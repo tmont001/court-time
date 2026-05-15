@@ -5,16 +5,23 @@ import CalendarShell from "./CalendarShell";
 export default async function CalendarPage() {
   const supabase = await createClient();
 
-  const { data: courts } = await supabase
+  // Validate the session before making RLS-protected queries.
+  await supabase.auth.getUser();
+
+  const { data: courts, error } = await supabase
     .from("courts")
-    .select("id, name, display_order")
+    .select("*")
     .eq("is_active", true)
     .order("display_order", { ascending: true });
+
+  if (error) {
+    console.error("[Calendar] courts query failed:", error.message);
+  }
 
   return (
     <>
       <Header screenTitle="Calendar" />
-      <CalendarShell courts={courts ?? []} />
+      <CalendarShell courts={courts ?? []} hasError={!!error} />
     </>
   );
 }

@@ -13,7 +13,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-white text-gray-900 antialiased">{children}</body>
+      {/*
+       * bg-gray-200 on the body gives a visible backdrop on wide screens so
+       * the 430 px mobile-preview card stands out. On real mobile the body
+       * fills the viewport anyway, so the gray is invisible.
+       */}
+      <body className="bg-gray-200 text-gray-900 antialiased">
+        <div className="mx-auto w-full max-w-[430px] min-h-screen bg-white">
+          {children}
+        </div>
+      </body>
     </html>
   );
 }

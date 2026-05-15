@@ -154,6 +154,60 @@ middleware.ts        # Next.js middleware — session refresh + auth guard
 
 ---
 
+## Troubleshooting
+
+### Calendar shows only "All" / No courts visible
+
+**Root cause.** The seed data (`clubs`, `courts`, `event_types`) is in the database, but the logged-in user either has no matching `profiles` row or the row's `club_id` does not match the seeded club. The RLS policy on `courts` evaluates `club_id = current_user_club_id()`, where `current_user_club_id()` reads the authenticated user's profile. A missing or mismatched profile means every court row is filtered out, with no error returned.
+
+**Step 1 — Verify the data.**
+
+Run the following queries in the Supabase SQL Editor:
+
+```sql
+-- Row counts (all should be > 0 after seeding)
+select count(*) as club_count        from clubs;
+select count(*) as court_count       from courts;
+select count(*) as event_type_count  from event_types;
+select count(*) as profile_count     from profiles;
+
+-- Inspect every profile and its linked auth user
+select
+  p.id,
+  u.email,
+  p.club_id,
+  p.role,
+  p.status
+from profiles p
+left join auth.users u on u.id = p.id;
+```
+
+If `profile_count` is 0, or `club_id` is NULL, proceed to Step 2.
+
+**Step 2 — Create or fix the profile row.**
+
+Find your auth user UUID in the Supabase dashboard under **Authentication → Users**, then run:
+
+```sql
+-- Insert a new profile, or update an existing one with the wrong club_id
+insert into profiles (id, club_id, role, status)
+values (
+  '<your-auth-user-id>',
+  'a1b2c3d4-e5f6-7890-abcd-ef1234567890',   -- Riverside club UUID from seed.sql
+  'member',
+  'active'
+)
+on conflict (id) do update
+  set club_id = excluded.club_id,
+      status  = excluded.status;
+```
+
+Reload `/calendar` — courts should appear.
+
+**Why the trigger may have missed.** The `on_auth_user_created` trigger inserts a profile row when a new auth user is created. If the `clubs` table was empty at that moment (user created before seed.sql was applied), the trigger's `select id from clubs where slug = 'riverside'` returns nothing and the insert fails silently. The fix is the manual insert above.
+
+---
+
 ## Phase 1 acceptance checklist
 
 - [ ] Sign in as member, pro, and admin users

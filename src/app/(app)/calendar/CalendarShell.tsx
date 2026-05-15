@@ -1,80 +1,96 @@
 "use client";
 
-// Time gutter: 8 AM – 7 PM in 30-min slots
-const START_HOUR = 8;
-const END_HOUR = 19;
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-function buildTimeSlots(): string[] {
-  const slots: string[] = [];
+const START_HOUR = 8;   // 8 AM
+const END_HOUR   = 19;  // 7 PM
+
+const GUTTER_W = 52;  // px — time-label column width
+const COL_W    = 80;  // px — each court column width
+const ROW_H    = 40;  // px — each 30-min slot height
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+type TimeSlot = { label: string; isHour: boolean };
+
+function buildTimeSlots(): TimeSlot[] {
+  const slots: TimeSlot[] = [];
   for (let h = START_HOUR; h < END_HOUR; h++) {
-    const ampm = h < 12 ? "AM" : "PM";
-    const display = h <= 12 ? h : h - 12;
-    slots.push(`${display}:00 ${ampm}`);
-    slots.push(`${display}:30 ${ampm}`);
+    const ampm    = h < 12 ? "AM" : "PM";
+    const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    slots.push({ label: `${display}:00 ${ampm}`, isHour: true });
+    slots.push({ label: "",                       isHour: false });
   }
   return slots;
 }
 
-const TIME_SLOTS = buildTimeSlots();
+type DatePill = { day: string; date: number; isToday: boolean };
 
-// Date strip: today ± 6 days (13 pills)
-function buildDateStrip(): { label: string; sublabel: string; isToday: boolean }[] {
-  const days: { label: string; sublabel: string; isToday: boolean }[] = [];
+function buildDateStrip(): DatePill[] {
+  const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   const today = new Date();
-  for (let offset = -3; offset <= 9; offset++) {
+  const pills: DatePill[] = [];
+  for (let offset = -2; offset <= 10; offset++) {
     const d = new Date(today);
     d.setDate(today.getDate() + offset);
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    days.push({
-      label: dayNames[d.getDay()],
-      sublabel: String(d.getDate()),
-      isToday: offset === 0,
-    });
+    pills.push({ day: DAY_NAMES[d.getDay()], date: d.getDate(), isToday: offset === 0 });
   }
-  return days;
+  return pills;
 }
 
-const DATE_STRIP = buildDateStrip();
+const TIME_SLOTS  = buildTimeSlots();
+const DATE_STRIP  = buildDateStrip();
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Court {
-  id: string;
-  name: string;
+  id:            string;
+  name:          string;
   display_order: number;
 }
 
 interface Props {
-  courts: Court[];
+  courts:    Court[];
+  hasError?: boolean;
 }
 
-const GUTTER_W = 56; // px width of time gutter
-const COL_W = 80;    // px width of each court column
-const ROW_H = 40;    // px height of each 30-min slot
+// ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts }: Props) {
-  const totalCols = courts.length;
-  const gridWidth = GUTTER_W + totalCols * COL_W;
+export default function CalendarShell({ courts, hasError }: Props) {
+  const gridContentWidth = courts.length * COL_W;
+  // Total inner width: gutter + all court columns (at least gutter + 1 placeholder column so the grid is visible even when empty)
+  const innerWidth = GUTTER_W + Math.max(gridContentWidth, COL_W);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem-4rem)] overflow-hidden">
-      {/* Date strip */}
-      <div className="flex overflow-x-auto gap-2 px-4 py-3 border-b border-gray-100 shrink-0">
+    /*
+     * Outer container: fills the space between the header (56 px = 3.5 rem)
+     * and the fixed bottom nav (64 px = 4 rem). Uses dvh so mobile Chrome's
+     * dynamic toolbar doesn't cause overflow.
+     */
+    <div
+      className="flex flex-col overflow-hidden bg-white"
+      style={{ height: "calc(100dvh - 56px - 64px)" }}
+    >
+
+      {/* ── Date strip ─────────────────────────────────────────────────── */}
+      <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-gray-100 shrink-0 hide-scrollbar">
         {DATE_STRIP.map((d, i) => (
           <div
             key={i}
-            className={`flex flex-col items-center justify-center rounded-full shrink-0 w-11 h-11 text-xs ${
+            className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
               d.isToday
                 ? "bg-gray-900 text-white font-semibold"
                 : "text-gray-500"
             }`}
           >
-            <span>{d.label}</span>
-            <span>{d.sublabel}</span>
+            <span>{d.day}</span>
+            <span>{d.date}</span>
           </div>
         ))}
       </div>
 
-      {/* View toggle */}
-      <div className="flex gap-1 px-4 py-2 border-b border-gray-100 shrink-0">
+      {/* ── View toggle ────────────────────────────────────────────────── */}
+      <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 shrink-0">
         {["Day", "Week", "My Schedule"].map((v) => (
           <button
             key={v}
@@ -90,11 +106,11 @@ export default function CalendarShell({ courts }: Props) {
         ))}
       </div>
 
-      {/* Court chips */}
-      <div className="flex gap-2 px-4 py-2 border-b border-gray-100 overflow-x-auto shrink-0">
+      {/* ── Court chips ────────────────────────────────────────────────── */}
+      <div className="flex gap-2 px-3 py-2 border-b border-gray-100 overflow-x-auto shrink-0 hide-scrollbar">
         <button
           disabled
-          className="px-3 py-1 rounded-full text-xs font-medium bg-gray-900 text-white shrink-0"
+          className="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-gray-900 text-white"
         >
           All
         </button>
@@ -102,32 +118,63 @@ export default function CalendarShell({ courts }: Props) {
           <button
             key={court.id}
             disabled
-            className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-500 shrink-0"
+            className="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
           >
             {court.name}
           </button>
         ))}
       </div>
 
-      {/* Timeline */}
+      {/* ── Empty / error state ────────────────────────────────────────── */}
+      {hasError && (
+        <p className="mx-4 mt-3 text-xs text-gray-400 shrink-0">
+          Unable to load courts. Please try refreshing.
+        </p>
+      )}
+
+      {!hasError && courts.length === 0 && (
+        <p className="mx-4 mt-3 text-xs text-gray-400 shrink-0">
+          No courts found. Please check your club setup.
+        </p>
+      )}
+
+      {/* ── Timeline grid ──────────────────────────────────────────────── */}
+      {/*
+       * Single scroll container: scrolls both axes.
+       * - Court-name header row: sticky top-0 (sticks during vertical scroll)
+       * - Time-label column:     sticky left-0 (sticks during horizontal scroll)
+       * - Corner cell:           sticky top-0 left-0 z-30 (always fixed)
+       */}
       <div className="flex-1 overflow-auto">
-        <div style={{ width: gridWidth, minWidth: "100%" }}>
+        <div style={{ width: innerWidth, minWidth: "100%" }}>
+
           {/* Court header row */}
           <div
-            className="flex border-b border-gray-200 bg-white sticky top-0 z-10"
-            style={{ width: gridWidth }}
+            className="flex bg-white border-b border-gray-200 sticky top-0 z-20"
+            style={{ width: innerWidth }}
           >
-            {/* Gutter space */}
-            <div style={{ width: GUTTER_W, minWidth: GUTTER_W }} />
-            {courts.map((court) => (
+            {/* Corner: always visible, covers both axes */}
+            <div
+              className="shrink-0 sticky left-0 z-30 bg-white border-r border-gray-200"
+              style={{ width: GUTTER_W }}
+            />
+            {courts.length > 0 ? (
+              courts.map((court) => (
+                <div
+                  key={court.id}
+                  className="shrink-0 text-center text-xs font-medium text-gray-700 py-2 border-l border-gray-200"
+                  style={{ width: COL_W }}
+                >
+                  {court.name}
+                </div>
+              ))
+            ) : (
+              /* Placeholder column header so the grid isn't zero-width */
               <div
-                key={court.id}
-                className="border-l border-gray-200 text-xs font-medium text-gray-600 text-center py-2"
-                style={{ width: COL_W, minWidth: COL_W }}
-              >
-                {court.name}
-              </div>
-            ))}
+                className="shrink-0 border-l border-gray-200"
+                style={{ width: COL_W }}
+              />
+            )}
           </div>
 
           {/* Time rows */}
@@ -135,27 +182,40 @@ export default function CalendarShell({ courts }: Props) {
             <div
               key={rowIdx}
               className="flex"
-              style={{ height: ROW_H, width: gridWidth }}
+              style={{ height: ROW_H, width: innerWidth }}
             >
-              {/* Time label */}
+              {/* Time label — sticky on horizontal scroll */}
               <div
-                className="flex items-start justify-end pr-2 pt-1 text-xs text-gray-400 shrink-0 border-r border-gray-200"
-                style={{ width: GUTTER_W, minWidth: GUTTER_W }}
+                className="shrink-0 sticky left-0 z-10 bg-white border-r border-gray-200 flex items-start justify-end pr-1.5"
+                style={{ width: GUTTER_W, paddingTop: 3 }}
               >
-                {slot.endsWith(":00 AM") || slot.endsWith(":00 PM")
-                  ? slot
-                  : ""}
+                {slot.isHour && (
+                  <span className="text-[10px] leading-none text-gray-400">
+                    {slot.label}
+                  </span>
+                )}
               </div>
-              {/* Court columns */}
-              {courts.map((court) => (
+
+              {/* Court cells */}
+              {courts.length > 0 ? (
+                courts.map((court, colIdx) => (
+                  <div
+                    key={court.id}
+                    className={`shrink-0 ${colIdx > 0 ? "border-l border-gray-100" : ""} ${
+                      slot.isHour ? "border-t border-gray-200" : "border-t border-gray-100"
+                    }`}
+                    style={{ width: COL_W, height: ROW_H }}
+                  />
+                ))
+              ) : (
+                /* Placeholder cell so the grid still draws rows */
                 <div
-                  key={court.id}
-                  className="border-l border-gray-100 border-b border-b-gray-100"
-                  style={{ width: COL_W, minWidth: COL_W, height: ROW_H }}
+                  className={`flex-1 ${slot.isHour ? "border-t border-gray-200" : "border-t border-gray-100"}`}
                 />
-              ))}
+              )}
             </div>
           ))}
+
         </div>
       </div>
     </div>
