@@ -300,6 +300,94 @@ export type Database = {
           }
         ];
       };
+      reservations: {
+        Row: {
+          id: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status: "pending" | "confirmed" | "cancelled";
+          reason: "member_booking" | "maintenance" | "admin_block";
+          player_count: number | null;
+          format: "singles" | "doubles" | null;
+          guest_names: string[] | null;
+          notes: string | null;
+          event_id: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_kind: "member" | "admin" | "system" | null;
+        };
+        Insert: {
+          id?: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status?: "pending" | "confirmed" | "cancelled";
+          reason?: "member_booking" | "maintenance" | "admin_block";
+          player_count?: number | null;
+          format?: "singles" | "doubles" | null;
+          guest_names?: string[] | null;
+          notes?: string | null;
+          event_id?: string | null;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          cancellation_kind?: "member" | "admin" | "system" | null;
+        };
+        Update: {
+          id?: string;
+          club_id?: string;
+          court_id?: string;
+          owner_user_id?: string;
+          starts_at?: string;
+          ends_at?: string;
+          status?: "pending" | "confirmed" | "cancelled";
+          reason?: "member_booking" | "maintenance" | "admin_block";
+          player_count?: number | null;
+          format?: "singles" | "doubles" | null;
+          guest_names?: string[] | null;
+          notes?: string | null;
+          event_id?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+          cancelled_at?: string | null;
+          cancelled_by?: string | null;
+          cancellation_kind?: "member" | "admin" | "system" | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "reservations_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reservations_court_id_fkey";
+            columns: ["court_id"];
+            isOneToOne: false;
+            referencedRelation: "courts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reservations_owner_user_id_fkey";
+            columns: ["owner_user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -310,6 +398,38 @@ export type Database = {
       current_user_club_id: {
         Args: Record<string, never>;
         Returns: string;
+      };
+      create_reservation: {
+        Args: {
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_format?: string | null;
+          p_player_count?: number | null;
+          p_guest_names?: string[] | null;
+          p_notes?: string | null;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status: string;
+          reason: string;
+          player_count: number | null;
+          format: string | null;
+          guest_names: string[] | null;
+          notes: string | null;
+          event_id: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_kind: string | null;
+        };
       };
     };
     Enums: { [_ in never]: never };
