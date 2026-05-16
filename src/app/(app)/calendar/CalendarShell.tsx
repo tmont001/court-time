@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
+import EventDetailSheet from "./EventDetailSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -602,6 +603,18 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           </div>
         </div>
       </div>
+
+      {/* ── Event detail sheet ───────────────────────────────────────────── */}
+      {selectedEvent && (
+        <EventDetailSheet
+          event={selectedEvent}
+          courts={courts}
+          userId={userId}
+          clubTimezone={clubTimezone}
+          onClose={() => setSelectedEvent(null)}
+          onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
+        />
+      )}
 
       {/* ── Booking sheet ────────────────────────────────────────────────── */}
       {bookingSlot && (
