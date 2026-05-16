@@ -11,11 +11,12 @@ export default async function CalendarPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("club_id")
+    .select("club_id, role")
     .eq("id", user.id)
     .single();
 
-  const clubId = profile?.club_id ?? "";
+  const clubId   = profile?.club_id ?? "";
+  const userRole = profile?.role    ?? "member";
 
   let clubTimezone = "America/New_York";
   if (clubId) {
@@ -26,6 +27,10 @@ export default async function CalendarPage() {
       .single();
     if (club?.timezone) clubTimezone = club.timezone;
   }
+
+  // Compute today in the club's timezone on the server so CalendarShell gets a
+  // stable YYYY-MM-DD string for both SSR and client hydration.
+  const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
   const { data: courts, error: courtsError } = await supabase
     .from("courts")
@@ -46,6 +51,8 @@ export default async function CalendarPage() {
         userId={user.id}
         clubId={clubId}
         clubTimezone={clubTimezone}
+        userRole={userRole}
+        todayISO={todayISO}
       />
     </>
   );

@@ -309,7 +309,7 @@ export type Database = {
           starts_at: string;
           ends_at: string;
           status: "pending" | "confirmed" | "cancelled";
-          reason: "member_booking" | "maintenance" | "admin_block";
+          reason: "member_booking" | "maintenance" | "admin_block" | "event";
           player_count: number | null;
           format: "singles" | "doubles" | null;
           guest_names: string[] | null;
@@ -330,7 +330,7 @@ export type Database = {
           starts_at: string;
           ends_at: string;
           status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block";
+          reason?: "member_booking" | "maintenance" | "admin_block" | "event";
           player_count?: number | null;
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
@@ -351,7 +351,7 @@ export type Database = {
           starts_at?: string;
           ends_at?: string;
           status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block";
+          reason?: "member_booking" | "maintenance" | "admin_block" | "event";
           player_count?: number | null;
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
@@ -382,6 +382,128 @@ export type Database = {
           {
             foreignKeyName: "reservations_owner_user_id_fkey";
             columns: ["owner_user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reservations_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      events: {
+        Row: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count: number;
+          status: "scheduled" | "cancelled";
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description?: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count?: number;
+          status?: "scheduled" | "cancelled";
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          club_id?: string;
+          event_type_id?: string;
+          title?: string;
+          description?: string | null;
+          starts_at?: string;
+          ends_at?: string;
+          capacity?: number;
+          court_count?: number;
+          status?: "scheduled" | "cancelled";
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "events_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "events_event_type_id_fkey";
+            columns: ["event_type_id"];
+            isOneToOne: false;
+            referencedRelation: "event_types";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "events_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      event_participants: {
+        Row: {
+          id: string;
+          event_id: string;
+          profile_id: string;
+          role: "host" | "participant";
+          status: "confirmed" | "cancelled";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_id: string;
+          profile_id: string;
+          role?: "host" | "participant";
+          status?: "confirmed" | "cancelled";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_id?: string;
+          profile_id?: string;
+          role?: "host" | "participant";
+          status?: "confirmed" | "cancelled";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "event_participants_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_participants_profile_id_fkey";
+            columns: ["profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
@@ -430,6 +552,49 @@ export type Database = {
           cancelled_by: string | null;
           cancellation_kind: string | null;
         };
+      };
+      create_event: {
+        Args: {
+          p_event_type_id: string;
+          p_title: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_court_ids: string[];
+          p_description?: string | null;
+          p_capacity?: number | null;
+          p_notes?: string | null;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count: number;
+          status: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      join_event: {
+        Args: { p_event_id: string };
+        Returns: {
+          id: string;
+          event_id: string;
+          profile_id: string;
+          role: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      leave_event: {
+        Args: { p_event_id: string };
+        Returns: undefined;
       };
     };
     Enums: { [_ in never]: never };

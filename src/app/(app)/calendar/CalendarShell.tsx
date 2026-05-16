@@ -29,12 +29,51 @@ interface BookingSlot {
   slotIdx:   number;
 }
 
+// Raw shape returned by the events query (reservations nested for court_id derivation)
+interface RawEventRow {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  capacity: number;
+  status: string;
+  created_by: string;
+  event_types: {
+    key: string;
+    label: string;
+    color: string;
+    shows_participant_names: boolean;
+  };
+  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  reservations: Array<{ court_id: string; status: string; reason: string }>;
+}
+
+interface EventWithDetails {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  capacity: number;
+  status: string;
+  created_by: string;
+  event_types: {
+    key: string;
+    label: string;
+    color: string;
+    shows_participant_names: boolean;
+  };
+  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  court_ids: string[];
+}
+
 interface Props {
   courts:       Court[];
   hasError?:    boolean;
   userId:       string;
   clubId:       string;
   clubTimezone: string;
+  userRole:     string;
+  todayISO:     string; // YYYY-MM-DD in club timezone, computed server-side
 }
 
 // ─── Timezone helpers ─────────────────────────────────────────────────────────
@@ -90,21 +129,6 @@ function buildTimeSlots(): TimeSlot[] {
 const TIME_SLOTS  = buildTimeSlots();
 const TOTAL_GRID_H = TIME_SLOTS.length * ROW_H;
 
-// ─── Date strip ───────────────────────────────────────────────────────────────
-
-function buildDateStrip() {
-  const today = new Date();
-  const pills = [];
-  for (let offset = -2; offset <= 10; offset++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + offset);
-    pills.push({ date: d, day: DAY_NAMES[d.getDay()], dateNum: d.getDate() });
-  }
-  return pills;
-}
-
-const DATE_STRIP = buildDateStrip();
-
 // ─── RPC error message map ────────────────────────────────────────────────────
 
 function rpcErrorMessage(code: string | undefined, message: string): string {
@@ -118,11 +142,12 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone }: Props) {
+export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const [selectedDate, setSelectedDate]         = useState<Date>(() => new Date());
+  // Initialize from the server-supplied date string (UTC noon = same calendar date in any timezone).
+  const [selectedDate, setSelectedDate]         = useState<Date>(() => new Date(todayISO + "T12:00:00Z"));
   const [reservations, setReservations]         = useState<Reservation[]>([]);
   const [loadingRes, setLoadingRes]             = useState(false);
   const [refreshTick, setRefreshTick]           = useState(0);
@@ -136,6 +161,24 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   // nowMs is 0 during SSR so all slots render as available (no past-slot check).
   // After hydration, useEffect sets the real timestamp, past slots disable without mismatch.
   const [nowMs, setNowMs]                 = useState(0);
+  const [events, setEvents]               = useState<EventWithDetails[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
+
+  // ── Date pills ────────────────────────────────────────────────────────────
+  // Built from todayISO (not new Date()) so server and client produce identical output.
+  // UTC noon is used so toLocaleDateString in any tz still returns the correct calendar date.
+  const datePills = useMemo(() => {
+    const [ty, tm, td] = todayISO.split("-").map(Number);
+    return Array.from({ length: 13 }, (_, i) => {
+      const offset = i - 2; // -2 … +10
+      const dt = new Date(Date.UTC(ty, tm - 1, td + offset, 12, 0, 0));
+      return {
+        dateISO: dt.toISOString().slice(0, 10),
+        day:     DAY_NAMES[dt.getUTCDay()],
+        dateNum: dt.getUTCDate(),
+      };
+    });
+  }, [todayISO]);
 
   // ── Derived values ────────────────────────────────────────────────────────
   const dayBounds = useMemo(
@@ -193,7 +236,48 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     setLoadingRes(false);
   }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchReservations(); }, [fetchReservations]);
+  // ── Event fetch ───────────────────────────────────────────────────────────
+  const fetchEvents = useCallback(async () => {
+    if (!clubId) return;
+    const { data, error } = await supabase
+      .from("events")
+      .select(`
+        id, title, starts_at, ends_at, capacity, status, created_by,
+        event_types(key, label, color, shows_participant_names),
+        event_participants(profile_id, role, status),
+        reservations(court_id, status, reason)
+      `)
+      .eq("club_id", clubId)
+      .gte("starts_at", dayBounds.start)
+      .lt("starts_at",  dayBounds.end)
+      .eq("status", "scheduled")
+      .order("starts_at");
+    if (!error) {
+      const mapped = (data ?? []).map((row: unknown) => {
+        const r = row as RawEventRow;
+        return {
+          id:                 r.id,
+          title:              r.title,
+          starts_at:          r.starts_at,
+          ends_at:            r.ends_at,
+          capacity:           r.capacity,
+          status:             r.status,
+          created_by:         r.created_by,
+          event_types:        r.event_types,
+          event_participants: r.event_participants,
+          court_ids: r.reservations
+            .filter(res => res.reason === "event" && res.status === "confirmed")
+            .map(res => res.court_id),
+        };
+      });
+      setEvents(mapped);
+    }
+  }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchReservations();
+    fetchEvents();
+  }, [fetchReservations, fetchEvents]);
   useEffect(() => { setNowMs(Date.now()); }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -262,20 +346,20 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     <>
       <div
         className="flex flex-col overflow-hidden bg-white"
+        data-role={userRole}
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
 
         {/* ── Date strip ────────────────────────────────────────────────── */}
         <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-gray-100 shrink-0 hide-scrollbar">
-          {DATE_STRIP.map((pill, i) => {
-            const isSelected = pill.date.toLocaleDateString("en-CA", { timeZone: clubTimezone }) ===
-              selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone });
-            const isToday = pill.date.toLocaleDateString("en-CA", { timeZone: clubTimezone }) ===
-              new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
+          {datePills.map((pill) => {
+            const selectedISO = selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone });
+            const isSelected  = pill.dateISO === selectedISO;
+            const isToday     = pill.dateISO === todayISO;
             return (
               <button
-                key={i}
-                onClick={() => setSelectedDate(new Date(pill.date))}
+                key={pill.dateISO}
+                onClick={() => setSelectedDate(new Date(pill.dateISO + "T12:00:00Z"))}
                 className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
                   isSelected
                     ? "bg-gray-900 text-white font-semibold"
@@ -399,7 +483,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               {/* Court columns */}
               {filteredCourts.length > 0 ? (
                 filteredCourts.map(court => {
-                  const courtRes  = reservations.filter(r => r.court_id === court.id);
+                  const courtRes  = reservations.filter(r => r.court_id === court.id && r.reason !== "event");
                   const occupied  = occupiedSlots.get(court.id) ?? new Set<number>();
 
                   return (
@@ -471,6 +555,34 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                           </div>
                         );
                       })}
+
+                      {/* Event blocks — colored, tappable, span the full column */}
+                      {events
+                        .filter(ev => ev.court_ids.includes(court.id))
+                        .map(ev => {
+                          const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone);
+                          const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone);
+                          const top       = (startMins / 30) * ROW_H;
+                          const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, ROW_H);
+                          return (
+                            <button
+                              key={ev.id}
+                              onClick={() => setSelectedEvent(ev)}
+                              className="absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 text-white"
+                              style={{
+                                top: top + 1,
+                                height,
+                                left: 2,
+                                right: 2,
+                                background: ev.event_types.color,
+                                touchAction: "manipulation",
+                              }}
+                            >
+                              {ev.title}
+                            </button>
+                          );
+                        })
+                      }
                     </div>
                   );
                 })
