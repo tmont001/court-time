@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
+import CreateEventSheet from "./CreateEventSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [nowMs, setNowMs]                 = useState(0);
   const [events, setEvents]               = useState<EventWithDetails[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
+  const [creatingEvent, setCreatingEvent] = useState(false);
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Built from todayISO (not new Date()) so server and client produce identical output.
@@ -603,6 +605,31 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           </div>
         </div>
       </div>
+
+      {/* ── + Event FAB — pro/admin only, floats above bottom nav ──────── */}
+      {(userRole === "pro" || userRole === "admin") && (
+        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-30 pointer-events-none">
+          <div className="flex justify-end px-4 pb-3">
+            <button
+              onClick={() => setCreatingEvent(true)}
+              className="pointer-events-auto px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+            >
+              + Event
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create event sheet ───────────────────────────────────────────── */}
+      {creatingEvent && (
+        <CreateEventSheet
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setCreatingEvent(false)}
+          onCreated={() => { setRefreshTick(t => t + 1); setCreatingEvent(false); }}
+        />
+      )}
 
       {/* ── Event detail sheet ───────────────────────────────────────────── */}
       {selectedEvent && (
