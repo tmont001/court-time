@@ -763,6 +763,19 @@ export type Database = {
           cancellation_kind: string | null;
         };
       };
+      get_members: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          first_name: string | null;
+          last_name: string | null;
+          phone: string | null;
+          role: string;
+          status: string;
+          created_at: string;
+          email: string | null;
+        }[];
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

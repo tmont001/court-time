@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import SignOutButton from "./SignOutButton";
@@ -49,6 +50,40 @@ export default async function ProfilePage() {
           lastName={profile?.last_name ?? null}
           phone={profile?.phone ?? null}
         />
+
+        {profile?.role === "admin" && (
+          <>
+            <hr className="border-gray-100" />
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Admin
+              </p>
+              <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+                <Link
+                  href="/admin/members"
+                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                >
+                  Members
+                  <span className="text-gray-400">›</span>
+                </Link>
+                <Link
+                  href="/admin/settings"
+                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                >
+                  Settings
+                  <span className="text-gray-400">›</span>
+                </Link>
+                <Link
+                  href="/admin/audit-log"
+                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                >
+                  Audit Log
+                  <span className="text-gray-400">›</span>
+                </Link>
+              </div>
+            </div>
+          </>
+        )}
 
         <SignOutButton />
       </div>
