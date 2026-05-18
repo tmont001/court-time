@@ -790,6 +790,21 @@ export type Database = {
           updated_at: string;
         };
       };
+      get_audit_log: {
+        Args: {
+          p_limit?: number;
+          p_offset?: number;
+        };
+        Returns: {
+          id: string;
+          actor_name: string;
+          action: string;
+          target_type: string;
+          target_id: string;
+          metadata: Json | null;
+          created_at: string;
+        }[];
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
