@@ -1,3 +1,5 @@
+import NotificationBell from "@/components/NotificationBell";
+
 interface HeaderProps {
   screenTitle: string;
 }
@@ -9,14 +11,7 @@ export default function Header({ screenTitle }: HeaderProps) {
         Riverside Tennis Club
       </span>
       <span className="text-sm font-semibold text-gray-900">{screenTitle}</span>
-      {/* Bell placeholder — non-functional in Phase 1 */}
-      <button
-        aria-label="Notifications"
-        className="w-8 h-8 flex items-center justify-center text-gray-400"
-        disabled
-      >
-        &#9679;
-      </button>
+      <NotificationBell />
     </header>
   );
 }
