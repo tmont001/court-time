@@ -45,6 +45,7 @@ interface Props {
   event: EventWithDetails;
   courts: Court[];
   userId: string;
+  userRole: string;
   clubTimezone: string;
   onClose: () => void;
   onRefresh: () => void;
@@ -77,13 +78,16 @@ function mapLeaveError(message: string): string {
 const MAX_NAMES = 5;
 
 export default function EventDetailSheet({
-  event, courts, userId, clubTimezone, onClose, onRefresh,
+  event, courts, userId, userRole, clubTimezone, onClose, onRefresh,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading]                         = useState(false);
   const [error, setError]                             = useState<string | null>(null);
   const [participantProfiles, setParticipantProfiles] = useState<ParticipantProfile[]>([]);
+  const [cancelConfirming, setCancelConfirming]       = useState(false);
+  const [cancelLoading, setCancelLoading]             = useState(false);
+  const [cancelError, setCancelError]                 = useState<string | null>(null);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ export default function EventDetailSheet({
   const myPart         = confirmedParticipants.find(p => p.profile_id === userId);
   const isFull         = confirmedCount >= event.capacity;
   const isHost         = myPart?.role === "host";
+  const canCancelEvent = userRole === "admin" || isHost;
 
   const courtNames = event.court_ids
     .map(id => courts.find(c => c.id === id)?.name ?? "Court")
@@ -145,6 +150,23 @@ export default function EventDetailSheet({
     if (rpcError) {
       setError(mapLeaveError(rpcError.message));
       setLoading(false);
+      return;
+    }
+    onRefresh();
+    onClose();
+  }
+
+  async function handleCancelEvent() {
+    setCancelLoading(true);
+    setCancelError(null);
+    const { error: rpcError } = await supabase.rpc("cancel_event", { p_event_id: event.id });
+    if (rpcError) {
+      setCancelError(
+        rpcError.message === "event_not_found"
+          ? "This event has already been cancelled."
+          : "Something went wrong. Please try again."
+      );
+      setCancelLoading(false);
       return;
     }
     onRefresh();
@@ -244,6 +266,40 @@ export default function EventDetailSheet({
         >
           {buttonLabel}
         </button>
+
+        {/* Cancel Event — admin or host only */}
+        {canCancelEvent && (
+          <div className="mt-4 text-center">
+            {!cancelConfirming ? (
+              <button
+                onClick={() => setCancelConfirming(true)}
+                className="text-xs text-red-500 underline"
+              >
+                Cancel Event
+              </button>
+            ) : (
+              <div>
+                <p className="text-xs text-gray-600 mb-2">Cancel this event?</p>
+                <div className="flex gap-2 justify-center">
+                  <button
+                    onClick={() => { setCancelConfirming(false); setCancelError(null); }}
+                    className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600"
+                  >
+                    Keep
+                  </button>
+                  <button
+                    disabled={cancelLoading}
+                    onClick={handleCancelEvent}
+                    className="px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white disabled:opacity-40"
+                  >
+                    {cancelLoading ? "Cancelling…" : "Yes, cancel"}
+                  </button>
+                </div>
+                {cancelError && <p className="mt-2 text-xs text-red-500">{cancelError}</p>}
+              </div>
+            )}
+          </div>
+        )}
 
       </div>
     </>

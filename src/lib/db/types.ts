@@ -644,6 +644,24 @@ export type Database = {
         Args: { p_event_id: string };
         Returns: undefined;
       };
+      cancel_event: {
+        Args: { p_event_id: string };
+        Returns: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count: number;
+          status: string;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       admin_cancel_reservation: {
         Args: { p_reservation_id: string };
         Returns: {

@@ -655,6 +655,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           event={selectedEvent}
           courts={courts}
           userId={userId}
+          userRole={userRole}
           clubTimezone={clubTimezone}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
