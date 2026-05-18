@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import SignOutButton from "./SignOutButton";
+import ProfileEditForm from "./ProfileEditForm";
 
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
@@ -40,6 +41,14 @@ export default async function ProfilePage() {
             {ROLE_LABELS[profile?.role ?? "member"]}
           </span>
         </div>
+
+        <hr className="border-gray-100" />
+
+        <ProfileEditForm
+          firstName={profile?.first_name ?? null}
+          lastName={profile?.last_name ?? null}
+          phone={profile?.phone ?? null}
+        />
 
         <SignOutButton />
       </div>
