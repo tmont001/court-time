@@ -776,6 +776,20 @@ export type Database = {
           email: string | null;
         }[];
       };
+      update_club_settings: {
+        Args: {
+          p_booking_window_days: number;
+          p_cancellation_window_hours: number;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          booking_window_days: number;
+          cancellation_window_hours: number;
+          created_at: string;
+          updated_at: string;
+        };
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
