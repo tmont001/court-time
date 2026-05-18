@@ -558,6 +558,54 @@ export type Database = {
           }
         ];
       };
+      notifications: {
+        Row: {
+          id:         string;
+          club_id:    string;
+          user_id:    string;
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          body:       string;
+          is_read:    boolean;
+          metadata:   Json | null;
+          created_at: string;
+        };
+        Insert: {
+          id?:         string;
+          club_id:     string;
+          user_id:     string;
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          body:        string;
+          is_read?:    boolean;
+          metadata?:   Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?:         string;
+          club_id?:    string;
+          user_id?:    string;
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          body?:       string;
+          is_read?:    boolean;
+          metadata?:   Json | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notifications_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
