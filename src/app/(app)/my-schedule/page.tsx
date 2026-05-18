@@ -31,7 +31,7 @@ interface RawSignupRow {
 }
 
 type ScheduleItem =
-  | { kind: "reservation"; res: ReservationRow }
+  | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
   | { kind: "event";       ev: EventItem; myRole: string };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
@@ -44,6 +44,34 @@ async function cancelReservation(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
+
+  // Server-side guard: enforce cancellation window for non-admin users.
+  // Admin is exempt; member and pro are subject to the window.
+  const { data: actorProfile } = await supabase
+    .from("profiles")
+    .select("role, club_id")
+    .eq("id", user.id)
+    .single();
+
+  if (actorProfile && actorProfile.role !== "admin") {
+    const { data: targetRes } = await supabase
+      .from("reservations")
+      .select("starts_at")
+      .eq("id", id)
+      .eq("owner_user_id", user.id)
+      .single();
+
+    if (targetRes) {
+      const { data: settings } = await supabase
+        .from("club_settings")
+        .select("cancellation_window_hours")
+        .eq("club_id", actorProfile.club_id)
+        .single();
+
+      const windowMs = (settings?.cancellation_window_hours ?? 24) * 60 * 60 * 1000;
+      if (new Date(targetRes.starts_at).getTime() - Date.now() < windowMs) return;
+    }
+  }
 
   await supabase
     .from("reservations")
@@ -104,19 +132,25 @@ export default async function MySchedulePage() {
   // Fetch club timezone
   const { data: profile } = await supabase
     .from("profiles")
-    .select("club_id")
+    .select("club_id, role")
     .eq("id", user.id)
     .single();
 
-  const clubId = profile?.club_id ?? "";
+  const clubId   = profile?.club_id ?? "";
+  const userRole = profile?.role ?? "member";
+
   let clubTimezone = "America/New_York";
+  let cancellationWindowHours = 24; // matches DB default
+
   if (clubId) {
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("timezone")
-      .eq("id", clubId)
-      .single();
+    const [{ data: club }, { data: settings }] = await Promise.all([
+      supabase.from("clubs").select("timezone").eq("id", clubId).single(),
+      supabase.from("club_settings").select("cancellation_window_hours").eq("club_id", clubId).single(),
+    ]);
     if (club?.timezone) clubTimezone = club.timezone;
+    if (settings?.cancellation_window_hours != null) {
+      cancellationWindowHours = settings.cancellation_window_hours;
+    }
   }
 
   const now = new Date().toISOString();
@@ -173,8 +207,16 @@ export default async function MySchedulePage() {
   const courtName = new Map((courts ?? []).map(c => [c.id, c.name]));
 
   // ── 4. Build unified sorted list ────────────────────────────────────────────
+  const windowMs = cancellationWindowHours * 60 * 60 * 1000;
+
   const allItems: ScheduleItem[] = [
-    ...reservations.map(res => ({ kind: "reservation" as const, res })),
+    ...reservations.map(res => ({
+      kind: "reservation" as const,
+      res,
+      isCancellable:
+        userRole === "admin" ||
+        new Date(res.starts_at).getTime() - Date.now() >= windowMs,
+    })),
     ...validSignups.map(s => ({
       kind:   "event" as const,
       ev:     s.events!,
@@ -241,15 +283,21 @@ export default async function MySchedulePage() {
                               {formatLabel ? ` · ${formatLabel}` : ""}
                             </p>
                           </div>
-                          <form action={cancelReservation}>
-                            <input type="hidden" name="id" value={res.id} />
-                            <button
-                              type="submit"
-                              className="text-xs font-medium text-red-500 ml-4 shrink-0"
-                            >
-                              Cancel
-                            </button>
-                          </form>
+                          {item.isCancellable ? (
+                            <form action={cancelReservation}>
+                              <input type="hidden" name="id" value={res.id} />
+                              <button
+                                type="submit"
+                                className="text-xs font-medium text-red-500 ml-4 shrink-0"
+                              >
+                                Cancel
+                              </button>
+                            </form>
+                          ) : (
+                            <span className="text-xs text-gray-400 ml-4 shrink-0 text-right">
+                              Cannot cancel<br />within {cancellationWindowHours}h
+                            </span>
+                          )}
                         </div>
                       );
                     }
