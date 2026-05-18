@@ -19,22 +19,22 @@ language plpgsql security definer as $$
 declare
   v_profile profiles%rowtype;
 begin
-  select * into v_profile from profiles where id = auth.uid();
+  select pr.* into v_profile from profiles pr where pr.id = auth.uid();
   if not found then raise exception 'not_authenticated'; end if;
   if v_profile.role <> 'admin' then raise exception 'insufficient_role'; end if;
 
   return query
     select
-      p.id,
-      p.first_name,
-      p.last_name,
-      p.phone,
-      p.role,
-      p.status,
-      p.created_at,
-      u.email::text
+      p.id         as id,
+      p.first_name as first_name,
+      p.last_name  as last_name,
+      p.phone      as phone,
+      p.role       as role,
+      p.status     as status,
+      p.created_at as created_at,
+      u.email::text as email
     from profiles p
-    join auth.users u on u.id = p.id
+    left join auth.users u on u.id = p.id
     where p.club_id = v_profile.club_id
     order by p.last_name asc nulls last, p.first_name asc nulls last;
 end;

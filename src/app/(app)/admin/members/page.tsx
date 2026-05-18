@@ -20,7 +20,7 @@ export default async function AdminMembersPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const { data: members } = await supabase.rpc("get_members");
+  const { data: members, error } = await supabase.rpc("get_members");
 
   return (
     <>
@@ -29,7 +29,12 @@ export default async function AdminMembersPage() {
         className="overflow-y-auto bg-gray-50"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
-        {!members || members.length === 0 ? (
+        {error ? (
+          <div className="mx-4 mt-6 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
+            <p className="text-sm font-semibold text-red-700">Failed to load members</p>
+            <p className="text-xs text-red-500 mt-1 break-all">{error.message}</p>
+          </div>
+        ) : !members || members.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
             No members yet.
           </div>

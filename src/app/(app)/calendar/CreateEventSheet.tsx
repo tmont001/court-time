@@ -103,6 +103,7 @@ export default function CreateEventSheet({
   const [conflictingCourtIds, setConflictingCourtIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting]                   = useState(false);
   const [error, setError]                             = useState<string | null>(null);
+  const [typesError, setTypesError]                   = useState<string | null>(null);
 
   // ── Fetch event types on mount ─────────────────────────────────────────────
 
@@ -112,8 +113,12 @@ export default function CreateEventSheet({
       .select("id, key, label, color, default_capacity, default_duration_minutes, default_court_count, shows_participant_names")
       .eq("club_id", clubId)
       .order("key")
-      .then(({ data }) => {
-        setEventTypes((data ?? []) as EventType[]);
+      .then(({ data, error: fetchErr }) => {
+        if (fetchErr) {
+          setTypesError("Failed to load event types. Please close and try again.");
+        } else {
+          setEventTypes((data ?? []) as EventType[]);
+        }
         setLoadingTypes(false);
       });
   }, [supabase, clubId]);
@@ -274,6 +279,10 @@ export default function CreateEventSheet({
             <div className="space-y-3 pt-1">
               {loadingTypes ? (
                 <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+              ) : typesError ? (
+                <p className="text-sm text-red-500 py-8 text-center">{typesError}</p>
+              ) : eventTypes.length === 0 ? (
+                <p className="text-sm text-gray-400 py-8 text-center">No event types configured.</p>
               ) : (
                 eventTypes.map(type => (
                   <button

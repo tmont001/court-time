@@ -11,15 +11,21 @@ interface Props {
 
 export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
   const [isPending, startTransition] = useTransition();
-  const [saved, setSaved]            = useState(false);
+  const [saved, setSaved]       = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    setSaveError(null);
     startTransition(async () => {
-      await updateProfile(formData);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      const result = await updateProfile(formData);
+      if (result?.error) {
+        setSaveError(result.error);
+      } else {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
     });
   }
 
@@ -71,6 +77,9 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
         </button>
         {saved && (
           <p className="text-xs font-medium text-green-600">Saved</p>
+        )}
+        {saveError && (
+          <p className="text-xs font-medium text-red-500">{saveError}</p>
         )}
       </div>
     </form>

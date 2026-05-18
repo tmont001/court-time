@@ -158,6 +158,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [selectedCourtIds, setSelectedCourtIds] = useState<Set<string>>(
     () => new Set(courts.map(c => c.id))
   );
+  const [resError, setResError]           = useState(false);
   const [bookingSlot, setBookingSlot]     = useState<BookingSlot | null>(null);
   const [bookingDuration, setBookingDuration] = useState<60 | 90>(60);
   const [bookingError, setBookingError]   = useState<string | null>(null);
@@ -231,6 +232,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const fetchReservations = useCallback(async () => {
     if (!clubId) return;
     setLoadingRes(true);
+    setResError(false);
     const { data, error } = await supabase
       .from("reservations")
       .select("*")
@@ -239,7 +241,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       .lt("starts_at",  dayBounds.end)
       .in("status", ["pending", "confirmed"])
       .order("starts_at");
-    if (!error) setReservations(data ?? []);
+    if (error) {
+      setResError(true);
+    } else {
+      setReservations(data ?? []);
+    }
     setLoadingRes(false);
   }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -618,9 +624,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               )}
 
             </div>
-            {/* Loading indicator */}
+            {/* Loading / error indicator */}
             {loadingRes && (
               <div className="text-center py-2 text-xs text-gray-400">Loading…</div>
+            )}
+            {resError && !loadingRes && (
+              <div className="text-center py-2 text-xs text-red-400">
+                Failed to load reservations. Please refresh.
+              </div>
             )}
           </div>
         </div>
