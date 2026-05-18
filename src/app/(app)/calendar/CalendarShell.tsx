@@ -6,6 +6,7 @@ import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
+import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
+  const [creatingBlock, setCreatingBlock]             = useState(false);
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Built from todayISO (not new Date()) so server and client produce identical output.
@@ -624,10 +626,18 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         </div>
       </div>
 
-      {/* ── + Event FAB — pro/admin only, floats above bottom nav ──────── */}
+      {/* ── FAB — pro/admin only, floats above bottom nav ───────────── */}
       {(userRole === "pro" || userRole === "admin") && (
         <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-30 pointer-events-none">
-          <div className="flex justify-end px-4 pb-3">
+          <div className="flex flex-col items-end gap-2 px-4 pb-3">
+            {userRole === "admin" && (
+              <button
+                onClick={() => setCreatingBlock(true)}
+                className="pointer-events-auto px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+              >
+                + Block
+              </button>
+            )}
             <button
               onClick={() => setCreatingEvent(true)}
               className="pointer-events-auto px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
@@ -659,6 +669,17 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           clubTimezone={clubTimezone}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
+        />
+      )}
+
+      {/* ── Create maintenance sheet (admin only) ───────────────────────── */}
+      {creatingBlock && (
+        <CreateMaintenanceSheet
+          courts={courts}
+          clubTimezone={clubTimezone}
+          selectedDate={selectedDate}
+          onClose={() => setCreatingBlock(false)}
+          onCreated={() => { setRefreshTick(t => t + 1); setCreatingBlock(false); }}
         />
       )}
 

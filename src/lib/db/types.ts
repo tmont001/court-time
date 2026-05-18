@@ -644,6 +644,35 @@ export type Database = {
         Args: { p_event_id: string };
         Returns: undefined;
       };
+      create_maintenance_block: {
+        Args: {
+          p_court_id:  string;
+          p_starts_at: string;
+          p_ends_at:   string;
+          p_notes?:    string | null;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status: string;
+          reason: string;
+          player_count: number | null;
+          format: string | null;
+          guest_names: string[] | null;
+          notes: string | null;
+          event_id: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_kind: string | null;
+        };
+      };
       cancel_event: {
         Args: { p_event_id: string };
         Returns: {
