@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
+import ReservationDetailSheet from "./ReservationDetailSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -166,6 +167,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [events, setEvents]               = useState<EventWithDetails[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Built from todayISO (not new Date()) so server and client produce identical output.
@@ -533,28 +535,44 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, 4);
                         const isOwn     = res.owner_user_id === userId;
                         const isBlocked = res.reason !== "member_booking";
+                        const isAdmin   = userRole === "admin";
 
-                        return (
+                        const blockCls = `absolute rounded text-[10px] font-medium px-1 overflow-hidden flex items-center ${
+                          isAdmin ? "cursor-pointer" : "pointer-events-none"
+                        } ${
+                          isOwn
+                            ? "border-2 border-blue-500 bg-blue-50 text-blue-700"
+                            : isBlocked
+                            ? "text-gray-400"
+                            : "bg-gray-400 text-white"
+                        }`;
+                        const blockStyle = {
+                          top: top + 1,
+                          height,
+                          left: 2,
+                          right: 2,
+                          ...(isBlocked ? {
+                            background: "repeating-linear-gradient(-45deg,#e5e7eb 0px,#e5e7eb 4px,#f9fafb 4px,#f9fafb 8px)",
+                          } : {}),
+                        };
+                        const blockLabel = isOwn ? "You / Booked" : isBlocked ? "Unavailable" : "";
+
+                        return isAdmin ? (
+                          <button
+                            key={res.id}
+                            onClick={() => setSelectedReservation(res)}
+                            className={blockCls}
+                            style={blockStyle}
+                          >
+                            {blockLabel}
+                          </button>
+                        ) : (
                           <div
                             key={res.id}
-                            className={`absolute rounded text-[10px] font-medium px-1 overflow-hidden pointer-events-none flex items-center ${
-                              isOwn
-                                ? "border-2 border-blue-500 bg-blue-50 text-blue-700"
-                                : isBlocked
-                                ? "text-gray-400"
-                                : "bg-gray-400 text-white"
-                            }`}
-                            style={{
-                              top: top + 1,
-                              height,
-                              left: 2,
-                              right: 2,
-                              ...(isBlocked ? {
-                                background: "repeating-linear-gradient(-45deg,#e5e7eb 0px,#e5e7eb 4px,#f9fafb 4px,#f9fafb 8px)",
-                              } : {}),
-                            }}
+                            className={blockCls}
+                            style={blockStyle}
                           >
-                            {isOwn ? "You / Booked" : isBlocked ? "Unavailable" : ""}
+                            {blockLabel}
                           </div>
                         );
                       })}
@@ -640,6 +658,17 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           clubTimezone={clubTimezone}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
+        />
+      )}
+
+      {/* ── Reservation detail sheet (admin only) ────────────────────────── */}
+      {selectedReservation && (
+        <ReservationDetailSheet
+          reservation={selectedReservation}
+          courts={courts}
+          clubTimezone={clubTimezone}
+          onClose={() => setSelectedReservation(null)}
+          onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
         />
       )}
 

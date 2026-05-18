@@ -465,6 +465,54 @@ export type Database = {
           }
         ];
       };
+      audit_log: {
+        Row: {
+          id:          string;
+          club_id:     string;
+          actor_id:    string;
+          action:      string;
+          target_type: string;
+          target_id:   string;
+          metadata:    Json | null;
+          created_at:  string;
+        };
+        Insert: {
+          id?:         string;
+          club_id:     string;
+          actor_id:    string;
+          action:      string;
+          target_type: string;
+          target_id:   string;
+          metadata?:   Json | null;
+          created_at?: string;
+        };
+        Update: {
+          id?:          string;
+          club_id?:     string;
+          actor_id?:    string;
+          action?:      string;
+          target_type?: string;
+          target_id?:   string;
+          metadata?:    Json | null;
+          created_at?:  string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "audit_log_actor_id_fkey";
+            columns: ["actor_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       event_participants: {
         Row: {
           id: string;
@@ -595,6 +643,30 @@ export type Database = {
       leave_event: {
         Args: { p_event_id: string };
         Returns: undefined;
+      };
+      admin_cancel_reservation: {
+        Args: { p_reservation_id: string };
+        Returns: {
+          id: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string;
+          starts_at: string;
+          ends_at: string;
+          status: string;
+          reason: string;
+          player_count: number | null;
+          format: string | null;
+          guest_names: string[] | null;
+          notes: string | null;
+          event_id: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_kind: string | null;
+        };
       };
     };
     Enums: { [_ in never]: never };
