@@ -519,7 +519,7 @@ export type Database = {
           event_id: string;
           profile_id: string;
           role: "host" | "participant";
-          status: "confirmed" | "cancelled";
+          status: "confirmed" | "cancelled" | "waitlisted";
           created_at: string;
           updated_at: string;
         };
@@ -528,7 +528,7 @@ export type Database = {
           event_id: string;
           profile_id: string;
           role?: "host" | "participant";
-          status?: "confirmed" | "cancelled";
+          status?: "confirmed" | "cancelled" | "waitlisted";
           created_at?: string;
           updated_at?: string;
         };
@@ -537,7 +537,7 @@ export type Database = {
           event_id?: string;
           profile_id?: string;
           role?: "host" | "participant";
-          status?: "confirmed" | "cancelled";
+          status?: "confirmed" | "cancelled" | "waitlisted";
           created_at?: string;
           updated_at?: string;
         };
@@ -563,7 +563,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -573,7 +573,7 @@ export type Database = {
           id?:         string;
           club_id:     string;
           user_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
           body:        string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -583,7 +583,7 @@ export type Database = {
           id?:         string;
           club_id?:    string;
           user_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined";
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
           body?:       string;
           is_read?:    boolean;
           metadata?:   Json | null;

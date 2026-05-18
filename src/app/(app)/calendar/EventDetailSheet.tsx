@@ -69,7 +69,8 @@ function mapJoinError(message: string): string {
 }
 
 function mapLeaveError(message: string): string {
-  if (message === "not_joined") return "You are not signed up for this event.";
+  if (message === "not_joined")  return "You are not signed up for this event.";
+  if (message === "not_authenticated") return "Please sign in to continue.";
   return "Something went wrong. Please try again.";
 }
 
@@ -91,14 +92,30 @@ export default function EventDetailSheet({
 
   // ── Derived values ────────────────────────────────────────────────────────
 
+  // Only confirmed participants with role = 'participant' consume capacity.
+  // Hosts never count toward capacity — matches the backend join_event logic.
   const confirmedParticipants = event.event_participants
-    .filter(p => p.status === "confirmed")
-    .sort((a, b) => (a.role === "host" ? -1 : b.role === "host" ? 1 : 0));
+    .filter(p => p.status === "confirmed" && p.role === "participant")
+    .sort((a, b) => a.profile_id.localeCompare(b.profile_id));
 
-  const confirmedCount = confirmedParticipants.length;
-  const myPart         = confirmedParticipants.find(p => p.profile_id === userId);
-  const isFull         = confirmedCount >= event.capacity;
-  const isHost         = myPart?.role === "host";
+  const waitlistedParticipants = event.event_participants
+    .filter(p => p.status === "waitlisted");
+
+  const confirmedCount  = confirmedParticipants.length;
+  const waitlistCount   = waitlistedParticipants.length;
+  const isFull          = confirmedCount >= event.capacity;
+
+  // Search all statuses so hosts, confirmed, and waitlisted users are all found.
+  const myPart       = event.event_participants.find(p => p.profile_id === userId);
+  const isHost       = myPart?.role === "host";
+  const isWaitlisted = myPart?.status === "waitlisted";
+
+  // 1-based position among waitlisted rows (order matches DB created_at order;
+  // CalendarShell fetches participants in insertion order as a proxy).
+  const myWaitlistPosition = isWaitlisted
+    ? waitlistedParticipants.findIndex(p => p.profile_id === userId) + 1
+    : null;
+
   const canCancelEvent = userRole === "admin" || isHost;
 
   const courtNames = event.court_ids
@@ -175,19 +192,23 @@ export default function EventDetailSheet({
 
   // ── Button ────────────────────────────────────────────────────────────────
 
-  const buttonDisabled = isHost || (isFull && !myPart) || loading;
-  const buttonLabel    = loading
-    ? (myPart && !isHost ? "Leaving…" : "Joining…")
-    : isHost    ? "You're the Host"
-    : myPart    ? "Leave Event"
-    : isFull    ? "Event Full"
+  const buttonDisabled = isHost || loading;
+
+  const buttonLabel = loading
+    ? (isHost ? "You're the Host" : isWaitlisted || (!myPart && isFull) ? "Joining…" : "Leaving…")
+    : isHost        ? "You're the Host"
+    : isWaitlisted  ? `Leave Waitlist${myWaitlistPosition ? ` (#${myWaitlistPosition})` : ""}`
+    : myPart        ? "Leave Event"
+    : isFull        ? "Join Waitlist"
     : "Join Event";
 
-  const handleAction = myPart && !isHost ? handleLeave : handleJoin;
+  const handleAction = (myPart && !isHost) ? handleLeave : handleJoin;
 
   const buttonClass = isHost
     ? "bg-gray-100 text-gray-500"
-    : myPart && !isHost
+    : isWaitlisted
+    ? "bg-amber-50 text-amber-700 border border-amber-200"
+    : myPart
     ? "bg-red-50 text-red-600 border border-red-200"
     : "bg-gray-900 text-white";
 
@@ -232,7 +253,8 @@ export default function EventDetailSheet({
 
         {/* Capacity */}
         <p className="text-sm text-gray-500 mt-0.5">
-          {confirmedCount} of {event.capacity} spots filled.
+          {confirmedCount} of {event.capacity} spots filled
+          {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
 
         {/* Participant names (only when event type opts in) */}
