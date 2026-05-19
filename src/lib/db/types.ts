@@ -85,6 +85,9 @@ export type Database = {
           phone: string | null;
           role: "member" | "pro" | "admin";
           status: "active" | "inactive" | "suspended";
+          sms_opt_in: boolean;
+          sms_opted_in_at: string | null;
+          sms_opted_in_ip: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -96,6 +99,9 @@ export type Database = {
           phone?: string | null;
           role?: "member" | "pro" | "admin";
           status?: "active" | "inactive" | "suspended";
+          sms_opt_in?: boolean;
+          sms_opted_in_at?: string | null;
+          sms_opted_in_ip?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -107,6 +113,9 @@ export type Database = {
           phone?: string | null;
           role?: "member" | "pro" | "admin";
           status?: "active" | "inactive" | "suspended";
+          sms_opt_in?: boolean;
+          sms_opted_in_at?: string | null;
+          sms_opted_in_ip?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -824,6 +833,13 @@ export type Database = {
           p_event_id:          string;
           p_profile_id:        string;
           p_attendance_status: string | null;
+        };
+        Returns: undefined;
+      };
+      update_sms_preference: {
+        Args: {
+          p_sms_opt_in: boolean;
+          p_ip?:        string | null;
         };
         Returns: undefined;
       };
