@@ -25,15 +25,16 @@ interface EventItem {
 }
 
 interface RawSignupRow {
-  event_id: string;
-  role:     string;
-  status:   string;
-  events:   EventItem | null;
+  event_id:          string;
+  role:              string;
+  status:            string;
+  attendance_status: string | null;
+  events:            EventItem | null;
 }
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event";       ev: EventItem; myRole: string; myStatus: string };
+  | { kind: "event"; ev: EventItem; myRole: string; myStatus: string; myAttendance: string | null };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -175,6 +176,7 @@ export default async function MySchedulePage() {
       event_id,
       role,
       status,
+      attendance_status,
       events(
         id,
         title,
@@ -188,20 +190,33 @@ export default async function MySchedulePage() {
     .eq("profile_id", user.id)
     .in("status", ["confirmed", "waitlisted"]) as { data: RawSignupRow[] | null };
 
-  const validSignups = (signupRows ?? []).filter(
+  const allSignupRows = signupRows ?? [];
+
+  const validSignups = allSignupRows.filter(
     s => s.events !== null &&
          s.events.status === "scheduled" &&
          s.events.starts_at >= now
   );
 
+  const pastSignups = allSignupRows.filter(
+    s => s.events !== null &&
+         s.events.status === "scheduled" &&
+         s.events.starts_at < now
+  );
+
   // ── 3. Collect all court IDs and fetch names in one query ───────────────────
-  const resCourtIds   = reservations.map(r => r.court_id);
-  const eventCourtIds = validSignups.flatMap(s =>
+  const resCourtIds      = reservations.map(r => r.court_id);
+  const eventCourtIds    = validSignups.flatMap(s =>
     (s.events?.reservations ?? [])
       .filter(r => r.reason === "event" && r.status === "confirmed")
       .map(r => r.court_id)
   );
-  const allCourtIds = [...new Set([...resCourtIds, ...eventCourtIds])];
+  const pastEventCourtIds = pastSignups.flatMap(s =>
+    (s.events?.reservations ?? [])
+      .filter(r => r.reason === "event" && r.status === "confirmed")
+      .map(r => r.court_id)
+  );
+  const allCourtIds = [...new Set([...resCourtIds, ...eventCourtIds, ...pastEventCourtIds])];
 
   const { data: courts } = allCourtIds.length
     ? await supabase.from("courts").select("id, name").in("id", allCourtIds)
@@ -220,13 +235,25 @@ export default async function MySchedulePage() {
         new Date(res.starts_at).getTime() - Date.now() >= windowMs,
     })),
     ...validSignups.map(s => ({
-      kind:     "event" as const,
-      ev:       s.events!,
-      myRole:   s.role,
-      myStatus: s.status,
+      kind:         "event" as const,
+      ev:           s.events!,
+      myRole:       s.role,
+      myStatus:     s.status,
+      myAttendance: s.attendance_status,
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
+
+  // Past events — most recent first, read-only
+  const pastItems = pastSignups
+    .map(s => ({
+      kind:         "event" as const,
+      ev:           s.events!,
+      myRole:       s.role,
+      myStatus:     s.status,
+      myAttendance: s.attendance_status,
+    }))
+    .sort((a, b) => b.ev.starts_at.localeCompare(a.ev.starts_at));
 
   // ── 5. Group by local date ───────────────────────────────────────────────────
   const grouped = new Map<string, ScheduleItem[]>();
@@ -246,12 +273,14 @@ export default async function MySchedulePage() {
         className="overflow-y-auto bg-gray-50"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
-        {allItems.length === 0 ? (
+        {allItems.length === 0 && pastItems.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
             No upcoming reservations or events.
           </div>
         ) : (
           <div className="pb-6">
+
+            {/* ── Upcoming section ──────────────────────────────────────── */}
             {sortedDateKeys.map(key => {
               const dayItems = grouped.get(key)!;
               const header   = formatDateHeader(itemStartsAt(dayItems[0]), clubTimezone);
@@ -305,7 +334,7 @@ export default async function MySchedulePage() {
                       );
                     }
 
-                    // ── Event signup card ────────────────────────────────────
+                    // ── Upcoming event signup card ────────────────────────────
                     const { ev, myRole, myStatus } = item;
                     const start = formatTime(ev.starts_at, clubTimezone);
                     const end   = formatTime(ev.ends_at,   clubTimezone);
@@ -360,6 +389,61 @@ export default async function MySchedulePage() {
                 </div>
               );
             })}
+
+            {/* ── Past events section — read-only ──────────────────────── */}
+            {pastItems.length > 0 && (
+              <div>
+                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Past Events
+                </p>
+                {pastItems.map(({ ev, myRole, myStatus, myAttendance }) => {
+                  const start = formatTime(ev.starts_at, clubTimezone);
+                  const end   = formatTime(ev.ends_at,   clubTimezone);
+                  const evCourtNames = ev.reservations
+                    .filter(r => r.reason === "event" && r.status === "confirmed")
+                    .map(r => courtName.get(r.court_id) ?? "Court")
+                    .join(", ");
+
+                  return (
+                    <div
+                      key={ev.id}
+                      className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200 flex items-start justify-between"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                          <span
+                            className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                            style={{ background: ev.event_types.color }}
+                          >
+                            {ev.event_types.label}
+                          </span>
+                          {myStatus === "waitlisted" && (
+                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                              Waitlisted
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {start} – {end}
+                          {evCourtNames ? ` · ${evCourtNames}` : ""}
+                        </p>
+                      </div>
+                      {myRole === "host" ? (
+                        <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
+                      ) : myAttendance === "attended" ? (
+                        <span className="text-xs font-medium text-green-600 ml-4 shrink-0">Attended</span>
+                      ) : myAttendance === "no_show" ? (
+                        <span className="text-xs font-medium text-red-500 ml-4 shrink-0">No-show</span>
+                      ) : (
+                        <span className="text-xs text-gray-300 ml-4 shrink-0">—</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
           </div>
         )}
       </div>

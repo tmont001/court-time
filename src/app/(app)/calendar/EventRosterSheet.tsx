@@ -24,9 +24,11 @@ interface Props {
 export default function EventRosterSheet({ eventId, onClose }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
-  const [rows, setRows]       = useState<RosterRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [rows, setRows]           = useState<RosterRow[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
+  const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     setLoading(true);
@@ -42,6 +44,34 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
         setLoading(false);
       });
   }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Attendance handler ────────────────────────────────────────────────────
+
+  async function handleMark(profileId: string, newStatus: string | null) {
+    const prevRows = rows;
+
+    // Optimistic update
+    setRows(prev => prev.map(r =>
+      r.profile_id === profileId ? { ...r, attendance_status: newStatus } : r
+    ));
+    setRowUpdating(prev => new Set(prev).add(profileId));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(profileId); return next; });
+
+    const { error: rpcError } = await supabase.rpc("mark_attendance", {
+      p_event_id:          eventId,
+      p_profile_id:        profileId,
+      p_attendance_status: newStatus,
+    });
+
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(profileId); return next; });
+
+    if (rpcError) {
+      setRows(prevRows);
+      setRowErrors(prev => new Map(prev).set(profileId, "Failed to update. Please try again."));
+    }
+  }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
 
   const confirmed  = rows.filter(r => r.status === "confirmed");
   const waitlisted = rows.filter(r => r.status === "waitlisted");
@@ -99,25 +129,70 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                     Confirmed ({confirmed.length})
                   </p>
-                  {confirmed.map(row => (
-                    <div
-                      key={row.profile_id}
-                      className="flex items-center py-2.5 border-b border-gray-100 last:border-0"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {row.display_name}
-                        </p>
-                        {row.role === "host" && (
-                          <p className="text-xs text-gray-400 mt-0.5">Host</p>
+                  {confirmed.map(row => {
+                    const isUpdating = rowUpdating.has(row.profile_id);
+                    const rowError   = rowErrors.get(row.profile_id);
+                    return (
+                      <div
+                        key={row.profile_id}
+                        className="py-2.5 border-b border-gray-100 last:border-0"
+                      >
+                        <div className="flex items-center">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {row.display_name}
+                            </p>
+                            {row.role === "host" && (
+                              <p className="text-xs text-gray-400 mt-0.5">Host</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Attendance controls */}
+                        <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                          <button
+                            disabled={isUpdating}
+                            onClick={() => handleMark(row.profile_id, "attended")}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                              row.attendance_status === "attended"
+                                ? "bg-green-100 text-green-700"
+                                : "bg-gray-100 text-gray-500"
+                            }`}
+                          >
+                            Attended
+                          </button>
+                          <button
+                            disabled={isUpdating}
+                            onClick={() => handleMark(row.profile_id, "no_show")}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                              row.attendance_status === "no_show"
+                                ? "bg-red-100 text-red-600"
+                                : "bg-gray-100 text-gray-500"
+                            }`}
+                          >
+                            No-show
+                          </button>
+                          {row.attendance_status && (
+                            <button
+                              disabled={isUpdating}
+                              onClick={() => handleMark(row.profile_id, null)}
+                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-400 disabled:opacity-40"
+                            >
+                              Clear
+                            </button>
+                          )}
+                        </div>
+
+                        {rowError && (
+                          <p className="text-xs text-red-500 mt-1">{rowError}</p>
                         )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              {/* ── Waitlist section ────────────────────────────────────── */}
+              {/* ── Waitlist section — display only, no attendance controls ── */}
               {waitlisted.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
