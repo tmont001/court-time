@@ -27,12 +27,13 @@ interface EventItem {
 interface RawSignupRow {
   event_id: string;
   role:     string;
+  status:   string;
   events:   EventItem | null;
 }
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event";       ev: EventItem; myRole: string };
+  | { kind: "event";       ev: EventItem; myRole: string; myStatus: string };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -173,6 +174,7 @@ export default async function MySchedulePage() {
     .select(`
       event_id,
       role,
+      status,
       events(
         id,
         title,
@@ -184,7 +186,7 @@ export default async function MySchedulePage() {
       )
     `)
     .eq("profile_id", user.id)
-    .eq("status", "confirmed") as { data: RawSignupRow[] | null };
+    .in("status", ["confirmed", "waitlisted"]) as { data: RawSignupRow[] | null };
 
   const validSignups = (signupRows ?? []).filter(
     s => s.events !== null &&
@@ -218,9 +220,10 @@ export default async function MySchedulePage() {
         new Date(res.starts_at).getTime() - Date.now() >= windowMs,
     })),
     ...validSignups.map(s => ({
-      kind:   "event" as const,
-      ev:     s.events!,
-      myRole: s.role,
+      kind:     "event" as const,
+      ev:       s.events!,
+      myRole:   s.role,
+      myStatus: s.status,
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
@@ -303,7 +306,7 @@ export default async function MySchedulePage() {
                     }
 
                     // ── Event signup card ────────────────────────────────────
-                    const { ev, myRole } = item;
+                    const { ev, myRole, myStatus } = item;
                     const start = formatTime(ev.starts_at, clubTimezone);
                     const end   = formatTime(ev.ends_at,   clubTimezone);
                     const evCourtNames = ev.reservations
@@ -311,36 +314,45 @@ export default async function MySchedulePage() {
                       .map(r => courtName.get(r.court_id) ?? "Court")
                       .join(", ");
 
+                    const isWaitlisted = myStatus === "waitlisted";
+
                     return (
                       <div
                         key={ev.id}
                         className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200 flex items-start justify-between"
                       >
                         <div className="flex-1 min-w-0">
-                          <span
-                            className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white mb-1.5"
-                            style={{ background: ev.event_types.color }}
-                          >
-                            {ev.event_types.label}
-                          </span>
+                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                            <span
+                              className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                              style={{ background: ev.event_types.color }}
+                            >
+                              {ev.event_types.label}
+                            </span>
+                            {isWaitlisted && (
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                Waitlisted
+                              </span>
+                            )}
+                          </div>
                           <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
                             {start} – {end}
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
                         </div>
-                        {myRole !== "host" ? (
+                        {myRole === "host" ? (
+                          <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
+                        ) : (
                           <form action={leaveEvent}>
                             <input type="hidden" name="event_id" value={ev.id} />
                             <button
                               type="submit"
                               className="text-xs font-medium text-red-500 ml-4 shrink-0"
                             >
-                              Leave
+                              {isWaitlisted ? "Leave Waitlist" : "Leave"}
                             </button>
                           </form>
-                        ) : (
-                          <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
                         )}
                       </div>
                     );
