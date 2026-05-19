@@ -49,6 +49,7 @@ export default async function ProfilePage() {
           firstName={profile?.first_name ?? null}
           lastName={profile?.last_name ?? null}
           phone={profile?.phone ?? null}
+          smsOptIn={profile?.sms_opt_in ?? false}
         />
 
         {profile?.role === "admin" && (
