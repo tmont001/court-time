@@ -618,6 +618,60 @@ export type Database = {
           }
         ];
       };
+      notification_deliveries: {
+        Row: {
+          id:                  string;
+          notification_id:     string;
+          club_id:             string;
+          channel:             "sms" | "email";
+          status:              "sent" | "failed" | "opted_out" | "no_phone";
+          provider:            string | null;
+          provider_message_id: string | null;
+          error:               string | null;
+          created_at:          string;
+          sent_at:             string | null;
+        };
+        Insert: {
+          id?:                  string;
+          notification_id:      string;
+          club_id:              string;
+          channel:              "sms" | "email";
+          status:               "sent" | "failed" | "opted_out" | "no_phone";
+          provider?:            string | null;
+          provider_message_id?: string | null;
+          error?:               string | null;
+          created_at?:          string;
+          sent_at?:             string | null;
+        };
+        Update: {
+          id?:                  string;
+          notification_id?:     string;
+          club_id?:             string;
+          channel?:             "sms" | "email";
+          status?:              "sent" | "failed" | "opted_out" | "no_phone";
+          provider?:            string | null;
+          provider_message_id?: string | null;
+          error?:               string | null;
+          created_at?:          string;
+          sent_at?:             string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notification_deliveries_notification_id_fkey";
+            columns: ["notification_id"];
+            isOneToOne: false;
+            referencedRelation: "notifications";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notification_deliveries_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
