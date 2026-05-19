@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import EventRosterSheet from "./EventRosterSheet";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -89,6 +90,7 @@ export default function EventDetailSheet({
   const [cancelConfirming, setCancelConfirming]       = useState(false);
   const [cancelLoading, setCancelLoading]             = useState(false);
   const [cancelError, setCancelError]                 = useState<string | null>(null);
+  const [rosterOpen, setRosterOpen]                   = useState(false);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -119,6 +121,12 @@ export default function EventDetailSheet({
     : null;
 
   const canCancelEvent = userRole === "admin" || isHost;
+  const canViewRoster  = userRole === "admin" || userRole === "pro";
+
+  // Total active participants shown in the roster button label.
+  const rosterCount = event.event_participants.filter(
+    p => p.status === "confirmed" || p.status === "waitlisted"
+  ).length;
 
   const courtNames = event.court_ids
     .map(id => courts.find(c => c.id === id)?.name ?? "Court")
@@ -259,6 +267,16 @@ export default function EventDetailSheet({
           {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
 
+        {/* View Roster — admin/pro only */}
+        {canViewRoster && (
+          <button
+            onClick={() => setRosterOpen(true)}
+            className="mt-2 text-xs font-medium text-blue-600 underline-offset-2 underline"
+          >
+            View Roster ({rosterCount})
+          </button>
+        )}
+
         {/* Participant names (only when event type opts in) */}
         {event.event_types.shows_participant_names && confirmedCount > 0 && (
           <div className="mt-3">
@@ -326,6 +344,14 @@ export default function EventDetailSheet({
         )}
 
       </div>
+
+      {/* ── Event Roster Sheet — admin/pro only, layers above this sheet ── */}
+      {rosterOpen && (
+        <EventRosterSheet
+          eventId={event.id}
+          onClose={() => setRosterOpen(false)}
+        />
+      )}
     </>
   );
 }
