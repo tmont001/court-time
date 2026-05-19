@@ -819,6 +819,14 @@ export type Database = {
           waitlist_position: number | null;
         }[];
       };
+      mark_attendance: {
+        Args: {
+          p_event_id:          string;
+          p_profile_id:        string;
+          p_attendance_status: string | null;
+        };
+        Returns: undefined;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
