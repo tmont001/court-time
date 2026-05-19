@@ -105,8 +105,10 @@ export default function EventDetailSheet({
   const waitlistCount   = waitlistedParticipants.length;
   const isFull          = confirmedCount >= event.capacity;
 
-  // Search all statuses so hosts, confirmed, and waitlisted users are all found.
-  const myPart       = event.event_participants.find(p => p.profile_id === userId);
+  // Exclude cancelled rows — a user who left should be treated as not joined.
+  const myPart       = event.event_participants.find(
+    p => p.profile_id === userId && p.status !== "cancelled"
+  );
   const isHost       = myPart?.role === "host";
   const isWaitlisted = myPart?.status === "waitlisted";
 
