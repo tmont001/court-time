@@ -520,6 +520,7 @@ export type Database = {
           profile_id: string;
           role: "host" | "participant";
           status: "confirmed" | "cancelled" | "waitlisted";
+          attendance_status: "attended" | "no_show" | null;
           created_at: string;
           updated_at: string;
         };
@@ -529,6 +530,7 @@ export type Database = {
           profile_id: string;
           role?: "host" | "participant";
           status?: "confirmed" | "cancelled" | "waitlisted";
+          attendance_status?: "attended" | "no_show" | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -538,6 +540,7 @@ export type Database = {
           profile_id?: string;
           role?: "host" | "participant";
           status?: "confirmed" | "cancelled" | "waitlisted";
+          attendance_status?: "attended" | "no_show" | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -803,6 +806,17 @@ export type Database = {
           target_id: string;
           metadata: Json | null;
           created_at: string;
+        }[];
+      };
+      get_event_roster: {
+        Args: { p_event_id: string };
+        Returns: {
+          profile_id:        string;
+          display_name:      string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          waitlist_position: number | null;
         }[];
       };
     };
