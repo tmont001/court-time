@@ -7,12 +7,13 @@ import { leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ReservationRow {
-  id:        string;
-  court_id:  string;
-  starts_at: string;
-  ends_at:   string;
-  status:    string;
-  format:    string | null;
+  id:         string;
+  court_id:   string;
+  starts_at:  string;
+  ends_at:    string;
+  status:     string;
+  format:     string | null;
+  created_at: string;
 }
 
 interface EventItem {
@@ -59,7 +60,7 @@ async function cancelReservation(formData: FormData) {
   if (actorProfile && actorProfile.role !== "admin") {
     const { data: targetRes } = await supabase
       .from("reservations")
-      .select("starts_at")
+      .select("starts_at, created_at")
       .eq("id", id)
       .eq("owner_user_id", user.id)
       .single();
@@ -67,12 +68,17 @@ async function cancelReservation(formData: FormData) {
     if (targetRes) {
       const { data: settings } = await supabase
         .from("club_settings")
-        .select("cancellation_window_hours")
+        .select("cancellation_window_hours, cancellation_grace_minutes")
         .eq("club_id", actorProfile.club_id)
         .single();
 
-      const windowMs = (settings?.cancellation_window_hours ?? 24) * 60 * 60 * 1000;
-      if (new Date(targetRes.starts_at).getTime() - Date.now() < windowMs) return;
+      const windowMs     = (settings?.cancellation_window_hours  ?? 24) * 60 * 60 * 1000;
+      const graceMs      = (settings?.cancellation_grace_minutes ?? 5)  * 60 * 1000;
+      const insideWindow = new Date(targetRes.starts_at).getTime() - Date.now() < windowMs;
+      const withinGrace  = graceMs > 0 && Date.now() - new Date(targetRes.created_at).getTime() < graceMs;
+
+      // Block cancellation only when inside the window AND outside the grace period.
+      if (insideWindow && !withinGrace) return;
     }
   }
 
@@ -137,18 +143,18 @@ export default async function MySchedulePage() {
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role ?? "member";
 
-  let clubTimezone = "America/New_York";
-  let cancellationWindowHours = 24; // matches DB default
+  let clubTimezone             = "America/New_York";
+  let cancellationWindowHours  = 24; // matches DB default
+  let cancellationGraceMinutes = 5;  // matches DB default
 
   if (clubId) {
     const [{ data: club }, { data: settings }] = await Promise.all([
       supabase.from("clubs").select("timezone").eq("id", clubId).single(),
-      supabase.from("club_settings").select("cancellation_window_hours").eq("club_id", clubId).single(),
+      supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single(),
     ]);
     if (club?.timezone) clubTimezone = club.timezone;
-    if (settings?.cancellation_window_hours != null) {
-      cancellationWindowHours = settings.cancellation_window_hours;
-    }
+    if (settings?.cancellation_window_hours  != null) cancellationWindowHours  = settings.cancellation_window_hours;
+    if (settings?.cancellation_grace_minutes != null) cancellationGraceMinutes = settings.cancellation_grace_minutes;
   }
 
   const now = new Date().toISOString();
@@ -156,7 +162,7 @@ export default async function MySchedulePage() {
   // ── 1. Member court reservations (exclude event-linked ones) ────────────────
   const { data: rows } = await supabase
     .from("reservations")
-    .select("id, court_id, starts_at, ends_at, status, format")
+    .select("id, court_id, starts_at, ends_at, status, format, created_at")
     .eq("owner_user_id", user.id)
     .in("status", ["pending", "confirmed"])
     .neq("reason", "event")
@@ -220,7 +226,8 @@ export default async function MySchedulePage() {
   const courtName = new Map((courts ?? []).map(c => [c.id, c.name]));
 
   // ── 4. Build unified sorted list ────────────────────────────────────────────
-  const windowMs = cancellationWindowHours * 60 * 60 * 1000;
+  const windowMs = cancellationWindowHours  * 60 * 60 * 1000;
+  const graceMs  = cancellationGraceMinutes * 60 * 1000;
 
   const allItems: ScheduleItem[] = [
     ...reservations.map(res => ({
@@ -228,7 +235,8 @@ export default async function MySchedulePage() {
       res,
       isCancellable:
         userRole === "admin" ||
-        new Date(res.starts_at).getTime() - Date.now() >= windowMs,
+        new Date(res.starts_at).getTime() - Date.now() >= windowMs ||
+        (graceMs > 0 && Date.now() - new Date(res.created_at).getTime() < graceMs),
     })),
     ...validSignups.map(s => ({
       kind:         "event" as const,
@@ -324,7 +332,10 @@ export default async function MySchedulePage() {
                             </form>
                           ) : (
                             <span className="text-xs text-gray-400 ml-4 shrink-0 text-right">
-                              Cannot cancel<br />within {cancellationWindowHours}h
+                              Cannot cancel within {cancellationWindowHours}h
+                              {cancellationGraceMinutes > 0 && (
+                                <><br />unless booked in last {cancellationGraceMinutes}m</>
+                              )}
                             </span>
                           )}
                         </div>

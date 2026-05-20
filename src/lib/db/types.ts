@@ -47,6 +47,7 @@ export type Database = {
           club_id: string;
           booking_window_days: number;
           cancellation_window_hours: number;
+          cancellation_grace_minutes: number;
           created_at: string;
           updated_at: string;
         };
@@ -55,6 +56,7 @@ export type Database = {
           club_id: string;
           booking_window_days?: number;
           cancellation_window_hours?: number;
+          cancellation_grace_minutes?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -63,6 +65,7 @@ export type Database = {
           club_id?: string;
           booking_window_days?: number;
           cancellation_window_hours?: number;
+          cancellation_grace_minutes?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -323,6 +326,7 @@ export type Database = {
           format: "singles" | "doubles" | null;
           guest_names: string[] | null;
           notes: string | null;
+          show_notes_to_members: boolean;
           event_id: string | null;
           created_by: string;
           created_at: string;
@@ -344,6 +348,7 @@ export type Database = {
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
           notes?: string | null;
+          show_notes_to_members?: boolean;
           event_id?: string | null;
           created_by: string;
           created_at?: string;
@@ -365,6 +370,7 @@ export type Database = {
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
           notes?: string | null;
+          show_notes_to_members?: boolean;
           event_id?: string | null;
           created_by?: string;
           created_at?: string;
@@ -844,14 +850,16 @@ export type Database = {
       };
       update_club_settings: {
         Args: {
-          p_booking_window_days: number;
-          p_cancellation_window_hours: number;
+          p_booking_window_days:        number;
+          p_cancellation_window_hours:  number;
+          p_cancellation_grace_minutes?: number;
         };
         Returns: {
           id: string;
           club_id: string;
           booking_window_days: number;
           cancellation_window_hours: number;
+          cancellation_grace_minutes: number;
           created_at: string;
           updated_at: string;
         };
@@ -862,10 +870,11 @@ export type Database = {
       };
       create_maintenance_blocks: {
         Args: {
-          p_court_ids: string[];
-          p_starts_at: string;
-          p_ends_at:   string;
-          p_notes?:    string | null;
+          p_court_ids:             string[];
+          p_starts_at:             string;
+          p_ends_at:               string;
+          p_notes?:                string | null;
+          p_show_notes_to_members?: boolean;
         };
         Returns: undefined;
       };

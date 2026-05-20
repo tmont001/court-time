@@ -17,7 +17,7 @@ export default async function AdminSettingsPage() {
 
   const { data: settings } = await supabase
     .from("club_settings")
-    .select("booking_window_days, cancellation_window_hours")
+    .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes")
     .eq("club_id", profile?.club_id ?? "")
     .single();
 
@@ -48,6 +48,7 @@ export default async function AdminSettingsPage() {
         <SettingsForm
           bookingWindowDays={settings?.booking_window_days ?? 14}
           cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
+          cancellationGraceMinutes={settings?.cancellation_grace_minutes ?? 5}
           clubName={club?.name ?? ""}
           userRole={profile?.role ?? "member"}
         />

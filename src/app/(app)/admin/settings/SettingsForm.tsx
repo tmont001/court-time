@@ -4,15 +4,17 @@ import { useState, useTransition } from "react";
 import { updateClubSettings } from "./actions";
 
 interface Props {
-  bookingWindowDays:       number;
-  cancellationWindowHours: number;
-  clubName:                string;
-  userRole:                string;
+  bookingWindowDays:        number;
+  cancellationWindowHours:  number;
+  cancellationGraceMinutes: number;
+  clubName:                 string;
+  userRole:                 string;
 }
 
 export default function SettingsForm({
   bookingWindowDays,
   cancellationWindowHours,
+  cancellationGraceMinutes,
   clubName,
   userRole,
 }: Props) {
@@ -88,6 +90,24 @@ export default function SettingsForm({
         />
         <p className="text-xs text-gray-400 mt-1">
           Minimum hours before a reservation that members can cancel (0–168).
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-500 mb-1">
+          Cancellation grace period (minutes)
+        </label>
+        <input
+          type="number"
+          name="cancellation_grace_minutes"
+          defaultValue={cancellationGraceMinutes}
+          min={0}
+          max={60}
+          required
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400"
+        />
+        <p className="text-xs text-gray-400 mt-1">
+          Allows members to cancel accidental bookings shortly after creation, even inside the cancellation window (0–60 min). Set to 0 to disable.
         </p>
       </div>
 

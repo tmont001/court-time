@@ -100,7 +100,8 @@ export default function CreateMaintenanceSheet({
     const startMins = (defaultStartHour ?? 9) * 60 + (defaultStartMinute ?? 0);
     return (startMins + 60) % 60;
   });
-  const [notes,       setNotes]       = useState("");
+  const [notes,            setNotes]           = useState("");
+  const [showNotesToMembers, setShowNotesToMembers] = useState(false);
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState<string | null>(null);
 
@@ -171,10 +172,11 @@ export default function CreateMaintenanceSheet({
     }
 
     const { error: rpcError } = await supabase.rpc("create_maintenance_blocks", {
-      p_court_ids: selectedCourtIds,
-      p_starts_at: startsAt.toISOString(),
-      p_ends_at:   endsAt.toISOString(),
-      p_notes:     notes.trim() || null,
+      p_court_ids:              selectedCourtIds,
+      p_starts_at:              startsAt.toISOString(),
+      p_ends_at:                endsAt.toISOString(),
+      p_notes:                  notes.trim() || null,
+      p_show_notes_to_members:  showNotesToMembers,
     });
 
     if (rpcError) {
@@ -307,6 +309,28 @@ export default function CreateMaintenanceSheet({
               placeholder="e.g. Resurfacing, Equipment repair"
               className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
             />
+          </div>
+
+          {/* Show notes to members */}
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="show-notes-to-members"
+              checked={showNotesToMembers}
+              onChange={e => setShowNotesToMembers(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-gray-900"
+            />
+            <div>
+              <label
+                htmlFor="show-notes-to-members"
+                className="text-xs font-medium text-gray-700 cursor-pointer"
+              >
+                Show this message to members
+              </label>
+              <p className="text-xs text-gray-400 mt-0.5">
+                If enabled, members will see the reason on blocked court times.
+              </p>
+            </div>
           </div>
 
           {error && <p className="text-xs text-red-500">{error}</p>}

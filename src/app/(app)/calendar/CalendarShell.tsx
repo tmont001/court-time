@@ -187,6 +187,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [creatingBlock, setCreatingBlock]             = useState(false);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
+  // Admin/pro only: maps owner_user_id → display name for non-own member bookings.
+  const [ownerNames, setOwnerNames]                   = useState<Map<string, string>>(new Map());
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Built from todayISO (not new Date()) so server and client produce identical output.
@@ -275,7 +277,33 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     if (error) {
       setResError(true);
     } else {
-      setReservations(data ?? []);
+      const rows = data ?? [];
+      setReservations(rows);
+
+      // For admin/pro: fetch display names for other members' court reservations.
+      // RLS (profiles_select_same_club) already limits results to the same club.
+      if (userRole === "admin" || userRole === "pro") {
+        const otherIds = [...new Set(
+          rows
+            .filter(r => r.owner_user_id !== userId && r.reason === "member_booking")
+            .map(r => r.owner_user_id)
+        )];
+        if (otherIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id, first_name, last_name")
+            .in("id", otherIds);
+          const map = new Map<string, string>();
+          for (const p of profiles ?? []) {
+            const f = p.first_name ?? "";
+            const l = p.last_name  ?? "";
+            map.set(p.id, l ? `${f} ${l[0]}.` : f || "Member");
+          }
+          setOwnerNames(map);
+        } else {
+          setOwnerNames(new Map());
+        }
+      }
     }
     setLoadingRes(false);
   }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -606,7 +634,23 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                             background: "repeating-linear-gradient(-45deg,#e5e7eb 0px,#e5e7eb 4px,#f9fafb 4px,#f9fafb 8px)",
                           } : {}),
                         };
-                        const blockLabel = isOwn ? "You / Booked" : isBlocked ? "Unavailable" : "";
+                        const note = (res.notes ?? "").trim();
+                        let blockLabel: string;
+                        if (isBlocked) {
+                          // Maintenance/admin blocks: check visibility before isOwn so an admin
+                          // who created the block never sees "You" instead of the reason.
+                          if (userRole === "admin" || userRole === "pro") {
+                            blockLabel = note || "Blocked";
+                          } else {
+                            blockLabel = (res.show_notes_to_members && note) ? note : "Blocked";
+                          }
+                        } else if (isOwn) {
+                          blockLabel = "You";
+                        } else if (userRole === "admin" || userRole === "pro") {
+                          blockLabel = ownerNames.get(res.owner_user_id) ?? "Member";
+                        } else {
+                          blockLabel = "";
+                        }
 
                         return isAdmin ? (
                           <button

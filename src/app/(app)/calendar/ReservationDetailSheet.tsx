@@ -7,12 +7,14 @@ import { adminCancelReservation } from "./actions";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ReservationBlock {
-  id:            string;
-  court_id:      string;
-  owner_user_id: string;
-  starts_at:     string;
-  ends_at:       string;
-  reason:        string;
+  id:                    string;
+  court_id:              string;
+  owner_user_id:         string;
+  starts_at:             string;
+  ends_at:               string;
+  reason:                string;
+  notes:                 string | null;
+  show_notes_to_members: boolean;
 }
 
 interface Court {
@@ -121,6 +123,22 @@ export default function ReservationDetailSheet({
 
         {/* Owner */}
         <p className="text-sm text-gray-500 mt-1">Booked by {ownerName}</p>
+
+        {/* Maintenance notes — only for maintenance/admin_block reason */}
+        {reservation.reason === "maintenance" && (
+          <div className="mt-3">
+            {reservation.notes?.trim() ? (
+              <>
+                <p className="text-sm text-gray-700">{reservation.notes.trim()}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {reservation.show_notes_to_members ? "Visible to members" : "Hidden from members"}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400">No reason added.</p>
+            )}
+          </div>
+        )}
 
         {/* Error */}
         {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
