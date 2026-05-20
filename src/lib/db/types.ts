@@ -897,6 +897,18 @@ export type Database = {
         };
         Returns: undefined;
       };
+      record_delivery_attempt: {
+        Args: {
+          p_notification_id:      string;
+          p_channel:              string;
+          p_status:               string;
+          p_provider?:            string | null;
+          p_provider_message_id?: string | null;
+          p_error?:               string | null;
+          p_sent_at?:             string | null;
+        };
+        Returns: string;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
