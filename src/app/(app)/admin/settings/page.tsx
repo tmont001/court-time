@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import SettingsForm from "./SettingsForm";
+import TestSmsSection from "./TestSmsSection";
 
 export default async function AdminSettingsPage() {
   const supabase = await createClient();
@@ -10,7 +11,7 @@ export default async function AdminSettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("club_id")
+    .select("club_id, role")
     .eq("id", user.id)
     .single();
 
@@ -19,6 +20,11 @@ export default async function AdminSettingsPage() {
     .select("booking_window_days, cancellation_window_hours")
     .eq("club_id", profile?.club_id ?? "")
     .single();
+
+  const twilioConfigured =
+    !!process.env.TWILIO_ACCOUNT_SID &&
+    !!process.env.TWILIO_AUTH_TOKEN &&
+    !!process.env.TWILIO_FROM_NUMBER;
 
   return (
     <>
@@ -37,6 +43,13 @@ export default async function AdminSettingsPage() {
           bookingWindowDays={settings?.booking_window_days ?? 14}
           cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
         />
+
+        {profile?.role === "admin" && (
+          <>
+            <hr className="border-gray-100" />
+            <TestSmsSection twilioConfigured={twilioConfigured} />
+          </>
+        )}
       </div>
     </>
   );

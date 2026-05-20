@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { sendSms } from "@/lib/sms";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:        "You must be signed in.",
@@ -32,4 +33,27 @@ export async function updateClubSettings(
 
   revalidatePath("/admin/settings");
   return {};
+}
+
+export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("phone, sms_opt_in")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.phone) return { error: "Add a phone number to your profile first." };
+  if (!profile.sms_opt_in) return { error: "Enable SMS in your profile first." };
+
+  const { sid, error } = await sendSms(
+    profile.phone,
+    "This is a test message from Riverside Tennis Club.\n\nReply STOP to opt out."
+  );
+
+  if (error) return { error };
+  return { sid: sid ?? undefined };
 }
