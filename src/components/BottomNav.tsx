@@ -4,10 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs: { label: string; href: string; twoLine?: boolean }[] = [
-  { label: "Calendar", href: "/calendar" },
-  { label: "Book", href: "/book" },
+  { label: "Calendar",    href: "/calendar" },
+  { label: "Events",      href: "/events" },
   { label: "My Schedule", href: "/my-schedule", twoLine: true },
-  { label: "Profile", href: "/profile" },
+  { label: "Profile",     href: "/profile" },
 ];
 
 export default function BottomNav() {

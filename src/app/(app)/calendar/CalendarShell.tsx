@@ -388,22 +388,6 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           })}
         </div>
 
-        {/* ── View toggle (Day only for Phase 2) ────────────────────────── */}
-        <div className="flex gap-1.5 px-3 py-2 border-b border-gray-100 shrink-0">
-          {["Day", "Week", "My Schedule"].map(v => (
-            <button
-              key={v}
-              disabled
-              className={`px-3 py-1 rounded-full text-xs font-medium ${
-                v === "Day"
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-500"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
 
         {/* ── Court filter chips ────────────────────────────────────────── */}
         <div className="flex gap-2 px-3 py-2 border-b border-gray-100 overflow-x-auto shrink-0 hide-scrollbar">

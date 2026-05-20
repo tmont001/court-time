@@ -1,0 +1,83 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import Header from "@/components/Header";
+
+export default async function HelpPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/sign-in");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id")
+    .eq("id", user.id)
+    .single();
+
+  const { data: settings } = profile?.club_id
+    ? await supabase
+        .from("club_settings")
+        .select("booking_window_days, cancellation_window_hours")
+        .eq("club_id", profile.club_id)
+        .single()
+    : { data: null };
+
+  const bookingDays   = settings?.booking_window_days       ?? 14;
+  const cancelHours   = settings?.cancellation_window_hours ?? 24;
+
+  const sections = [
+    {
+      title: "Booking Rules",
+      items: [
+        `You can book court time up to ${bookingDays} day${bookingDays !== 1 ? "s" : ""} in advance.`,
+        "Bookings are for confirmed members only.",
+        "Courts are available during posted operating hours.",
+        "Only one court reservation per time slot per member.",
+      ],
+    },
+    {
+      title: "Cancellation Policy",
+      items: [
+        `Reservations must be cancelled at least ${cancelHours} hour${cancelHours !== 1 ? "s" : ""} before the start time.`,
+        "Late cancellations cannot be undone through the app — contact the club admin.",
+        "Event participation can be cancelled any time before the event starts.",
+      ],
+    },
+    {
+      title: "SMS Notifications",
+      items: [
+        "SMS reminders are optional. You can opt in or out from your Profile.",
+        "Standard message and data rates may apply.",
+        "Reply STOP to any message to opt out immediately.",
+      ],
+    },
+    {
+      title: "Need Help?",
+      items: [
+        "For booking issues, account questions, or anything else, contact the club admin directly.",
+        "Your admin can adjust your role, reset your password, or update court availability.",
+      ],
+    },
+  ];
+
+  return (
+    <>
+      <Header screenTitle="Help & Rules" />
+      <div className="px-4 py-6 space-y-5 overflow-y-auto" style={{ height: "calc(100dvh - 56px - 64px)" }}>
+        {sections.map(section => (
+          <div key={section.title}>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              {section.title}
+            </p>
+            <div className="rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+              {section.items.map(item => (
+                <p key={item} className="px-4 py-3 text-sm text-gray-700 leading-snug">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}

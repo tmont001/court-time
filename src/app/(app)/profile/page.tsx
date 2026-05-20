@@ -86,6 +86,23 @@ export default async function ProfilePage() {
           </>
         )}
 
+        <hr className="border-gray-100" />
+
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            Help
+          </p>
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <Link
+              href="/help"
+              className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+            >
+              Help &amp; Rules
+              <span className="text-gray-400">›</span>
+            </Link>
+          </div>
+        </div>
+
         <SignOutButton />
       </div>
     </>
