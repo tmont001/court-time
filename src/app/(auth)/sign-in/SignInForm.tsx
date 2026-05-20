@@ -53,8 +53,7 @@ export default function SignInForm() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900 mb-1">Sign in</h1>
-      <p className="text-sm text-gray-500 mb-8">Riverside Tennis Club</p>
+      <h1 className="text-2xl font-semibold text-gray-900 mb-8">Sign in</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>

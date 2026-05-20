@@ -6,9 +6,16 @@ import { updateClubSettings } from "./actions";
 interface Props {
   bookingWindowDays:       number;
   cancellationWindowHours: number;
+  clubName:                string;
+  userRole:                string;
 }
 
-export default function SettingsForm({ bookingWindowDays, cancellationWindowHours }: Props) {
+export default function SettingsForm({
+  bookingWindowDays,
+  cancellationWindowHours,
+  clubName,
+  userRole,
+}: Props) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -29,6 +36,25 @@ export default function SettingsForm({ bookingWindowDays, cancellationWindowHour
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      {userRole === "admin" && (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">
+            Club name
+          </label>
+          <input
+            type="text"
+            name="club_name"
+            defaultValue={clubName}
+            required
+            maxLength={100}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-400"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Shown in the app header for all members.
+          </p>
+        </div>
+      )}
+
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1">
           Booking window (days)

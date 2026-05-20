@@ -856,6 +856,10 @@ export type Database = {
           updated_at: string;
         };
       };
+      update_club_name: {
+        Args: { p_name: string };
+        Returns: undefined;
+      };
       get_audit_log: {
         Args: {
           p_limit?: number;

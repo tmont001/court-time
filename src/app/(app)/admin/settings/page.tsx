@@ -21,6 +21,12 @@ export default async function AdminSettingsPage() {
     .eq("club_id", profile?.club_id ?? "")
     .single();
 
+  const { data: club } = await supabase
+    .from("clubs")
+    .select("name")
+    .eq("id", profile?.club_id ?? "")
+    .single();
+
   const twilioConfigured =
     !!process.env.TWILIO_ACCOUNT_SID &&
     !!process.env.TWILIO_AUTH_TOKEN &&
@@ -42,6 +48,8 @@ export default async function AdminSettingsPage() {
         <SettingsForm
           bookingWindowDays={settings?.booking_window_days ?? 14}
           cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
+          clubName={club?.name ?? ""}
+          userRole={profile?.role ?? "member"}
         />
 
         {profile?.role === "admin" && (
