@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 
-// Authenticated users land on /calendar directly.
-// Unauthenticated users reach /calendar, which middleware redirects to /sign-in.
-export default function Home() {
-  redirect("/calendar");
+export const dynamic = "force-dynamic";
+
+export default async function Home() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  redirect(user ? "/calendar" : "/sign-in");
 }
