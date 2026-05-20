@@ -63,6 +63,7 @@ function toMins(hour: number, minute: number): number {
 function mapBlockError(code: string | undefined, message: string): string {
   if (code === "23P01")                  return "That time overlaps an existing booking — choose a different time.";
   if (message === "invalid_duration")    return "End time must be after start time.";
+  if (message === "cannot_create_past")  return "Maintenance blocks cannot be scheduled in the past.";
   if (message === "court_not_found")     return "Court not found. Please try again.";
   if (message === "insufficient_role")   return "Only admins can create maintenance blocks.";
   return "Something went wrong. Please try again.";
@@ -133,6 +134,12 @@ export default function CreateMaintenanceSheet({
 
     const startsAt = localTimeToUTC(date, startHour, startMinute, clubTimezone);
     const endsAt   = localTimeToUTC(date, endHour,   endMinute,   clubTimezone);
+
+    if (startsAt <= new Date()) {
+      setError("Maintenance blocks cannot be scheduled in the past.");
+      setSubmitting(false);
+      return;
+    }
 
     const { error: rpcError } = await supabase.rpc("create_maintenance_block", {
       p_court_id:  courtId,

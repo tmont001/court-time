@@ -18,7 +18,7 @@ export default function SignInForm() {
     setLoading(true);
 
     const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -29,13 +29,22 @@ export default function SignInForm() {
       return;
     }
 
-    // Check if profile is complete (first_name set)
+    if (!user) {
+      setError("Sign-in failed. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    // Redirect to /welcome only when required profile fields are genuinely missing.
+    // Must filter by user.id — the RLS policy returns all club members, so .single()
+    // without a filter fails once more than one member exists.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("*")
+      .select("first_name, last_name")
+      .eq("id", user.id)
       .single();
 
-    if (!profile?.first_name) {
+    if (!profile?.first_name || !profile?.last_name) {
       router.push("/welcome");
     } else {
       router.push("/calendar");

@@ -59,6 +59,7 @@ function mapCreateError(code: string | undefined, message: string): string {
   if (code === "23P01")                              return "A court is already booked at that time.";
   if (message === "insufficient_role"
    || message === "not_authorized")                  return "Only pros and admins can create events.";
+  if (message === "cannot_create_past")              return "Events cannot be scheduled in the past.";
   if (message === "outside_booking_window")          return "That date is outside the booking window.";
   if (message === "club_closed_this_day")            return "The club is closed on that day.";
   if (message === "outside_operating_hours")         return "That time is outside operating hours.";
@@ -381,9 +382,18 @@ export default function CreateEventSheet({
                 />
               </div>
 
+              {error && <p className="text-xs text-red-500">{error}</p>}
+
               <button
                 disabled={!title.trim()}
-                onClick={() => { setError(null); setStep(3); }}
+                onClick={() => {
+                  setError(null);
+                  if (startsAt <= new Date()) {
+                    setError("Events cannot be scheduled in the past.");
+                    return;
+                  }
+                  setStep(3);
+                }}
                 className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
               >
                 Continue
