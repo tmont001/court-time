@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
@@ -13,7 +13,8 @@ import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 const START_HOUR = 8;
 const END_HOUR   = 19;
 const GUTTER_W   = 52;
-const COL_W      = 80;
+const MIN_colW  = 80;
+const MAX_colW  = 180;
 const ROW_H      = 40;
 const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
@@ -167,6 +168,13 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   // After hydration, useEffect sets the real timestamp, past slots disable without mismatch.
   const [nowMs, setNowMs]                 = useState(0);
   const [events, setEvents]               = useState<EventWithDetails[]>([]);
+
+  // ── Responsive column width ───────────────────────────────────────────────
+  // Starts at MIN_colW (matches old colW = 80) for consistent SSR/hydration.
+  // The useLayoutEffect below (placed after filteredCourts) updates this via
+  // a ResizeObserver once the grid container is mounted.
+  const gridContainerRef                  = useRef<HTMLDivElement>(null);
+  const [colW, setColW]                   = useState(MIN_colW);
   const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
@@ -200,7 +208,22 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     [courts, selectedCourtIds]
   );
 
-  const innerWidth = GUTTER_W + Math.max(filteredCourts.length * COL_W, COL_W);
+  // Placed after filteredCourts to avoid the forward-reference TS error.
+  useLayoutEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el) return;
+    const compute = () => {
+      const available = el.clientWidth - GUTTER_W;
+      const count     = Math.max(filteredCourts.length, 1);
+      setColW(Math.min(Math.max(Math.floor(available / count), MIN_colW), MAX_colW));
+    };
+    compute();
+    const ro = new ResizeObserver(compute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [filteredCourts.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const innerWidth = GUTTER_W + Math.max(filteredCourts.length * colW, colW);
 
   // Map of courtId → set of occupied slot indices
   const occupiedSlots = useMemo(() => {
@@ -429,7 +452,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         )}
 
         {/* ── Timeline grid ─────────────────────────────────────────────── */}
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-auto" ref={gridContainerRef}>
           <div style={{ width: innerWidth, minWidth: "100%" }}>
 
             {/* Sticky court-name header */}
@@ -446,13 +469,13 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                   <div
                     key={court.id}
                     className="shrink-0 text-center text-xs font-medium text-gray-700 py-2 border-l border-gray-200"
-                    style={{ width: COL_W }}
+                    style={{ width: colW }}
                   >
                     {court.name}
                   </div>
                 ))
               ) : (
-                <div className="shrink-0 border-l border-gray-200" style={{ width: COL_W }} />
+                <div className="shrink-0 border-l border-gray-200" style={{ width: colW }} />
               )}
             </div>
 
@@ -487,7 +510,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                     <div
                       key={court.id}
                       className="relative shrink-0 border-l border-gray-200"
-                      style={{ width: COL_W, height: TOTAL_GRID_H }}
+                      style={{ width: colW, height: TOTAL_GRID_H }}
                     >
                       {/* 30-min slot tap targets */}
                       {TIME_SLOTS.map((slot, slotIdx) => {
@@ -623,23 +646,21 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
       {/* ── FAB — pro/admin only, floats above bottom nav ───────────── */}
       {(userRole === "pro" || userRole === "admin") && (
-        <div className="fixed bottom-16 left-1/2 -translate-x-1/2 w-full max-w-[430px] z-30 pointer-events-none">
-          <div className="flex flex-col items-end gap-2 px-4 pb-3">
-            {userRole === "admin" && (
-              <button
-                onClick={() => setCreatingBlock(true)}
-                className="pointer-events-auto px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
-              >
-                + Block
-              </button>
-            )}
+        <div className="fixed bottom-20 right-4 z-30 flex flex-col items-end gap-2">
+          {userRole === "admin" && (
             <button
-              onClick={() => setCreatingEvent(true)}
-              className="pointer-events-auto px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+              onClick={() => setCreatingBlock(true)}
+              className="px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
             >
-              + Event
+              + Block
             </button>
-          </div>
+          )}
+          <button
+            onClick={() => setCreatingEvent(true)}
+            className="px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+          >
+            + Event
+          </button>
         </div>
       )}
 

@@ -29,6 +29,7 @@ export default async function AdminMembersPage() {
         className="overflow-y-auto bg-gray-50"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
+        <div className="md:max-w-3xl md:mx-auto">
         {error ? (
           <div className="mx-4 mt-6 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
             <p className="text-sm font-semibold text-red-700">Failed to load members</p>
@@ -64,6 +65,7 @@ export default async function AdminMembersPage() {
             })}
           </div>
         )}
+        </div>
       </div>
     </>
   );

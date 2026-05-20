@@ -19,7 +19,7 @@ export default function RootLayout({
        * fills the viewport anyway, so the gray is invisible.
        */}
       <body className="bg-gray-200 text-gray-900 antialiased">
-        <div className="mx-auto w-full max-w-[430px] min-h-screen bg-white">
+        <div className="mx-auto w-full max-w-[430px] md:max-w-full min-h-screen bg-white">
           {children}
         </div>
       </body>

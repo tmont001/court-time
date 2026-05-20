@@ -35,7 +35,7 @@ export default async function AdminSettingsPage() {
   return (
     <>
       <Header screenTitle="Settings" />
-      <div className="px-4 py-6 space-y-4">
+      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto">
         <div className="space-y-1">
           <p className="text-sm font-semibold text-gray-900">Club settings</p>
           <p className="text-xs text-gray-500">

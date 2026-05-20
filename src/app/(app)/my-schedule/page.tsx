@@ -269,6 +269,7 @@ export default async function MySchedulePage() {
         className="overflow-y-auto bg-gray-50"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
+        <div className="md:max-w-2xl md:mx-auto">
         {allItems.length === 0 && pastItems.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
             No upcoming reservations or events.
@@ -442,6 +443,7 @@ export default async function MySchedulePage() {
 
           </div>
         )}
+        </div>
       </div>
     </>
   );

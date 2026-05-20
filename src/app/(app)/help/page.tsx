@@ -62,7 +62,8 @@ export default async function HelpPage() {
   return (
     <>
       <Header screenTitle="Help & Rules" />
-      <div className="px-4 py-6 space-y-5 overflow-y-auto" style={{ height: "calc(100dvh - 56px - 64px)" }}>
+      <div className="overflow-y-auto" style={{ height: "calc(100dvh - 56px - 64px)" }}>
+      <div className="px-4 py-6 space-y-5 md:max-w-2xl md:mx-auto">
         {sections.map(section => (
           <div key={section.title}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
@@ -77,6 +78,7 @@ export default async function HelpPage() {
             </div>
           </div>
         ))}
+      </div>
       </div>
     </>
   );

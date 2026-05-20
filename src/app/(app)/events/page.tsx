@@ -133,6 +133,7 @@ export default async function EventsPage() {
         className="overflow-y-auto bg-gray-50"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
+        <div className="md:max-w-2xl md:mx-auto">
         {/* Page title */}
         <div className="px-4 pt-5 pb-1">
           <p className="text-lg font-semibold text-gray-900">Upcoming Events</p>
@@ -280,6 +281,7 @@ export default async function EventsPage() {
             })}
           </div>
         )}
+        </div>
       </div>
     </>
   );
