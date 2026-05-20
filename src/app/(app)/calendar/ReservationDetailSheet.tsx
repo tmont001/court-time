@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { adminCancelReservation } from "./actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,11 +91,9 @@ export default function ReservationDetailSheet({
   async function handleCancel() {
     setLoading(true);
     setError(null);
-    const { error: rpcError } = await supabase.rpc("admin_cancel_reservation", {
-      p_reservation_id: reservation.id,
-    });
-    if (rpcError) {
-      setError(mapCancelError(rpcError.message));
+    const result = await adminCancelReservation(reservation.id);
+    if (result?.error) {
+      setError(mapCancelError(result.error));
       setLoading(false);
       return;
     }
