@@ -860,6 +860,15 @@ export type Database = {
         Args: { p_name: string };
         Returns: undefined;
       };
+      create_maintenance_blocks: {
+        Args: {
+          p_court_ids: string[];
+          p_starts_at: string;
+          p_ends_at:   string;
+          p_notes?:    string | null;
+        };
+        Returns: undefined;
+      };
       get_audit_log: {
         Args: {
           p_limit?: number;

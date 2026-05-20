@@ -71,6 +71,12 @@ interface EventWithDetails {
   court_ids: string[];
 }
 
+interface SlotAction {
+  court:     Court;
+  slotStart: Date;
+  slotIdx:   number;
+}
+
 interface Props {
   courts:       Court[];
   hasError?:    boolean;
@@ -179,6 +185,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [creatingBlock, setCreatingBlock]             = useState(false);
+  const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
+  const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Built from todayISO (not new Date()) so server and client produce identical output.
@@ -319,9 +327,37 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleSlotTap(court: Court, slotIdx: number) {
     const slotStart = new Date(dayStartMs + (START_HOUR * 60 + slotIdx * 30) * 60_000);
-    setBookingSlot({ court, slotStart, slotIdx });
+    if (userRole === "pro" || userRole === "admin") {
+      // Show the role-based action menu.
+      setPendingSlotAction({ court, slotStart, slotIdx });
+    } else {
+      // Members go straight to the booking modal.
+      setBookingSlot({ court, slotStart, slotIdx });
+      setBookingDuration(60);
+      setBookingError(null);
+    }
+  }
+
+  function openBookingFromSlot() {
+    if (!pendingSlotAction) return;
+    setBookingSlot({ court: pendingSlotAction.court, slotStart: pendingSlotAction.slotStart, slotIdx: pendingSlotAction.slotIdx });
     setBookingDuration(60);
     setBookingError(null);
+    setPendingSlotAction(null);
+  }
+
+  function openEventFromSlot() {
+    if (!pendingSlotAction) return;
+    setSlotPreFill(pendingSlotAction);
+    setCreatingEvent(true);
+    setPendingSlotAction(null);
+  }
+
+  function openBlockFromSlot() {
+    if (!pendingSlotAction) return;
+    setSlotPreFill(pendingSlotAction);
+    setCreatingBlock(true);
+    setPendingSlotAction(null);
   }
 
   function toggleCourt(courtId: string) {
@@ -664,14 +700,59 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         </div>
       )}
 
+      {/* ── Slot action menu — pro/admin only ───────────────────────────── */}
+      {pendingSlotAction && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setPendingSlotAction(null)}
+          />
+          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+            <p className="text-sm font-semibold text-gray-900">{pendingSlotAction.court.name}</p>
+            <p className="text-xs text-gray-500 mt-0.5 mb-5">
+              {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
+                timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+              })}
+            </p>
+            <div className="space-y-2">
+              <button
+                onClick={openBookingFromSlot}
+                className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold"
+              >
+                Book Court
+              </button>
+              <button
+                onClick={openEventFromSlot}
+                className="w-full py-3 rounded-xl border border-gray-200 text-gray-900 text-sm font-medium"
+              >
+                Create Event
+              </button>
+              {userRole === "admin" && (
+                <button
+                  onClick={openBlockFromSlot}
+                  className="w-full py-3 rounded-xl border border-gray-200 text-gray-900 text-sm font-medium"
+                >
+                  Maintenance Block
+                </button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ── Create event sheet ───────────────────────────────────────────── */}
       {creatingEvent && (
         <CreateEventSheet
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
-          onClose={() => setCreatingEvent(false)}
-          onCreated={() => { setRefreshTick(t => t + 1); setCreatingEvent(false); }}
+          onClose={() => { setCreatingEvent(false); setSlotPreFill(null); }}
+          onCreated={() => { setRefreshTick(t => t + 1); setCreatingEvent(false); setSlotPreFill(null); }}
+          initialDate={slotPreFill ? selectedDate : undefined}
+          initialHour={slotPreFill ? Math.floor((START_HOUR * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
+          initialMinute={slotPreFill ? (START_HOUR * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
+          initialCourtId={slotPreFill?.court.id}
         />
       )}
 
@@ -694,8 +775,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           courts={courts}
           clubTimezone={clubTimezone}
           selectedDate={selectedDate}
-          onClose={() => setCreatingBlock(false)}
-          onCreated={() => { setRefreshTick(t => t + 1); setCreatingBlock(false); }}
+          onClose={() => { setCreatingBlock(false); setSlotPreFill(null); }}
+          onCreated={() => { setRefreshTick(t => t + 1); setCreatingBlock(false); setSlotPreFill(null); }}
+          defaultCourtId={slotPreFill?.court.id}
+          defaultStartHour={slotPreFill ? Math.floor((START_HOUR * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
+          defaultStartMinute={slotPreFill ? (START_HOUR * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
         />
       )}
 

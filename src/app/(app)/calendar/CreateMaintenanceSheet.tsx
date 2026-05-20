@@ -29,11 +29,15 @@ interface Court {
 }
 
 interface Props {
-  courts:       Court[];
-  clubTimezone: string;
-  selectedDate: Date;
-  onClose:      () => void;
-  onCreated:    () => void;
+  courts:           Court[];
+  clubTimezone:     string;
+  selectedDate:     Date;
+  onClose:          () => void;
+  onCreated:        () => void;
+  // Optional pre-fill from slot click
+  defaultCourtId?:    string;
+  defaultStartHour?:  number;
+  defaultStartMinute?: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -61,11 +65,12 @@ function toMins(hour: number, minute: number): number {
 }
 
 function mapBlockError(code: string | undefined, message: string): string {
-  if (code === "23P01")                  return "That time overlaps an existing booking — choose a different time.";
-  if (message === "invalid_duration")    return "End time must be after start time.";
-  if (message === "cannot_create_past")  return "Maintenance blocks cannot be scheduled in the past.";
-  if (message === "court_not_found")     return "Court not found. Please try again.";
-  if (message === "insufficient_role")   return "Only admins can create maintenance blocks.";
+  if (code === "23P01")                            return "One or more courts already have a booking at that time.";
+  if (message === "invalid_duration")              return "End time must be after start time.";
+  if (message === "cannot_create_past")            return "Maintenance blocks cannot be scheduled in the past.";
+  if (message === "select_at_least_one_court")     return "Select at least one court.";
+  if (message === "invalid_court")                 return "One or more selected courts are invalid.";
+  if (message === "insufficient_role")             return "Only admins can create maintenance blocks.";
   return "Something went wrong. Please try again.";
 }
 
@@ -73,15 +78,28 @@ function mapBlockError(code: string | undefined, message: string): string {
 
 export default function CreateMaintenanceSheet({
   courts, clubTimezone, selectedDate, onClose, onCreated,
+  defaultCourtId, defaultStartHour, defaultStartMinute,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
-  const [courtId,     setCourtId]     = useState(courts[0]?.id ?? "");
+  // ── Court multi-select: default to the clicked court, else first court ─────
+  const [selectedCourtIds, setSelectedCourtIds] = useState<string[]>(() => {
+    if (defaultCourtId) return [defaultCourtId];
+    return courts[0] ? [courts[0].id] : [];
+  });
+
   const [date,        setDate]        = useState<Date>(selectedDate);
-  const [startHour,   setStartHour]   = useState(9);
-  const [startMinute, setStartMinute] = useState(0);
-  const [endHour,     setEndHour]     = useState(10);
-  const [endMinute,   setEndMinute]   = useState(0);
+  const [startHour,   setStartHour]   = useState(defaultStartHour   ?? 9);
+  const [startMinute, setStartMinute] = useState(defaultStartMinute ?? 0);
+  const [endHour,     setEndHour]     = useState(() => {
+    const startMins = (defaultStartHour ?? 9) * 60 + (defaultStartMinute ?? 0);
+    const endMins   = startMins + 60; // default 1-hour block
+    return Math.floor(endMins / 60);
+  });
+  const [endMinute,   setEndMinute]   = useState(() => {
+    const startMins = (defaultStartHour ?? 9) * 60 + (defaultStartMinute ?? 0);
+    return (startMins + 60) % 60;
+  });
   const [notes,       setNotes]       = useState("");
   const [submitting,  setSubmitting]  = useState(false);
   const [error,       setError]       = useState<string | null>(null);
@@ -115,6 +133,12 @@ export default function CreateMaintenanceSheet({
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  function toggleCourt(id: string) {
+    setSelectedCourtIds(prev =>
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  }
+
   function handleStartChange(value: string) {
     const [h, m] = value.split(":").map(Number);
     setStartHour(h);
@@ -128,7 +152,12 @@ export default function CreateMaintenanceSheet({
   }
 
   async function handleSubmit() {
-    if (!courtId || endSlots.length === 0) return;
+    if (selectedCourtIds.length === 0) {
+      setError("Select at least one court.");
+      return;
+    }
+    if (endSlots.length === 0) return;
+
     setSubmitting(true);
     setError(null);
 
@@ -141,8 +170,8 @@ export default function CreateMaintenanceSheet({
       return;
     }
 
-    const { error: rpcError } = await supabase.rpc("create_maintenance_block", {
-      p_court_id:  courtId,
+    const { error: rpcError } = await supabase.rpc("create_maintenance_blocks", {
+      p_court_ids: selectedCourtIds,
       p_starts_at: startsAt.toISOString(),
       p_ends_at:   endsAt.toISOString(),
       p_notes:     notes.trim() || null,
@@ -167,24 +196,42 @@ export default function CreateMaintenanceSheet({
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
           <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <p className="text-base font-semibold text-gray-900">Block Court</p>
+          <p className="text-base font-semibold text-gray-900">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
         </div>
 
         {/* Scrollable content */}
         <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-5 pt-1">
 
-          {/* Court */}
+          {/* Court multi-select */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Court</label>
-            <select
-              value={courtId}
-              onChange={e => setCourtId(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
-            >
-              {courts.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+              Courts
+            </label>
+            <div className="flex flex-wrap gap-2 pt-2">
+              {courts.map(court => {
+                const isSelected = selectedCourtIds.includes(court.id);
+                return (
+                  <button
+                    key={court.id}
+                    type="button"
+                    onClick={() => toggleCourt(court.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      isSelected
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "bg-white text-gray-600 border-gray-200"
+                    }`}
+                  >
+                    {court.name}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedCourtIds.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">Select at least one court.</p>
+            )}
+            {selectedCourtIds.length === courts.length && courts.length > 1 && (
+              <p className="mt-1 text-xs text-gray-500">All courts selected</p>
+            )}
           </div>
 
           {/* Date */}
@@ -265,11 +312,11 @@ export default function CreateMaintenanceSheet({
           {error && <p className="text-xs text-red-500">{error}</p>}
 
           <button
-            disabled={submitting || !courtId || endSlots.length === 0}
+            disabled={submitting || selectedCourtIds.length === 0 || endSlots.length === 0}
             onClick={handleSubmit}
             className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
           >
-            {submitting ? "Blocking…" : "Block Court"}
+            {submitting ? "Blocking…" : "Block Court" + (selectedCourtIds.length !== 1 ? "s" : "")}
           </button>
 
         </div>

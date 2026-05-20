@@ -27,11 +27,16 @@ interface Court {
 }
 
 interface Props {
-  courts:       Court[];
-  clubId:       string;
-  clubTimezone: string;
-  onClose:      () => void;
-  onCreated:    () => void;
+  courts:          Court[];
+  clubId:          string;
+  clubTimezone:    string;
+  onClose:         () => void;
+  onCreated:       () => void;
+  // Optional pre-fill from slot click
+  initialDate?:    Date;
+  initialHour?:    number;
+  initialMinute?:  number;
+  initialCourtId?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -82,6 +87,7 @@ const TIME_SLOTS = (() => {
 
 export default function CreateEventSheet({
   courts, clubId, clubTimezone, onClose, onCreated,
+  initialDate, initialHour, initialMinute, initialCourtId,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -93,11 +99,12 @@ export default function CreateEventSheet({
   const [selectedType, setSelectedType]               = useState<EventType | null>(null);
   const [title, setTitle]                             = useState("");
   const [selectedDate, setSelectedDate]               = useState<Date>(() => {
+    if (initialDate) return initialDate;
     const iso = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
     return new Date(iso + "T12:00:00Z");
   });
-  const [startHour, setStartHour]                     = useState(9);
-  const [startMinute, setStartMinute]                 = useState(0);
+  const [startHour, setStartHour]                     = useState(initialHour   ?? 9);
+  const [startMinute, setStartMinute]                 = useState(initialMinute ?? 0);
   const [durationMinutes, setDurationMinutes]         = useState(60);
   const [selectedCourtIds, setSelectedCourtIds]       = useState<string[]>([]);
   const [capacity, setCapacity]                       = useState(1);
@@ -189,7 +196,11 @@ export default function CreateEventSheet({
     setDurationMinutes(type.default_duration_minutes);
     setCapacity(type.default_capacity);
     const n = Math.min(type.default_court_count, courts.length);
-    setSelectedCourtIds(courts.slice(0, n).map(c => c.id));
+    let defaults = courts.slice(0, n).map(c => c.id);
+    if (initialCourtId && !defaults.includes(initialCourtId)) {
+      defaults = [initialCourtId, ...defaults.slice(0, n - 1)];
+    }
+    setSelectedCourtIds(defaults);
     setTitle("");
     setError(null);
     setStep(2);
