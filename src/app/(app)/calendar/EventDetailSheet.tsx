@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet from "./EventRosterSheet";
-import { cancelEvent } from "./actions";
+import { cancelEvent, leaveEvent } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -174,9 +174,9 @@ export default function EventDetailSheet({
   async function handleLeave() {
     setLoading(true);
     setError(null);
-    const { error: rpcError } = await supabase.rpc("leave_event", { p_event_id: event.id });
-    if (rpcError) {
-      setError(mapLeaveError(rpcError.message));
+    const result = await leaveEvent(event.id);
+    if (result?.error) {
+      setError(mapLeaveError(result.error));
       setLoading(false);
       return;
     }

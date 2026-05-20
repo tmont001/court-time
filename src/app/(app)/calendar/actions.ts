@@ -102,6 +102,109 @@ async function dispatchAdminCancelSms(ownerUserId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// leaveEvent
+// Calls leave_event RPC and dispatches SMS to the promoted user (if any).
+// Returns the raw RPC error message so callers can map it to UI strings.
+// ---------------------------------------------------------------------------
+export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { data: promotedProfileId, error: rpcError } = await supabase.rpc(
+    "leave_event",
+    { p_event_id: eventId }
+  );
+
+  if (rpcError) return { error: rpcError.message };
+
+  try {
+    await dispatchWaitlistPromotionSms(eventId, promotedProfileId);
+  } catch {
+    // SMS dispatch must never surface as a user-facing error.
+  }
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// dispatchWaitlistPromotionSms — internal, not exported
+// Skips immediately when no one was promoted (promotedProfileId is null).
+// Otherwise finds the waitlist_promoted notification just created by the RPC,
+// checks the promoted user's SMS eligibility, and records the delivery attempt.
+// ---------------------------------------------------------------------------
+async function dispatchWaitlistPromotionSms(
+  eventId:          string,
+  promotedProfileId: string | null,
+): Promise<void> {
+  if (!promotedProfileId) return;
+
+  const supabase = await createClient();
+
+  // Fetch the most recent waitlist_promoted notifications for this user and
+  // confirm the event_id matches in JS (avoids PostgREST JSONB filter syntax).
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", promotedProfileId)
+    .eq("kind", "waitlist_promoted")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", promotedProfileId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // cancelEvent
 // Calls the cancel_event RPC, then dispatches SMS to all notified participants.
 // The actor is excluded from SMS even if they received an in-app notification.

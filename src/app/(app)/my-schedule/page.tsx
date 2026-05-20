@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
+import { leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,12 +94,7 @@ async function leaveEvent(formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-
-  await supabase.rpc("leave_event", { p_event_id: eventId });
+  await dispatchLeaveEvent(eventId);
   revalidatePath("/my-schedule");
 }
 
