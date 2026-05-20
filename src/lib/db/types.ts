@@ -756,7 +756,7 @@ export type Database = {
       };
       leave_event: {
         Args: { p_event_id: string };
-        Returns: undefined;
+        Returns: string | null;
       };
       create_maintenance_block: {
         Args: {
