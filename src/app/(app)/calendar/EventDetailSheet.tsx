@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet from "./EventRosterSheet";
+import { cancelEvent } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -186,10 +187,10 @@ export default function EventDetailSheet({
   async function handleCancelEvent() {
     setCancelLoading(true);
     setCancelError(null);
-    const { error: rpcError } = await supabase.rpc("cancel_event", { p_event_id: event.id });
-    if (rpcError) {
+    const result = await cancelEvent(event.id);
+    if (result?.error) {
       setCancelError(
-        rpcError.message === "event_not_found"
+        result.error === "event_not_found"
           ? "This event has already been cancelled."
           : "Something went wrong. Please try again."
       );
