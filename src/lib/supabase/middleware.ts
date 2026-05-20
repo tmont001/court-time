@@ -45,5 +45,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Redirect authenticated users away from the sign-in page.
+  if (pathname === "/sign-in" && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/calendar";
+    return NextResponse.redirect(url);
+  }
+
   return supabaseResponse;
 }
