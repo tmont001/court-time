@@ -34,7 +34,7 @@ export default async function ProfilePage() {
           <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {profile?.first_name ?? ""} {profile?.last_name ?? ""}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{user.email}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
         </div>
 
         <div>
@@ -65,6 +65,13 @@ export default async function ProfilePage() {
                   className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
                 >
                   Members
+                  <span className="text-gray-400 dark:text-gray-500">›</span>
+                </Link>
+                <Link
+                  href="/admin/courts"
+                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                >
+                  Courts
                   <span className="text-gray-400 dark:text-gray-500">›</span>
                 </Link>
                 <Link

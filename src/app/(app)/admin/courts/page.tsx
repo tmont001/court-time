@@ -1,0 +1,43 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import Header from "@/components/Header";
+import CourtManagementList from "./CourtManagementList";
+
+export default async function AdminCourtsPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/sign-in");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id")
+    .eq("id", user.id)
+    .single();
+
+  const { data: courts, error } = await supabase
+    .from("courts")
+    .select("id, name, display_order, is_active")
+    .eq("club_id", profile?.club_id ?? "")
+    .order("display_order", { ascending: true });
+
+  if (error) {
+    console.error("[AdminCourts] courts query failed:", error.message);
+  }
+
+  return (
+    <>
+      <Header screenTitle="Courts" />
+      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
+        <div className="space-y-1">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Court management</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Active courts appear as columns on the calendar. Inactive courts are hidden from
+            bookings but their reservation history is preserved.
+          </p>
+        </div>
+        <hr className="border-gray-100 dark:border-gray-800" />
+        <CourtManagementList initialCourts={courts ?? []} />
+      </div>
+    </>
+  );
+}

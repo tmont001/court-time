@@ -931,6 +931,22 @@ export type Database = {
         };
         Returns: string;
       };
+      add_court: {
+        Args: { p_name: string };
+        Returns: undefined;
+      };
+      rename_court: {
+        Args: { p_court_id: string; p_name: string };
+        Returns: undefined;
+      };
+      reorder_courts: {
+        Args: { p_court_order: string[] };
+        Returns: undefined;
+      };
+      set_court_active: {
+        Args: { p_court_id: string; p_is_active: boolean };
+        Returns: undefined;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
