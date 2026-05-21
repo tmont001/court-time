@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-export default function SignInForm() {
+export default function SignInForm({ redirectTo }: { redirectTo?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -44,7 +44,9 @@ export default function SignInForm() {
       .eq("id", user.id)
       .single();
 
-    if (!profile?.first_name || !profile?.last_name) {
+    if (redirectTo) {
+      router.push(redirectTo);
+    } else if (!profile?.first_name || !profile?.last_name) {
       router.push("/welcome");
     } else {
       router.push("/calendar");

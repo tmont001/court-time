@@ -961,6 +961,40 @@ export type Database = {
         Args: { p_court_id: string };
         Returns: undefined;
       };
+      validate_club_invite: {
+        Args: { p_code: string };
+        Returns: Json;
+      };
+      accept_club_invite: {
+        Args: { p_code: string };
+        Returns: Json;
+      };
+      create_club_invite: {
+        Args: {
+          p_role?:       string;
+          p_email?:      string | null;
+          p_expires_at?: string;
+        };
+        Returns: string;
+      };
+      revoke_club_invite: {
+        Args: { p_code: string };
+        Returns: undefined;
+      };
+      get_club_invites: {
+        Args: Record<string, never>;
+        Returns: {
+          id:          string;
+          code:        string;
+          role:        string;
+          email:       string | null;
+          expires_at:  string;
+          accepted_at: string | null;
+          accepted_by: string | null;
+          revoked_at:  string | null;
+          created_at:  string;
+        }[];
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
