@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { addCourt, renameCourt, reorderCourts, setCourtActive } from "./actions";
+import { addCourt, renameCourt, reorderCourts, setCourtActive, deleteCourt } from "./actions";
 
 type Court = {
   id: string;
@@ -29,6 +29,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
   const [renameValue, setRenameValue] = useState("");
   const [isAddingCourt, setIsAddingCourt] = useState(false);
   const [addValue, setAddValue] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
 
   // Sync local list when the server component re-renders after router.refresh().
@@ -67,6 +68,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
 
   function handleRenameStart(court: Court) {
     setStatus(null);
+    setDeletingId(null);
     setRenamingId(court.id);
     setRenameValue(court.name);
   }
@@ -115,6 +117,40 @@ export default function CourtManagementList({ initialCourts }: Props) {
           type: "success",
           message: isActive ? "Court activated." : "Court deactivated.",
         });
+        router.refresh();
+      }
+    });
+  }
+
+  // ── Delete ────────────────────────────────────────────────────────────────
+
+  function handleDeleteStart(courtId: string) {
+    setStatus(null);
+    setRenamingId(null);
+    setRenameValue("");
+    setDeletingId(courtId);
+  }
+
+  function handleDeleteCancel() {
+    setDeletingId(null);
+  }
+
+  function handleDeleteConfirm(court: Court) {
+    setStatus(null);
+    setPendingId(court.id);
+    startTransition(async () => {
+      const result = await deleteCourt(court.id);
+      setPendingId(null);
+      setDeletingId(null);
+      if (result.error === "court_has_history") {
+        showStatus({
+          type: "error",
+          message: `${court.name} has booking history and cannot be deleted. Deactivate it instead.`,
+        });
+      } else if (result.error) {
+        showStatus({ type: "error", message: result.error });
+      } else {
+        showStatus({ type: "success", message: "Court deleted." });
         router.refresh();
       }
     });
@@ -175,7 +211,34 @@ export default function CourtManagementList({ initialCourts }: Props) {
           {courts.map((court, idx) => (
             <div key={court.id} className="bg-white dark:bg-gray-800">
 
-              {renamingId === court.id ? (
+              {deletingId === court.id ? (
+                /* ── Delete confirmation row ── */
+                <div className="flex items-center justify-between gap-2 px-4 py-3">
+                  <div className="min-w-0">
+                    <span className="text-sm text-gray-900 dark:text-gray-100 truncate block">
+                      {court.name}
+                    </span>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                      Only courts with no history can be deleted.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 text-xs font-medium">
+                    <button
+                      onClick={() => handleDeleteConfirm(court)}
+                      disabled={isPending && pendingId === court.id}
+                      className="px-2 py-1 rounded bg-red-600 text-white text-xs font-medium disabled:opacity-40"
+                    >
+                      {isPending && pendingId === court.id ? "Deleting…" : "Delete"}
+                    </button>
+                    <button
+                      onClick={handleDeleteCancel}
+                      className="text-gray-500 dark:text-gray-400"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : renamingId === court.id ? (
                 /* ── Rename row ── */
                 <div className="flex items-center gap-2 px-4 py-3">
                   <input
@@ -265,6 +328,16 @@ export default function CourtManagementList({ initialCourts }: Props) {
                         : court.is_active
                         ? "Deactivate"
                         : "Activate"}
+                    </button>
+
+                    <span className="mx-0.5 text-gray-200 dark:text-gray-700 select-none">|</span>
+
+                    <button
+                      onClick={() => handleDeleteStart(court.id)}
+                      disabled={anyPending}
+                      className="px-1 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30"
+                    >
+                      Delete
                     </button>
                   </div>
                 </div>

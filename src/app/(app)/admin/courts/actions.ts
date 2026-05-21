@@ -88,3 +88,21 @@ export async function setCourtActive(
   revalidateCourts();
   return {};
 }
+
+export async function deleteCourt(courtId: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("delete_court", { p_court_id: courtId });
+  if (error) {
+    if (error.message.includes("court_has_history")) {
+      return { error: "court_has_history" };
+    }
+    const key = error.message.match(/not_authenticated|insufficient_role|invalid_court/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to delete court." };
+  }
+
+  revalidateCourts();
+  return {};
+}

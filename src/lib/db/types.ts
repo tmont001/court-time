@@ -957,6 +957,10 @@ export type Database = {
         Args: { p_court_id: string; p_is_active: boolean };
         Returns: undefined;
       };
+      delete_court: {
+        Args: { p_court_id: string };
+        Returns: undefined;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
