@@ -88,7 +88,7 @@ export type Database = {
       profiles: {
         Row: {
           id: string;
-          club_id: string;
+          club_id: string | null;
           first_name: string | null;
           last_name: string | null;
           phone: string | null;
@@ -102,7 +102,7 @@ export type Database = {
         };
         Insert: {
           id: string;
-          club_id: string;
+          club_id?: string | null;
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;
@@ -116,7 +116,7 @@ export type Database = {
         };
         Update: {
           id?: string;
-          club_id?: string;
+          club_id?: string | null;
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;
@@ -677,6 +677,56 @@ export type Database = {
           },
           {
             foreignKeyName: "notification_deliveries_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      club_invites: {
+        Row: {
+          id:          string;
+          club_id:     string;
+          code:        string;
+          role:        "member" | "pro" | "admin";
+          email:       string | null;
+          created_by:  string;
+          expires_at:  string;
+          accepted_at: string | null;
+          accepted_by: string | null;
+          revoked_at:  string | null;
+          created_at:  string;
+        };
+        Insert: {
+          id?:         string;
+          club_id:     string;
+          code?:       string;
+          role?:       "member" | "pro" | "admin";
+          email?:      string | null;
+          created_by:  string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          accepted_by?: string | null;
+          revoked_at?:  string | null;
+          created_at?:  string;
+        };
+        Update: {
+          id?:         string;
+          club_id?:    string;
+          code?:       string;
+          role?:       "member" | "pro" | "admin";
+          email?:      string | null;
+          created_by?: string;
+          expires_at?: string;
+          accepted_at?: string | null;
+          accepted_by?: string | null;
+          revoked_at?:  string | null;
+          created_at?:  string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "club_invites_club_id_fkey";
             columns: ["club_id"];
             isOneToOne: false;
             referencedRelation: "clubs";

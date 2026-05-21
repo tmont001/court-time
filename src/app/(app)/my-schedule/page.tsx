@@ -69,7 +69,7 @@ async function cancelReservation(formData: FormData) {
       const { data: settings } = await supabase
         .from("club_settings")
         .select("cancellation_window_hours, cancellation_grace_minutes")
-        .eq("club_id", actorProfile.club_id)
+        .eq("club_id", actorProfile.club_id ?? "")
         .single();
 
       const windowMs     = (settings?.cancellation_window_hours  ?? 24) * 60 * 60 * 1000;

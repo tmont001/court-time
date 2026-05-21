@@ -105,6 +105,7 @@ export async function uploadClubLogo(
     .eq("id", user.id)
     .single();
   if (profile?.role !== "admin") return { error: ERROR_MESSAGES.insufficient_role };
+  if (!profile.club_id) return { error: ERROR_MESSAGES.not_authenticated };
 
   const file = formData.get("logo") as File | null;
   if (!file || file.size === 0) return { error: "No file selected." };
@@ -154,6 +155,7 @@ export async function deleteClubLogo(): Promise<{ error?: string }> {
     .eq("id", user.id)
     .single();
   if (profile?.role !== "admin") return { error: ERROR_MESSAGES.insufficient_role };
+  if (!profile.club_id) return { error: ERROR_MESSAGES.not_authenticated };
 
   const clubId = profile.club_id;
 
