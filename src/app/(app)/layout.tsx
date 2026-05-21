@@ -15,6 +15,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .select("club_id")
     .eq("id", user.id)
     .single();
+
+  if (!profile?.club_id) redirect("/pending-invite");
+
   if (profile?.club_id) {
     const { data: club } = await supabase
       .from("clubs")
