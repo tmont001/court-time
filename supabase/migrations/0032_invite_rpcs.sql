@@ -240,7 +240,7 @@ language plpgsql security definer as $$
 declare
   v_profile profiles%rowtype;
 begin
-  select * into v_profile from profiles where id = auth.uid();
+  select p.* into v_profile from profiles p where p.id = auth.uid();
   if not found then raise exception 'not_authenticated'; end if;
   if v_profile.role <> 'admin' then raise exception 'insufficient_role'; end if;
 

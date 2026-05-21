@@ -1,26 +1,27 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
+import MembersClient from "./MembersClient";
 
-const ROLE_LABELS: Record<string, string> = {
-  member: "Member",
-  pro: "Pro",
-  admin: "Admin",
-};
-
-function formatJoinDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    year: "numeric",
-  });
-}
+export const dynamic = "force-dynamic";
 
 export default async function AdminMembersPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
-  const { data: members, error } = await supabase.rpc("get_members");
+  const [membersResult, invitesResult] = await Promise.all([
+    supabase.rpc("get_members"),
+    supabase.rpc("get_club_invites"),
+  ]);
+
+  const now = new Date();
+  const pendingInvites = (invitesResult.data ?? []).filter(
+    (inv) =>
+      !inv.accepted_at &&
+      !inv.revoked_at &&
+      new Date(inv.expires_at) > now
+  );
 
   return (
     <>
@@ -30,41 +31,12 @@ export default async function AdminMembersPage() {
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">
-        {error ? (
-          <div className="mx-4 mt-6 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
-            <p className="text-sm font-semibold text-red-700">Failed to load members</p>
-            <p className="text-xs text-red-500 mt-1 break-all">{error.message}</p>
-          </div>
-        ) : !members || members.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
-            No members yet.
-          </div>
-        ) : (
-          <div className="pb-6 pt-3">
-            {members.map((m) => {
-              const fullName =
-                [m.first_name, m.last_name].filter(Boolean).join(" ") ||
-                "Unnamed member";
-              return (
-                <div
-                  key={m.id}
-                  className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700"
-                >
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{fullName}</p>
-                    <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                      {ROLE_LABELS[m.role] ?? m.role}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{m.email ?? "—"}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {m.phone ?? "—"} · Joined {formatJoinDate(m.created_at)}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
+          <MembersClient
+            members={membersResult.data ?? []}
+            pendingInvites={pendingInvites}
+            membersError={membersResult.error?.message ?? null}
+            invitesError={invitesResult.error?.message ?? null}
+          />
         </div>
       </div>
     </>
