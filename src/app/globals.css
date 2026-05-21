@@ -2,6 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Accent theme tokens ───────────────────────────────────────────────────── */
+:root                 { --accent: #374151; } /* classic-gray light */
+@media (prefers-color-scheme: dark) {
+  :root               { --accent: #d1d5db; } /* classic-gray dark  */
+}
+.theme-forest-green   { --accent: #15803d; }
+@media (prefers-color-scheme: dark) {
+  .theme-forest-green { --accent: #4ade80; }
+}
+.theme-clay-court     { --accent: #c2410c; }
+@media (prefers-color-scheme: dark) {
+  .theme-clay-court   { --accent: #fb923c; }
+}
+.theme-ocean-blue     { --accent: #1d4ed8; }
+@media (prefers-color-scheme: dark) {
+  .theme-ocean-blue   { --accent: #60a5fa; }
+}
+.theme-royal-purple   { --accent: #7e22ce; }
+@media (prefers-color-scheme: dark) {
+  .theme-royal-purple { --accent: #c084fc; }
+}
+
 /* Hide scrollbar while keeping scroll behaviour */
 .hide-scrollbar {
   -ms-overflow-style: none;  /* IE / Edge */

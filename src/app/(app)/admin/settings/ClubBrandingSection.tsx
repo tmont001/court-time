@@ -3,13 +3,15 @@
 import { useState, useTransition } from "react";
 import { updateClubName } from "./actions";
 import ClubLogoUpload from "./ClubLogoUpload";
+import ThemePicker from "./ThemePicker";
 
 interface Props {
-  clubName: string;
-  logoUrl:  string | null;
+  clubName:  string;
+  logoUrl:   string | null;
+  themeKey:  string;
 }
 
-export default function ClubBrandingSection({ clubName, logoUrl }: Props) {
+export default function ClubBrandingSection({ clubName, logoUrl, themeKey }: Props) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -51,7 +53,7 @@ export default function ClubBrandingSection({ clubName, logoUrl }: Props) {
           <button
             type="submit"
             disabled={isPending}
-            className="px-4 py-2 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+            className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
           >
             {isPending ? "Saving…" : "Save"}
           </button>
@@ -74,8 +76,8 @@ export default function ClubBrandingSection({ clubName, logoUrl }: Props) {
       </div>
 
       <div>
-        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Color theme</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">Color theme coming soon.</p>
+        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Color theme</p>
+        <ThemePicker currentTheme={themeKey} />
       </div>
     </div>
   );

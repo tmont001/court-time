@@ -293,7 +293,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
           <button
             onClick={handleAddSubmit}
             disabled={isPending && pendingId === "__new__"}
-            className="px-4 py-2 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+            className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
           >
             {isPending && pendingId === "__new__" ? "Adding…" : "Add"}
           </button>

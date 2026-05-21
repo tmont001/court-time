@@ -462,7 +462,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                 onClick={() => setSelectedDate(new Date(pill.dateISO + "T12:00:00Z"))}
                 className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
                   isSelected
-                    ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-semibold"
+                    ? "bg-accent text-white dark:text-gray-900 font-semibold"
                     : isToday
                     ? "text-blue-600 dark:text-blue-400 font-medium"
                     : "text-gray-500 dark:text-gray-400"
@@ -482,7 +482,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             onClick={() => setSelectedCourtIds(new Set(courts.map(c => c.id)))}
             className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
               selectedCourtIds.size === courts.length
-                ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                ? "bg-accent text-white dark:text-gray-900"
                 : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
             }`}
           >
@@ -883,7 +883,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             <button
               disabled={bookingConflict || bookingLoading}
               onClick={handleConfirmBooking}
-              className="mt-5 w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
+              className="mt-5 w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
             >
               {bookingLoading ? "Booking…" : "Confirm Booking"}
             </button>

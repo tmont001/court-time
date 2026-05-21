@@ -221,7 +221,7 @@ export default function EventDetailSheet({
     ? "bg-amber-50 text-amber-700 border border-amber-200"
     : myPart
     ? "bg-red-50 text-red-600 border border-red-200"
-    : "bg-gray-900 text-white";
+    : "bg-accent text-white dark:text-gray-900";
 
   // ── Participant display ────────────────────────────────────────────────────
 

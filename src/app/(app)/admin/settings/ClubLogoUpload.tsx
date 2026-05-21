@@ -98,7 +98,7 @@ export default function ClubLogoUpload({ currentLogoUrl, clubInitial }: Props) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isPending}
-            className="px-3 py-1.5 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 text-xs font-medium disabled:opacity-40"
+            className="px-3 py-1.5 rounded-lg bg-accent text-white dark:text-gray-900 text-xs font-medium disabled:opacity-40"
           >
             {pendingAction === "upload" ? "Uploading…" : "Upload logo"}
           </button>

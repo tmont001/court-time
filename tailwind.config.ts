@@ -11,6 +11,7 @@ const config: Config = {
     extend: {
       // Event-type colors reserved for future use
       colors: {
+        accent: "var(--accent)",
         "event-lesson": "#3B7DD8",
         "event-clinic": "#2E9B5E",
         "event-social": "#E68433",

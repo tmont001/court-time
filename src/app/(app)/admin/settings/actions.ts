@@ -59,6 +59,32 @@ export async function updateBookingRules(
   return {};
 }
 
+const VALID_THEMES = new Set([
+  "classic-gray", "forest-green", "clay-court", "ocean-blue", "royal-purple",
+]);
+
+export async function updateClubTheme(themeKey: string): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  if (!VALID_THEMES.has(themeKey)) return { error: "Invalid theme selection." };
+
+  const { error } = await supabase.rpc("update_club_theme", { p_theme_key: themeKey });
+  if (error) {
+    const key = error.message.match(/insufficient_role|invalid_theme|not_authenticated/)?.[0] ?? "";
+    return { error:
+      key === "insufficient_role" ? ERROR_MESSAGES.insufficient_role :
+      key === "invalid_theme"     ? "Invalid theme selection."        :
+      key === "not_authenticated" ? ERROR_MESSAGES.not_authenticated  :
+      "Failed to save theme."
+    };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
 const ALLOWED_LOGO_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png":  "png",

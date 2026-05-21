@@ -76,7 +76,7 @@ export default function BottomNav() {
             href={tab.href}
             className={`flex-1 flex flex-col items-center justify-center gap-1 ${
               isActive
-                ? "text-gray-900 dark:text-gray-100 border-t-2 border-gray-900 dark:border-gray-100"
+                ? "text-accent border-t-2 border-accent"
                 : "text-gray-400 dark:text-gray-500"
             }`}
           >

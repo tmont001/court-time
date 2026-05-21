@@ -21,6 +21,7 @@ export type Database = {
           slug: string;
           timezone: string;
           logo_url: string | null;
+          theme_key: string;
           created_at: string;
           updated_at: string;
         };
@@ -30,6 +31,7 @@ export type Database = {
           slug: string;
           timezone?: string;
           logo_url?: string | null;
+          theme_key?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -39,6 +41,7 @@ export type Database = {
           slug?: string;
           timezone?: string;
           logo_url?: string | null;
+          theme_key?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -933,6 +936,10 @@ export type Database = {
           p_sent_at?:             string | null;
         };
         Returns: string;
+      };
+      update_club_theme: {
+        Args: { p_theme_key: string };
+        Returns: undefined;
       };
       add_court: {
         Args: { p_name: string };

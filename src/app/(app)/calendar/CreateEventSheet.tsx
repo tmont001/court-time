@@ -344,7 +344,7 @@ export default function CreateEventSheet({
                         onClick={() => setSelectedDate(new Date(pill.dateISO + "T12:00:00Z"))}
                         className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
                           isSelected
-                            ? "bg-gray-900 text-white font-semibold"
+                            ? "bg-accent text-white dark:text-gray-900 font-semibold"
                             : isToday
                             ? "text-blue-600 font-medium"
                             : "text-gray-500 dark:text-gray-400 dark:text-gray-500"
@@ -405,7 +405,7 @@ export default function CreateEventSheet({
                   }
                   setStep(3);
                 }}
-                className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
               >
                 Continue
               </button>
@@ -429,7 +429,7 @@ export default function CreateEventSheet({
                           hasConflict
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : isSelected
-                            ? "bg-gray-900 text-white border-gray-900"
+                            ? "bg-accent text-white dark:text-gray-900 border-accent"
                             : "bg-white text-gray-600 border-gray-200 dark:border-gray-700"
                         }`}
                       >
@@ -454,7 +454,7 @@ export default function CreateEventSheet({
               <button
                 disabled={selectedCourtIds.length === 0}
                 onClick={() => { setError(null); setStep(4); }}
-                className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
               >
                 Continue
               </button>
@@ -495,7 +495,7 @@ export default function CreateEventSheet({
               <button
                 disabled={submitting || capacity < 1}
                 onClick={handleCreate}
-                className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
               >
                 {submitting ? "Creating…" : "Create Event"}
               </button>

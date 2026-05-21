@@ -33,7 +33,7 @@ export default function TestSmsSection({ twilioConfigured }: Props) {
           <button
             onClick={handleSend}
             disabled={isPending}
-            className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium disabled:opacity-40"
+            className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
           >
             {isPending ? "Sending…" : "Send test message to my phone"}
           </button>
