@@ -27,11 +27,11 @@ export default async function Header({ screenTitle }: HeaderProps) {
   }
 
   return (
-    <header className="flex items-center justify-between px-4 h-14 border-b border-gray-200 bg-white">
-      <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">
+    <header className="flex items-center justify-between px-4 h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+      <span className="text-xs text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide">
         {clubName}
       </span>
-      <span className="text-sm font-semibold text-gray-900">{screenTitle}</span>
+      <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{screenTitle}</span>
       <NotificationBell />
     </header>
   );

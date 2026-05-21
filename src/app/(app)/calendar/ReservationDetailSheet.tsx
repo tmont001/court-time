@@ -107,35 +107,35 @@ export default function ReservationDetailSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
 
         {/* Handle */}
-        <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+        <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
 
         {/* Court */}
-        <p className="text-base font-semibold text-gray-900">{courtName}</p>
+        <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{courtName}</p>
 
         {/* Date */}
-        <p className="text-sm text-gray-500 mt-0.5">{dateLabel}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{dateLabel}</p>
 
         {/* Time */}
-        <p className="text-sm text-gray-700 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
+        <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
 
         {/* Owner */}
-        <p className="text-sm text-gray-500 mt-1">Booked by {ownerName}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
 
         {/* Maintenance notes — only for maintenance/admin_block reason */}
         {reservation.reason === "maintenance" && (
           <div className="mt-3">
             {reservation.notes?.trim() ? (
               <>
-                <p className="text-sm text-gray-700">{reservation.notes.trim()}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{reservation.notes.trim()}</p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {reservation.show_notes_to_members ? "Visible to members" : "Hidden from members"}
                 </p>
               </>
             ) : (
-              <p className="text-xs text-gray-400">No reason added.</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">No reason added.</p>
             )}
           </div>
         )}
@@ -147,7 +147,7 @@ export default function ReservationDetailSheet({
         <button
           disabled={loading}
           onClick={handleCancel}
-          className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-red-50 text-red-600 border border-red-200 disabled:opacity-40"
+          className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40"
         >
           {loading ? "Cancelling…" : "Cancel Booking"}
         </button>

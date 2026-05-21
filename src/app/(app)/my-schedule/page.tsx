@@ -274,12 +274,12 @@ export default async function MySchedulePage() {
       <Header screenTitle="My Schedule" />
 
       <div
-        className="overflow-y-auto bg-gray-50"
+        className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
         {allItems.length === 0 && pastItems.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 text-sm">
+          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
             No upcoming reservations or events.
           </div>
         ) : (
@@ -291,7 +291,7 @@ export default async function MySchedulePage() {
               const header   = formatDateHeader(itemStartsAt(dayItems[0]), clubTimezone);
               return (
                 <div key={key}>
-                  <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     {header}
                   </p>
 
@@ -311,11 +311,11 @@ export default async function MySchedulePage() {
                       return (
                         <div
                           key={res.id}
-                          className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200 flex items-center justify-between"
+                          className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-between"
                         >
                           <div>
-                            <p className="text-sm font-semibold text-gray-900">{name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                               {start} – {end} · {durationMin} min
                               {formatLabel ? ` · ${formatLabel}` : ""}
                             </p>
@@ -356,7 +356,7 @@ export default async function MySchedulePage() {
                     return (
                       <div
                         key={ev.id}
-                        className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200 flex items-start justify-between"
+                        className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-start justify-between"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
@@ -372,8 +372,8 @@ export default async function MySchedulePage() {
                               </span>
                             )}
                           </div>
-                          <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {start} – {end}
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
@@ -401,7 +401,7 @@ export default async function MySchedulePage() {
             {/* ── Past events section — read-only ──────────────────────── */}
             {pastItems.length > 0 && (
               <div>
-                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Past Events
                 </p>
                 {pastItems.map(({ ev, myRole, myStatus, myAttendance }) => {
@@ -415,7 +415,7 @@ export default async function MySchedulePage() {
                   return (
                     <div
                       key={ev.id}
-                      className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200 flex items-start justify-between"
+                      className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-start justify-between"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
@@ -431,8 +431,8 @@ export default async function MySchedulePage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                           {start} – {end}
                           {evCourtNames ? ` · ${evCourtNames}` : ""}
                         </p>

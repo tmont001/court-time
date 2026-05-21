@@ -69,9 +69,9 @@ export default async function HelpPage() {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               {section.title}
             </p>
-            <div className="rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 overflow-hidden">
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
               {section.items.map(item => (
-                <p key={item} className="px-4 py-3 text-sm text-gray-700 leading-snug">
+                <p key={item} className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 leading-snug">
                   {item}
                 </p>
               ))}

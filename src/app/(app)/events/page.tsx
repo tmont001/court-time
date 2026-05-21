@@ -130,20 +130,20 @@ export default async function EventsPage() {
       <Header screenTitle="Events" />
 
       <div
-        className="overflow-y-auto bg-gray-50"
+        className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
         {/* Page title */}
         <div className="px-4 pt-5 pb-1">
-          <p className="text-lg font-semibold text-gray-900">Upcoming Events</p>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">Upcoming Events</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             Browse clinics, socials, leagues, and other scheduled events.
           </p>
         </div>
 
         {events.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
             No upcoming events yet.
           </div>
         ) : (
@@ -155,7 +155,7 @@ export default async function EventsPage() {
               return (
                 <div key={key}>
                   {/* Date section header */}
-                  <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                     {header}
                   </p>
 
@@ -195,7 +195,7 @@ export default async function EventsPage() {
                       return (
                         <div
                           key={ev.id}
-                          className="bg-white rounded-xl border border-gray-200 px-4 py-3"
+                          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3"
                         >
                           {/* Type pill + status badge */}
                           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
@@ -208,7 +208,7 @@ export default async function EventsPage() {
                               </span>
                             )}
                             {isHost && (
-                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600">
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                                 Host
                               </span>
                             )}
@@ -225,17 +225,17 @@ export default async function EventsPage() {
                           </div>
 
                           {/* Title */}
-                          <p className="text-sm font-semibold text-gray-900">{ev.title}</p>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
 
                           {/* Time range + courts (date is in section header) */}
-                          <p className="text-xs text-gray-500 mt-0.5">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {startLabel} – {endLabel}
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
 
                           {/* Capacity row + action button */}
                           <div className="flex items-center justify-between mt-2">
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-gray-400 dark:text-gray-500">
                               {confirmedCount} / {ev.capacity} joined
                               {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
                             </p>
@@ -265,7 +265,7 @@ export default async function EventsPage() {
 
                           {/* Roster — admin / pro only */}
                           {(profile?.role === "admin" || profile?.role === "pro") && (
-                            <div className="mt-2 pt-2 border-t border-gray-100">
+                            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                               <EventRosterButton
                                 eventId={ev.id}
                                 count={confirmedCount + waitlistCount}

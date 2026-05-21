@@ -60,32 +60,32 @@ export default function AuditLogTable({ initialRows }: Props) {
         return (
           <div
             key={row.id}
-            className="mx-4 mb-3 px-4 py-3 bg-white rounded-xl border border-gray-200"
+            className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900">{label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{label}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   {row.actor_name ?? "Unknown"}
                 </p>
               </div>
-              <p className="text-xs text-gray-400 shrink-0 text-right">
+              <p className="text-xs text-gray-400 dark:text-gray-500 shrink-0 text-right">
                 {formatDate(row.created_at)}
               </p>
             </div>
 
             <div className="mt-2">
-              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                 {row.target_type}
               </span>
             </div>
 
             {row.metadata != null && (
               <details className="mt-2">
-                <summary className="text-xs text-gray-400 cursor-pointer select-none">
+                <summary className="text-xs text-gray-400 dark:text-gray-500 cursor-pointer select-none">
                   Details
                 </summary>
-                <pre className="mt-1 text-xs text-gray-500 whitespace-pre-wrap break-all bg-gray-50 rounded p-2">
+                <pre className="mt-1 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap break-all bg-gray-50 dark:bg-gray-700 rounded p-2">
                   {JSON.stringify(row.metadata, null, 2)}
                 </pre>
               </details>
@@ -103,7 +103,7 @@ export default function AuditLogTable({ initialRows }: Props) {
           <button
             onClick={handleLoadMore}
             disabled={isPending}
-            className="px-4 py-2 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 font-medium disabled:opacity-40"
+            className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300 font-medium disabled:opacity-40"
           >
             {isPending ? "Loading…" : "Load more"}
           </button>

@@ -193,12 +193,12 @@ export default function CreateMaintenanceSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
 
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <p className="text-base font-semibold text-gray-900">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
+          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
         </div>
 
         {/* Scrollable content */}
@@ -206,7 +206,7 @@ export default function CreateMaintenanceSheet({
 
           {/* Court multi-select */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
               Courts
             </label>
             <div className="flex flex-wrap gap-2 pt-2">
@@ -220,7 +220,7 @@ export default function CreateMaintenanceSheet({
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
                       isSelected
                         ? "bg-gray-900 text-white border-gray-900"
-                        : "bg-white text-gray-600 border-gray-200"
+                        : "bg-white text-gray-600 border-gray-200 dark:border-gray-700"
                     }`}
                   >
                     {court.name}
@@ -229,16 +229,16 @@ export default function CreateMaintenanceSheet({
               })}
             </div>
             {selectedCourtIds.length === 0 && (
-              <p className="mt-1 text-xs text-gray-400">Select at least one court.</p>
+              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Select at least one court.</p>
             )}
             {selectedCourtIds.length === courts.length && courts.length > 1 && (
-              <p className="mt-1 text-xs text-gray-500">All courts selected</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">All courts selected</p>
             )}
           </div>
 
           {/* Date */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</label>
             <div className="flex gap-1.5 overflow-x-auto pt-2 pb-1 hide-scrollbar">
               {datePills.map(pill => {
                 const isSelected = pill.dateISO === selectedDateISO;
@@ -252,7 +252,7 @@ export default function CreateMaintenanceSheet({
                         ? "bg-gray-900 text-white font-semibold"
                         : isToday
                         ? "text-blue-600 font-medium"
-                        : "text-gray-500"
+                        : "text-gray-500 dark:text-gray-400 dark:text-gray-500"
                     }`}
                   >
                     <span>{pill.day}</span>
@@ -265,11 +265,11 @@ export default function CreateMaintenanceSheet({
 
           {/* Start time */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Start Time</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Start Time</label>
             <select
               value={`${startHour}:${startMinute}`}
               onChange={e => handleStartChange(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             >
               {startSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -281,7 +281,7 @@ export default function CreateMaintenanceSheet({
 
           {/* End time */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">End Time</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">End Time</label>
             <select
               value={`${endHour}:${endMinute}`}
               onChange={e => {
@@ -289,7 +289,7 @@ export default function CreateMaintenanceSheet({
                 setEndHour(h);
                 setEndMinute(m);
               }}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             >
               {endSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -301,13 +301,13 @@ export default function CreateMaintenanceSheet({
 
           {/* Notes */}
           <div>
-            <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Reason (optional)</label>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Reason (optional)</label>
             <input
               type="text"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="e.g. Resurfacing, Equipment repair"
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             />
           </div>
 
@@ -323,7 +323,7 @@ export default function CreateMaintenanceSheet({
             <div>
               <label
                 htmlFor="show-notes-to-members"
-                className="text-xs font-medium text-gray-700 cursor-pointer"
+                className="text-xs font-medium text-gray-700 dark:text-gray-300 cursor-pointer"
               >
                 Show this message to members
               </label>

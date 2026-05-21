@@ -31,19 +31,19 @@ export default async function ProfilePage() {
       <Header screenTitle="Profile" />
       <div className="px-4 py-6 space-y-4 md:max-w-lg md:mx-auto">
         <div className="space-y-1">
-          <p className="text-lg font-semibold text-gray-900">
+          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {profile?.first_name ?? ""} {profile?.last_name ?? ""}
           </p>
-          <p className="text-sm text-gray-500">{user.email}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">{user.email}</p>
         </div>
 
         <div>
-          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
             {ROLE_LABELS[profile?.role ?? "member"]}
           </span>
         </div>
 
-        <hr className="border-gray-100" />
+        <hr className="border-gray-100 dark:border-gray-800" />
 
         <ProfileEditForm
           firstName={profile?.first_name ?? null}
@@ -54,51 +54,51 @@ export default async function ProfilePage() {
 
         {profile?.role === "admin" && (
           <>
-            <hr className="border-gray-100" />
+            <hr className="border-gray-100 dark:border-gray-800" />
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Admin
               </p>
-              <div className="rounded-xl border border-gray-200 divide-y divide-gray-100 overflow-hidden">
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
                 <Link
                   href="/admin/members"
-                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
                 >
                   Members
-                  <span className="text-gray-400">›</span>
+                  <span className="text-gray-400 dark:text-gray-500">›</span>
                 </Link>
                 <Link
                   href="/admin/settings"
-                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
                 >
                   Settings
-                  <span className="text-gray-400">›</span>
+                  <span className="text-gray-400 dark:text-gray-500">›</span>
                 </Link>
                 <Link
                   href="/admin/audit-log"
-                  className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
                 >
                   Audit Log
-                  <span className="text-gray-400">›</span>
+                  <span className="text-gray-400 dark:text-gray-500">›</span>
                 </Link>
               </div>
             </div>
           </>
         )}
 
-        <hr className="border-gray-100" />
+        <hr className="border-gray-100 dark:border-gray-800" />
 
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Help
           </p>
-          <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <Link
               href="/help"
-              className="flex items-center justify-between px-4 py-3 bg-white text-sm text-gray-900"
+              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
             >
               Help &amp; Rules
-              <span className="text-gray-400">›</span>
+              <span className="text-gray-400 dark:text-gray-500">›</span>
             </Link>
           </div>
         </div>

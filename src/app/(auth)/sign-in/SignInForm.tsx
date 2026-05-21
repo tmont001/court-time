@@ -53,13 +53,13 @@ export default function SignInForm() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900 mb-8">Sign in</h1>
+      <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-8">Sign in</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label
             htmlFor="email"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Email
           </label>
@@ -70,14 +70,14 @@ export default function SignInForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
         </div>
 
         <div>
           <label
             htmlFor="password"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Password
           </label>
@@ -88,18 +88,18 @@ export default function SignInForm() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
         </div>
 
         {error && (
-          <p className="text-sm text-red-600">{error}</p>
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         )}
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-gray-900 text-white rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
+          className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
         >
           {loading ? "Signing in…" : "Sign in"}
         </button>
@@ -108,7 +108,7 @@ export default function SignInForm() {
       <div className="mt-4 text-center">
         <Link
           href="/forgot-password"
-          className="text-sm text-gray-500 underline"
+          className="text-sm text-gray-500 dark:text-gray-400 underline"
         >
           Forgot password?
         </Link>

@@ -445,13 +445,13 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   return (
     <>
       <div
-        className="flex flex-col overflow-hidden bg-white"
+        className="flex flex-col overflow-hidden bg-white dark:bg-gray-900"
         data-role={userRole}
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
 
         {/* ── Date strip ────────────────────────────────────────────────── */}
-        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-gray-100 shrink-0 hide-scrollbar">
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-gray-100 dark:border-gray-800 shrink-0 hide-scrollbar">
           {datePills.map((pill) => {
             const selectedISO = selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone });
             const isSelected  = pill.dateISO === selectedISO;
@@ -462,10 +462,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                 onClick={() => setSelectedDate(new Date(pill.dateISO + "T12:00:00Z"))}
                 className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
                   isSelected
-                    ? "bg-gray-900 text-white font-semibold"
+                    ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-semibold"
                     : isToday
-                    ? "text-blue-600 font-medium"
-                    : "text-gray-500"
+                    ? "text-blue-600 dark:text-blue-400 font-medium"
+                    : "text-gray-500 dark:text-gray-400"
                 }`}
               >
                 <span>{pill.day}</span>
@@ -477,13 +477,13 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
 
         {/* ── Court filter chips ────────────────────────────────────────── */}
-        <div className="flex gap-2 px-3 py-2 border-b border-gray-100 overflow-x-auto shrink-0 hide-scrollbar">
+        <div className="flex gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 overflow-x-auto shrink-0 hide-scrollbar">
           <button
             onClick={() => setSelectedCourtIds(new Set(courts.map(c => c.id)))}
             className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
               selectedCourtIds.size === courts.length
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-600"
+                ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
             }`}
           >
             All
@@ -494,8 +494,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               onClick={() => toggleCourt(court.id)}
               className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
                 selectedCourtIds.has(court.id)
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-600"
+                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
               }`}
             >
               {court.name}
@@ -521,25 +521,25 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
             {/* Sticky court-name header */}
             <div
-              className="flex bg-white border-b border-gray-200 sticky top-0 z-20"
+              className="flex bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-20"
               style={{ width: innerWidth }}
             >
               <div
-                className="shrink-0 sticky left-0 z-30 bg-white border-r border-gray-200"
+                className="shrink-0 sticky left-0 z-30 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700"
                 style={{ width: GUTTER_W }}
               />
               {filteredCourts.length > 0 ? (
                 filteredCourts.map(court => (
                   <div
                     key={court.id}
-                    className="shrink-0 text-center text-xs font-medium text-gray-700 py-2 border-l border-gray-200"
+                    className="shrink-0 text-center text-xs font-medium text-gray-700 dark:text-gray-300 py-2 border-l border-gray-200 dark:border-gray-700"
                     style={{ width: colW }}
                   >
                     {court.name}
                   </div>
                 ))
               ) : (
-                <div className="shrink-0 border-l border-gray-200" style={{ width: colW }} />
+                <div className="shrink-0 border-l border-gray-200 dark:border-gray-700" style={{ width: colW }} />
               )}
             </div>
 
@@ -548,7 +548,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
               {/* Time gutter — sticky on horizontal scroll */}
               <div
-                className="shrink-0 sticky left-0 z-10 bg-white border-r border-gray-200"
+                className="shrink-0 sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700"
                 style={{ width: GUTTER_W, height: TOTAL_GRID_H }}
               >
                 {TIME_SLOTS.map((slot, i) => (
@@ -558,7 +558,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                     style={{ top: i * ROW_H, height: ROW_H, width: GUTTER_W, paddingTop: 3 }}
                   >
                     {slot.isHour && (
-                      <span className="text-[10px] leading-none text-gray-400">{slot.label}</span>
+                      <span className="text-[10px] leading-none text-gray-400 dark:text-gray-600">{slot.label}</span>
                     )}
                   </div>
                 ))}
@@ -573,7 +573,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                   return (
                     <div
                       key={court.id}
-                      className="relative shrink-0 border-l border-gray-200"
+                      className="relative shrink-0 border-l border-gray-200 dark:border-gray-700"
                       style={{ width: colW, height: TOTAL_GRID_H }}
                     >
                       {/* 30-min slot tap targets */}
@@ -589,8 +589,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                             disabled={isDisabled}
                             onClick={() => handleSlotTap(court, slotIdx)}
                             className={`absolute border-t ${
-                              slot.isHour ? "border-gray-200" : "border-gray-100"
-                            } ${!isDisabled ? "cursor-pointer hover:bg-blue-50 active:bg-blue-100" : "cursor-default"}`}
+                              slot.isHour ? "border-gray-200 dark:border-gray-700/60" : "border-gray-100 dark:border-gray-800"
+                            } ${!isDisabled ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/30" : "cursor-default"}`}
                             style={{
                               top: slotIdx * ROW_H,
                               height: ROW_H,
@@ -600,7 +600,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                             }}
                           >
                             {!isDisabled && (
-                              <div className="mx-1 my-0.5 h-[calc(100%-4px)] border border-dashed border-gray-200 rounded-sm" />
+                              <div className="mx-1 my-0.5 h-[calc(100%-4px)] border border-dashed border-gray-200 dark:border-gray-700 rounded-sm" />
                             )}
                           </button>
                         );
@@ -705,7 +705,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               ) : (
                 /* Placeholder column so grid rows still draw when all filtered out */
                 <div
-                  className="flex-1 border-l border-gray-200"
+                  className="flex-1 border-l border-gray-200 dark:border-gray-700"
                   style={{ height: TOTAL_GRID_H }}
                 />
               )}
@@ -730,14 +730,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           {userRole === "admin" && (
             <button
               onClick={() => setCreatingBlock(true)}
-              className="px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+              className="px-4 py-2 rounded-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold shadow-md"
             >
               + Block
             </button>
           )}
           <button
             onClick={() => setCreatingEvent(true)}
-            className="px-4 py-2 rounded-full bg-gray-900 text-white text-sm font-semibold shadow-md"
+            className="px-4 py-2 rounded-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold shadow-md"
           >
             + Event
           </button>
@@ -751,10 +751,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             className="fixed inset-0 bg-black/30 z-40"
             onClick={() => setPendingSlotAction(null)}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-            <p className="text-sm font-semibold text-gray-900">{pendingSlotAction.court.name}</p>
-            <p className="text-xs text-gray-500 mt-0.5 mb-5">
+          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pendingSlotAction.court.name}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-5">
               {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
                 timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
               })}
@@ -762,20 +762,20 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             <div className="space-y-2">
               <button
                 onClick={openBookingFromSlot}
-                className="w-full py-3 rounded-xl bg-gray-900 text-white text-sm font-semibold"
+                className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
               >
                 Book Court
               </button>
               <button
                 onClick={openEventFromSlot}
-                className="w-full py-3 rounded-xl border border-gray-200 text-gray-900 text-sm font-medium"
+                className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium"
               >
                 Create Event
               </button>
               {userRole === "admin" && (
                 <button
                   onClick={openBlockFromSlot}
-                  className="w-full py-3 rounded-xl border border-gray-200 text-gray-900 text-sm font-medium"
+                  className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium"
                 >
                   Maintenance Block
                 </button>
@@ -845,25 +845,25 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             className="fixed inset-0 bg-black/30 z-40"
             onClick={() => { setBookingSlot(null); setBookingError(null); }}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
 
-            <p className="text-base font-semibold text-gray-900">{bookingSlot.court.name}</p>
-            <p className="text-sm text-gray-500 mt-0.5">{sheetDateLabel}</p>
-            <p className="text-sm text-gray-700 mt-1 font-medium">
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{bookingSlot.court.name}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{sheetDateLabel}</p>
+            <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">
               {sheetStartLabel} – {sheetEndLabel}
             </p>
 
             <div className="flex items-center gap-3 mt-4">
-              <span className="text-sm text-gray-600">Duration</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Duration</span>
               {([60, 90] as const).map(d => (
                 <button
                   key={d}
                   onClick={() => setBookingDuration(d)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     bookingDuration === d
-                      ? "bg-gray-900 text-white"
-                      : "bg-gray-100 text-gray-600"
+                      ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                      : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   }`}
                 >
                   {d} min

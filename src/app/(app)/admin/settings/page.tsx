@@ -35,15 +35,15 @@ export default async function AdminSettingsPage() {
   return (
     <>
       <Header screenTitle="Settings" />
-      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto">
+      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
         <div className="space-y-1">
-          <p className="text-sm font-semibold text-gray-900">Club settings</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Club settings</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Changes take effect immediately for all members.
           </p>
         </div>
 
-        <hr className="border-gray-100" />
+        <hr className="border-gray-100 dark:border-gray-800" />
 
         <SettingsForm
           bookingWindowDays={settings?.booking_window_days ?? 14}
@@ -55,7 +55,7 @@ export default async function AdminSettingsPage() {
 
         {profile?.role === "admin" && (
           <>
-            <hr className="border-gray-100" />
+            <hr className="border-gray-100 dark:border-gray-800" />
             <TestSmsSection twilioConfigured={twilioConfigured} />
           </>
         )}

@@ -14,7 +14,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 bg-white flex z-40">
+    <nav className="fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex z-40">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (
@@ -22,7 +22,9 @@ export default function BottomNav() {
             key={tab.href}
             href={tab.href}
             className={`flex-1 flex flex-col items-center justify-center text-xs font-medium leading-tight ${
-              isActive ? "text-gray-900 border-t-2 border-gray-900" : "text-gray-400"
+              isActive
+                ? "text-gray-900 dark:text-gray-100 border-t-2 border-gray-900 dark:border-gray-100"
+                : "text-gray-400 dark:text-gray-500"
             }`}
           >
             {tab.twoLine ? (

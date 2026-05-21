@@ -20,7 +20,7 @@ export default async function AdminAuditLogPage() {
     <>
       <Header screenTitle="Audit Log" />
       <div
-        className="overflow-y-auto bg-gray-50"
+        className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
         style={{ height: "calc(100dvh - 56px - 64px)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">

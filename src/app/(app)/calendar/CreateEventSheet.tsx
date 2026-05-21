@@ -262,24 +262,24 @@ export default function CreateEventSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
 
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {step > 1 && (
                 <button
                   onClick={() => { setStep((s) => (s - 1) as 1 | 2 | 3 | 4); setError(null); }}
-                  className="text-sm text-gray-500"
+                  className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500"
                 >
                   ← Back
                 </button>
               )}
-              <p className="text-base font-semibold text-gray-900">{stepTitles[step]}</p>
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{stepTitles[step]}</p>
             </div>
-            <p className="text-xs text-gray-400">{step} of 4</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{step} of 4</p>
           </div>
         </div>
 
@@ -300,11 +300,11 @@ export default function CreateEventSheet({
                   <button
                     key={type.id}
                     onClick={() => selectType(type)}
-                    className="w-full text-left rounded-xl border border-gray-200 bg-white px-4 py-3 flex items-start gap-3 active:bg-gray-50"
+                    className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 flex items-start gap-3 active:bg-gray-50 dark:active:bg-gray-600"
                     style={{ borderLeftWidth: 4, borderLeftColor: type.color }}
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900">{type.label}</p>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{type.label}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {type.default_capacity} spots · {type.default_duration_minutes} min · {type.default_court_count} court{type.default_court_count !== 1 ? "s" : ""}
                       </p>
@@ -321,19 +321,19 @@ export default function CreateEventSheet({
 
               {/* Title */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Title</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Title</label>
                 <input
                   type="text"
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder={selectedType.label}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
                 />
               </div>
 
               {/* Date strip */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Date</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</label>
                 <div className="flex gap-1.5 overflow-x-auto pt-2 pb-1 hide-scrollbar">
                   {datePills.map(pill => {
                     const isSelected = pill.dateISO === selectedDateISO;
@@ -347,7 +347,7 @@ export default function CreateEventSheet({
                             ? "bg-gray-900 text-white font-semibold"
                             : isToday
                             ? "text-blue-600 font-medium"
-                            : "text-gray-500"
+                            : "text-gray-500 dark:text-gray-400 dark:text-gray-500"
                         }`}
                       >
                         <span>{pill.day}</span>
@@ -360,7 +360,7 @@ export default function CreateEventSheet({
 
               {/* Start time */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Start Time</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Start Time</label>
                 <select
                   value={`${startHour}:${startMinute}`}
                   onChange={e => {
@@ -368,7 +368,7 @@ export default function CreateEventSheet({
                     setStartHour(h);
                     setStartMinute(m);
                   }}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
                 >
                   {TIME_SLOTS.map(slot => (
                     <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -380,7 +380,7 @@ export default function CreateEventSheet({
 
               {/* Duration */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Duration (min) — ends {endTimeLabel}
                 </label>
                 <input
@@ -389,7 +389,7 @@ export default function CreateEventSheet({
                   onChange={e => setDurationMinutes(Math.max(30, Number(e.target.value)))}
                   step={30}
                   min={30}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
                 />
               </div>
 
@@ -416,7 +416,7 @@ export default function CreateEventSheet({
           {step === 3 && (
             <div className="pt-1 space-y-5">
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Select Courts</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Select Courts</label>
                 <div className="flex flex-wrap gap-2 pt-2">
                   {courts.map(court => {
                     const isSelected   = selectedCourtIds.includes(court.id);
@@ -430,7 +430,7 @@ export default function CreateEventSheet({
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : isSelected
                             ? "bg-gray-900 text-white border-gray-900"
-                            : "bg-white text-gray-600 border-gray-200"
+                            : "bg-white text-gray-600 border-gray-200 dark:border-gray-700"
                         }`}
                       >
                         {court.name}{hasConflict ? " ⚠" : ""}
@@ -447,7 +447,7 @@ export default function CreateEventSheet({
                   </p>
                 )}
                 {selectedCourtIds.length === 0 && (
-                  <p className="mt-2 text-xs text-gray-400">Select at least one court.</p>
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">Select at least one court.</p>
                 )}
               </div>
 
@@ -467,18 +467,18 @@ export default function CreateEventSheet({
 
               {/* Capacity */}
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Capacity (spots)</label>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Capacity (spots)</label>
                 <input
                   type="number"
                   value={capacity}
                   onChange={e => setCapacity(Math.max(1, Number(e.target.value)))}
                   min={1}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
                 />
               </div>
 
               {/* Summary */}
-              <div className="rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+              <div className="rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700 px-4 py-3">
                 <p className="text-xs text-gray-500 leading-relaxed">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white mr-1.5"

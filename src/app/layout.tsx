@@ -18,8 +18,8 @@ export default function RootLayout({
        * the 430 px mobile-preview card stands out. On real mobile the body
        * fills the viewport anyway, so the gray is invisible.
        */}
-      <body className="bg-gray-200 text-gray-900 antialiased">
-        <div className="mx-auto w-full max-w-[430px] md:max-w-full min-h-screen bg-white">
+      <body className="bg-gray-200 dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased">
+        <div className="mx-auto w-full max-w-[430px] md:max-w-full min-h-screen bg-white dark:bg-gray-900">
           {children}
         </div>
       </body>

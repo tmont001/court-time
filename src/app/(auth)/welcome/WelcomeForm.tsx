@@ -43,8 +43,8 @@ export default function WelcomeForm() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold text-gray-900 mb-1">Welcome!</h1>
-      <p className="text-sm text-gray-500 mb-8">
+      <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-1">Welcome!</h1>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
         Tell us a bit about yourself to get started.
       </p>
 
@@ -52,7 +52,7 @@ export default function WelcomeForm() {
         <div>
           <label
             htmlFor="firstName"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             First name
           </label>
@@ -63,14 +63,14 @@ export default function WelcomeForm() {
             required
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
         </div>
 
         <div>
           <label
             htmlFor="lastName"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Last name
           </label>
@@ -81,14 +81,14 @@ export default function WelcomeForm() {
             required
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
         </div>
 
         <div>
           <label
             htmlFor="phone"
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
           >
             Phone <span className="text-gray-400">(optional)</span>
           </label>
@@ -98,7 +98,7 @@ export default function WelcomeForm() {
             autoComplete="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
         </div>
 
@@ -107,7 +107,7 @@ export default function WelcomeForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-gray-900 text-white rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
+          className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
         >
           {loading ? "Saving…" : "Get started"}
         </button>

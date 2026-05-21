@@ -89,14 +89,14 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
 
       {/* Sheet */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-xl flex flex-col"
+        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl flex flex-col"
         style={{ zIndex: 70, maxHeight: "80dvh" }}
       >
         {/* Header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
+          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
           <div className="flex items-center justify-between">
-            <p className="text-base font-semibold text-gray-900">Roster</p>
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
             <button
               onClick={onClose}
               className="text-sm text-gray-400 font-medium"
@@ -135,11 +135,11 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                     return (
                       <div
                         key={row.profile_id}
-                        className="py-2.5 border-b border-gray-100 last:border-0"
+                        className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                       >
                         <div className="flex items-center">
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                               {row.display_name}
                             </p>
                             {row.role === "host" && (
@@ -156,7 +156,7 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                             className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
                               row.attendance_status === "attended"
                                 ? "bg-green-100 text-green-700"
-                                : "bg-gray-100 text-gray-500"
+                                : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 dark:text-gray-400 dark:text-gray-500"
                             }`}
                           >
                             Attended
@@ -167,7 +167,7 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                             className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
                               row.attendance_status === "no_show"
                                 ? "bg-red-100 text-red-600"
-                                : "bg-gray-100 text-gray-500"
+                                : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 dark:text-gray-400 dark:text-gray-500"
                             }`}
                           >
                             No-show
@@ -176,7 +176,7 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                             <button
                               disabled={isUpdating}
                               onClick={() => handleMark(row.profile_id, null)}
-                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-400 disabled:opacity-40"
+                              className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
                             >
                               Clear
                             </button>
@@ -201,10 +201,10 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                   {waitlisted.map(row => (
                     <div
                       key={row.profile_id}
-                      className="flex items-center py-2.5 border-b border-gray-100 last:border-0"
+                      className="flex items-center py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                           {row.display_name}
                         </p>
                       </div>
