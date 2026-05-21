@@ -494,7 +494,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               onClick={() => toggleCourt(court.id)}
               className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
                 selectedCourtIds.has(court.id)
-                  ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                  ? "bg-accent text-white dark:text-gray-900"
                   : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
               }`}
             >
@@ -730,14 +730,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           {userRole === "admin" && (
             <button
               onClick={() => setCreatingBlock(true)}
-              className="px-4 py-2 rounded-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold shadow-md"
+              className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
             >
               + Block
             </button>
           )}
           <button
             onClick={() => setCreatingEvent(true)}
-            className="px-4 py-2 rounded-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold shadow-md"
+            className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
           >
             + Event
           </button>
@@ -762,7 +762,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             <div className="space-y-2">
               <button
                 onClick={openBookingFromSlot}
-                className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold"
               >
                 Book Court
               </button>
@@ -862,7 +862,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                   onClick={() => setBookingDuration(d)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     bookingDuration === d
-                      ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                      ? "bg-accent text-white dark:text-gray-900"
                       : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   }`}
                 >
