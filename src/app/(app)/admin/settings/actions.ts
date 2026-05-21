@@ -13,7 +13,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_club_name:           "Club name cannot be blank.",
 };
 
-export async function updateClubSettings(
+export async function updateClubName(
   formData: FormData
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
@@ -21,21 +21,28 @@ export async function updateClubSettings(
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
   const clubName = (formData.get("club_name") as string | null)?.trim() ?? "";
+  if (!clubName) return { error: ERROR_MESSAGES.invalid_club_name };
 
-  // Update club name when the field is present (admin-only field; RPC enforces role).
-  if (clubName) {
-    const { error: nameError } = await supabase.rpc("update_club_name", {
-      p_name: clubName,
-    });
-    if (nameError) {
-      const key = nameError.message.match(/invalid_club_name|not_authenticated|insufficient_role/)?.[0] ?? "";
-      return { error: ERROR_MESSAGES[key] ?? "Failed to save club name." };
-    }
+  const { error } = await supabase.rpc("update_club_name", { p_name: clubName });
+  if (error) {
+    const key = error.message.match(/invalid_club_name|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save club name." };
   }
 
-  const bookingDays   = Number(formData.get("booking_window_days"));
-  const cancelHours   = Number(formData.get("cancellation_window_hours"));
-  const graceMins     = Number(formData.get("cancellation_grace_minutes"));
+  revalidatePath("/", "layout");
+  return {};
+}
+
+export async function updateBookingRules(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const bookingDays  = Number(formData.get("booking_window_days"));
+  const cancelHours  = Number(formData.get("cancellation_window_hours"));
+  const graceMins    = Number(formData.get("cancellation_grace_minutes"));
 
   const { error } = await supabase.rpc("update_club_settings", {
     p_booking_window_days:        bookingDays,
@@ -48,7 +55,6 @@ export async function updateClubSettings(
     return { error: ERROR_MESSAGES[key] ?? "Failed to save settings." };
   }
 
-  // Revalidate the entire layout so the header picks up a new club name on all pages.
   revalidatePath("/", "layout");
   return {};
 }

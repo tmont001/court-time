@@ -1,22 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateClubSettings } from "./actions";
+import { updateBookingRules } from "./actions";
 
 interface Props {
   bookingWindowDays:        number;
   cancellationWindowHours:  number;
   cancellationGraceMinutes: number;
-  clubName:                 string;
-  userRole:                 string;
 }
 
-export default function SettingsForm({
+export default function BookingRulesForm({
   bookingWindowDays,
   cancellationWindowHours,
   cancellationGraceMinutes,
-  clubName,
-  userRole,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -26,7 +22,7 @@ export default function SettingsForm({
     const formData = new FormData(e.currentTarget);
     setStatus(null);
     startTransition(async () => {
-      const result = await updateClubSettings(formData);
+      const result = await updateBookingRules(formData);
       if (result.error) {
         setStatus({ type: "error", message: result.error });
       } else {
@@ -38,25 +34,6 @@ export default function SettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      {userRole === "admin" && (
-        <div>
-          <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-            Club name
-          </label>
-          <input
-            type="text"
-            name="club_name"
-            defaultValue={clubName}
-            required
-            maxLength={100}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
-          />
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-            Shown in the app header for all members.
-          </p>
-        </div>
-      )}
-
       <div>
         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
           Booking window (days)
@@ -107,7 +84,8 @@ export default function SettingsForm({
           className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          Allows members to cancel accidental bookings shortly after creation, even inside the cancellation window (0–60 min). Set to 0 to disable.
+          Allows members to cancel accidental bookings shortly after creation, even inside the
+          cancellation window (0–60 min). Set to 0 to disable.
         </p>
       </div>
 
@@ -115,16 +93,14 @@ export default function SettingsForm({
         <button
           type="submit"
           disabled={isPending}
-          className="px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium disabled:opacity-40"
+          className="px-4 py-2 rounded-lg bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 text-sm font-medium disabled:opacity-40"
         >
           {isPending ? "Saving…" : "Save"}
         </button>
         {status && (
-          <p
-            className={`text-xs font-medium ${
-              status.type === "success" ? "text-green-600" : "text-red-500"
-            }`}
-          >
+          <p className={`text-xs font-medium ${
+            status.type === "success" ? "text-green-600" : "text-red-500"
+          }`}>
             {status.message}
           </p>
         )}

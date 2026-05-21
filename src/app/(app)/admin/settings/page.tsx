@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
-import SettingsForm from "./SettingsForm";
+import ClubBrandingSection from "./ClubBrandingSection";
+import BookingRulesForm from "./BookingRulesForm";
 import TestSmsSection from "./TestSmsSection";
 
 export default async function AdminSettingsPage() {
@@ -35,30 +37,65 @@ export default async function AdminSettingsPage() {
   return (
     <>
       <Header screenTitle="Settings" />
-      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Club settings</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Changes take effect immediately for all members.
+      <div className="px-4 py-6 space-y-6 md:max-w-2xl md:mx-auto dark:text-gray-100">
+
+        {/* ── Club Branding ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Club Branding
           </p>
-        </div>
+          <ClubBrandingSection clubName={club?.name ?? ""} />
+        </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
-        <SettingsForm
-          bookingWindowDays={settings?.booking_window_days ?? 14}
-          cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
-          cancellationGraceMinutes={settings?.cancellation_grace_minutes ?? 5}
-          clubName={club?.name ?? ""}
-          userRole={profile?.role ?? "member"}
-        />
+        {/* ── Booking Rules ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Booking Rules
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Changes take effect immediately for all members.
+          </p>
+          <BookingRulesForm
+            bookingWindowDays={settings?.booking_window_days ?? 14}
+            cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
+            cancellationGraceMinutes={settings?.cancellation_grace_minutes ?? 5}
+          />
+        </section>
 
-        {profile?.role === "admin" && (
-          <>
-            <hr className="border-gray-100 dark:border-gray-800" />
-            <TestSmsSection twilioConfigured={twilioConfigured} />
-          </>
-        )}
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Court Management ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Court Management
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Add, rename, reorder, or deactivate courts.
+          </p>
+          <Link
+            href="/admin/courts"
+            className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+          >
+            Manage Courts
+            <span className="text-gray-400 dark:text-gray-500">›</span>
+          </Link>
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Notifications ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Notifications
+          </p>
+          <TestSmsSection twilioConfigured={twilioConfigured} />
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            More notification options coming soon.
+          </p>
+        </section>
+
       </div>
     </>
   );
