@@ -25,7 +25,7 @@ export default async function AdminSettingsPage() {
 
   const { data: club } = await supabase
     .from("clubs")
-    .select("name")
+    .select("name, logo_url")
     .eq("id", profile?.club_id ?? "")
     .single();
 
@@ -44,7 +44,7 @@ export default async function AdminSettingsPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Club Branding
           </p>
-          <ClubBrandingSection clubName={club?.name ?? ""} />
+          <ClubBrandingSection clubName={club?.name ?? ""} logoUrl={club?.logo_url ?? null} />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />

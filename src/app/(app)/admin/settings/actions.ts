@@ -59,6 +59,104 @@ export async function updateBookingRules(
   return {};
 }
 
+const ALLOWED_LOGO_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png":  "png",
+  "image/webp": "webp",
+};
+const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
+
+export async function uploadClubLogo(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id, role")
+    .eq("id", user.id)
+    .single();
+  if (profile?.role !== "admin") return { error: ERROR_MESSAGES.insufficient_role };
+
+  const file = formData.get("logo") as File | null;
+  if (!file || file.size === 0) return { error: "No file selected." };
+
+  const ext = ALLOWED_LOGO_TYPES[file.type];
+  if (!ext) return { error: "Only JPEG, PNG, and WebP images are allowed." };
+  if (file.size > MAX_LOGO_BYTES) return { error: "File must be 2 MB or smaller." };
+
+  const clubId = profile.club_id;
+  const path   = `${clubId}/logo.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("club-logos")
+    .upload(path, file, { upsert: true, contentType: file.type });
+  if (uploadError) return { error: "Upload failed. Please try again." };
+
+  const { data: urlData } = supabase.storage.from("club-logos").getPublicUrl(path);
+  const logoUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+  const { error: updateError } = await supabase
+    .from("clubs")
+    .update({ logo_url: logoUrl })
+    .eq("id", clubId);
+  if (updateError) return { error: "Failed to save logo URL." };
+
+  await supabase.from("audit_log").insert({
+    club_id:     clubId,
+    actor_id:    user.id,
+    action:      "upload_club_logo",
+    target_type: "club",
+    target_id:   clubId,
+    metadata:    { path },
+  });
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
+export async function deleteClubLogo(): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id, role")
+    .eq("id", user.id)
+    .single();
+  if (profile?.role !== "admin") return { error: ERROR_MESSAGES.insufficient_role };
+
+  const clubId = profile.club_id;
+
+  const { data: files } = await supabase.storage
+    .from("club-logos")
+    .list(clubId);
+  if (files && files.length > 0) {
+    const paths = files.map((f) => `${clubId}/${f.name}`);
+    await supabase.storage.from("club-logos").remove(paths);
+  }
+
+  await supabase
+    .from("clubs")
+    .update({ logo_url: null })
+    .eq("id", clubId);
+
+  await supabase.from("audit_log").insert({
+    club_id:     clubId,
+    actor_id:    user.id,
+    action:      "delete_club_logo",
+    target_type: "club",
+    target_id:   clubId,
+    metadata:    {},
+  });
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
 export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

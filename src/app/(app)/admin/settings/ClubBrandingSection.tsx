@@ -2,12 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { updateClubName } from "./actions";
+import ClubLogoUpload from "./ClubLogoUpload";
 
 interface Props {
   clubName: string;
+  logoUrl:  string | null;
 }
 
-export default function ClubBrandingSection({ clubName }: Props) {
+export default function ClubBrandingSection({ clubName, logoUrl }: Props) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
@@ -65,7 +67,10 @@ export default function ClubBrandingSection({ clubName }: Props) {
 
       <div>
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Club logo</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">Logo upload coming soon.</p>
+        <ClubLogoUpload
+          currentLogoUrl={logoUrl}
+          clubInitial={(clubName || "C").charAt(0).toUpperCase()}
+        />
       </div>
 
       <div>
