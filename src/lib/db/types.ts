@@ -1053,6 +1053,10 @@ export type Database = {
         Args: { p_target_user_id: string; p_new_status: string };
         Returns: undefined;
       };
+      update_operating_hours: {
+        Args: { p_hours: Json; p_dry_run?: boolean };
+        Returns: Json;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import BookingRulesForm from "./BookingRulesForm";
+import OperatingHoursEditor from "./OperatingHoursEditor";
 import TestSmsSection from "./TestSmsSection";
 
 export default async function AdminSettingsPage() {
@@ -70,21 +70,15 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
-        {/* ── Court Management ── */}
+        {/* ── Operating Hours ── */}
         <section className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Court Management
+            Operating Hours
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Add, rename, reorder, or deactivate courts.
+            Changes take effect immediately for new bookings. Existing reservations are not affected.
           </p>
-          <Link
-            href="/admin/courts"
-            className="flex items-center justify-between px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-          >
-            Manage Courts
-            <span className="text-gray-400 dark:text-gray-500">›</span>
-          </Link>
+          <OperatingHoursEditor clubId={profile?.club_id ?? ""} />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
