@@ -34,6 +34,7 @@ export default async function AdminMembersPage() {
           <MembersClient
             members={membersResult.data ?? []}
             pendingInvites={pendingInvites}
+            currentUserId={user.id}
             membersError={membersResult.error?.message ?? null}
             invitesError={invitesResult.error?.message ?? null}
           />

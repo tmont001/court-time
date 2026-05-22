@@ -8,6 +8,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   insufficient_role:       "Admin access required.",
   no_club:                 "Your account is not assigned to a club.",
   invalid_role:            "Invalid role selection.",
+  invalid_status:          "Invalid status value.",
+  user_not_found:          "Member not found in your club.",
+  cannot_change_own_role:  "You cannot change your own role.",
+  cannot_change_own_status:"You cannot change your own status.",
+  last_admin:              "This is the last active admin. Promote another member first.",
   invite_already_accepted: "This invite has already been accepted.",
   invite_already_revoked:  "This invite has already been revoked.",
   invalid_invite:          "Invite not found.",
@@ -42,6 +47,42 @@ export async function createInviteAction(
 
   revalidatePath("/admin/members");
   return { code: data ?? undefined };
+}
+
+export async function setMemberRoleAction(
+  targetUserId: string,
+  newRole: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_member_role", {
+    p_target_user_id: targetUserId,
+    p_new_role:       newRole,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
+}
+
+export async function setMemberStatusAction(
+  targetUserId: string,
+  newStatus: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_member_status", {
+    p_target_user_id: targetUserId,
+    p_new_status:     newStatus,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
 }
 
 export async function revokeInviteAction(

@@ -1045,6 +1045,14 @@ export type Database = {
           created_at:  string;
         }[];
       };
+      set_member_role: {
+        Args: { p_target_user_id: string; p_new_role: string };
+        Returns: undefined;
+      };
+      set_member_status: {
+        Args: { p_target_user_id: string; p_new_status: string };
+        Returns: undefined;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
