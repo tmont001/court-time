@@ -32,7 +32,7 @@ export default async function Header({ screenTitle }: HeaderProps) {
   const initial = clubName.charAt(0).toUpperCase();
 
   return (
-    <header className="flex items-center justify-between px-4 h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+    <header className="sticky top-0 z-30 flex items-center justify-between px-4 h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
       {logoUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img

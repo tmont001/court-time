@@ -471,7 +471,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       <div
         className="flex flex-col overflow-hidden bg-white dark:bg-gray-900"
         data-role={userRole}
-        style={{ height: "calc(100dvh - 56px - 64px)" }}
+        style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}
       >
 
         {/* ── Date strip ────────────────────────────────────────────────── */}

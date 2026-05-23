@@ -29,7 +29,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className={`flex flex-col min-h-screen theme-${themeKey}`}>
-      <main className="flex-1 pb-16">{children}</main>
+      <main className="flex-1" style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}>
+        {children}
+      </main>
       <BottomNav />
     </div>
   );

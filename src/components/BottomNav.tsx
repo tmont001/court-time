@@ -67,14 +67,14 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-16 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex z-40">
+    <nav className="fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex z-40 pb-[env(safe-area-inset-bottom)]">
       {tabs.map((tab) => {
         const isActive = pathname === tab.href;
         return (
           <Link
             key={tab.href}
             href={tab.href}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 ${
+            className={`flex-1 flex flex-col items-center justify-center gap-1 h-16 ${
               isActive
                 ? "text-accent border-t-2 border-accent"
                 : "text-gray-400 dark:text-gray-500"

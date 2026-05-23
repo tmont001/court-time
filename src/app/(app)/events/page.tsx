@@ -131,7 +131,7 @@ export default async function EventsPage() {
 
       <div
         className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
-        style={{ height: "calc(100dvh - 56px - 64px)" }}
+        style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
         {/* Page title */}
