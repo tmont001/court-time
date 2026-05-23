@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import InviteSheet from "./InviteSheet";
 import { revokeInviteAction, setMemberRoleAction, setMemberStatusAction } from "./actions";
@@ -16,6 +16,29 @@ const ROLE_OPTIONS = [
   { value: "pro",    label: "Pro"    },
   { value: "admin",  label: "Admin"  },
 ];
+
+// ── Sort ─────────────────────────────────────────────────────────────────────
+
+type SortField = "first_name" | "last_name" | "role" | "status";
+type SortDir   = "asc" | "desc";
+
+const SORT_OPTIONS: { field: SortField; label: string }[] = [
+  { field: "first_name", label: "First Name" },
+  { field: "last_name",  label: "Last Name"  },
+  { field: "role",       label: "Role"       },
+  { field: "status",     label: "Status"     },
+];
+
+// Defined order for role (admin → pro → member) and status (active → inactive).
+const ROLE_ORDER:   Record<string, number> = { admin: 0, pro: 1, member: 2 };
+const STATUS_ORDER: Record<string, number> = { active: 0, inactive: 1 };
+
+function cmp(a: string | null, b: string | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;   // nulls last
+  if (b === null) return -1;
+  return a.toLowerCase().localeCompare(b.toLowerCase());
+}
 
 function formatJoinDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -83,6 +106,10 @@ export default function MembersClient({
   const [copiedCode, setCopiedCode]     = useState<string | null>(null);
   const [, startTransition]             = useTransition();
 
+  // Sort
+  const [sortField, setSortField] = useState<SortField>("first_name");
+  const [sortDir,   setSortDir]   = useState<SortDir>("asc");
+
   // Role change
   const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
   const [roleErrors, setRoleErrors]         = useState<Record<string, string>>({});
@@ -92,9 +119,44 @@ export default function MembersClient({
   const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
 
   // How many active admins are in this member list?
+  // Derived from the original prop — not sortedMembers — so the count is
+  // stable and the last-admin guard is never affected by sort order.
   const activeAdminCount = members.filter(
     (m) => m.role === "admin" && m.status === "active"
   ).length;
+
+  // Sorted view of members — never mutates the prop.
+  const sortedMembers = useMemo(() => {
+    const sorted = [...members].sort((a, b) => {
+      let result = 0;
+      switch (sortField) {
+        case "first_name":
+          result = cmp(a.first_name, b.first_name);
+          break;
+        case "last_name":
+          result = cmp(a.last_name, b.last_name);
+          break;
+        case "role":
+          result = (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99);
+          break;
+        case "status":
+          result = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+          break;
+      }
+      return sortDir === "asc" ? result : -result;
+    });
+    return sorted;
+  }, [members, sortField, sortDir]);
+
+  function handleSortChip(field: SortField) {
+    if (field === sortField) {
+      // Toggle direction on the active field.
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
 
   async function handleCopy(code: string) {
     const url = `${window.location.origin}/join/${code}`;
@@ -174,6 +236,29 @@ export default function MembersClient({
         </button>
       </div>
 
+      {/* Sort controls */}
+      {!membersError && members.length > 1 && (
+        <div className="mx-4 mb-3 flex gap-1.5 overflow-x-auto hide-scrollbar">
+          {SORT_OPTIONS.map(({ field, label }) => {
+            const isActive = sortField === field;
+            const arrow = isActive ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+            return (
+              <button
+                key={field}
+                onClick={() => handleSortChip(field)}
+                className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-accent text-white dark:text-gray-900"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                }`}
+              >
+                {label}{arrow}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Member list */}
       {membersError ? (
         <div className="mx-4 mt-2 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
@@ -186,7 +271,7 @@ export default function MembersClient({
         </div>
       ) : (
         <div className="pb-2">
-          {members.map((m) => {
+          {sortedMembers.map((m) => {
             const fullName =
               [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
             const isActive    = m.status === "active";
