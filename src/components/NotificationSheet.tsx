@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import BottomSheet from "@/components/BottomSheet";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,59 +80,55 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl z-50 shadow-xl">
+    <BottomSheet onClose={onClose}>
 
-        {/* Handle + title */}
-        <div className="px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-4" />
-          <div className="flex items-center justify-between">
-            <p className="text-base font-semibold text-gray-900">Notifications</p>
-            {hasUnread && (
-              <button
-                onClick={handleMarkAllRead}
-                className="text-xs text-blue-600 font-medium"
-              >
-                Mark all read
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Scrollable list */}
-        <div className="overflow-y-auto max-h-[55vh] pb-8 px-6">
-          {loading ? (
-            <p className="text-center text-sm text-gray-400 py-8">Loading…</p>
-          ) : notifications.length === 0 ? (
-            <p className="text-center text-sm text-gray-400 py-8">
-              You&apos;re all caught up.
-            </p>
-          ) : (
-            notifications.map(n => (
-              <div
-                key={n.id}
-                onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
-                className={`flex items-start gap-3 py-3 border-b border-gray-100 last:border-b-0 ${
-                  !n.is_read ? "cursor-pointer" : ""
-                }`}
-              >
-                {/* Unread dot — invisible spacer when read to keep alignment */}
-                <span
-                  className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${
-                    !n.is_read ? "bg-blue-500" : "bg-transparent"
-                  }`}
-                />
-                <p className="flex-1 text-sm text-gray-800 leading-snug">{n.body}</p>
-                <p className="shrink-0 text-xs text-gray-400 mt-0.5 ml-2">
-                  {relativeTime(n.created_at)}
-                </p>
-              </div>
-            ))
+      {/* Title */}
+      <div className="px-6 pt-5 pb-3">
+        <div className="flex items-center justify-between">
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Notifications</p>
+          {hasUnread && (
+            <button
+              onClick={handleMarkAllRead}
+              className="text-xs text-blue-600 dark:text-blue-400 font-medium"
+            >
+              Mark all read
+            </button>
           )}
         </div>
-
       </div>
-    </>
+
+      {/* Scrollable list */}
+      <div className="overflow-y-auto max-h-[55vh] pb-8 px-6">
+        {loading ? (
+          <p className="text-center text-sm text-gray-400 py-8">Loading…</p>
+        ) : notifications.length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-8">
+            You&apos;re all caught up.
+          </p>
+        ) : (
+          notifications.map(n => (
+            <div
+              key={n.id}
+              onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
+              className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${
+                !n.is_read ? "cursor-pointer" : ""
+              }`}
+            >
+              {/* Unread dot — invisible spacer when read to keep alignment */}
+              <span
+                className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${
+                  !n.is_read ? "bg-blue-500" : "bg-transparent"
+                }`}
+              />
+              <p className="flex-1 text-sm text-gray-800 dark:text-gray-200 leading-snug">{n.body}</p>
+              <p className="shrink-0 text-xs text-gray-400 mt-0.5 ml-2">
+                {relativeTime(n.created_at)}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+
+    </BottomSheet>
   );
 }
