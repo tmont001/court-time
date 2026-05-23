@@ -10,8 +10,9 @@ import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const START_HOUR = 8;
-const END_HOUR   = 19;
+// Fallback hours used when no operating_hours row exists for the selected day.
+const DEFAULT_START_HOUR = 8;
+const DEFAULT_END_HOUR   = 19;
 const GUTTER_W   = 52;
 const MIN_colW  = 80;
 const MAX_colW  = 180;
@@ -77,14 +78,22 @@ interface SlotAction {
   slotIdx:   number;
 }
 
+interface OperatingHoursRow {
+  day_of_week: number;
+  opens_at:    string; // "HH:MM:SS" from DB
+  closes_at:   string;
+  is_closed:   boolean;
+}
+
 interface Props {
-  courts:       Court[];
-  hasError?:    boolean;
-  userId:       string;
-  clubId:       string;
-  clubTimezone: string;
-  userRole:     string;
-  todayISO:     string; // YYYY-MM-DD in club timezone, computed server-side
+  courts:          Court[];
+  hasError?:       boolean;
+  userId:          string;
+  clubId:          string;
+  clubTimezone:    string;
+  userRole:        string;
+  todayISO:        string; // YYYY-MM-DD in club timezone, computed server-side
+  operatingHours:  OperatingHoursRow[];
 }
 
 // ─── Timezone helpers ─────────────────────────────────────────────────────────
@@ -108,8 +117,8 @@ function getDayBoundsUTC(date: Date, tz: string): { start: string; end: string }
   };
 }
 
-// Returns minutes elapsed since START_HOUR for a given UTC date in tz.
-function minsFromViewportTop(utcDate: Date, tz: string): number {
+// Returns minutes elapsed since viewStartHour for a given UTC date in tz.
+function minsFromViewportTop(utcDate: Date, tz: string, viewStartHour: number): number {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     hour: "2-digit",
@@ -119,16 +128,16 @@ function minsFromViewportTop(utcDate: Date, tz: string): number {
   const h = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
   const m = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
   const hour = h === 24 ? 0 : h;
-  return hour * 60 + m - START_HOUR * 60;
+  return hour * 60 + m - viewStartHour * 60;
 }
 
 // ─── Time slot list ───────────────────────────────────────────────────────────
 
 interface TimeSlot { label: string; isHour: boolean }
 
-function buildTimeSlots(): TimeSlot[] {
+function buildTimeSlots(startHour: number, endHour: number): TimeSlot[] {
   const slots: TimeSlot[] = [];
-  for (let h = START_HOUR; h < END_HOUR; h++) {
+  for (let h = startHour; h < endHour; h++) {
     const ampm    = h < 12 ? "AM" : "PM";
     const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
     slots.push({ label: `${display}:00 ${ampm}`, isHour: true });
@@ -136,9 +145,6 @@ function buildTimeSlots(): TimeSlot[] {
   }
   return slots;
 }
-
-const TIME_SLOTS  = buildTimeSlots();
-const TOTAL_GRID_H = TIME_SLOTS.length * ROW_H;
 
 // ─── RPC error message map ────────────────────────────────────────────────────
 
@@ -153,7 +159,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO }: Props) {
+export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, operatingHours }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -213,6 +219,24 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   );
   const dayStartMs = useMemo(() => new Date(dayBounds.start).getTime(), [dayBounds]);
 
+  // selectedDate is stored as UTC noon, so getUTCDay() correctly returns the
+  // club-local day-of-week (the date pills encode local dates as UTC noon).
+  const selectedDayHours = useMemo(() => {
+    const dow = selectedDate.getUTCDay();
+    return operatingHours.find(h => h.day_of_week === dow) ?? null;
+  }, [selectedDate, operatingHours]);
+
+  const isClosed  = selectedDayHours?.is_closed ?? false;
+  const startHour = !isClosed && selectedDayHours
+    ? parseInt(selectedDayHours.opens_at.slice(0, 2), 10)
+    : DEFAULT_START_HOUR;
+  const endHour   = !isClosed && selectedDayHours
+    ? parseInt(selectedDayHours.closes_at.slice(0, 2), 10)
+    : DEFAULT_END_HOUR;
+
+  const timeSlots  = useMemo(() => buildTimeSlots(startHour, endHour), [startHour, endHour]);
+  const totalGridH = timeSlots.length * ROW_H;
+
   const filteredCourts = useMemo(
     () => courts.filter(c => selectedCourtIds.has(c.id)),
     [courts, selectedCourtIds]
@@ -239,15 +263,15 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const occupiedSlots = useMemo(() => {
     const map = new Map<string, Set<number>>();
     for (const res of reservations) {
-      const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone);
-      const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone);
+      const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone, startHour);
+      const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
       const startSlot = Math.floor(startMins / 30);
       const endSlot   = Math.ceil(endMins   / 30);
       if (!map.has(res.court_id)) map.set(res.court_id, new Set());
       for (let s = startSlot; s < endSlot; s++) map.get(res.court_id)!.add(s);
     }
     return map;
-  }, [reservations, clubTimezone]);
+  }, [reservations, clubTimezone, startHour]);
 
   // Client-side conflict check for extended duration
   const bookingConflict = useMemo(() => {
@@ -354,7 +378,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleSlotTap(court: Court, slotIdx: number) {
-    const slotStart = new Date(dayStartMs + (START_HOUR * 60 + slotIdx * 30) * 60_000);
+    const slotStart = new Date(dayStartMs + (startHour * 60 + slotIdx * 30) * 60_000);
     if (userRole === "pro" || userRole === "admin") {
       // Show the role-based action menu.
       setPendingSlotAction({ court, slotStart, slotIdx });
@@ -503,6 +527,15 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           ))}
         </div>
 
+        {/* ── Closed-day banner ────────────────────────────────────────── */}
+        {isClosed && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 shrink-0">
+            <p className="text-xs font-medium text-amber-700 dark:text-amber-400 text-center">
+              Club closed — no bookings available on this day
+            </p>
+          </div>
+        )}
+
         {/* ── Error / empty states ──────────────────────────────────────── */}
         {hasError && (
           <p className="mx-4 mt-3 text-xs text-gray-400 shrink-0">
@@ -544,14 +577,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             </div>
 
             {/* Grid body: gutter + court columns */}
-            <div className="flex" style={{ height: TOTAL_GRID_H }}>
+            <div className="flex" style={{ height: totalGridH }}>
 
               {/* Time gutter — sticky on horizontal scroll */}
               <div
                 className="shrink-0 sticky left-0 z-10 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700"
-                style={{ width: GUTTER_W, height: TOTAL_GRID_H }}
+                style={{ width: GUTTER_W, height: totalGridH }}
               >
-                {TIME_SLOTS.map((slot, i) => (
+                {timeSlots.map((slot: TimeSlot, i: number) => (
                   <div
                     key={i}
                     className="absolute flex justify-end pr-1.5"
@@ -574,14 +607,15 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                     <div
                       key={court.id}
                       className="relative shrink-0 border-l border-gray-200 dark:border-gray-700"
-                      style={{ width: colW, height: TOTAL_GRID_H }}
+                      style={{ width: colW, height: totalGridH }}
                     >
                       {/* 30-min slot tap targets */}
-                      {TIME_SLOTS.map((slot, slotIdx) => {
-                        const isOccupied = occupied.has(slotIdx);
-                        const slotStartMs = dayStartMs + (START_HOUR * 60 + slotIdx * 30) * 60_000;
+                      {timeSlots.map((slot: TimeSlot, slotIdx: number) => {
+                        const isOccupied  = occupied.has(slotIdx);
+                        const slotStartMs = dayStartMs + (startHour * 60 + slotIdx * 30) * 60_000;
                         const isPast      = nowMs > 0 && slotStartMs < nowMs;
-                        const isDisabled  = isOccupied || isPast;
+                        // Slots are also disabled on closed days
+                        const isDisabled  = isOccupied || isPast || isClosed;
 
                         return (
                           <button
@@ -608,8 +642,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
                       {/* Reservation blocks — absolutely positioned over the slot buttons */}
                       {courtRes.map(res => {
-                        const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone);
-                        const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone);
+                        const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone, startHour);
+                        const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
                         const top       = (startMins / 30) * ROW_H;
                         const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, 4);
                         const isOwn     = res.owner_user_id === userId;
@@ -676,8 +710,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                       {events
                         .filter(ev => ev.court_ids.includes(court.id))
                         .map(ev => {
-                          const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone);
-                          const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone);
+                          const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone, startHour);
+                          const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone, startHour);
                           const top       = (startMins / 30) * ROW_H;
                           const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, ROW_H);
                           return (
@@ -706,7 +740,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                 /* Placeholder column so grid rows still draw when all filtered out */
                 <div
                   className="flex-1 border-l border-gray-200 dark:border-gray-700"
-                  style={{ height: TOTAL_GRID_H }}
+                  style={{ height: totalGridH }}
                 />
               )}
 
@@ -794,8 +828,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           onClose={() => { setCreatingEvent(false); setSlotPreFill(null); }}
           onCreated={() => { setRefreshTick(t => t + 1); setCreatingEvent(false); setSlotPreFill(null); }}
           initialDate={slotPreFill ? selectedDate : undefined}
-          initialHour={slotPreFill ? Math.floor((START_HOUR * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
-          initialMinute={slotPreFill ? (START_HOUR * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
+          initialHour={slotPreFill ? Math.floor((startHour * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
+          initialMinute={slotPreFill ? (startHour * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
           initialCourtId={slotPreFill?.court.id}
         />
       )}
@@ -822,8 +856,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           onClose={() => { setCreatingBlock(false); setSlotPreFill(null); }}
           onCreated={() => { setRefreshTick(t => t + 1); setCreatingBlock(false); setSlotPreFill(null); }}
           defaultCourtId={slotPreFill?.court.id}
-          defaultStartHour={slotPreFill ? Math.floor((START_HOUR * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
-          defaultStartMinute={slotPreFill ? (START_HOUR * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
+          defaultStartHour={slotPreFill ? Math.floor((startHour * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
+          defaultStartMinute={slotPreFill ? (startHour * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
         />
       )}
 

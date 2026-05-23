@@ -32,11 +32,21 @@ export default async function CalendarPage() {
   // stable YYYY-MM-DD string for both SSR and client hydration.
   const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
-  const { data: courts, error: courtsError } = await supabase
-    .from("courts")
-    .select("id, name, display_order")
-    .eq("is_active", true)
-    .order("display_order", { ascending: true });
+  const [{ data: courts, error: courtsError }, { data: operatingHours }] =
+    await Promise.all([
+      supabase
+        .from("courts")
+        .select("id, name, display_order")
+        .eq("is_active", true)
+        .order("display_order", { ascending: true }),
+      clubId
+        ? supabase
+            .from("operating_hours")
+            .select("day_of_week, opens_at, closes_at, is_closed")
+            .eq("club_id", clubId)
+            .order("day_of_week")
+        : Promise.resolve({ data: [] }),
+    ]);
 
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
@@ -53,6 +63,7 @@ export default async function CalendarPage() {
         clubTimezone={clubTimezone}
         userRole={userRole}
         todayISO={todayISO}
+        operatingHours={operatingHours ?? []}
       />
     </>
   );
