@@ -95,6 +95,29 @@ export default async function ProfilePage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
+        {/* ── Notifications ── */}
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Notifications
+          </p>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <Link
+              href="/profile/notifications"
+              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+            >
+              <div>
+                <p>Notification Preferences</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  Choose which alerts you receive.
+                </p>
+              </div>
+              <span className="text-gray-400 dark:text-gray-500">›</span>
+            </Link>
+          </div>
+        </div>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
             Help

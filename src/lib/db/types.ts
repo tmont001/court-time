@@ -684,6 +684,48 @@ export type Database = {
           }
         ];
       };
+      notification_preferences: {
+        Row: {
+          id:         string;
+          user_id:    string;
+          club_id:    string;
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          enabled:    boolean;
+          updated_at: string;
+        };
+        Insert: {
+          id?:         string;
+          user_id:     string;
+          club_id:     string;
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          enabled?:    boolean;
+          updated_at?: string;
+        };
+        Update: {
+          id?:         string;
+          user_id?:    string;
+          club_id?:    string;
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          enabled?:    boolean;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "notification_preferences_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       club_invites: {
         Row: {
           id:          string;
@@ -1064,6 +1106,14 @@ export type Database = {
       send_announcement: {
         Args: { p_title: string; p_body: string };
         Returns: number;
+      };
+      update_notification_preference: {
+        Args: { p_kind: string; p_enabled: boolean };
+        Returns: undefined;
+      };
+      user_pref_enabled: {
+        Args: { p_user_id: string; p_kind: string };
+        Returns: boolean;
       };
     };
     Enums: { [_ in never]: never };
