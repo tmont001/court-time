@@ -1061,6 +1061,10 @@ export type Database = {
         Args: { p_reservation_id: string };
         Returns: undefined;
       };
+      send_announcement: {
+        Args: { p_title: string; p_body: string };
+        Returns: number;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

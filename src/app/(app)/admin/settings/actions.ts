@@ -11,6 +11,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_cancellation_window: "Cancellation window must be between 0 and 168 hours.",
   invalid_grace_period:        "Grace period must be between 0 and 60 minutes.",
   invalid_club_name:           "Club name cannot be blank.",
+  invalid_announcement:        "Title and message are required (title ≤ 100 chars, message ≤ 500 chars).",
 };
 
 export async function updateClubName(
@@ -216,4 +217,32 @@ export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
 
   if (error) return { error };
   return { sid: sid ?? undefined };
+}
+
+export async function sendAnnouncementAction(
+  formData: FormData
+): Promise<{ success?: boolean; message?: string; recipientCount?: number; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const title = (formData.get("title") as string | null)?.trim() ?? "";
+  const body  = (formData.get("body")  as string | null)?.trim() ?? "";
+
+  const { data: recipientCount, error } = await supabase.rpc("send_announcement", {
+    p_title: title,
+    p_body:  body,
+  });
+
+  if (error) {
+    const key = error.message.match(/not_authenticated|insufficient_role|invalid_announcement/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to send announcement. Please try again." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {
+    success:        true,
+    message:        `Announcement sent to ${recipientCount ?? 0} member${(recipientCount ?? 0) === 1 ? "" : "s"}.`,
+    recipientCount: recipientCount ?? 0,
+  };
 }

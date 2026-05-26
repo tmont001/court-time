@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import BottomSheet from "@/components/BottomSheet";
+import type { Json } from "@/lib/db/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,6 +12,7 @@ interface NotificationRow {
   kind:       string;
   body:       string;
   is_read:    boolean;
+  metadata:   Json | null;
   created_at: string;
 }
 
@@ -44,7 +46,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
     async function fetch() {
       const { data } = await supabase
         .from("notifications")
-        .select("id, kind, body, is_read, created_at")
+        .select("id, kind, body, is_read, metadata, created_at")
         .order("created_at", { ascending: false })
         .limit(20);
       setNotifications(data ?? []);
@@ -106,26 +108,42 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
             You&apos;re all caught up.
           </p>
         ) : (
-          notifications.map(n => (
-            <div
-              key={n.id}
-              onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
-              className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${
-                !n.is_read ? "cursor-pointer" : ""
-              }`}
-            >
-              {/* Unread dot — invisible spacer when read to keep alignment */}
-              <span
-                className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${
-                  !n.is_read ? "bg-blue-500" : "bg-transparent"
+          notifications.map(n => {
+            const isAnnouncement = n.kind === "announcement";
+            const announcementTitle = isAnnouncement
+              ? ((n.metadata as Record<string, string> | null)?.title ?? null)
+              : null;
+
+            return (
+              <div
+                key={n.id}
+                onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
+                className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${
+                  !n.is_read ? "cursor-pointer" : ""
                 }`}
-              />
-              <p className="flex-1 text-sm text-gray-800 dark:text-gray-200 leading-snug">{n.body}</p>
-              <p className="shrink-0 text-xs text-gray-400 mt-0.5 ml-2">
-                {relativeTime(n.created_at)}
-              </p>
-            </div>
-          ))
+              >
+                {/* Unread dot — amber for announcements, blue for all others */}
+                <span
+                  className={`mt-1.5 shrink-0 w-2 h-2 rounded-full ${
+                    !n.is_read
+                      ? isAnnouncement ? "bg-amber-400" : "bg-blue-500"
+                      : "bg-transparent"
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  {announcementTitle && (
+                    <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-0.5 truncate">
+                      📢 {announcementTitle}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-800 dark:text-gray-200 leading-snug">{n.body}</p>
+                </div>
+                <p className="shrink-0 text-xs text-gray-400 mt-0.5 ml-2">
+                  {relativeTime(n.created_at)}
+                </p>
+              </div>
+            );
+          })
         )}
       </div>
 

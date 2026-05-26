@@ -5,6 +5,7 @@ import ClubBrandingSection from "./ClubBrandingSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
 import TestSmsSection from "./TestSmsSection";
+import AnnouncementsSection from "./AnnouncementsSection";
 
 export default async function AdminSettingsPage() {
   const supabase = await createClient();
@@ -79,6 +80,19 @@ export default async function AdminSettingsPage() {
             Changes take effect immediately for new bookings. Existing reservations are not affected.
           </p>
           <OperatingHoursEditor clubId={profile?.club_id ?? ""} />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Member Announcements ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Member Announcements
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Send an in-app notification to all active members.
+          </p>
+          <AnnouncementsSection />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
