@@ -19,6 +19,37 @@ export default function NotificationBell() {
 
   useEffect(() => { fetchCount(); }, [fetchCount]);
 
+  // Realtime subscription: re-fetch the unread count whenever a new
+  // notification row is inserted for the current user. The filter is scoped
+  // to user_id so no other user's rows trigger a refresh.
+  useEffect(() => {
+    let mounted = true;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!mounted || !user) return;
+
+      channel = supabase
+        .channel("notification-bell")
+        .on(
+          "postgres_changes",
+          {
+            event:  "INSERT",
+            schema: "public",
+            table:  "notifications",
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => { fetchCount(); }
+        )
+        .subscribe();
+    });
+
+    return () => {
+      mounted = false;
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, [supabase, fetchCount]);
+
   const badge = count > 9 ? "9+" : count > 0 ? String(count) : null;
 
   return (
