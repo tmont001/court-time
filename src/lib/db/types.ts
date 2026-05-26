@@ -1115,6 +1115,24 @@ export type Database = {
         Args: { p_user_id: string; p_kind: string };
         Returns: boolean;
       };
+      upsert_operating_hours_override: {
+        Args: {
+          p_override_date: string;
+          p_is_closed:     boolean;
+          p_opens_at?:     string | null;
+          p_closes_at?:    string | null;
+          p_note?:         string | null;
+          p_dry_run?:      boolean;
+        };
+        Returns: Json;
+      };
+      delete_operating_hours_override: {
+        Args: {
+          p_override_date: string;
+          p_dry_run?:      boolean;
+        };
+        Returns: Json;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
