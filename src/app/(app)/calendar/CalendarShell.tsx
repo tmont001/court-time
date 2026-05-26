@@ -86,15 +86,25 @@ interface OperatingHoursRow {
   is_closed:   boolean;
 }
 
+// Phase 17C: date-specific override row (subset of operating_hours_override).
+interface OperatingHoursOverrideRow {
+  override_date: string;        // YYYY-MM-DD
+  is_closed:     boolean;
+  opens_at:      string | null; // "HH:MM:SS" or null
+  closes_at:     string | null; // "HH:MM:SS" or null
+  note:          string | null;
+}
+
 interface Props {
-  courts:          Court[];
-  hasError?:       boolean;
-  userId:          string;
-  clubId:          string;
-  clubTimezone:    string;
-  userRole:        string;
-  todayISO:        string; // YYYY-MM-DD in club timezone, computed server-side
-  operatingHours:  OperatingHoursRow[];
+  courts:                  Court[];
+  hasError?:               boolean;
+  userId:                  string;
+  clubId:                  string;
+  clubTimezone:            string;
+  userRole:                string;
+  todayISO:                string; // YYYY-MM-DD in club timezone, computed server-side
+  operatingHours:          OperatingHoursRow[];
+  operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
 }
 
 // ─── Timezone helpers ─────────────────────────────────────────────────────────
@@ -147,6 +157,18 @@ function buildTimeSlots(startHour: number, endHour: number): TimeSlot[] {
   return slots;
 }
 
+// ─── Override time formatter ─────────────────────────────────────────────────
+// Converts "HH:MM" or "HH:MM:SS" to a 12-hour display string, e.g. "8:00 AM".
+
+function formatTimeStr(t: string): string {
+  const [h, m] = t.slice(0, 5).split(":").map(Number);
+  const ampm    = h < 12 ? "AM" : "PM";
+  const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return m === 0
+    ? `${display} ${ampm}`
+    : `${display}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
 // ─── RPC error message map ────────────────────────────────────────────────────
 
 function rpcErrorMessage(code: string | undefined, message: string): string {
@@ -160,7 +182,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, operatingHours }: Props) {
+export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, operatingHours, operatingHoursOverrides }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -227,11 +249,44 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     return operatingHours.find(h => h.day_of_week === dow) ?? null;
   }, [selectedDate, operatingHours]);
 
-  const isClosed  = selectedDayHours?.is_closed ?? false;
-  const startHour = !isClosed && selectedDayHours
+  // Phase 17C: find any date-specific override for the selected day.
+  // Uses the club-local YYYY-MM-DD string so the lookup is timezone-safe.
+  const selectedDateOverride = useMemo(() => {
+    const iso = selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone });
+    return operatingHoursOverrides.find(o => o.override_date === iso) ?? null;
+  }, [selectedDate, clubTimezone, operatingHoursOverrides]);
+
+  // isSpecialHours: override present, not fully closed, and both hours set.
+  const isSpecialHours = !!(
+    selectedDateOverride &&
+    !selectedDateOverride.is_closed &&
+    selectedDateOverride.opens_at &&
+    selectedDateOverride.closes_at
+  );
+
+  // isClosed: date-specific override (if any) takes priority over weekly hours.
+  const isClosed = selectedDateOverride
+    ? selectedDateOverride.is_closed
+    : (selectedDayHours?.is_closed ?? false);
+
+  // startHour / endHour priority:
+  //   1. Special-hours override — use override opens_at / closes_at.
+  //   2. Normal weekly hours (no override or override without hours, not closed).
+  //   3. Closed-override day — show weekly hours so existing bookings stay visible;
+  //      fall through to DEFAULT only when weekly is also closed or absent.
+  const startHour = isSpecialHours && selectedDateOverride?.opens_at
+    ? parseInt(selectedDateOverride.opens_at.slice(0, 2), 10)
+    : !isClosed && selectedDayHours
+    ? parseInt(selectedDayHours.opens_at.slice(0, 2), 10)
+    : selectedDateOverride?.is_closed && selectedDayHours && !selectedDayHours.is_closed
     ? parseInt(selectedDayHours.opens_at.slice(0, 2), 10)
     : DEFAULT_START_HOUR;
-  const endHour   = !isClosed && selectedDayHours
+
+  const endHour = isSpecialHours && selectedDateOverride?.closes_at
+    ? parseInt(selectedDateOverride.closes_at.slice(0, 2), 10)
+    : !isClosed && selectedDayHours
+    ? parseInt(selectedDayHours.closes_at.slice(0, 2), 10)
+    : selectedDateOverride?.is_closed && selectedDayHours && !selectedDayHours.is_closed
     ? parseInt(selectedDayHours.closes_at.slice(0, 2), 10)
     : DEFAULT_END_HOUR;
 
@@ -532,7 +587,19 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         {isClosed && (
           <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 shrink-0">
             <p className="text-xs font-medium text-amber-700 dark:text-amber-400 text-center">
-              Club closed — no bookings available on this day
+              {selectedDateOverride?.is_closed && selectedDateOverride.note
+                ? `Club closed — no bookings available on this day. ${selectedDateOverride.note}`
+                : "Club closed — no bookings available on this day"}
+            </p>
+          </div>
+        )}
+
+        {/* ── Special-hours banner (Phase 17C) ─────────────────────────── */}
+        {!isClosed && isSpecialHours && selectedDateOverride && (
+          <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-700 shrink-0">
+            <p className="text-xs font-medium text-blue-700 dark:text-blue-400 text-center">
+              {`Special hours today: ${formatTimeStr(selectedDateOverride.opens_at!)} – ${formatTimeStr(selectedDateOverride.closes_at!)}`}
+              {selectedDateOverride.note ? ` · ${selectedDateOverride.note}` : ""}
             </p>
           </div>
         )}

@@ -32,21 +32,34 @@ export default async function CalendarPage() {
   // stable YYYY-MM-DD string for both SSR and client hydration.
   const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
-  const [{ data: courts, error: courtsError }, { data: operatingHours }] =
-    await Promise.all([
-      supabase
-        .from("courts")
-        .select("id, name, display_order")
-        .eq("is_active", true)
-        .order("display_order", { ascending: true }),
-      clubId
-        ? supabase
-            .from("operating_hours")
-            .select("day_of_week, opens_at, closes_at, is_closed")
-            .eq("club_id", clubId)
-            .order("day_of_week")
-        : Promise.resolve({ data: [] }),
-    ]);
+  const [
+    { data: courts, error: courtsError },
+    { data: operatingHours },
+    { data: operatingHoursOverrides },
+  ] = await Promise.all([
+    supabase
+      .from("courts")
+      .select("id, name, display_order")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true }),
+    clubId
+      ? supabase
+          .from("operating_hours")
+          .select("day_of_week, opens_at, closes_at, is_closed")
+          .eq("club_id", clubId)
+          .order("day_of_week")
+      : Promise.resolve({ data: [] }),
+    // Phase 17C: fetch all upcoming overrides for this club (today onward).
+    // The table is small (O(tens) of rows); no upper bound is needed.
+    clubId
+      ? supabase
+          .from("operating_hours_override")
+          .select("override_date, is_closed, opens_at, closes_at, note")
+          .eq("club_id", clubId)
+          .gte("override_date", todayISO)
+          .order("override_date")
+      : Promise.resolve({ data: [] }),
+  ]);
 
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
@@ -64,6 +77,7 @@ export default async function CalendarPage() {
         userRole={userRole}
         todayISO={todayISO}
         operatingHours={operatingHours ?? []}
+        operatingHoursOverrides={operatingHoursOverrides ?? []}
       />
     </>
   );
