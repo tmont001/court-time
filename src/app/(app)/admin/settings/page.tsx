@@ -4,6 +4,7 @@ import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
+import DateOverridesEditor from "./DateOverridesEditor";
 import TestSmsSection from "./TestSmsSection";
 import AnnouncementsSection from "./AnnouncementsSection";
 
@@ -26,7 +27,7 @@ export default async function AdminSettingsPage() {
 
   const { data: club } = await supabase
     .from("clubs")
-    .select("name, logo_url, theme_key")
+    .select("name, logo_url, theme_key, timezone")
     .eq("id", profile?.club_id ?? "")
     .single();
 
@@ -80,6 +81,22 @@ export default async function AdminSettingsPage() {
             Changes take effect immediately for new bookings. Existing reservations are not affected.
           </p>
           <OperatingHoursEditor clubId={profile?.club_id ?? ""} />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Special Closures ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Special Closures
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Override hours for a specific date. Existing reservations are not cancelled or modified.
+          </p>
+          <DateOverridesEditor
+            clubId={profile?.club_id ?? ""}
+            clubTimezone={club?.timezone ?? "America/New_York"}
+          />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
