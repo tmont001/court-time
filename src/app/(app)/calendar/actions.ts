@@ -4,6 +4,213 @@ import { createClient } from "@/lib/supabase/server";
 import { sendSms } from "@/lib/sms";
 
 // ---------------------------------------------------------------------------
+// createReservation
+// Wraps the create_reservation RPC so that SMS dispatch can run server-side.
+// Returns the same { error: { code, message } } shape CalendarShell already
+// passes to rpcErrorMessage(), keeping the call-site change minimal.
+// ---------------------------------------------------------------------------
+export async function createReservation(params: {
+  p_court_id:    string;
+  p_starts_at:   string;
+  p_ends_at:     string;
+  p_format?:     string | null;
+  p_player_count?: number | null;
+  p_guest_names?:  string[] | null;
+  p_notes?:      string | null;
+}): Promise<{ error?: { code?: string; message: string } }> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: { message: "not_authenticated" } };
+
+  const { error } = await supabase.rpc("create_reservation", params);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  try {
+    await dispatchBookingConfirmSms(user.id);
+  } catch {
+    // SMS dispatch must never block booking success or surface to the user.
+  }
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// dispatchBookingConfirmSms — internal, not exported
+// Finds the reservation_confirmed notification just inserted by the RPC,
+// checks the member's SMS eligibility, sends if opted in, and records the
+// delivery attempt. Mirrors dispatchAdminCancelSms exactly.
+// ---------------------------------------------------------------------------
+async function dispatchBookingConfirmSms(ownerUserId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("user_id", ownerUserId)
+    .eq("kind", "reservation_confirmed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", ownerUserId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// joinEvent
+// Wraps the join_event RPC so that SMS dispatch can run server-side.
+// Returns { error?: string } matching the leaveEvent pattern so callers
+// can map the error string to a UI message with mapJoinError(error).
+// SMS is dispatched only when the result status is 'confirmed'; waitlisted
+// joins emit no notification (matches in-app behavior).
+// ---------------------------------------------------------------------------
+export async function joinEvent(
+  eventId: string,
+): Promise<{ data?: { status: string } | null; error?: string }> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "not_authenticated" };
+
+  const { data, error } = await supabase.rpc("join_event", { p_event_id: eventId });
+  if (error) return { error: error.message };
+
+  if ((data as { status?: string } | null)?.status === "confirmed") {
+    try {
+      await dispatchEventJoinSms(user.id, eventId);
+    } catch {
+      // SMS dispatch must never block join success or surface to the user.
+    }
+  }
+
+  return { data: data as { status: string } | null };
+}
+
+// ---------------------------------------------------------------------------
+// dispatchEventJoinSms — internal, not exported
+// Finds the event_joined notification just inserted by join_event (confirmed
+// path only), checks SMS eligibility, sends, and records the attempt.
+// Mirrors dispatchWaitlistPromotionSms: fetches recent candidates and matches
+// event_id via JS because PostgREST JSONB filter syntax is avoided.
+// ---------------------------------------------------------------------------
+async function dispatchEventJoinSms(
+  userId:  string,
+  eventId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", userId)
+    .eq("kind", "event_joined")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // adminCancelReservation
 // Calls the admin_cancel_reservation RPC, then attempts to send an SMS to
 // the reservation owner. SMS failures are non-blocking — the cancellation

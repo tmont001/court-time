@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet from "./EventRosterSheet";
-import { cancelEvent, leaveEvent } from "./actions";
+import { cancelEvent, joinEvent, leaveEvent } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -161,9 +161,9 @@ export default function EventDetailSheet({
   async function handleJoin() {
     setLoading(true);
     setError(null);
-    const { error: rpcError } = await supabase.rpc("join_event", { p_event_id: event.id });
+    const { error: rpcError } = await joinEvent(event.id);
     if (rpcError) {
-      setError(mapJoinError(rpcError.message));
+      setError(mapJoinError(rpcError));
       setLoading(false);
       return;
     }

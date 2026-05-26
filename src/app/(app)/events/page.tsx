@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
-import { leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
+import { joinEvent as dispatchJoinEvent, leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
 import EventRosterButton from "./EventRosterButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -26,8 +26,7 @@ async function joinEventAction(formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  const supabase = await createClient();
-  await supabase.rpc("join_event", { p_event_id: eventId });
+  await dispatchJoinEvent(eventId);
   revalidatePath("/events");
 }
 

@@ -7,6 +7,7 @@ import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
+import { createReservation } from "./actions";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -428,7 +429,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
     const endsAt = new Date(bookingSlot.slotStart.getTime() + bookingDuration * 60_000);
 
-    const { error } = await supabase.rpc("create_reservation", {
+    const { error } = await createReservation({
       p_court_id:  bookingSlot.court.id,
       p_starts_at: bookingSlot.slotStart.toISOString(),
       p_ends_at:   endsAt.toISOString(),
