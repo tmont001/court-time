@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
-import { leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
+import {
+  leaveEvent as dispatchLeaveEvent,
+  notifyMemberReservationCancelled,
+} from "@/app/(app)/calendar/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,6 +95,15 @@ async function cancelReservation(formData: FormData) {
     })
     .eq("id", id)
     .eq("owner_user_id", user.id);
+
+  // Notify and dispatch SMS — non-blocking; never surfaces errors to the user.
+  // The RPC verifies status = 'cancelled' before inserting, so a failed update
+  // above simply results in no notification (reservation_not_found raised).
+  try {
+    await notifyMemberReservationCancelled(user.id, id);
+  } catch {
+    // intentionally swallowed
+  }
 
   revalidatePath("/my-schedule");
 }

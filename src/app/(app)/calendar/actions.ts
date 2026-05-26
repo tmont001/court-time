@@ -309,6 +309,102 @@ async function dispatchAdminCancelSms(ownerUserId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// notifyMemberReservationCancelled
+// Called from my-schedule/page.tsx after a member self-cancels a reservation.
+// Calls the notify_reservation_cancelled_by_member security-definer RPC (which
+// inserts the notification — RLS blocks direct inserts from regular sessions),
+// then dispatches SMS non-blocking. Any error in dispatch is swallowed so it
+// never surfaces to the user.
+// ---------------------------------------------------------------------------
+export async function notifyMemberReservationCancelled(
+  userId:        string,
+  reservationId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { error: rpcError } = await supabase.rpc(
+    "notify_reservation_cancelled_by_member",
+    { p_reservation_id: reservationId }
+  );
+  if (rpcError) return; // notification not created — skip SMS
+
+  try {
+    await dispatchMemberCancelSms(userId);
+  } catch {
+    // SMS dispatch must never block or surface errors.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// dispatchMemberCancelSms — internal, not exported
+// Finds the reservation_cancelled_by_member notification just inserted by the
+// RPC, checks the member's SMS eligibility, sends if opted in, and records the
+// delivery attempt. Mirrors dispatchAdminCancelSms exactly.
+// ---------------------------------------------------------------------------
+async function dispatchMemberCancelSms(ownerUserId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("user_id", ownerUserId)
+    .eq("kind", "reservation_cancelled_by_member")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", ownerUserId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // leaveEvent
 // Calls leave_event RPC and dispatches SMS to the promoted user (if any).
 // Returns the raw RPC error message so callers can map it to UI strings.

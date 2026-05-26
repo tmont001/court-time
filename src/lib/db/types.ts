@@ -587,7 +587,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "announcement";
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -1056,6 +1056,10 @@ export type Database = {
       update_operating_hours: {
         Args: { p_hours: Json; p_dry_run?: boolean };
         Returns: Json;
+      };
+      notify_reservation_cancelled_by_member: {
+        Args: { p_reservation_id: string };
+        Returns: undefined;
       };
     };
     Enums: { [_ in never]: never };
