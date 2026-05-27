@@ -537,6 +537,45 @@ export type Database = {
           }
         ];
       };
+      event_guests: {
+        Row: {
+          id:           string;
+          event_id:     string;
+          display_name: string;
+          added_by:     string;
+          created_at:   string;
+        };
+        Insert: {
+          id?:          string;
+          event_id:     string;
+          display_name: string;
+          added_by:     string;
+          created_at?:  string;
+        };
+        Update: {
+          id?:           string;
+          event_id?:     string;
+          display_name?: string;
+          added_by?:     string;
+          created_at?:   string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "event_guests_event_id_fkey";
+            columns: ["event_id"];
+            isOneToOne: false;
+            referencedRelation: "events";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_guests_added_by_fkey";
+            columns: ["added_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       event_participants: {
         Row: {
           id: string;
@@ -1025,10 +1064,10 @@ export type Database = {
         Returns: {
           profile_id:        string;
           display_name:      string;
-          role:              string;
+          role:              string;  // 'host' | 'participant' | 'guest' (Phase 19A)
           status:            string;
           attendance_status: string | null;
-          offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted
+          offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted/guest
           waitlist_position: number | null;
         }[];
       };
