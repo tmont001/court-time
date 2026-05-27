@@ -459,6 +459,7 @@ export default function EventDetailSheet({
         <EventRosterSheet
           eventId={event.id}
           clubTimezone={clubTimezone}
+          userRole={userRole}
           onClose={() => setRosterOpen(false)}
         />
       )}

@@ -4,11 +4,12 @@ import { useState } from "react";
 import EventRosterSheet from "@/app/(app)/calendar/EventRosterSheet";
 
 interface Props {
-  eventId: string;
-  count:   number;
+  eventId:   string;
+  count:     number;
+  userRole?: string;
 }
 
-export default function EventRosterButton({ eventId, count }: Props) {
+export default function EventRosterButton({ eventId, count, userRole }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -21,6 +22,7 @@ export default function EventRosterButton({ eventId, count }: Props) {
       {open && (
         <EventRosterSheet
           eventId={eventId}
+          userRole={userRole}
           onClose={() => setOpen(false)}
         />
       )}

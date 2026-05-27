@@ -342,6 +342,7 @@ export default async function EventsPage() {
                               <EventRosterButton
                                 eventId={ev.id}
                                 count={confirmedCount + offeredCount + waitlistCount}
+                                userRole={profile?.role}
                               />
                             </div>
                           )}

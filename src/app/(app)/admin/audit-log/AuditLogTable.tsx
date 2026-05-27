@@ -5,10 +5,17 @@ import { fetchMoreAuditLog } from "./actions";
 import type { AuditLogRow } from "./actions";
 
 const ACTION_LABELS: Record<string, string> = {
-  admin_cancel_reservation: "Cancelled reservation",
-  cancel_event:             "Cancelled event",
-  create_maintenance_block: "Created maintenance block",
-  update_club_settings:     "Updated settings",
+  admin_cancel_reservation:  "Cancelled reservation",
+  cancel_event:              "Cancelled event",
+  create_maintenance_block:  "Created maintenance block",
+  update_club_settings:      "Updated settings",
+  admin_add_member:          "Added member to event",
+  admin_remove_participant:  "Removed participant from event",
+  admin_force_confirm:       "Force confirmed participant",
+  admin_offer_spot:          "Manually offered spot",
+  admin_expire_offer:        "Expired offer",
+  admin_add_guest:           "Added guest to event",
+  admin_remove_guest:        "Removed guest from event",
 };
 
 function formatDate(iso: string): string {

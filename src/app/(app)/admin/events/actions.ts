@@ -8,17 +8,17 @@ import { createClient } from "@/lib/supabase/server";
 // ---------------------------------------------------------------------------
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:     "You must be signed in.",
-  admin_required:        "Admin or pro access required.",
+  admin_required:        "You do not have permission to manage this roster.",
   event_not_found:       "Event not found.",
   event_cancelled:       "This event has been cancelled.",
-  member_not_found:      "Member not found.",
-  member_inactive:       "This member's account is inactive.",
-  participant_not_found: "Participant not found in this event.",
-  already_joined:        "This member is already in the event.",
-  offer_already_active:  "Another offer is already active. Expire it before offering a new spot.",
-  no_capacity_for_offer: "Event is full. Free a spot before offering.",
-  guest_not_found:       "Guest not found in this event.",
-  invalid_guest_name:    "Guest name cannot be blank.",
+  member_not_found:      "That member could not be found.",
+  member_inactive:       "That member is inactive.",
+  participant_not_found: "That participant could not be found.",
+  already_joined:        "That member is already on this roster.",
+  offer_already_active:  "Another member already has an active offer. Expire that offer first.",
+  no_capacity_for_offer: "There is no open spot to offer.",
+  guest_not_found:       "That guest could not be found.",
+  invalid_guest_name:    "Enter a guest name.",
 };
 
 function rpcError(error: { message?: string } | null): string {
