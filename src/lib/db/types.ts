@@ -1202,6 +1202,71 @@ export type Database = {
         };
         Returns: Json;
       };
+      // Phase 19B: admin participant action RPCs
+      admin_add_member: {
+        Args: { p_event_id: string; p_profile_id: string };
+        Returns: {
+          id:                string;
+          event_id:          string;
+          profile_id:        string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      admin_remove_participant: {
+        Args: { p_event_id: string; p_profile_id: string };
+        Returns: undefined;
+      };
+      admin_force_confirm: {
+        Args: { p_event_id: string; p_profile_id: string };
+        Returns: {
+          id:                string;
+          event_id:          string;
+          profile_id:        string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      admin_offer_spot: {
+        Args: { p_event_id: string; p_profile_id: string };
+        Returns: {
+          id:                string;
+          event_id:          string;
+          profile_id:        string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      admin_expire_offer: {
+        Args: { p_event_id: string; p_profile_id: string };
+        Returns: undefined;
+      };
+      admin_add_guest: {
+        Args: { p_event_id: string; p_display_name: string };
+        Returns: {
+          id:           string;
+          event_id:     string;
+          display_name: string;
+          added_by:     string;
+          created_at:   string;
+        };
+      };
+      admin_remove_guest: {
+        Args: { p_event_id: string; p_guest_id: string };
+        Returns: undefined;
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };
