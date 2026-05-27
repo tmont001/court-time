@@ -10,6 +10,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_booking_window:      "Booking window must be between 1 and 365 days.",
   invalid_cancellation_window: "Cancellation window must be between 0 and 168 hours.",
   invalid_grace_period:        "Grace period must be between 0 and 60 minutes.",
+  invalid_offer_window:        "Waitlist offer window must be between 1 and 72 hours.",  // Phase 18C
   invalid_club_name:           "Club name cannot be blank.",
   invalid_announcement:        "Title and message are required (title ≤ 100 chars, message ≤ 500 chars).",
 };
@@ -41,14 +42,16 @@ export async function updateBookingRules(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
-  const bookingDays  = Number(formData.get("booking_window_days"));
-  const cancelHours  = Number(formData.get("cancellation_window_hours"));
-  const graceMins    = Number(formData.get("cancellation_grace_minutes"));
+  const bookingDays      = Number(formData.get("booking_window_days"));
+  const cancelHours      = Number(formData.get("cancellation_window_hours"));
+  const graceMins        = Number(formData.get("cancellation_grace_minutes"));
+  const offerWindowHours = Number(formData.get("waitlist_offer_window_hours"));  // Phase 18C
 
   const { error } = await supabase.rpc("update_club_settings", {
-    p_booking_window_days:        bookingDays,
-    p_cancellation_window_hours:  cancelHours,
-    p_cancellation_grace_minutes: graceMins,
+    p_booking_window_days:         bookingDays,
+    p_cancellation_window_hours:   cancelHours,
+    p_cancellation_grace_minutes:  graceMins,
+    p_waitlist_offer_window_hours: offerWindowHours,  // Phase 18C
   });
 
   if (error) {

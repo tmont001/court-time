@@ -4,15 +4,17 @@ import { useState, useTransition } from "react";
 import { updateBookingRules } from "./actions";
 
 interface Props {
-  bookingWindowDays:        number;
-  cancellationWindowHours:  number;
-  cancellationGraceMinutes: number;
+  bookingWindowDays:          number;
+  cancellationWindowHours:    number;
+  cancellationGraceMinutes:   number;
+  waitlistOfferWindowHours:   number;  // Phase 18C
 }
 
 export default function BookingRulesForm({
   bookingWindowDays,
   cancellationWindowHours,
   cancellationGraceMinutes,
+  waitlistOfferWindowHours,
 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -86,6 +88,24 @@ export default function BookingRulesForm({
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           Allows members to cancel accidental bookings shortly after creation, even inside the
           cancellation window (0–60 min). Set to 0 to disable.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+          Waitlist offer window (hours)
+        </label>
+        <input
+          type="number"
+          name="waitlist_offer_window_hours"
+          defaultValue={waitlistOfferWindowHours}
+          min={1}
+          max={72}
+          required
+          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+        />
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          How long a waitlisted member has to accept a spot offer (1–72 hours).
         </p>
       </div>
 

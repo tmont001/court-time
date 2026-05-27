@@ -11,17 +11,30 @@ interface RosterRow {
   role:              string;
   status:            string;
   attendance_status: string | null;
+  offer_expires_at:  string | null;  // Phase 18C: present for offered rows
   waitlist_position: number | null;
 }
 
 interface Props {
-  eventId: string;
-  onClose: () => void;
+  eventId:       string;
+  onClose:       () => void;
+  clubTimezone?: string;  // Phase 18C: for offer expiry display; falls back to browser timezone
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatExpiryTime(isoString: string, tz?: string): string {
+  return new Date(isoString).toLocaleTimeString("en-US", {
+    ...(tz ? { timeZone: tz } : {}),
+    hour:   "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function EventRosterSheet({ eventId, onClose }: Props) {
+export default function EventRosterSheet({ eventId, onClose, clubTimezone }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   const [rows, setRows]           = useState<RosterRow[]>([]);
@@ -74,6 +87,7 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
   // ── Derived ────────────────────────────────────────────────────────────────
 
   const confirmed  = rows.filter(r => r.status === "confirmed");
+  const offered    = rows.filter(r => r.status === "offered");   // Phase 18C
   const waitlisted = rows.filter(r => r.status === "waitlisted");
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -186,6 +200,43 @@ export default function EventRosterSheet({ eventId, onClose }: Props) {
                         {rowError && (
                           <p className="text-xs text-red-500 mt-1">{rowError}</p>
                         )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Offered section — display only, no attendance controls ── */}
+              {offered.length > 0 && (
+                <div className="mb-5">
+                  <p className="text-xs font-semibold text-amber-600 dark:text-amber-500 uppercase tracking-wide mb-2">
+                    Offered ({offered.length})
+                  </p>
+                  {offered.map(row => {
+                    const isExpired = row.offer_expires_at
+                      ? new Date(row.offer_expires_at) <= new Date()
+                      : false;
+                    return (
+                      <div
+                        key={row.profile_id}
+                        className="flex items-start py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                            {row.display_name}
+                          </p>
+                          {row.offer_expires_at && (
+                            isExpired ? (
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                Expired {formatExpiryTime(row.offer_expires_at, clubTimezone)}
+                              </p>
+                            ) : (
+                              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                                Offer expires {formatExpiryTime(row.offer_expires_at, clubTimezone)}
+                              </p>
+                            )
+                          )}
+                        </div>
                       </div>
                     );
                   })}
