@@ -406,13 +406,15 @@ async function dispatchMemberCancelSms(ownerUserId: string): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // leaveEvent
-// Calls leave_event RPC and dispatches SMS to the promoted user (if any).
+// Calls leave_event RPC and dispatches SMS to the next offered user (if any).
+// Phase 18A: leave_event now creates a waitlist_offer notification (not
+// waitlist_promoted) for the user who receives the spot offer.
 // Returns the raw RPC error message so callers can map it to UI strings.
 // ---------------------------------------------------------------------------
 export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
   const supabase = await createClient();
 
-  const { data: promotedProfileId, error: rpcError } = await supabase.rpc(
+  const { data: offeredProfileId, error: rpcError } = await supabase.rpc(
     "leave_event",
     { p_event_id: eventId }
   );
@@ -420,7 +422,7 @@ export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
   if (rpcError) return { error: rpcError.message };
 
   try {
-    await dispatchWaitlistPromotionSms(eventId, promotedProfileId);
+    await dispatchWaitlistOfferSms(eventId, offeredProfileId);
   } catch {
     // SMS dispatch must never surface as a user-facing error.
   }
@@ -429,26 +431,27 @@ export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
 }
 
 // ---------------------------------------------------------------------------
-// dispatchWaitlistPromotionSms — internal, not exported
-// Skips immediately when no one was promoted (promotedProfileId is null).
-// Otherwise finds the waitlist_promoted notification just created by the RPC,
-// checks the promoted user's SMS eligibility, and records the delivery attempt.
+// dispatchWaitlistOfferSms — internal, not exported
+// Skips immediately when no one was offered (offeredProfileId is null).
+// Otherwise finds the waitlist_offer notification just created by the RPC,
+// checks the offered user's SMS eligibility, and records the delivery attempt.
+// Phase 18A: leave_event now creates waitlist_offer (not waitlist_promoted).
 // ---------------------------------------------------------------------------
-async function dispatchWaitlistPromotionSms(
-  eventId:          string,
-  promotedProfileId: string | null,
+async function dispatchWaitlistOfferSms(
+  eventId:         string,
+  offeredProfileId: string | null,
 ): Promise<void> {
-  if (!promotedProfileId) return;
+  if (!offeredProfileId) return;
 
   const supabase = await createClient();
 
-  // Fetch the most recent waitlist_promoted notifications for this user and
+  // Fetch the most recent waitlist_offer notifications for this user and
   // confirm the event_id matches in JS (avoids PostgREST JSONB filter syntax).
   const { data: candidates } = await supabase
     .from("notifications")
     .select("id, body, metadata")
-    .eq("user_id", promotedProfileId)
-    .eq("kind", "waitlist_promoted")
+    .eq("user_id", offeredProfileId)
+    .eq("kind", "waitlist_offer")
     .order("created_at", { ascending: false })
     .limit(5);
 
@@ -461,7 +464,7 @@ async function dispatchWaitlistPromotionSms(
   const { data: profile } = await supabase
     .from("profiles")
     .select("sms_opt_in, phone")
-    .eq("id", promotedProfileId)
+    .eq("id", offeredProfileId)
     .single();
 
   if (!profile) return;
@@ -505,6 +508,129 @@ async function dispatchWaitlistPromotionSms(
       p_error:           smsError ?? "Unknown error",
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// acceptWaitlistOffer
+// Calls accept_waitlist_offer RPC, then dispatches SMS for the waitlist_promoted
+// notification that the RPC creates (reused for the accept/confirm path).
+// Returns { error } on failure so callers can map to a UI message.
+// ---------------------------------------------------------------------------
+export async function acceptWaitlistOffer(
+  eventId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "not_authenticated" };
+
+  const { error: rpcError } = await supabase.rpc("accept_waitlist_offer", {
+    p_event_id: eventId,
+  });
+
+  if (rpcError) return { error: rpcError.message };
+
+  try {
+    await dispatchAcceptOfferSms(user.id, eventId);
+  } catch {
+    // SMS dispatch must never block accept success or surface to the user.
+  }
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// dispatchAcceptOfferSms — internal, not exported
+// Finds the waitlist_promoted notification created by accept_waitlist_offer
+// (the same kind is reused for the "you are now confirmed" path), checks SMS
+// eligibility, sends if opted in, and records the delivery attempt.
+// ---------------------------------------------------------------------------
+async function dispatchAcceptOfferSms(
+  userId:  string,
+  eventId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", userId)
+    .eq("kind", "waitlist_promoted")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// declineWaitlistOffer
+// Calls decline_waitlist_offer RPC. No SMS is dispatched on decline.
+// Returns { error } on failure so callers can map to a UI message.
+// ---------------------------------------------------------------------------
+export async function declineWaitlistOffer(
+  eventId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error: rpcError } = await supabase.rpc("decline_waitlist_offer", {
+    p_event_id: eventId,
+  });
+
+  if (rpcError) return { error: rpcError.message };
+
+  return {};
 }
 
 // ---------------------------------------------------------------------------

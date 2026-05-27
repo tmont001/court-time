@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
-import { joinEvent as dispatchJoinEvent, leaveEvent as dispatchLeaveEvent } from "@/app/(app)/calendar/actions";
+import {
+  joinEvent as dispatchJoinEvent,
+  leaveEvent as dispatchLeaveEvent,
+  acceptWaitlistOffer as dispatchAcceptWaitlistOffer,
+  declineWaitlistOffer as dispatchDeclineWaitlistOffer,
+} from "@/app/(app)/calendar/actions";
 import EventRosterButton from "./EventRosterButton";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,7 +21,7 @@ interface RawEventRow {
   status:     string;
   created_by: string;
   event_types: { key: string; label: string; color: string } | null;
-  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
   reservations: Array<{ court_id: string; reason: string; status: string }>;
 }
 
@@ -35,6 +40,22 @@ async function leaveEventAction(formData: FormData) {
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
   await dispatchLeaveEvent(eventId);
+  revalidatePath("/events");
+}
+
+async function acceptWaitlistOfferAction(formData: FormData) {
+  "use server";
+  const eventId = formData.get("event_id") as string | null;
+  if (!eventId) return;
+  await dispatchAcceptWaitlistOffer(eventId);
+  revalidatePath("/events");
+}
+
+async function declineWaitlistOfferAction(formData: FormData) {
+  "use server";
+  const eventId = formData.get("event_id") as string | null;
+  if (!eventId) return;
+  await dispatchDeclineWaitlistOffer(eventId);
   revalidatePath("/events");
 }
 
@@ -89,7 +110,7 @@ export default async function EventsPage() {
     .select(`
       id, title, starts_at, ends_at, capacity, status, created_by,
       event_types(key, label, color),
-      event_participants(profile_id, role, status),
+      event_participants(profile_id, role, status, offer_expires_at),
       reservations(court_id, reason, status)
     `)
     .eq("club_id", clubId)
@@ -162,14 +183,19 @@ export default async function EventsPage() {
                     {dayEvents.map(ev => {
                       const type = ev.event_types;
 
-                      // Participant counts — hosts do not consume capacity
+                      // Participant counts.
+                      // Phase 18B: offered rows also hold a spot (same as confirmed for capacity).
                       const confirmedCount = ev.event_participants.filter(
                         p => p.role === "participant" && p.status === "confirmed"
                       ).length;
+                      const offeredCount = ev.event_participants.filter(
+                        p => p.status === "offered"
+                      ).length;
+                      // Waitlisted excludes offered rows.
                       const waitlistCount = ev.event_participants.filter(
                         p => p.status === "waitlisted"
                       ).length;
-                      const isFull = confirmedCount >= ev.capacity;
+                      const isFull = (confirmedCount + offeredCount) >= ev.capacity;
 
                       // Current user's participation
                       const myEntry  = ev.event_participants.find(p => p.profile_id === user.id);
@@ -179,7 +205,12 @@ export default async function EventsPage() {
                       const isHost       = myRole === "host";
                       const isConfirmed  = myStatus === "confirmed" && myRole === "participant";
                       const isWaitlisted = myStatus === "waitlisted";
+                      const isOffered    = myStatus === "offered";
                       const isJoined     = isHost || isConfirmed;
+
+                      // Offer deadline — only set when user has an active offer.
+                      const offerExpiresAt        = isOffered ? (myEntry?.offer_expires_at ?? null) : null;
+                      const offerExpiredServerSide = offerExpiresAt ? new Date(offerExpiresAt) <= new Date() : false;
 
                       // Courts
                       const evCourtNames = ev.reservations
@@ -221,6 +252,16 @@ export default async function EventsPage() {
                                 Waitlisted
                               </span>
                             )}
+                            {isOffered && !offerExpiredServerSide && (
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                Spot offered
+                              </span>
+                            )}
+                            {isOffered && offerExpiredServerSide && (
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                Offer expired
+                              </span>
+                            )}
                           </div>
 
                           {/* Title */}
@@ -232,14 +273,47 @@ export default async function EventsPage() {
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
 
+                          {/* Offer deadline — shown only for active (non-expired) offers */}
+                          {isOffered && !offerExpiredServerSide && offerExpiresAt && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                              Accept by {formatTime(offerExpiresAt, clubTimezone)}
+                            </p>
+                          )}
+
                           {/* Capacity row + action button */}
                           <div className="flex items-center justify-between mt-2">
                             <p className="text-xs text-gray-400 dark:text-gray-500">
-                              {confirmedCount} / {ev.capacity} joined
+                              {confirmedCount + offeredCount} / {ev.capacity} joined
                               {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
                             </p>
 
-                            {isHost ? null : isJoined || isWaitlisted ? (
+                            {isHost ? null : isOffered ? (
+                              offerExpiredServerSide ? (
+                                /* Expired — let them rejoin */
+                                <form action={joinEventAction}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button type="submit" className="text-xs font-medium text-blue-600">
+                                    Rejoin
+                                  </button>
+                                </form>
+                              ) : (
+                                /* Active offer — Accept or Pass side by side */
+                                <div className="flex items-center gap-3">
+                                  <form action={declineWaitlistOfferAction}>
+                                    <input type="hidden" name="event_id" value={ev.id} />
+                                    <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                      Pass
+                                    </button>
+                                  </form>
+                                  <form action={acceptWaitlistOfferAction}>
+                                    <input type="hidden" name="event_id" value={ev.id} />
+                                    <button type="submit" className="text-xs font-semibold text-green-600">
+                                      Accept
+                                    </button>
+                                  </form>
+                                </div>
+                              )
+                            ) : isJoined || isWaitlisted ? (
                               <form action={leaveEventAction}>
                                 <input type="hidden" name="event_id" value={ev.id} />
                                 <button
@@ -267,7 +341,7 @@ export default async function EventsPage() {
                             <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                               <EventRosterButton
                                 eventId={ev.id}
-                                count={confirmedCount + waitlistCount}
+                                count={confirmedCount + offeredCount + waitlistCount}
                               />
                             </div>
                           )}

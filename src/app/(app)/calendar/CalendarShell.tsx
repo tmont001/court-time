@@ -51,7 +51,7 @@ interface RawEventRow {
     color: string;
     shows_participant_names: boolean;
   };
-  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
   reservations: Array<{ court_id: string; status: string; reason: string }>;
 }
 
@@ -69,7 +69,7 @@ interface EventWithDetails {
     color: string;
     shows_participant_names: boolean;
   };
-  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
   court_ids: string[];
 }
 
@@ -396,7 +396,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       .select(`
         id, title, starts_at, ends_at, capacity, status, created_by,
         event_types(key, label, color, shows_participant_names),
-        event_participants(profile_id, role, status),
+        event_participants(profile_id, role, status, offer_expires_at),
         reservations(court_id, status, reason)
       `)
       .eq("club_id", clubId)

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet from "./EventRosterSheet";
-import { cancelEvent, joinEvent, leaveEvent } from "./actions";
+import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -11,6 +11,7 @@ interface EventParticipant {
   profile_id: string;
   role: string;
   status: string;
+  offer_expires_at?: string | null;
 }
 
 interface EventWithDetails {
@@ -76,6 +77,13 @@ function mapLeaveError(message: string): string {
   return "Something went wrong. Please try again.";
 }
 
+function mapOfferError(message: string): string {
+  if (message === "offer_not_found") return "This offer is no longer valid.";
+  if (message === "offer_expired")   return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
+  if (message === "not_authenticated") return "Please sign in to continue.";
+  return "Something went wrong. Please try again.";
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 const MAX_NAMES = 5;
@@ -92,6 +100,8 @@ export default function EventDetailSheet({
   const [cancelLoading, setCancelLoading]             = useState(false);
   const [cancelError, setCancelError]                 = useState<string | null>(null);
   const [rosterOpen, setRosterOpen]                   = useState(false);
+  const [offerLoading, setOfferLoading]               = useState<"accept" | "pass" | null>(null);
+  const [offerError, setOfferError]                   = useState<string | null>(null);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -101,12 +111,19 @@ export default function EventDetailSheet({
     .filter(p => p.status === "confirmed" && p.role === "participant")
     .sort((a, b) => a.profile_id.localeCompare(b.profile_id));
 
+  // Phase 18B: offered rows also hold a spot (capacity guard: confirmed+offered).
+  const offeredParticipants = event.event_participants
+    .filter(p => p.status === "offered");
+
+  // Waitlisted: only truly-waitlisted rows (excludes offered).
   const waitlistedParticipants = event.event_participants
     .filter(p => p.status === "waitlisted");
 
   const confirmedCount  = confirmedParticipants.length;
+  const offeredCount    = offeredParticipants.length;
   const waitlistCount   = waitlistedParticipants.length;
-  const isFull          = confirmedCount >= event.capacity;
+  // Full when confirmed + offered rows reach capacity.
+  const isFull          = (confirmedCount + offeredCount) >= event.capacity;
 
   // Exclude cancelled rows — a user who left should be treated as not joined.
   const myPart       = event.event_participants.find(
@@ -114,6 +131,12 @@ export default function EventDetailSheet({
   );
   const isHost       = myPart?.role === "host";
   const isWaitlisted = myPart?.status === "waitlisted";
+  const isOffered    = myPart?.status === "offered";
+
+  // Offer expiry (client-side). Evaluated once per render; no polling needed
+  // because the sheet closes/re-opens on every action refresh.
+  const myOfferExpiresAt  = isOffered ? (myPart?.offer_expires_at ?? null) : null;
+  const offerExpired      = myOfferExpiresAt ? new Date(myOfferExpiresAt) <= new Date() : false;
 
   // 1-based position among waitlisted rows (order matches DB created_at order;
   // CalendarShell fetches participants in insertion order as a proxy).
@@ -124,9 +147,9 @@ export default function EventDetailSheet({
   const canCancelEvent = userRole === "admin" || isHost;
   const canViewRoster  = userRole === "admin" || userRole === "pro";
 
-  // Total active participants shown in the roster button label.
+  // Total active participants shown in the roster button label (confirmed + offered + waitlisted).
   const rosterCount = event.event_participants.filter(
-    p => p.status === "confirmed" || p.status === "waitlisted"
+    p => p.status === "confirmed" || p.status === "offered" || p.status === "waitlisted"
   ).length;
 
   const courtNames = event.court_ids
@@ -201,6 +224,32 @@ export default function EventDetailSheet({
     onClose();
   }
 
+  async function handleAcceptOffer() {
+    setOfferLoading("accept");
+    setOfferError(null);
+    const result = await acceptWaitlistOffer(event.id);
+    if (result?.error) {
+      setOfferError(mapOfferError(result.error));
+      setOfferLoading(null);
+      return;
+    }
+    onRefresh();
+    onClose();
+  }
+
+  async function handlePassOffer() {
+    setOfferLoading("pass");
+    setOfferError(null);
+    const result = await declineWaitlistOffer(event.id);
+    if (result?.error) {
+      setOfferError(mapOfferError(result.error));
+      setOfferLoading(null);
+      return;
+    }
+    onRefresh();
+    onClose();
+  }
+
   // ── Button ────────────────────────────────────────────────────────────────
 
   const buttonDisabled = isHost || loading;
@@ -262,9 +311,9 @@ export default function EventDetailSheet({
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{courtNames}</p>
         )}
 
-        {/* Capacity */}
+        {/* Capacity — confirmed + offered rows both consume a spot */}
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          {confirmedCount} of {event.capacity} spots filled
+          {confirmedCount + offeredCount} of {event.capacity} spots filled
           {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
 
@@ -298,17 +347,76 @@ export default function EventDetailSheet({
           </div>
         )}
 
-        {/* Error */}
-        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
-
-        {/* Action button */}
-        <button
-          disabled={buttonDisabled}
-          onClick={handleAction}
-          className={`mt-5 w-full py-3 rounded-xl text-sm font-semibold disabled:opacity-40 ${buttonClass}`}
-        >
-          {buttonLabel}
-        </button>
+        {/* ── Offered state — replaces the standard action button ── */}
+        {isOffered ? (
+          offerExpired ? (
+            /* Offer has expired client-side */
+            <div className="mt-5">
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3 text-center">
+                <p className="text-sm text-amber-800 dark:text-amber-300">
+                  This offer has expired. Rejoin the waitlist if you're still interested.
+                </p>
+              </div>
+              {offerError && <p className="mt-2 text-xs text-red-500">{offerError}</p>}
+              <button
+                disabled={loading}
+                onClick={handleJoin}
+                className="mt-3 w-full py-3 rounded-xl text-sm font-semibold bg-accent text-white dark:text-gray-900 disabled:opacity-40"
+              >
+                {loading ? "Joining…" : isFull ? "Rejoin Waitlist" : "Rejoin Event"}
+              </button>
+            </div>
+          ) : (
+            /* Active offer — show deadline + Accept / Pass */
+            <div className="mt-5">
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3">
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  Spot offered
+                </p>
+                {myOfferExpiresAt && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                    Accept by{" "}
+                    {new Date(myOfferExpiresAt).toLocaleTimeString("en-US", {
+                      timeZone: clubTimezone,
+                      hour: "numeric",
+                      minute: "2-digit",
+                      hour12: true,
+                    })}
+                  </p>
+                )}
+              </div>
+              {offerError && <p className="mt-2 text-xs text-red-500">{offerError}</p>}
+              <div className="flex gap-3 mt-3">
+                <button
+                  disabled={!!offerLoading}
+                  onClick={handlePassOffer}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40"
+                >
+                  {offerLoading === "pass" ? "Passing…" : "Pass"}
+                </button>
+                <button
+                  disabled={!!offerLoading}
+                  onClick={handleAcceptOffer}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold bg-green-600 text-white disabled:opacity-40"
+                >
+                  {offerLoading === "accept" ? "Accepting…" : "Accept Spot"}
+                </button>
+              </div>
+            </div>
+          )
+        ) : (
+          /* Normal state — Join / Leave / Waitlist / Host */
+          <>
+            {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+            <button
+              disabled={buttonDisabled}
+              onClick={handleAction}
+              className={`mt-5 w-full py-3 rounded-xl text-sm font-semibold disabled:opacity-40 ${buttonClass}`}
+            >
+              {buttonLabel}
+            </button>
+          </>
+        )}
 
         {/* Cancel Event — admin or host only */}
         {canCancelEvent && (
