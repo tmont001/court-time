@@ -54,6 +54,7 @@ export type Database = {
           booking_window_days: number;
           cancellation_window_hours: number;
           cancellation_grace_minutes: number;
+          waitlist_offer_window_hours: number;  // Phase 18A
           created_at: string;
           updated_at: string;
         };
@@ -63,6 +64,7 @@ export type Database = {
           booking_window_days?: number;
           cancellation_window_hours?: number;
           cancellation_grace_minutes?: number;
+          waitlist_offer_window_hours?: number;  // Phase 18A
           created_at?: string;
           updated_at?: string;
         };
@@ -72,6 +74,7 @@ export type Database = {
           booking_window_days?: number;
           cancellation_window_hours?: number;
           cancellation_grace_minutes?: number;
+          waitlist_offer_window_hours?: number;  // Phase 18A
           created_at?: string;
           updated_at?: string;
         };
@@ -540,8 +543,9 @@ export type Database = {
           event_id: string;
           profile_id: string;
           role: "host" | "participant";
-          status: "confirmed" | "cancelled" | "waitlisted";
+          status: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A: offered
           attendance_status: "attended" | "no_show" | null;
+          offer_expires_at: string | null;  // Phase 18A
           created_at: string;
           updated_at: string;
         };
@@ -550,8 +554,9 @@ export type Database = {
           event_id: string;
           profile_id: string;
           role?: "host" | "participant";
-          status?: "confirmed" | "cancelled" | "waitlisted";
+          status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
           attendance_status?: "attended" | "no_show" | null;
+          offer_expires_at?: string | null;  // Phase 18A
           created_at?: string;
           updated_at?: string;
         };
@@ -560,8 +565,9 @@ export type Database = {
           event_id?: string;
           profile_id?: string;
           role?: "host" | "participant";
-          status?: "confirmed" | "cancelled" | "waitlisted";
+          status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
           attendance_status?: "attended" | "no_show" | null;
+          offer_expires_at?: string | null;  // Phase 18A
           created_at?: string;
           updated_at?: string;
         };
@@ -587,7 +593,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "announcement";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: waitlist_offer
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -597,7 +603,7 @@ export type Database = {
           id?:         string;
           club_id:     string;
           user_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: aligned with Row
           body:        string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -607,7 +613,7 @@ export type Database = {
           id?:         string;
           club_id?:    string;
           user_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "event_cancelled" | "event_joined" | "waitlist_promoted";
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: aligned with Row
           body?:       string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -854,13 +860,34 @@ export type Database = {
           profile_id: string;
           role: string;
           status: string;
+          attendance_status: string | null;
+          offer_expires_at: string | null;  // Phase 18A
           created_at: string;
           updated_at: string;
         };
       };
       leave_event: {
         Args: { p_event_id: string };
-        Returns: string | null;
+        Returns: string | null;  // offered profile_id or null (Phase 18A: was promoted profile_id)
+      };
+      // Phase 18A: new RPCs
+      accept_waitlist_offer: {
+        Args: { p_event_id: string };
+        Returns: {
+          id: string;
+          event_id: string;
+          profile_id: string;
+          role: string;
+          status: string;
+          attendance_status: string | null;
+          offer_expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      decline_waitlist_offer: {
+        Args: { p_event_id: string };
+        Returns: string | null;  // next offered profile_id or null
       };
       create_maintenance_block: {
         Args: {
@@ -948,9 +975,10 @@ export type Database = {
       };
       update_club_settings: {
         Args: {
-          p_booking_window_days:        number;
-          p_cancellation_window_hours:  number;
+          p_booking_window_days:         number;
+          p_cancellation_window_hours:   number;
           p_cancellation_grace_minutes?: number;
+          p_waitlist_offer_window_hours?: number;  // Phase 18A
         };
         Returns: {
           id: string;
@@ -958,6 +986,7 @@ export type Database = {
           booking_window_days: number;
           cancellation_window_hours: number;
           cancellation_grace_minutes: number;
+          waitlist_offer_window_hours: number;  // Phase 18A
           created_at: string;
           updated_at: string;
         };
@@ -999,6 +1028,7 @@ export type Database = {
           role:              string;
           status:            string;
           attendance_status: string | null;
+          offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted
           waitlist_position: number | null;
         }[];
       };
