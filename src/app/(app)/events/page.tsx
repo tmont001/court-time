@@ -22,6 +22,7 @@ interface RawEventRow {
   created_by: string;
   event_types: { key: string; label: string; color: string } | null;
   event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
+  event_guests: Array<{ id: string }>;
   reservations: Array<{ court_id: string; reason: string; status: string }>;
 }
 
@@ -111,6 +112,7 @@ export default async function EventsPage() {
       id, title, starts_at, ends_at, capacity, status, created_by,
       event_types(key, label, color),
       event_participants(profile_id, role, status, offer_expires_at),
+      event_guests(id),
       reservations(court_id, reason, status)
     `)
     .eq("club_id", clubId)
@@ -183,19 +185,19 @@ export default async function EventsPage() {
                     {dayEvents.map(ev => {
                       const type = ev.event_types;
 
-                      // Participant counts.
-                      // Phase 18B: offered rows also hold a spot (same as confirmed for capacity).
+                      // Participant counts. Guests also occupy capacity slots (Phase 19A).
                       const confirmedCount = ev.event_participants.filter(
                         p => p.role === "participant" && p.status === "confirmed"
                       ).length;
                       const offeredCount = ev.event_participants.filter(
                         p => p.status === "offered"
                       ).length;
-                      // Waitlisted excludes offered rows.
+                      const guestCount = ev.event_guests?.length ?? 0;
+                      // Waitlisted excludes offered rows and guests.
                       const waitlistCount = ev.event_participants.filter(
                         p => p.status === "waitlisted"
                       ).length;
-                      const isFull = (confirmedCount + offeredCount) >= ev.capacity;
+                      const isFull = (confirmedCount + offeredCount + guestCount) >= ev.capacity;
 
                       // Current user's participation
                       const myEntry  = ev.event_participants.find(p => p.profile_id === user.id);
@@ -283,7 +285,7 @@ export default async function EventsPage() {
                           {/* Capacity row + action button */}
                           <div className="flex items-center justify-between mt-2">
                             <p className="text-xs text-gray-400 dark:text-gray-500">
-                              {confirmedCount + offeredCount} / {ev.capacity} joined
+                              {confirmedCount + offeredCount + guestCount} / {ev.capacity} joined
                               {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
                             </p>
 

@@ -29,6 +29,7 @@ interface EventWithDetails {
     shows_participant_names: boolean;
   };
   event_participants: EventParticipant[];
+  event_guests: Array<{ id: string }>;
   court_ids: string[];
 }
 
@@ -115,15 +116,16 @@ export default function EventDetailSheet({
   const offeredParticipants = event.event_participants
     .filter(p => p.status === "offered");
 
-  // Waitlisted: only truly-waitlisted rows (excludes offered).
+  // Waitlisted: only truly-waitlisted rows (excludes offered and guests).
   const waitlistedParticipants = event.event_participants
     .filter(p => p.status === "waitlisted");
 
   const confirmedCount  = confirmedParticipants.length;
   const offeredCount    = offeredParticipants.length;
+  const guestCount      = event.event_guests?.length ?? 0;
   const waitlistCount   = waitlistedParticipants.length;
-  // Full when confirmed + offered rows reach capacity.
-  const isFull          = (confirmedCount + offeredCount) >= event.capacity;
+  // Full when confirmed + offered + guests reach capacity (Phase 19A).
+  const isFull          = (confirmedCount + offeredCount + guestCount) >= event.capacity;
 
   // Exclude cancelled rows — a user who left should be treated as not joined.
   const myPart       = event.event_participants.find(
@@ -147,10 +149,10 @@ export default function EventDetailSheet({
   const canCancelEvent = userRole === "admin" || isHost;
   const canViewRoster  = userRole === "admin" || userRole === "pro";
 
-  // Total active participants shown in the roster button label (confirmed + offered + waitlisted).
+  // Total active participants shown in the roster button label (confirmed + offered + waitlisted + guests).
   const rosterCount = event.event_participants.filter(
     p => p.status === "confirmed" || p.status === "offered" || p.status === "waitlisted"
-  ).length;
+  ).length + guestCount;
 
   const courtNames = event.court_ids
     .map(id => courts.find(c => c.id === id)?.name ?? "Court")
@@ -311,9 +313,9 @@ export default function EventDetailSheet({
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{courtNames}</p>
         )}
 
-        {/* Capacity — confirmed + offered rows both consume a spot */}
+        {/* Capacity — confirmed + offered + guests all consume a spot */}
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          {confirmedCount + offeredCount} of {event.capacity} spots filled
+          {confirmedCount + offeredCount + guestCount} of {event.capacity} spots filled
           {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
 

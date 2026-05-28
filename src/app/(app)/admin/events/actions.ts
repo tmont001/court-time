@@ -2,6 +2,56 @@
 
 import { createClient } from "@/lib/supabase/server";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export type AdminEventRow = {
+  id:                 string;
+  title:              string;
+  starts_at:          string;
+  ends_at:            string;
+  capacity:           number;
+  status:             string;
+  event_types:        { key: string; label: string; color: string } | null;
+  event_participants: Array<{ profile_id: string; role: string; status: string }>;
+  event_guests:       Array<{ id: string }>;
+};
+
+// ─── fetchMoreAdminEvents ─────────────────────────────────────────────────────
+
+export async function fetchMoreAdminEvents(
+  offset: number,
+): Promise<{ events: AdminEventRow[]; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { events: [], error: "Not authenticated." };
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id, role")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.club_id) return { events: [], error: "Profile not found." };
+  if (profile.role !== "admin" && profile.role !== "pro") {
+    return { events: [], error: "Access denied." };
+  }
+
+  const { data, error } = await supabase
+    .from("events")
+    .select(`
+      id, title, starts_at, ends_at, capacity, status,
+      event_types(key, label, color),
+      event_participants(profile_id, role, status),
+      event_guests(id)
+    `)
+    .eq("club_id", profile.club_id)
+    .order("starts_at", { ascending: false })
+    .range(offset, offset + 24);
+
+  if (error) return { events: [], error: error.message };
+  return { events: (data ?? []) as AdminEventRow[] };
+}
+
 // ---------------------------------------------------------------------------
 // Error code → user-facing message map.
 // These codes are raised as exceptions by the admin_* RPCs in 0051.

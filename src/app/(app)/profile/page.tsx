@@ -52,7 +52,7 @@ export default async function ProfilePage() {
           smsOptIn={profile?.sms_opt_in ?? false}
         />
 
-        {profile?.role === "admin" && (
+        {(profile?.role === "admin" || profile?.role === "pro") && (
           <>
             <hr className="border-gray-100 dark:border-gray-800" />
             <div className="space-y-2">
@@ -60,32 +60,43 @@ export default async function ProfilePage() {
                 Admin
               </p>
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+                {profile?.role === "admin" && (
+                  <>
+                    <Link
+                      href="/admin/members"
+                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                    >
+                      Members
+                      <span className="text-gray-400 dark:text-gray-500">›</span>
+                    </Link>
+                    <Link
+                      href="/admin/courts"
+                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                    >
+                      Courts
+                      <span className="text-gray-400 dark:text-gray-500">›</span>
+                    </Link>
+                    <Link
+                      href="/admin/settings"
+                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                    >
+                      Settings
+                      <span className="text-gray-400 dark:text-gray-500">›</span>
+                    </Link>
+                    <Link
+                      href="/admin/audit-log"
+                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
+                    >
+                      Audit Log
+                      <span className="text-gray-400 dark:text-gray-500">›</span>
+                    </Link>
+                  </>
+                )}
                 <Link
-                  href="/admin/members"
+                  href="/admin/events"
                   className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
                 >
-                  Members
-                  <span className="text-gray-400 dark:text-gray-500">›</span>
-                </Link>
-                <Link
-                  href="/admin/courts"
-                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-                >
-                  Courts
-                  <span className="text-gray-400 dark:text-gray-500">›</span>
-                </Link>
-                <Link
-                  href="/admin/settings"
-                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-                >
-                  Settings
-                  <span className="text-gray-400 dark:text-gray-500">›</span>
-                </Link>
-                <Link
-                  href="/admin/audit-log"
-                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100"
-                >
-                  Audit Log
+                  Events
                   <span className="text-gray-400 dark:text-gray-500">›</span>
                 </Link>
               </div>

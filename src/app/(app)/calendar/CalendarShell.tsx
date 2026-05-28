@@ -52,6 +52,7 @@ interface RawEventRow {
     shows_participant_names: boolean;
   };
   event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
+  event_guests: Array<{ id: string }>;
   reservations: Array<{ court_id: string; status: string; reason: string }>;
 }
 
@@ -70,6 +71,7 @@ interface EventWithDetails {
     shows_participant_names: boolean;
   };
   event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
+  event_guests: Array<{ id: string }>;
   court_ids: string[];
 }
 
@@ -397,6 +399,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         id, title, starts_at, ends_at, capacity, status, created_by,
         event_types(key, label, color, shows_participant_names),
         event_participants(profile_id, role, status, offer_expires_at),
+        event_guests(id),
         reservations(court_id, status, reason)
       `)
       .eq("club_id", clubId)
@@ -417,6 +420,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           created_by:         r.created_by,
           event_types:        r.event_types,
           event_participants: r.event_participants,
+          event_guests:       r.event_guests,
           court_ids: r.reservations
             .filter(res => res.reason === "event" && res.status === "confirmed")
             .map(res => res.court_id),
