@@ -26,10 +26,88 @@ gets a new UUID and is fully isolated by row-level security.
 
 ---
 
+## Production environment checklist
+
+Complete these steps **once per environment** (production or staging) before
+running the bootstrap script for the first time. They are not repeated per club.
+
+### 1 — Vercel environment variables
+
+Set the following in your Vercel project → Settings → Environment Variables:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key (not service role) |
+| `TWILIO_ACCOUNT_SID` | No | Optional — in-app notifications work without it |
+| `TWILIO_AUTH_TOKEN` | No | Optional — see SMS note below |
+| `TWILIO_FROM_NUMBER` | No | Optional — e.g. `+1xxxxxxxxxx` |
+
+**SMS note:** In-app notifications (the bell) are pilot-critical and require no
+Twilio configuration. SMS is optional for the pilot. If Twilio vars are unset,
+the SMS test in Admin → Settings shows "SMS not configured" and SMS delivery is
+skipped silently. You can add Twilio later without any code changes.
+
+### 2 — Supabase Auth redirect URLs
+
+In Supabase dashboard → Authentication → URL Configuration:
+
+- **Site URL:** set to your production URL, e.g. `https://your-app.vercel.app`
+- **Redirect URLs:** add all of the following:
+  - `https://your-app.vercel.app/**`
+  - `http://localhost:3000/**` (for local development)
+
+Without this, password reset emails and invite flows redirect to the wrong URL.
+
+### 3 — club-logos storage bucket
+
+The storage bucket is not created by migrations — create it manually:
+
+1. Supabase dashboard → Storage → New bucket
+2. **Name:** `club-logos`
+3. **Public bucket:** enabled (logos are publicly readable)
+4. **File size limit:** 2 MB (2,097,152 bytes)
+5. **Allowed MIME types:** `image/jpeg`, `image/png`, `image/webp`
+
+Without this bucket, logo uploads from Admin → Settings will fail.
+
+### 4 — Notifications realtime publication
+
+The in-app notification bell uses Supabase Realtime. Run this **once** in the
+SQL Editor to add the `notifications` table to the realtime publication:
+
+```sql
+alter publication supabase_realtime add table notifications;
+```
+
+Without this, the notification bell count does not update in real time (new
+notifications require a page refresh to appear).
+
+### 5 — Verify the production environment
+
+Run `supabase/scripts/verify_production_setup.sql` in the SQL Editor. All
+checks should pass before proceeding to bootstrap. See that file for fix
+instructions for any failing checks.
+
+### 6 — Update app_url in the bootstrap script
+
+Before running `bootstrap_new_club.sql`, update the `app_url` field to your
+production URL:
+
+```sql
+'https://your-app.vercel.app'   as app_url
+```
+
+This value is used only to build the `invite_url` returned by the script. It
+must match the URL where your app is deployed so that the invite link works.
+
+---
+
 ## Prerequisites
 
 - Access to the Supabase project (SQL Editor + Authentication dashboard).
 - Migration `0035_bootstrap_new_club.sql` has been applied.
+- All steps in **Production environment checklist** above are complete.
 - You know the new club's name, slug, timezone, and court count.
 
 ---

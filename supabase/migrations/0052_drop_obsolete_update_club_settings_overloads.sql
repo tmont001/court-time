@@ -1,0 +1,38 @@
+-- 0052_drop_obsolete_update_club_settings_overloads.sql
+-- Phase 20A: Remove orphaned update_club_settings overloads.
+--
+-- Background
+-- ----------
+-- update_club_settings has been extended twice since its original definition,
+-- each time leaving the prior overload alive in the schema:
+--
+--   0012  CREATE OR REPLACE FUNCTION update_club_settings(int, int)
+--           → 2-argument overload created.
+--
+--   0025  CREATE OR REPLACE FUNCTION update_club_settings(int, int, int default 5)
+--           → PostgreSQL treats a different argument count as a distinct overload,
+--             so this created a NEW 3-argument version rather than replacing the
+--             2-argument one. The 2-argument overload from 0012 survived.
+--
+--   0049  DROP FUNCTION update_club_settings(int, int, int)
+--         CREATE OR REPLACE FUNCTION update_club_settings(int, int, int default 5, int default 2)
+--           → The 3-argument overload was explicitly dropped and the current
+--             4-argument overload was created. The 2-argument overload from 0012
+--             was not mentioned and survived again.
+--
+-- Result: every clean deployment running 0001–0051 in order ends with two
+-- overloads — the orphaned 2-argument version and the current 4-argument version.
+-- Named-argument calls from the app always resolve to the 4-argument version,
+-- so the 2-argument overload is unreachable and cannot be accidentally invoked.
+-- This migration removes it (and the 3-argument version defensively) so future
+-- clean deployments produce exactly one overload.
+--
+-- Safety
+-- ------
+-- Both DROP statements use IF EXISTS. Neither statement affects the current
+-- 4-argument overload: update_club_settings(integer, integer, integer, integer).
+-- No schema columns, RLS policies, tables, or data are modified.
+-- Safe to apply in any environment, including production. Idempotent.
+
+drop function if exists public.update_club_settings(integer, integer);
+drop function if exists public.update_club_settings(integer, integer, integer);
