@@ -101,13 +101,58 @@ not used. SSR was not disabled. Output format changes from `"Wed, Jun 3 at 9:00 
 
 ---
 
-## Checkpoint 20D-B — Issue #5: Member booking duration selector
+## Checkpoint 20D-B — Issue #5: Member court-reservation duration selector and RPC validation
 
-**Status: Not yet started**
+**Status: Complete ✓ — migration applied, manual QA passed; pnpm tsc and pnpm build pass**
 
-Scope: member court reservations only (`CalendarShell.tsx` booking sheet +
-`create_reservation` RPC). `CreateEventSheet` admin/pro event duration is
-explicitly excluded from this change.
+### Scope
+
+Member court reservations only. `CreateEventSheet.tsx` was not modified.
+Admin/pro event duration is unrestricted.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/calendar/CalendarShell.tsx` | State type `<60 \| 90>` → `<30 \| 60 \| 90 \| 120>`; pill array `[60, 90]` → `[30, 60, 90, 120]`; added `invalid_duration` → user-friendly message to `rpcErrorMessage` |
+| `supabase/migrations/0053_create_reservation_duration_check.sql` | New migration — full `create_reservation` body from 0047 + duration allowlist check |
+
+`CreateEventSheet.tsx` — **untouched**. Confirmed.
+
+### Migration base
+
+Migration `0047_create_reservation_override_check.sql` is the latest definition
+of `create_reservation` (five migrations define it: 0003, 0010, 0037, 0043, 0047).
+Migration 0053 reproduces the 0047 body exactly, inserting only the duration
+check between the existing `p_ends_at <= p_starts_at` guard and the Phase 17A
+override/hours block.
+
+### Applying migration 0053
+
+**Apply in Supabase SQL Editor before running manual QA against the database.**
+
+1. Open your Supabase project → SQL Editor.
+2. Paste the full contents of `supabase/migrations/0053_create_reservation_duration_check.sql`.
+3. Run. Expected: no error; `create or replace function` completes.
+4. Verify:
+   ```sql
+   select prosrc from pg_proc where proname = 'create_reservation';
+   -- Expected: body contains 'not in (30, 60, 90, 120)' duration check
+   ```
+
+### Manual QA results
+
+- [x] Migration `0053` applied successfully in Supabase SQL Editor.
+- [x] Verified `create_reservation` function body includes `not in (30, 60, 90, 120)` duration check.
+- [x] Booking sheet shows exactly four choices: **30 min**, **60 min**, **90 min**, **120 min**. Default remains 60 min.
+- [x] **30-minute reservation:** booked successfully; verified in DB.
+- [x] **60-minute reservation:** booked successfully; verified in DB.
+- [x] **90-minute reservation:** booked successfully; verified in DB.
+- [x] **120-minute reservation:** booked successfully; verified in DB.
+- [x] **45-minute direct RPC attempt:** rejected with `invalid_duration`.
+- [x] **Special-hours override regression:** booking beyond special closing hours rejected; booking ending within window succeeded.
+- [x] **Booking confirmation notification regression:** passed.
+- [x] `CreateEventSheet.tsx` untouched; admin/pro event duration unrestricted.
 
 ---
 

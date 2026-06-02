@@ -179,6 +179,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
   if (message === "cannot_book_past")       return "You cannot book in the past.";
   if (message === "outside_operating_hours") return "That time is outside operating hours.";
   if (message === "club_closed_this_day")   return "The club is closed on that day.";
+  if (message === "invalid_duration")       return "Reservations must be 30, 60, 90, or 120 minutes.";
   return "Something went wrong. Please try again.";
 }
 
@@ -198,7 +199,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   );
   const [resError, setResError]           = useState(false);
   const [bookingSlot, setBookingSlot]     = useState<BookingSlot | null>(null);
-  const [bookingDuration, setBookingDuration] = useState<60 | 90>(60);
+  const [bookingDuration, setBookingDuration] = useState<30 | 60 | 90 | 120>(60);
   const [bookingError, setBookingError]   = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
   // nowMs is 0 during SSR so all slots render as available (no past-slot check).
@@ -962,7 +963,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
             <div className="flex items-center gap-3 mt-4">
               <span className="text-sm text-gray-600 dark:text-gray-400">Duration</span>
-              {([60, 90] as const).map(d => (
+              {([30, 60, 90, 120] as const).map(d => (
                 <button
                   key={d}
                   onClick={() => setBookingDuration(d)}
