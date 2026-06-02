@@ -9,6 +9,14 @@ export default async function AdminAuditLogPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.role !== "admin") redirect("/calendar");
+
   const { data, error } = await supabase.rpc("get_audit_log", {
     p_limit:  50,
     p_offset: 0,

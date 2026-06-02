@@ -10,6 +10,14 @@ export default async function AdminMembersPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.role !== "admin") redirect("/calendar");
+
   const [membersResult, invitesResult] = await Promise.all([
     supabase.rpc("get_members"),
     supabase.rpc("get_club_invites"),

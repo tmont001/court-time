@@ -19,6 +19,8 @@ export default async function AdminSettingsPage() {
     .eq("id", user.id)
     .single();
 
+  if (profile?.role !== "admin") redirect("/calendar");
+
   const { data: settings } = await supabase
     .from("club_settings")
     .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours")

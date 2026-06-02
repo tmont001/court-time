@@ -10,9 +10,11 @@ export default async function AdminCourtsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("club_id")
+    .select("club_id, role")
     .eq("id", user.id)
     .single();
+
+  if (profile?.role !== "admin") redirect("/calendar");
 
   const { data: courts, error } = await supabase
     .from("courts")

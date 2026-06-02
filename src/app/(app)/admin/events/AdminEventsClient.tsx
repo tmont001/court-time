@@ -5,16 +5,24 @@ import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import { fetchMoreAdminEvents } from "./actions";
 import type { AdminEventRow } from "./actions";
 
+// Split date and time into separate Intl calls to avoid the browser-vs-Node
+// "at" connector divergence in en-US toLocaleString when both date and time
+// fields are requested together. Each call is deterministic on both runtimes.
 function formatDate(iso: string, tz: string): string {
-  return new Date(iso).toLocaleString("en-US", {
-    timeZone:    tz,
-    weekday:     "short",
-    month:       "short",
-    day:         "numeric",
-    hour:        "numeric",
-    minute:      "2-digit",
-    hour12:      true,
+  const d = new Date(iso);
+  const datePart = d.toLocaleDateString("en-US", {
+    timeZone: tz,
+    weekday:  "short",
+    month:    "short",
+    day:      "numeric",
   });
+  const timePart = d.toLocaleTimeString("en-US", {
+    timeZone: tz,
+    hour:     "numeric",
+    minute:   "2-digit",
+    hour12:   true,
+  });
+  return `${datePart} ${timePart}`;
 }
 
 interface Props {
