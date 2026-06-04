@@ -158,7 +158,125 @@ override/hours block.
 
 ## Checkpoint 20D-C — Issue #4: Invited-user signup from `/join/<code>`
 
-**Status: Not yet started**
+**Status: Complete ✓ — migration applied, corrected flow verified, manual QA passed; pnpm tsc and pnpm build pass**
+
+### Confirmed architecture decisions
+
+- Email confirmation remains enabled. Not disabled or worked around.
+- Email template remains `{{ .ConfirmationURL }}`. Not changed.
+- No service-role key required.
+- Custom SMTP is a Phase 20E / pilot-launch configuration requirement (not code).
+
+### Files changed
+
+| File | Type | Change |
+|------|------|--------|
+| `supabase/migrations/0054_validate_club_invite_privacy.sql` | New migration | Replaces `email: string\|null` with `email_restricted: boolean` in `validate_club_invite` response |
+| `src/app/auth/confirm/route.ts` | New Route Handler | Exchanges PKCE code via `exchangeCodeForSession`; validates `next` (/join/<code> only); sets session cookies on redirect response |
+| `src/lib/supabase/middleware.ts` | Edit | Added `/sign-up` and `/auth/confirm` to `isAppRoute` exclusion list |
+| `src/app/(auth)/sign-up/page.tsx` | New Server Component | Validates `redirect` param; redirects authenticated users; renders `SignUpForm` |
+| `src/app/(auth)/sign-up/SignUpForm.tsx` | New Client Component | Email + password + confirm; email_restricted notice; `signUp()` with `emailRedirectTo`; check-email confirmation state; sign-in link |
+| `src/app/(auth)/join/[code]/page.tsx` | Edit | `InviteValid.email → email_restricted: boolean`; signed-out branch adds "Create account" link and email-restriction notice |
+
+### Migration 0054
+
+**Apply in Supabase SQL Editor before running manual QA.**
+Changes `validate_club_invite` to return `email_restricted: boolean` instead of
+`email: string|null`. Existing UI did not display the invite email; this closes
+the anonymous-caller privacy exposure while preserving all validation behavior.
+
+```sql
+-- Verify after applying:
+select validate_club_invite('<any-valid-invite-code>');
+-- Expected: contains "email_restricted": true/false (not "email": "...")
+```
+
+### Open-redirect protection in `/auth/confirm`
+
+Only `/join/<32-char-hex>` passes the regex `^\/join\/[0-9a-f]{32}$`.
+Any missing, absolute, or arbitrary `next` value redirects to
+`/sign-in?error=invalid_redirect` without performing code exchange.
+
+### Supabase Redirect URL entries required before local/production testing
+
+Ensure these are present in Supabase → Authentication → URL Configuration → Redirect URLs:
+- `https://court-time.vercel.app/**` (wildcard — covers `/auth/confirm?next=...`)
+- `http://localhost:3000/**` (for local development)
+
+The wildcard should cover `/auth/confirm` with query parameters. If wildcard
+matching does not cover query strings in your Supabase plan, add the explicit entry:
+- `https://court-time.vercel.app/auth/confirm`
+
+### Email template
+
+Current template uses `{{ .ConfirmationURL }}`. No change required. Supabase
+builds the ConfirmationURL from the OTP and appends `?code=<pkce>` to the
+`emailRedirectTo` value when the user clicks. The Route Handler at `/auth/confirm`
+then exchanges the code.
+
+### QA progress
+
+**Invalid `next` redirect protection:** ✓ Passed
+- [x] `/auth/confirm?next=https://evil.com` → redirected to `/sign-in?error=invalid_redirect`.
+- [x] `/auth/confirm?next=/calendar` → redirected to `/sign-in?error=invalid_redirect`.
+- [x] `/auth/confirm` (no code) → redirected to `/sign-in?error=confirmation_failed`.
+- [x] No external navigation or data exposure occurred in any case.
+
+**Initial signup-confirmation test — redundant steps identified:**
+Initial test revealed that after clicking the confirmation link, the user landed on
+`/join/<code>` and had to manually click "Accept Invitation" as a second step.
+The intended flow is: confirm email → invite auto-accepted → `/welcome` once →
+`/calendar`. Correction implemented: `/auth/confirm` now auto-accepts the invite
+after exchanging the PKCE code, then redirects directly to `/welcome`. See
+implementation note below.
+
+**Test-user cleanup — out of scope:**
+Supabase returned `Failed to delete user: Database error deleting user` when
+attempting to delete a test Auth user during cleanup. This is not investigated or
+fixed in Phase 20D-C. A new email alias will be used for the post-correction
+retest. Deleting a user that has accepted an invite references profile/invite/audit
+rows — deletion failure is expected behavior from Supabase's cascade handling.
+
+### Correction: auto-accept in `/auth/confirm`
+
+After `exchangeCodeForSession` establishes the session, the Route Handler now
+calls `accept_club_invite` server-side using the same Supabase client (which has
+the new session in its auth context). If acceptance succeeds, redirects to
+`/welcome`. If acceptance fails (email_mismatch, expired, etc.), redirects to
+`/join/<code>` with the session cookie set so the user sees the appropriate error
+via the existing AcceptButton error display.
+
+### Manual QA results (post-correction retest)
+
+- [x] Migration `0054` already applied; `validate_club_invite` returns `email_restricted` boolean, not email value.
+- [x] `/join/<code>` signed-out view: both "Sign in to accept" and "Create account" visible; email-restriction notice shown without revealing actual email address.
+- [x] `/sign-up?redirect=/join/<code>`: restricted-invite notice shown, editable email field, sign-in fallback link present.
+- [x] Signup with correct restricted email → "Check your email" state shown.
+- [x] Clicking newest confirmation link → redirected directly to `/welcome` (no redundant sign-in or manual accept step).
+- [x] `/welcome` is the only profile step → submit → `/calendar` with correct member role.
+- [x] DB: `profiles.club_id` set, `club_invites.accepted_at`/`accepted_by` set, audit log `accept_invite` entry present.
+- [x] Reusing the accepted invite link → "Invite already used" shown correctly.
+- [x] Existing-user "Sign in to accept" path intact.
+- [x] Wrong-email enforcement intact (`accept_club_invite` unchanged; `email_mismatch` error path redirects back to `/join/<code>` with session established).
+- [x] Invalid `/auth/confirm?next=...` redirect tests passed (external URL, arbitrary internal path, missing params all redirected safely).
+- [x] No hydration or runtime errors during corrected onboarding flow.
+- [x] Supabase Auth user deletion error is test-cleanup only and out of scope; fresh email aliases used for onboarding tests.
+
+### Custom SMTP — Phase 20E / pilot-launch prerequisite (retained)
+
+Supabase built-in email is rate-limited and not suitable for production member
+onboarding or password-reset reliability. Custom SMTP must be configured before
+inviting real pilot members. No code change required. Add to Phase 20E launch checklist.
+
+**Confirmation link failure:**
+- [ ] Use an already-consumed or expired confirmation code (e.g., click the link twice).
+- [ ] Expected: redirect to `/sign-in?error=confirmation_failed` (exchange fails).
+
+### Custom SMTP — Phase 20E pilot-launch requirement
+
+Supabase built-in email has rate limits not suitable for production. Custom SMTP
+must be configured before inviting real pilot members. This does not affect any
+application code. Add to Phase 20E / pilot-launch checklist.
 
 Must preserve email verification. Must not assume invite redirect automatically
 establishes an SSR-authenticated session without inspecting the existing

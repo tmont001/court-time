@@ -15,7 +15,7 @@ interface InviteValid {
   valid: true;
   club_name: string;
   role: string;
-  email: string | null;
+  email_restricted: boolean;
 }
 
 interface InviteInvalid {
@@ -117,14 +117,15 @@ export default async function JoinPage({
     );
   }
 
-  // --- Signed out: show invite details and prompt to sign in ---
+  // --- Signed out: show invite details and offer sign in or create account ---
   if (!user) {
+    const signUpHref = `/sign-up?redirect=/join/${code}${invite.email_restricted ? "&emailRestricted=1" : ""}`;
     return (
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-1">
           You&apos;re invited
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
           You&apos;ve been invited to join{" "}
           <span className="font-medium text-gray-900 dark:text-gray-100">
             {invite.club_name}
@@ -135,12 +136,27 @@ export default async function JoinPage({
           </span>
           .
         </p>
-        <Link
-          href={`/sign-in?redirect=/join/${code}`}
-          className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
-        >
-          Sign in to accept
-        </Link>
+
+        {invite.email_restricted && (
+          <p className="mb-4 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-md px-3 py-2">
+            This invitation is restricted to a specific email address.
+          </p>
+        )}
+
+        <div className="space-y-2">
+          <Link
+            href={`/sign-in?redirect=/join/${code}`}
+            className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
+          >
+            Sign in to accept
+          </Link>
+          <Link
+            href={signUpHref}
+            className="block w-full text-center border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-md px-3 py-2 text-sm font-medium"
+          >
+            Create account
+          </Link>
+        </div>
       </div>
     );
   }

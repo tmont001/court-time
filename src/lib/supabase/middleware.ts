@@ -39,6 +39,8 @@ export async function updateSession(request: NextRequest) {
     !pathname.startsWith("/welcome") &&
     !pathname.startsWith("/join") &&
     !pathname.startsWith("/pending-invite") &&
+    !pathname.startsWith("/sign-up") &&
+    !pathname.startsWith("/auth/confirm") &&
     pathname !== "/";
 
   if (isAppRoute && !user) {
