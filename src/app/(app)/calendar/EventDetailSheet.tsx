@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import EventRosterSheet from "./EventRosterSheet";
+import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
@@ -96,6 +96,8 @@ export default function EventDetailSheet({
 
   const [loading, setLoading]                         = useState(false);
   const [error, setError]                             = useState<string | null>(null);
+  const [localParticipants, setLocalParticipants]     = useState<EventParticipant[]>(event.event_participants);
+  const [localGuestCount, setLocalGuestCount]         = useState(event.event_guests?.length ?? 0);
   const [participantProfiles, setParticipantProfiles] = useState<ParticipantProfile[]>([]);
   const [cancelConfirming, setCancelConfirming]       = useState(false);
   const [cancelLoading, setCancelLoading]             = useState(false);
@@ -108,27 +110,27 @@ export default function EventDetailSheet({
 
   // Only confirmed participants with role = 'participant' consume capacity.
   // Hosts never count toward capacity — matches the backend join_event logic.
-  const confirmedParticipants = event.event_participants
+  const confirmedParticipants = localParticipants
     .filter(p => p.status === "confirmed" && p.role === "participant")
     .sort((a, b) => a.profile_id.localeCompare(b.profile_id));
 
   // Phase 18B: offered rows also hold a spot (capacity guard: confirmed+offered).
-  const offeredParticipants = event.event_participants
+  const offeredParticipants = localParticipants
     .filter(p => p.status === "offered");
 
   // Waitlisted: only truly-waitlisted rows (excludes offered and guests).
-  const waitlistedParticipants = event.event_participants
+  const waitlistedParticipants = localParticipants
     .filter(p => p.status === "waitlisted");
 
   const confirmedCount  = confirmedParticipants.length;
   const offeredCount    = offeredParticipants.length;
-  const guestCount      = event.event_guests?.length ?? 0;
+  const guestCount      = localGuestCount;
   const waitlistCount   = waitlistedParticipants.length;
   // Full when confirmed + offered + guests reach capacity (Phase 19A).
   const isFull          = (confirmedCount + offeredCount + guestCount) >= event.capacity;
 
   // Exclude cancelled rows — a user who left should be treated as not joined.
-  const myPart       = event.event_participants.find(
+  const myPart       = localParticipants.find(
     p => p.profile_id === userId && p.status !== "cancelled"
   );
   const isHost       = myPart?.role === "host";
@@ -150,7 +152,7 @@ export default function EventDetailSheet({
   const canViewRoster  = userRole === "admin" || userRole === "pro";
 
   // Total active participants shown in the roster button label (confirmed + offered + waitlisted + guests).
-  const rosterCount = event.event_participants.filter(
+  const rosterCount = localParticipants.filter(
     p => p.status === "confirmed" || p.status === "offered" || p.status === "waitlisted"
   ).length + guestCount;
 
@@ -463,6 +465,10 @@ export default function EventDetailSheet({
           clubTimezone={clubTimezone}
           userRole={userRole}
           onClose={() => setRosterOpen(false)}
+          onRosterChange={(rows: RosterParticipantRow[], gc: number) => {
+            setLocalParticipants(rows);
+            setLocalGuestCount(gc);
+          }}
         />
       )}
     </>

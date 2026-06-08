@@ -269,8 +269,8 @@ onboarding or password-reset reliability. Custom SMTP must be configured before
 inviting real pilot members. No code change required. Add to Phase 20E launch checklist.
 
 **Confirmation link failure:**
-- [ ] Use an already-consumed or expired confirmation code (e.g., click the link twice).
-- [ ] Expected: redirect to `/sign-in?error=confirmation_failed` (exchange fails).
+- [x] Use an already-consumed or expired confirmation code (e.g., click the link twice).
+- [x] Expected: redirect to `/sign-in?error=confirmation_failed` (exchange fails). ✓ Verified in Phase 20E-A.
 
 ### Custom SMTP — Phase 20E pilot-launch requirement
 
@@ -286,7 +286,7 @@ callback/confirmation architecture first.
 
 ## Checkpoint 20D-D — Issues #1 and #6: Pre-pilot usability fixes
 
-**Status: Implemented — pending manual QA**
+**Status: Complete ✓ — manual QA passed (including 20E-A regression); pnpm tsc and pnpm build pass**
 
 ### Issue #1: Roster and occupancy refresh after mutations
 
@@ -324,26 +324,44 @@ No migrations. No new RPCs.
 
 No migrations. No RLS changes. No new RPCs.
 
-### Pending manual QA
+### Manual QA results
 
-**Issue #1 — roster refresh:**
-- [ ] Open `/admin/events` as Admin → open roster on a scheduled event → add a member → occupancy count on the event card updates immediately (no page reload needed).
-- [ ] Add a guest → event card occupancy count updates immediately.
-- [ ] Remove a participant → event card count updates.
-- [ ] Force Confirm, Offer Spot, Expire Offer → event card count updates after each action.
-- [ ] Roster sheet rows are still correct after each mutation (unchanged behavior).
+**Issue #1 — roster refresh (/admin/events):**
+- [x] Open `/admin/events` as Admin → open roster on a scheduled event → add a member → occupancy count on the event card updates immediately (no page reload needed).
+- [x] Add a guest → event card occupancy count updates immediately.
+- [x] Remove a participant → event card count updates.
+- [x] Force Confirm, Offer Spot, Expire Offer → event card count updates after each action.
+- [x] Roster sheet rows are still correct after each mutation (unchanged behavior).
 
 **Issue #6 — member reservation detail/cancel:**
-- [ ] M1 books a court → own reservation block shows as "You" on the calendar.
-- [ ] M1 taps the "You" block → reservation detail sheet opens showing court, date, time.
-- [ ] "Booked by" line is NOT shown (member is viewing their own booking).
-- [ ] **Within cancellation window + after grace period:** Cancel Booking button → "This booking can no longer be cancelled — the cancellation window has passed." error shown. Reservation not cancelled.
-- [ ] **Outside cancellation window (or within grace period):** Cancel Booking → succeeds → reservation disappears from calendar → `/my-schedule` no longer shows it.
-- [ ] M2's reservation block (another member's booking) shows as a non-clickable div — no detail sheet opens.
-- [ ] Admin tapping any reservation still opens the admin-mode detail sheet with "Booked by" and admin-cancel behavior intact.
+- [x] M1 books a court → own reservation block shows as "You" on the calendar.
+- [x] M1 taps the "You" block → reservation detail sheet opens showing court, date, time.
+- [x] "Booked by" line is NOT shown (member is viewing their own booking).
+- [x] **Within cancellation window + after grace period:** Cancel Booking button → "This booking can no longer be cancelled — the cancellation window has passed." error shown. Reservation not cancelled.
+- [x] **Outside cancellation window (or within grace period):** Cancel Booking → succeeds → reservation disappears from calendar → `/my-schedule` no longer shows it.
+- [x] M2's reservation block (another member's booking) shows as a non-clickable div — no detail sheet opens.
+- [x] Admin tapping any reservation still opens the admin-mode detail sheet with "Booked by" and admin-cancel behavior intact.
+
+### Bug found during Phase 20E-A regression and fixed
+
+**Issue:** `EventDetailSheet` (Calendar page) showed stale capacity counts after roster mutations made inside the nested `EventRosterSheet`. The `/admin/events` card counts (Issue #1) updated correctly because `AdminEventsClient` was wired to `onRosterChange` in Phase 20D-D — but `EventDetailSheet` rendered its own inline `EventRosterSheet` without passing `onRosterChange`, so the capacity display never updated.
+
+**Root cause:** `EventDetailSheet` derived `confirmedCount`, `offeredCount`, `guestCount`, `waitlistCount`, and `isFull` directly from the frozen `event` prop passed when the sheet opened.
+
+**Fix (Phase 20E-A):** Added `localParticipants` and `localGuestCount` state in `EventDetailSheet`, initialized from the prop. All capacity-derived values now read from local state. Wired `onRosterChange` to the inline `EventRosterSheet` to push updated rows and guest count into local state after each successful `loadRoster()`.
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/calendar/EventDetailSheet.tsx` | Import `RosterParticipantRow`; add `localParticipants`/`localGuestCount` state; replace prop references with local state; wire `onRosterChange` to `EventRosterSheet` |
+
+No migrations. No new RPCs.
+
+**Retest:**
+- [x] Open event detail sheet from Calendar → open roster → add a member → capacity count in the detail sheet header updates immediately.
+- [x] `/admin/events` card counts still update correctly (regression).
 
 ---
 
 ## Checkpoint 20D-E — Final sign-off
 
-**Status: Not yet started**
+**Status: Complete ✓ — all 20D issues verified; one regression found and fixed in Phase 20E-A (see above). Phase 20D closed.**
