@@ -31,11 +31,13 @@ interface OwnerProfile {
 }
 
 interface Props {
-  reservation:  ReservationBlock;
-  courts:       Court[];
-  clubTimezone: string;
-  onClose:      () => void;
-  onCancelled:  () => void;
+  reservation:    ReservationBlock;
+  courts:         Court[];
+  clubTimezone:   string;
+  onClose:        () => void;
+  onCancelled:    () => void;
+  // When provided, the sheet operates in member-cancel mode (instead of admin).
+  onMemberCancel?: () => Promise<{ error?: string }>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, onClose, onCancelled,
+  reservation, courts, clubTimezone, onClose, onCancelled, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -65,6 +67,10 @@ export default function ReservationDetailSheet({
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
 
   useEffect(() => {
+    // Owner-profile fetch is only needed for admin mode (to display "Booked by").
+    // In member-cancel mode the member is viewing their own booking — skip the fetch.
+    if (onMemberCancel) return;
+
     supabase
       .from("profiles")
       .select("id, first_name, last_name")
@@ -89,14 +95,27 @@ export default function ReservationDetailSheet({
 
   const ownerName = ownerProfile ? ownerDisplayName(ownerProfile) : "Loading…";
 
-  // ── Action ────────────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────
 
-  async function handleCancel() {
+  async function handleAdminCancel() {
     setLoading(true);
     setError(null);
     const result = await adminCancelReservation(reservation.id);
     if (result?.error) {
       setError(mapCancelError(result.error));
+      setLoading(false);
+      return;
+    }
+    onCancelled();
+  }
+
+  async function handleMemberCancel() {
+    if (!onMemberCancel) return;
+    setLoading(true);
+    setError(null);
+    const result = await onMemberCancel();
+    if (result?.error) {
+      setError(result.error);
       setLoading(false);
       return;
     }
@@ -117,8 +136,10 @@ export default function ReservationDetailSheet({
       {/* Time */}
       <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
 
-      {/* Owner */}
-      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
+      {/* Owner — admin mode only; member is viewing their own booking */}
+      {!onMemberCancel && (
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
+      )}
 
       {/* Maintenance notes — only for maintenance/admin_block reason */}
       {reservation.reason === "maintenance" && (
@@ -139,10 +160,10 @@ export default function ReservationDetailSheet({
       {/* Error */}
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
-      {/* Cancel */}
+      {/* Cancel — member mode or admin mode */}
       <button
         disabled={loading}
-        onClick={handleCancel}
+        onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
         className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40"
       >
         {loading ? "Cancelling…" : "Cancel Booking"}

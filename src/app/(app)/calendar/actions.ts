@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sendSms } from "@/lib/sms";
 
@@ -738,4 +739,78 @@ async function dispatchEventCancelSms(
       });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// cancelMemberReservation
+// Member self-cancel for a confirmed court reservation.
+// Enforces the same cancellation-window and grace-period rules as the inline
+// server action in my-schedule/page.tsx. Returns { error } when cancellation
+// is blocked or fails so callers can surface a message to the user.
+// Revalidates both /my-schedule and /calendar to keep both views fresh.
+// ---------------------------------------------------------------------------
+export async function cancelMemberReservation(
+  reservationId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  const { data: actorProfile } = await supabase
+    .from("profiles")
+    .select("role, club_id")
+    .eq("id", user.id)
+    .single();
+
+  if (!actorProfile) return { error: "Profile not found." };
+
+  // Members (non-admin) are subject to cancellation-window and grace-period rules.
+  if (actorProfile.role !== "admin") {
+    const { data: targetRes } = await supabase
+      .from("reservations")
+      .select("starts_at, created_at")
+      .eq("id", reservationId)
+      .eq("owner_user_id", user.id)
+      .single();
+
+    if (!targetRes) return { error: "Reservation not found." };
+
+    const { data: settings } = await supabase
+      .from("club_settings")
+      .select("cancellation_window_hours, cancellation_grace_minutes")
+      .eq("club_id", actorProfile.club_id ?? "")
+      .single();
+
+    const windowMs    = (settings?.cancellation_window_hours  ?? 24) * 60 * 60 * 1000;
+    const graceMs     = (settings?.cancellation_grace_minutes ??  5) * 60 * 1000;
+    const insideWindow = new Date(targetRes.starts_at).getTime() - Date.now() < windowMs;
+    const withinGrace  = graceMs > 0 && Date.now() - new Date(targetRes.created_at).getTime() < graceMs;
+
+    if (insideWindow && !withinGrace) {
+      return { error: "This booking can no longer be cancelled — the cancellation window has passed." };
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("reservations")
+    .update({
+      status:            "cancelled",
+      cancelled_at:      new Date().toISOString(),
+      cancelled_by:      user.id,
+      cancellation_kind: "member",
+    })
+    .eq("id", reservationId)
+    .eq("owner_user_id", user.id);
+
+  if (updateError) return { error: "Could not cancel the booking. Please try again." };
+
+  try {
+    await notifyMemberReservationCancelled(user.id, reservationId);
+  } catch {
+    // Notification dispatch must never surface to the user.
+  }
+
+  revalidatePath("/my-schedule");
+  return {};
 }

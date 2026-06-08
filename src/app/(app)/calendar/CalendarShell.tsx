@@ -7,7 +7,7 @@ import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
-import { createReservation } from "./actions";
+import { createReservation, cancelMemberReservation } from "./actions";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -723,8 +723,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         const isBlocked = res.reason !== "member_booking";
                         const isAdmin   = userRole === "admin";
 
+                        // Members can tap their own court reservations to manage/cancel them.
+                        const isClickable = isAdmin || (isOwn && !isBlocked);
                         const blockCls = `absolute rounded text-[10px] font-medium px-1 overflow-hidden flex items-center ${
-                          isAdmin ? "cursor-pointer" : "pointer-events-none"
+                          isClickable ? "cursor-pointer" : "pointer-events-none"
                         } ${
                           isOwn
                             ? "border-2 border-blue-500 bg-blue-50 text-blue-700"
@@ -759,7 +761,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                           blockLabel = "";
                         }
 
-                        return isAdmin ? (
+                        return isClickable ? (
                           <button
                             key={res.id}
                             onClick={() => setSelectedReservation(res)}
@@ -934,7 +936,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         />
       )}
 
-      {/* ── Reservation detail sheet (admin only) ────────────────────────── */}
+      {/* ── Reservation detail sheet ─────────────────────────────────────── */}
       {selectedReservation && (
         <ReservationDetailSheet
           reservation={selectedReservation}
@@ -942,6 +944,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           clubTimezone={clubTimezone}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
+          onMemberCancel={
+            selectedReservation.owner_user_id === userId && userRole === "member"
+              ? async () => cancelMemberReservation(selectedReservation.id)
+              : undefined
+          }
         />
       )}
 

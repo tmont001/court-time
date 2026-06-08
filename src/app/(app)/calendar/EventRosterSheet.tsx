@@ -29,11 +29,16 @@ interface MemberOption {
   display_name: string;
 }
 
+// Minimal participant shape needed by parent components to update occupancy counts.
+export type RosterParticipantRow = { profile_id: string; role: string; status: string };
+
 interface Props {
-  eventId:       string;
-  onClose:       () => void;
-  clubTimezone?: string;
-  userRole?:     string;
+  eventId:          string;
+  onClose:          () => void;
+  clubTimezone?:    string;
+  userRole?:        string;
+  // Called after every successful roster fetch so parents can update occupancy counts.
+  onRosterChange?: (participantRows: RosterParticipantRow[], guestCount: number) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,7 +54,7 @@ function formatExpiryTime(isoString: string, tz?: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole }: Props) {
+export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, onRosterChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const isAdmin  = userRole === "admin" || userRole === "pro";
 
@@ -86,7 +91,19 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
         if (rpcError) {
           setError("Unable to load roster. Please try again.");
         } else {
-          setRows((data as RosterRow[]) ?? []);
+          const fetched = (data as RosterRow[]) ?? [];
+          setRows(fetched);
+          // Notify parent so it can update occupancy counts without a page reload.
+          if (onRosterChange) {
+            onRosterChange(
+              fetched.filter(r => r.role !== "guest").map(r => ({
+                profile_id: r.profile_id,
+                role:       r.role,
+                status:     r.status,
+              })),
+              fetched.filter(r => r.role === "guest").length,
+            );
+          }
         }
         setLoading(false);
       });

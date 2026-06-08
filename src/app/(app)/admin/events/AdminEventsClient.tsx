@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
+import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import { fetchMoreAdminEvents } from "./actions";
 import type { AdminEventRow } from "./actions";
 
@@ -37,6 +38,22 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [hasMore, setHasMore]           = useState(initialHasMore);
   const [fetchError, setFetchError]     = useState<string | null>(null);
   const [isPending, startTransition]    = useTransition();
+
+  function handleRosterChange(
+    eventId:         string,
+    participantRows: RosterParticipantRow[],
+    guestCount:      number,
+  ) {
+    setEvents(prev => prev.map(ev => {
+      if (ev.id !== eventId) return ev;
+      return {
+        ...ev,
+        event_participants: participantRows,
+        // Preserve only the count; individual ids are not used by this component.
+        event_guests: Array.from({ length: guestCount }, () => ({ id: "" })),
+      };
+    }));
+  }
 
   function handleLoadMore() {
     setFetchError(null);
@@ -128,6 +145,8 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                   eventId={ev.id}
                   count={rosterCount}
                   userRole={userRole}
+                  clubTimezone={clubTimezone}
+                  onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
                 />
               </div>
             )}

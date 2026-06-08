@@ -286,10 +286,61 @@ callback/confirmation architecture first.
 
 ## Checkpoint 20D-D — Issues #1 and #6: Pre-pilot usability fixes
 
-**Status: Not yet started**
+**Status: Implemented — pending manual QA**
 
-- Issue #1: Admin roster and occupancy counts stale after mutations.
-- Issue #6: Members cannot manage/cancel own court reservations from Calendar.
+### Issue #1: Roster and occupancy refresh after mutations
+
+**Root cause:** `AdminEventsClient` holds a local `events` state initialized from server props. The event card's occupancy count is derived from `ev.event_participants` and `ev.event_guests` arrays in that state. Roster mutations update Supabase correctly and `EventRosterSheet` already calls `loadRoster()` after each mutation — the roster rows update. But `AdminEventsClient`'s `events` state was never notified, so the parent card counts stayed stale.
+
+**Fix:** Added `onRosterChange` callback prop chain: `AdminEventsClient` → `EventRosterButton` → `EventRosterSheet`. After every successful `loadRoster()`, `EventRosterSheet` calls the callback with the fresh participant rows and guest count. `AdminEventsClient.handleRosterChange` updates the specific event's `event_participants` and `event_guests` arrays in local state, causing the occupancy counts to recompute immediately on re-render.
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/calendar/EventRosterSheet.tsx` | Export `RosterParticipantRow` type; add `onRosterChange` prop; call it after each successful `loadRoster()` |
+| `src/app/(app)/events/EventRosterButton.tsx` | Add `clubTimezone` and `onRosterChange` props; pass both to `EventRosterSheet` |
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | Import `RosterParticipantRow`; add `handleRosterChange`; pass callback and `clubTimezone` to `EventRosterButton` |
+
+No migrations. No new RPCs.
+
+### Issue #6: Calendar own-reservation detail and cancel
+
+**Root cause:** Reservation blocks in CalendarShell were rendered as `pointer-events-none <div>` for all non-admin users. No path existed for a member to view or cancel their own reservation from Calendar.
+
+**Fix:**
+1. Own (non-maintenance) reservation blocks are now rendered as clickable `<button>` for members when `isOwn && !isBlocked`. This calls `setSelectedReservation(res)`.
+2. `ReservationDetailSheet` gains an optional `onMemberCancel` prop. When present, it shows a cancel button using the member-level action (not `adminCancelReservation`). The owner-profile fetch and "Booked by" line are suppressed in member mode.
+3. CalendarShell passes `onMemberCancel` when `selectedReservation.owner_user_id === userId && userRole === "member"`.
+4. New `cancelMemberReservation` server action in `calendar/actions.ts` enforces the same cancellation-window and grace-period rules as `my-schedule/page.tsx`. Returns `{ error }` if blocked so the sheet can display a message.
+
+**Files changed:**
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/calendar/actions.ts` | Add `revalidatePath` import; add `cancelMemberReservation` server action |
+| `src/app/(app)/calendar/ReservationDetailSheet.tsx` | Add `onMemberCancel` prop; member-mode cancel path; suppress "Booked by" and owner fetch in member mode |
+| `src/app/(app)/calendar/CalendarShell.tsx` | Import `cancelMemberReservation`; make `isOwn && !isBlocked` blocks clickable; pass `onMemberCancel` to `ReservationDetailSheet` |
+
+No migrations. No RLS changes. No new RPCs.
+
+### Pending manual QA
+
+**Issue #1 — roster refresh:**
+- [ ] Open `/admin/events` as Admin → open roster on a scheduled event → add a member → occupancy count on the event card updates immediately (no page reload needed).
+- [ ] Add a guest → event card occupancy count updates immediately.
+- [ ] Remove a participant → event card count updates.
+- [ ] Force Confirm, Offer Spot, Expire Offer → event card count updates after each action.
+- [ ] Roster sheet rows are still correct after each mutation (unchanged behavior).
+
+**Issue #6 — member reservation detail/cancel:**
+- [ ] M1 books a court → own reservation block shows as "You" on the calendar.
+- [ ] M1 taps the "You" block → reservation detail sheet opens showing court, date, time.
+- [ ] "Booked by" line is NOT shown (member is viewing their own booking).
+- [ ] **Within cancellation window + after grace period:** Cancel Booking button → "This booking can no longer be cancelled — the cancellation window has passed." error shown. Reservation not cancelled.
+- [ ] **Outside cancellation window (or within grace period):** Cancel Booking → succeeds → reservation disappears from calendar → `/my-schedule` no longer shows it.
+- [ ] M2's reservation block (another member's booking) shows as a non-clickable div — no detail sheet opens.
+- [ ] Admin tapping any reservation still opens the admin-mode detail sheet with "Booked by" and admin-cancel behavior intact.
 
 ---
 

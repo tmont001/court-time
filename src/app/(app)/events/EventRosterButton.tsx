@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import EventRosterSheet from "@/app/(app)/calendar/EventRosterSheet";
+import EventRosterSheet, { type RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 
 interface Props {
-  eventId:   string;
-  count:     number;
-  userRole?: string;
+  eventId:          string;
+  count:            number;
+  userRole?:        string;
+  clubTimezone?:    string;
+  onRosterChange?:  (participantRows: RosterParticipantRow[], guestCount: number) => void;
 }
 
-export default function EventRosterButton({ eventId, count, userRole }: Props) {
+export default function EventRosterButton({ eventId, count, userRole, clubTimezone, onRosterChange }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -23,7 +25,9 @@ export default function EventRosterButton({ eventId, count, userRole }: Props) {
         <EventRosterSheet
           eventId={eventId}
           userRole={userRole}
+          clubTimezone={clubTimezone}
           onClose={() => setOpen(false)}
+          onRosterChange={onRosterChange}
         />
       )}
     </>
