@@ -417,6 +417,41 @@ they can return to `/welcome` or update their name from `/profile`.
 
 ---
 
+## Changing the first admin
+
+The first admin account is provisioned via the bootstrap script and the manual
+Auth-user creation in Step 4. If you need to transfer the admin role to a different
+person — for example, if the initial admin changes or the club wants a different
+primary contact — do this entirely through the app. No code changes, no migrations,
+and no Supabase dashboard edits are required.
+
+**Process**
+
+1. Sign in as an existing admin.
+2. Navigate to `/admin/members` → **Invite** → choose role **admin**.
+3. Copy the generated invite link and send it to the new admin.
+4. The new admin accepts the invite and completes the `/welcome` flow.
+5. Confirm the new admin can access `/admin/members`, `/admin/courts`,
+   `/admin/settings`, and `/admin/audit-log` before making any changes to the
+   original admin account.
+6. If the original admin should no longer have admin access, either:
+   - Change their role to **member** or **pro** via `/admin/members` → role selector, or
+   - Set their status to **inactive** via `/admin/members` → status selector.
+
+**Rules**
+
+- **Keep at least one active admin at all times.** There is no recovery path if all
+  admin accounts are deactivated — you would need to update the `profiles` table
+  directly in the Supabase SQL Editor to restore admin access.
+- Verify the new admin has working access before deactivating or demoting the original.
+- Do not attempt to change an admin's email address. There is no email-change feature
+  in the app. If an admin needs a different email address, invite them with the new
+  address and deactivate the old account.
+- Deactivated accounts cannot book courts or join events (enforced at the RPC level),
+  but they can still sign in to the app. This is expected behavior.
+
+---
+
 ## Defaults reference
 
 | Setting                  | Default                 | Adjustable after setup         |
