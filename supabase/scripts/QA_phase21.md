@@ -259,8 +259,8 @@ No migrations. No code changes. No data cleanup or deletion performed.
 
 This checkpoint ensures North Shore Towers is fully configured for real use,
 that the admin and any pro users understand how to operate the platform
-day-to-day, and that a member-facing explanation is ready before friendly
-users are invited.
+independently, and that member-facing talking points are ready before
+friendly users are invited.
 
 No code changes. No migrations. No data deletion.
 
@@ -268,336 +268,444 @@ No code changes. No migrations. No data deletion.
 
 ### Part 1 — North Shore Towers configuration checklist
 
-Work through this as the admin before inviting anyone. Everything in this
-section is done through the app or Supabase SQL Editor.
+Work through this section as the admin before inviting anyone. Everything
+here is done through the app at `https://court-time.vercel.app` or the
+Supabase SQL Editor.
 
 **1A — Club settings verified**
 
-Open `/admin/settings`. Confirm the following match the intended pilot setup
-and edit any values that need to change before members arrive.
+Open `/admin/settings`. Confirm each value matches the club's actual policy
+and edit anything that needs to change before members arrive.
 
-- [x] Club name displays correctly as **North Shore Towers** in the app header.
-- [x] Booking window shows **14 days** (adjust if the club wants a shorter or
-      longer advance-booking horizon).
-- [x] Cancellation window shows **24 hours** (adjust to match the club's policy).
-- [x] Cancellation grace period shows **5 minutes** (adjust if needed).
-- [x] Waitlist offer window is set (check the value; adjust to match how long
-      the club wants to give a waitlisted member to accept a spot offer).
+- [ ] Club name displays as **North Shore Towers** in the app header and on
+      the sign-in page.
+- [ ] Booking window is set correctly (default: 14 days). Adjust if the club
+      wants a shorter or longer advance-booking horizon.
+- [ ] Cancellation window is set correctly (default: 24 hours). Adjust to
+      match the club's stated cancellation policy.
+- [ ] Cancellation grace period is set correctly (default: 5 minutes). This
+      is the window after booking during which a member can cancel even if
+      they are already inside the cancellation window.
+- [ ] Waitlist offer window is set. This controls how long an offered spot is
+      held for a waitlisted member before it is considered expired. Adjust to
+      a value the admin is comfortable enforcing.
 
 **1B — Courts verified**
 
 Open `/admin/courts`. Confirm:
 
-- [x] Five courts are listed: Court 1, Court 2, Court 3, Court 4, Court 5.
-- [x] All five are **active** (toggle is on).
-- [x] Court names match what members would recognize. Rename any court now
-      if the club uses different names (e.g. "Clay 1", "Hard Court", etc.).
-- [x] Court display order is correct. Drag to reorder if needed.
+- [ ] Five courts are listed: Court 1, Court 2, Court 3, Court 4, Court 5.
+- [ ] All five courts are **active** (toggle is on for each).
+- [ ] Court names match what members would recognize. If the club uses specific
+      names (e.g. "Hard Court A", "Clay 1"), rename the courts now. Names can
+      be changed at any time from this page.
+- [ ] Court display order matches the physical layout or the club's preferred
+      order. Drag to reorder if needed.
 
 **1C — Operating hours verified**
 
 Open `/admin/settings` → Operating Hours. Confirm:
 
-- [x] Hours for each day of the week match the club's actual open/close times.
-      The bootstrap default is 08:00–20:00 for all 7 days — update any day
-      that differs (e.g. shorter weekend hours, closed Monday).
-- [x] Any day the club is always closed (e.g. Monday) has **Closed** toggled on.
-- [x] Navigate to `/calendar` and verify that slots outside the configured
-      hours appear greyed/unavailable.
+- [ ] Open and close times for each day of the week match the club's actual
+      hours. The bootstrap default is 08:00–20:00 for all 7 days.
+- [ ] Any day the club is always closed (e.g. Monday) has **Closed** toggled
+      on for that day.
+- [ ] After saving any changes, navigate to `/calendar` and verify that time
+      slots outside the configured hours appear greyed and cannot be tapped.
 
 **1D — Booking and cancellation rules verified**
 
-- [] As a member account (or sandbox Riverside account), attempt to navigate
-  to a date beyond the booking window in `/calendar`. Slots should be
-  unavailable past that horizon.
-- [ ] Confirm the cancellation window and grace values are correct by reviewing
-      the logic with the admin: members cannot cancel inside the window unless
-      they are still within the grace period after booking.
+- [ ] Sign in as a member account (or use the Riverside sandbox) and navigate
+      to a date beyond the booking window in `/calendar`. Slots beyond that
+      date should appear unavailable.
+- [ ] Confirm the cancellation policy is understood by the admin: members
+      cannot cancel inside the cancellation window unless the booking was made
+      within the grace period. Walk through one example to verify the logic
+      matches expectation.
 
 **1E — Logo and theme/branding**
 
 Open `/admin/settings` → Club Branding.
 
-- [ ] Decide whether to upload a club logo before inviting members. A logo makes
-      the app feel real to pilot users; it can be added or changed at any time.
-      Upload a JPEG or PNG under 2 MB if available.
-- [ ] Select a theme color that matches the club's brand. Default is
-      **Classic Gray**; other options are available in the theme selector.
-- [ ] After changing the theme, navigate to `/calendar` and confirm the accent
-      color has updated.
+- [ ] Decide whether to upload a club logo before inviting members. A logo
+      makes the app feel credible to pilot users; it can be added or changed
+      at any time. Upload a JPEG or PNG under 2 MB if one is available.
+- [ ] Select a theme color that matches the club's identity. Default is
+      **Classic Gray**. After changing, navigate to `/calendar` and confirm
+      the accent color has updated club-wide.
 
-**1F — First real-looking test event**
+**1F — First real-looking event**
 
 Before inviting friendly users, create at least one future event so the
 calendar is not empty on day one.
 
-- [ ] Admin navigates to `/calendar` → taps a future time slot → creates
-      an event (e.g. a Round Robin or Clinic).
-- [ ] Event appears on the calendar with the correct date, time, and court.
-- [ ] Admin opens the event detail sheet and confirms capacity, duration, and
-      title look correct.
-- [ ] Optionally create a second event on a different day so the `/events`
-      page shows a list rather than a single item.
+- [ ] Admin taps a future time slot on `/calendar` → creates an event
+      (e.g. "Round Robin" or "Beginner Clinic") with a realistic title,
+      capacity, and duration.
+- [ ] Event appears on the calendar at the correct date, time, and court.
+      Open the event detail sheet and confirm the title, capacity, and
+      duration display correctly.
+- [ ] Optionally create a second event on a different day so `/events` shows
+      a list rather than a single item.
+
+**1G — First admin account status**
+
+- [ ] First admin has accepted their invite and can sign in at the production
+      URL (`https://court-time.vercel.app`).
+- [ ] First admin has completed `/welcome` and their first name and last name
+      are set (visible in `/profile`).
+- [ ] First admin has reset their password from the temporary password set
+      during bootstrap (via `/forgot-password` or prompted after first sign-in).
+- [ ] First admin profile is confirmed in the database:
+  ```sql
+  select p.first_name, p.last_name, p.role, p.status
+  from profiles p
+  join clubs c on c.id = p.club_id
+  where c.slug = 'north-shore-towers';
+  -- Expected: role = 'admin'; status = 'active'; names populated
+  ```
+
+**1H — Pro account decision**
+
+Decide before Phase 21D whether a pro-role user is needed for the
+friendly-user rollout.
+
+- [ ] **Decision recorded:** Is a pro account required before inviting
+      friendly users? A pro can create and manage events and rosters but
+      cannot access club settings, courts, members, or the audit log.
+      If no pro is needed yet, this can be deferred until a real club
+      pro or instructor joins. Mark N/A if not applicable for Phase 21D.
+- [ ] If yes: pro account is invited via `/admin/members` → role **pro**,
+      invite accepted, and pro training (Part 3) is completed before
+      friendly-user rollout begins.
 
 ---
 
 ### Part 2 — Admin training checklist
 
-Walk the pilot admin through each area before they invite anyone else. The
-goal is that the admin can operate the club independently. Check each item
-when the admin has successfully performed the action themselves, not just
-watched a demonstration.
+Walk the pilot admin through each area before they invite anyone else.
+The goal is that the admin can operate the club independently without
+operator assistance. Check each item when the admin has successfully
+performed the action themselves — not just watched a demonstration.
 
-**`/admin/settings`**
+**`/admin/settings` — club-wide configuration**
 
-- [ ] Admin locates and updates operating hours for one day; verifies the
-      change reflects in `/calendar`.
-- [ ] Admin adds a date override (e.g. closes a future date); verifies the
-      date is blocked in `/calendar`; removes the override.
-- [ ] Admin saves a booking rule change (e.g. adjusts the booking window by
-      1 day); verifies the value persists after a page reload; restores the
-      original value.
-- [ ] Admin sends a test announcement; confirms the notification appears in
-      their own bell within a few seconds (Realtime delivery).
-- [ ] Admin understands the logo upload and theme selectors and where to find
-      them again.
+*Purpose: configure operating hours, booking rules, date overrides,
+announcements, and club branding. This is the primary control panel for
+how the club operates.*
 
-**`/admin/courts`**
+- [ ] Admin updates operating hours for one day and verifies the change
+      reflects in `/calendar`; restores the original value.
+- [ ] Admin adds a date override marking a future date as closed; verifies
+      the date is fully blocked in `/calendar`; deletes the override.
+- [ ] Admin sends a test announcement and confirms it appears in their own
+      notification bell within a few seconds without refreshing the page.
+
+**`/admin/courts` — court management**
+
+*Purpose: rename, reorder, and activate or deactivate individual courts.
+Court names and order appear directly in the member-facing calendar.*
 
 - [ ] Admin renames a court; verifies the new name appears in the calendar
-      column header; renames it back.
-- [ ] Admin reorders courts using drag-and-drop; verifies calendar column
-      order updates; restores original order.
-- [ ] Admin toggles a court inactive; verifies it disappears from the calendar;
-      re-activates it.
+      column header immediately; renames it back.
+- [ ] Admin reorders courts; verifies the calendar column order updates;
+      restores the original order.
 
-**`/admin/members`**
+**`/admin/members` — invites and member management**
 
-- [ ] Admin creates a **member** invite with no email restriction; copies the
-      invite link; understands that the link must be shared manually — no email
-      is sent automatically.
-- [ ] Admin creates an **email-restricted** invite (enters the invitee's email);
-      understands that only that exact email address can use the link.
-- [ ] Admin understands the invite link must start from the production URL
-      (`https://court-time.vercel.app/join/...`) for email confirmation to
-      route correctly.
-- [ ] Admin can locate a member in the list and change their role (member ↔ pro).
-- [ ] Admin can change a member's status (active → inactive) and understands
-      that deactivated members are blocked from booking and joining events at the
-      RPC level but can still sign in.
-- [ ] Admin understands that to transfer or add an admin, they invite with role
-      **admin**, verify access, then demote or deactivate the old admin. At least
-      one active admin must always exist. See `README_bootstrap_new_club.md` →
-      "Changing the first admin."
+*Purpose: invite new members and pros, manage roles, and deactivate
+accounts. This is the only way to onboard new users — there is no
+self-serve signup.*
 
-**`/admin/events`**
+- [ ] Admin creates a **member** invite with no email restriction; copies
+      the invite link; understands the link must be shared manually (no
+      email is sent automatically by the app).
+- [ ] Admin creates an **email-restricted** invite and understands that only
+      the exact email address entered can use that link.
+- [ ] Admin locates a member and changes their role (member ↔ pro) and
+      understands the access difference.
+- [ ] Admin changes a member's status to **inactive** and understands:
+      deactivated members are blocked from booking courts and joining events
+      at the database level but can still sign in to the app. This is
+      expected behavior.
+- [ ] Admin understands the admin-transfer procedure: invite with role
+      **admin**, verify the new admin has working access, then demote or
+      deactivate the original. At least one active admin must exist at all
+      times. See `README_bootstrap_new_club.md` → "Changing the first admin."
 
-- [ ] Admin creates an event using the create-event sheet (event type → title →
-      date/time/duration → courts → capacity → confirm).
-- [ ] Admin opens a roster sheet on an existing event; adds a member; confirms
-      the occupancy count on the event card updates without a page reload.
-- [ ] Admin adds a guest to an event roster; confirms the guest appears and
-      capacity count reflects it.
-- [ ] Admin removes a participant; confirms the roster and count update; if a
-      waitlisted member exists, confirms an offer is extended.
-- [ ] Admin uses **Offer Spot** manually to bypass FIFO for a specific waitlisted
-      member; confirms only one offer can be active at a time.
-- [ ] Admin uses **Force Confirm** to place a waitlisted member directly into
-      the confirmed list regardless of capacity.
-- [ ] Admin cancels an event; confirms all confirmed/waitlisted/offered members
-      receive an `event_cancelled` notification in their bell.
+**`/admin/events` — event and roster management**
 
-**`/admin/audit-log`**
+*Purpose: create events, manage rosters (add/remove participants, add
+guests, handle waitlist offers), and cancel events. This page is also
+accessible to pro-role users.*
 
-- [ ] Admin opens the audit log and can read the human-readable labels for
-      each recent action.
-- [ ] Admin understands the audit log is admin-only and not visible to members.
+- [ ] Admin creates an event end-to-end: type → title → date/time/duration
+      → courts → capacity → confirm. Verifies it appears on `/calendar`.
+- [ ] Admin cancels an event and confirms all affected members receive an
+      `event_cancelled` notification in their bell.
 
-**`/calendar`**
+**`/admin/audit-log` — activity history**
 
-- [ ] Admin understands they see the same calendar view as members but can also
-      tap reservation blocks to see the owner and admin-cancel if needed.
-- [ ] Admin understands that their own court reservations as a player are booked
-      from this same calendar (they are a member too).
+*Purpose: review a chronological log of all admin and member actions.
+Useful for diagnosing issues during the pilot.*
 
-**`/profile/notifications`**
+- [ ] Admin opens the log and can read the human-readable action labels
+      (e.g. "Added member to event", "Accepted invite").
+- [ ] Admin understands the log is admin-only and never visible to members.
 
-- [ ] Admin opens their notification preferences and understands which
-      notification kinds are toggleable and which are always delivered
-      (e.g. `event_cancelled` is mandatory regardless of preferences).
-- [ ] Admin understands the bell icon shows unread count and updates in real
-      time without a page refresh.
-- [ ] Admin understands that SMS is not currently configured and only in-app
-      bell notifications are active. The SMS section in `/admin/settings` will
-      show "SMS not configured" — this is expected and not an error.
+**`/calendar` — court booking view**
+
+*Purpose: the primary day-view grid for court reservations. Admins see
+the same view as members but can tap any reservation to see the owner
+and cancel it if needed.*
+
+- [ ] Admin books a court reservation for themselves as a player and
+      verifies the slot shows "You" on the calendar.
+- [ ] Admin taps another member's reservation block and confirms they can
+      see the booking detail and an admin-cancel option.
+
+**`/profile/notifications` — notification preferences**
+
+*Purpose: control which in-app notification kinds are delivered to this
+account. Some kinds are mandatory and cannot be turned off.*
+
+- [ ] Admin opens notification preferences and identifies at least one
+      toggleable kind (e.g. reservation confirmed) and one mandatory kind
+      (e.g. event cancelled — always delivered regardless of preference).
+- [ ] Admin understands the bell updates in real time and that SMS shows
+      "not configured" in `/admin/settings` — this is expected.
 
 ---
 
 ### Part 3 — Pro training checklist
 
-A pro has access to `/admin/events` only among the admin routes. All other
-`/admin/*` routes redirect to `/calendar`. Walk through these items with any
-pro-role users.
+A pro has access to `/admin/events` only among the admin-area routes.
+All other `/admin/*` routes redirect to `/calendar`. Skip this section
+if no pro account is being set up before Phase 21D.
 
-**`/admin/events` — roster management**
+**Access and restrictions**
 
-- [ ] Pro navigates to `/admin/events`; confirms the full event list loads and
-      roster buttons are visible.
-- [ ] Pro opens a roster and confirms they can: add a member, add a guest,
-      remove a participant, force confirm, offer spot, expire an offer.
+- [ ] Pro navigates to `/admin/events`; confirms the full event list loads
+      and roster buttons are visible.
 - [ ] Pro confirms they cannot access `/admin/members`, `/admin/courts`,
-      `/admin/settings`, or `/admin/audit-log` — each redirects cleanly to
-      `/calendar`.
+      `/admin/settings`, or `/admin/audit-log` — each should redirect
+      cleanly to `/calendar` with no error page or data exposure.
 
-**Event creation**
+**Creating events**
 
-- [ ] Pro taps a calendar slot or uses the create-event sheet to create an event;
-      confirms all four steps complete (type → date/time/duration → courts →
-      capacity); confirms the event appears on the calendar.
-- [ ] Pro understands the duration preset pills (30/45/60/90/120 min) and the
-      Custom option for non-standard durations.
+- [ ] Pro taps a future time slot or opens the create-event sheet from the
+      calendar; completes all four steps (type → date/time/duration →
+      courts → capacity); confirms the event appears on the calendar.
+- [ ] Pro understands the duration preset pills (30/45/60/90/120 min) and
+      the Custom option for non-standard durations.
+
+**Cancelling events**
+
+- [ ] Pro understands that events cannot be edited after creation — only
+      cancelled. To change time, duration, or courts, the event must be
+      cancelled and re-created.
+- [ ] Pro cancels a test event from `/admin/events`; confirms affected
+      members receive an `event_cancelled` notification.
+
+**Roster management**
+
+- [ ] Pro opens a roster sheet on a scheduled event and confirms they can:
+      add a member from the dropdown, add a guest by name, remove a
+      confirmed participant, use **Force Confirm** on a waitlisted member,
+      use **Offer Spot** to manually offer a specific waitlisted member, and
+      use **Expire** to remove an active offer.
+- [ ] Pro confirms the event card occupancy count updates immediately after
+      each roster mutation — no page reload required.
 
 **Waitlist and offer behavior**
 
-- [ ] Pro understands the FIFO waitlist flow: when a confirmed participant is
-      removed or leaves, the oldest waitlisted member is offered a spot
-      automatically and receives a notification.
-- [ ] Pro understands they can bypass FIFO manually using **Offer Spot** and
-      that only one active offer can exist at a time.
-- [ ] Pro understands **Force Confirm** places a member directly into the
-      confirmed list and may put the event over capacity — this is intentional
-      administrative override behavior and is recorded in the audit log.
-- [ ] Pro understands **Expire** removes an active offer without auto-advancing
-      the waitlist; the admin or pro must manually offer the next person.
+- [ ] Pro understands the automatic FIFO flow: when a confirmed participant
+      is removed or leaves, the next waitlisted member receives an offer
+      notification automatically.
+- [ ] Pro understands **Offer Spot** bypasses FIFO and that only one active
+      offer can exist at a time — the button is blocked if an offer is
+      already open.
+- [ ] Pro understands **Force Confirm** may put the event over capacity and
+      that this action is logged in the audit log.
+- [ ] Pro understands **Expire** removes the active offer without
+      auto-advancing the queue; the next offer must be issued manually.
 
 **Calendar view**
 
-- [ ] Pro confirms `/calendar` loads correctly with all courts visible.
-- [ ] Pro can book their own court reservation from the calendar as a player.
+- [ ] Pro confirms `/calendar` loads with all courts visible.
+- [ ] Pro can book their own court reservation as a player.
 - [ ] Pro understands tapping their own booked block shows a cancel option;
-      tapping another member's block shows no action (member privacy).
+      tapping another member's block shows no action.
 
 ---
 
 ### Part 4 — Member-facing explanation points
 
-Prepare these talking points before inviting friendly users. These do not need
-to be a formal document — a short message or verbal briefing is sufficient.
+Prepare these talking points before inviting friendly users. A short
+verbal briefing or a simple message is sufficient — no formal document
+is required.
 
-**How invite links work**
+**Invite links**
 
-Members receive a `/join/<code>` URL that is unique to them (or shared if no
-email restriction was set). The link is valid for 14 days. They must open it
-from the production URL (`https://court-time.vercel.app/join/...`) — not a
-locally-forwarded or copied link — for email confirmation to work correctly.
+Members receive a `/join/<code>` URL. The link is valid for 14 days. It
+must be opened from `https://court-time.vercel.app/join/...` on a real
+device or browser — not a locally-forwarded URL — for email confirmation
+to route correctly.
 
-**How to create an account**
+**Account creation and email confirmation**
 
-Members who do not have an existing account visit the invite link → tap
-**Create account** → enter their email and a password → receive a confirmation
-email from `Court Time <no-reply@court-time.app>` → click the link in the
-email → are automatically signed in, their invite is accepted, and they land
-on `/welcome` to set their name → then `/calendar`.
+New members: visit the invite link → tap **Create account** → enter email
+and password → receive a confirmation email from
+`Court Time <no-reply@court-time.app>` → click the link → account
+confirmed, invite auto-accepted, redirected to `/welcome` to set name →
+then `/calendar`.
 
-Members who already have an account visit the invite link → tap **Sign in to
-accept** → sign in → tap **Accept Invitation** → land on `/calendar`.
+Existing members (already have an account): visit the invite link → tap
+**Sign in to accept** → sign in → tap **Accept Invitation** → `/calendar`.
 
-**How to book and cancel a court**
+If the confirmation email does not arrive: check spam. If the link is
+clicked more than once or prefetched by the mail client it will show
+"link expired" — in that case, use **Forgot password** to set a new
+password, then sign in and visit the invite URL again.
 
-Tap any open time slot on the calendar to open the booking sheet. Select
-duration (30/60/90/120 min), confirm. The booked slot appears immediately on
-the calendar labeled "You." To cancel: tap the "You" block to open the
-reservation detail sheet and tap **Cancel Booking**, or go to `/my-schedule`
-and cancel from there. Cancellation is blocked within 24 hours of the start
-time (the club's cancellation window) unless the booking was made within the
-last 5 minutes (grace period).
+**Booking a court**
 
-**How to join and waitlist for events**
+Tap any open time slot on `/calendar` → booking sheet opens → select
+duration (30 / 60 / 90 / 120 min) → tap **Confirm Booking**. The slot
+appears immediately on the calendar labeled "You."
 
-Go to `/events` to see all upcoming events. Tap **Join Event** if there is
-open capacity — the spot is confirmed immediately. Tap **Join Waitlist** if the
-event is full — a position number is shown. If a spot opens up, the first
-person on the waitlist receives an offer notification in their bell. They have
-a window to accept or pass. If they pass or the window expires, the next person
-on the waitlist is offered. Members can leave a confirmed event or leave the
-waitlist at any time from `/events` or `/my-schedule`.
+**Cancelling a booking**
 
-**How notifications work**
+Two ways: tap the "You" block on the calendar → **Cancel Booking** in the
+detail sheet. Or go to `/my-schedule` → find the reservation → cancel.
+Cancellation is blocked if the session starts within the club's
+cancellation window (24 hours by default) and the booking was not made
+within the last 5 minutes (grace period).
 
-The bell icon in the top bar shows a count of unread notifications. It updates
-in real time — no page refresh needed. Tap the bell to see all notifications.
-Tap one to mark it as read. Some notification kinds (e.g. event cancellations)
-are always delivered regardless of preferences. Others (e.g. reservation
-confirmation, event join confirmation) can be toggled off in
-`/profile/notifications`.
+**Joining an event**
+
+Go to `/events` → tap **Join Event** if capacity is available. Spot is
+confirmed immediately and a confirmation notification appears in the bell.
+To leave: tap **Leave Event** from `/events` or `/my-schedule`.
+
+**Joining a waitlist**
+
+If an event is full, tap **Join Waitlist**. A position number is shown.
+When a spot opens, the first waitlisted member receives an offer
+notification in their bell with a deadline to accept. Tap **Accept Spot**
+to confirm, or **Pass** to decline (the offer moves to the next person).
+To leave the waitlist: tap **Leave Waitlist** from `/events` or
+`/my-schedule`.
+
+**In-app notifications**
+
+The bell icon in the top bar shows the unread count and updates in real
+time without a page refresh. Tap it to see all notifications; tap one to
+mark it read. Some kinds (e.g. event cancellation) are always delivered.
+Others can be turned off per-kind in `/profile/notifications`.
+
+**Notification preferences**
+
+Go to `/profile` → **Notifications** (or navigate directly to
+`/profile/notifications`). Each toggleable notification kind has an on/off
+switch. Mandatory kinds (e.g. event cancelled, waitlist offer) are always
+delivered regardless of preferences.
 
 **SMS is not enabled**
 
-All notifications are in-app only (the bell). SMS text messages are not
-currently configured. Members should not expect text alerts.
+All notifications are in-app only (the bell). No SMS text messages are
+sent. Members should not expect text alerts during this pilot.
+
+**App-generated email notifications are deferred**
+
+Members receive Supabase Auth emails (signup confirmation, password reset)
+via `no-reply@court-time.app`. They do not receive email copies of in-app
+notifications (e.g. "You have a waitlist offer" or "Your booking is
+confirmed"). Email notification delivery is a post-pilot feature.
 
 ---
 
-### Part 5 — Known caveats to mention during training
+### Part 5 — Known caveats to communicate during training
 
-Communicate these to the admin, any pro, and friendly users before they start.
-These are not bugs — they are known, intentional constraints for the pilot.
+Share these with the admin, any pro, and friendly users before the pilot
+begins. These are not bugs — they are known, intentional constraints.
 
-| Caveat                                                  | What to say                                                                                                                                                                                                                                                                    |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Use the production URL**                              | Always open the app at `https://court-time.vercel.app`. Invite links and email confirmation links must be opened from this URL. A link forwarded from a locally-running version of the app will fail for new signups.                                                          |
-| **Riverside is a sandbox**                              | The `riverside` club is used for developer testing only. It is fully isolated from North Shore Towers by the database's row-level security. Members of North Shore Towers never see Riverside data and vice versa.                                                             |
-| **SMS is not configured**                               | The SMS section in Admin → Settings shows "SMS not configured." This is expected. In-app bell notifications are the only active channel for this pilot.                                                                                                                        |
-| **Email notifications beyond auth emails are deferred** | Members receive Supabase Auth emails (signup confirmation, password reset) via Resend. They do not receive email copies of in-app notifications (e.g. "You have a new waitlist offer"). That feature is deferred to a post-pilot phase.                                        |
-| **Member roster visibility**                            | Members can see the names of other confirmed and waitlisted participants on an event. This is intentional for the v1 pilot (tennis clubs typically post rosters) but can be revisited based on pilot feedback if privacy is a concern.                                         |
-| **Admin/host as participant**                           | An admin or pro who creates an event is the host but does not automatically hold a participant spot. If they want to play in their own event, they must join it as a member from `/events` or `/calendar`. This is intentional v1 behavior and can be reconsidered post-pilot. |
-| **Sticky header console warning**                       | Developers testing locally may see a Next.js console warning about `position: sticky` during navigation. This does not cause any visible problem and is cosmetic only.                                                                                                         |
+| Caveat | What to say |
+| --- | --- |
+| **Use the production URL only** | Always open the app at `https://court-time.vercel.app`. Invite links, confirmation links, and password-reset links must be opened at this URL. A link from a locally-running version of the app will not work for email confirmation. |
+| **North Shore Towers is the pilot club** | The active pilot club is North Shore Towers (`north-shore-towers`). All member invites, events, and bookings belong to this club. Members of North Shore Towers see only North Shore Towers data. |
+| **Riverside is a developer sandbox** | The `riverside` club exists for developer testing only. It is fully isolated from North Shore Towers by row-level security. No one outside the development team should attempt to join or access it. |
+| **SMS is not configured** | The SMS section in Admin → Settings shows "SMS not configured." This is expected and not an error. In-app bell notifications are the only active delivery channel during this pilot. |
+| **App-generated email notifications are deferred** | Signup confirmation and password-reset emails are delivered via Resend. Notifications generated by the app (offers, event cancellations, booking confirmations) are in-app only. Email delivery for those is a post-pilot feature. |
+| **Member roster visibility** | Members can see the names of other confirmed and waitlisted participants on an event. This is intentional for the v1 pilot but can be revisited after pilot feedback if privacy is a concern. |
+| **Admin/host as participant** | An admin or pro who creates an event does not automatically hold a participant spot. If they want to play, they must join the event as a member from `/events` or `/calendar`. This is intentional v1 behavior. |
+| **Deactivated users can still sign in** | Deactivating a member via `/admin/members` blocks them from booking courts, joining events, and joining waitlists (enforced at the database level). It does not prevent them from signing in to the app. This is expected behavior. |
+| **Keep at least one active admin** | If all admin accounts are deactivated or demoted, there is no in-app recovery path. Admin access would need to be restored directly via the Supabase SQL Editor. Always verify a new admin has working access before changing an existing admin's role or status. |
 
 ---
 
 ### Part 6 — Go/no-go checklist for Phase 21D (friendly-user rollout)
 
 All items below must be checked before inviting any real friendly users.
-A friendly user is a real person on a real device using their real email address.
+A friendly user is a real person on a real device using their real email.
 
-**Club configuration**
+**North Shore Towers settings verified**
 
-- [ ] Operating hours are correct for every day of the week.
-- [ ] Court names are final (or clearly understood as placeholders).
+- [ ] Operating hours are correct for every day of the week and reflect the
+      club's actual schedule.
+- [ ] Court names are final, or it is clearly understood they are
+      placeholders that will be renamed before the broader pilot.
 - [ ] Booking window, cancellation window, and grace period match the club's
-      actual policy.
-- [ ] Waitlist offer window is set to a value the admin is comfortable with.
-- [ ] At least one upcoming event exists so the calendar is not empty on day one.
+      stated policy.
+- [ ] Waitlist offer window is set to a value the admin has agreed to.
 
-**Admin readiness**
+**Admin can access all admin pages**
 
-- [ ] Admin has completed all items in Part 2 (training checklist) and can
-      operate every admin page independently.
-- [ ] Admin can generate an invite link without operator assistance.
-- [ ] Admin knows where to send members if they have trouble (email the operator
-      or use the in-app Help page at `/help`).
-- [ ] Admin understands the auth user deletion caveat: deactivate members via
-      the app; do not attempt to delete Auth users from the Supabase dashboard.
+- [ ] Admin signs in at the production URL and confirms all five admin pages
+      load without errors: `/admin/members`, `/admin/courts`,
+      `/admin/settings`, `/admin/events`, `/admin/audit-log`.
+- [ ] Admin has completed Part 2 (training checklist) and can perform every
+      listed action independently, without operator assistance.
+- [ ] Admin can generate an invite link and copy it without operator help.
 
-**Pro readiness (if applicable)**
+**Courts look correct**
 
-- [ ] Any pro-role users have completed Part 3 (pro training checklist).
-- [ ] Pro understands their access is limited to `/admin/events`.
+- [ ] `/calendar` shows exactly five court columns with the correct names.
+- [ ] All courts are active. No court is inadvertently deactivated.
+- [ ] Slots outside configured operating hours appear greyed and cannot be
+      tapped.
 
-**Production environment**
+**At least one event exists for testing**
 
-- [ ] Vercel deployment is current — latest commit is on `main` and Vercel
-      shows **Ready** (green) for the production deployment.
-- [ ] Resend delivery is healthy — check the Resend dashboard for any recent
-      delivery failures from the Phase 21B bootstrap invite and first admin
-      password reset flow.
-- [ ] No unresolved errors in Vercel function logs from Phase 21B activity.
+- [ ] At least one scheduled future event appears in `/events` and on
+      `/calendar` so the calendar is not empty when friendly users arrive.
+- [ ] The event has a realistic title, capacity, and duration.
 
-**Pilot operating notes reviewed**
+**Invite flow tested for pilot club**
 
-- [ ] All caveats in Part 5 have been communicated to the admin and any pro.
-- [ ] Member-facing explanation points from Part 4 are ready to share with
-      friendly users (verbally or as a short written briefing).
-- [ ] The operator (you) is available to support the friendly users during their
-      first week and has reviewed the support triage reference in the Phase 21
-      plan.
+- [ ] Admin has generated at least one invite link for North Shore Towers
+      and confirmed the link begins with
+      `https://court-time.vercel.app/join/` and opens the correct
+      `/join/<code>` page when visited in a browser.
+- [ ] The invite and signup flow has been tested end-to-end for a brand-new
+      account (not just an existing account accepting an invite) — either
+      during Phase 21B or as part of Part 2 training.
+
+**No unresolved pilot blockers**
+
+- [ ] All Phase 20E-C pilot blockers are resolved (confirmed: Issues #4, #5,
+      #8 fixed in Phase 20D; EventDetailSheet capacity fixed in Phase 20E-A).
+- [ ] No new functional regressions have been introduced since Phase 20E-C.
+- [ ] No unresolved errors in Vercel function logs or Supabase API logs from
+      Phase 21B or Phase 21C activity.
+- [ ] Vercel shows **Ready** (green) for the current production deployment.
+- [ ] Resend dashboard shows no delivery failures for recent auth emails.
+
+**Support and feedback process identified**
+
+- [ ] Admin knows how to reach the operator if something goes wrong (direct
+      contact method agreed — email, message, etc.).
+- [ ] Friendly users will be told to report issues directly to the admin or
+      operator, not through any public channel.
+- [ ] Operator has reviewed the support triage reference in this Phase 21
+      plan and is available during the friendly users' first week of use.
