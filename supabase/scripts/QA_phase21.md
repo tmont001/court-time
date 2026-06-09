@@ -709,3 +709,353 @@ A friendly user is a real person on a real device using their real email.
       operator, not through any public channel.
 - [ ] Operator has reviewed the support triage reference in this Phase 21
       plan and is available during the friendly users' first week of use.
+
+---
+
+## Checkpoint 21D — Friendly-User Rollout
+
+**Status: In progress — complete all items before moving to Phase 21E**
+
+This checkpoint runs a controlled first wave of real users through North
+Shore Towers before any broader pilot invitation. All items in Phase 21C
+(configuration and training) must be complete before this checkpoint begins.
+
+No code changes. No migrations. No data deletion.
+
+---
+
+### Part 1 — Rollout scope
+
+**Wave size:** 2–4 trusted users. Small enough to catch issues quickly and
+manage support personally; large enough to exercise the full member flow
+across multiple real accounts.
+
+**Roles:**
+
+- Start with **member** role for all friendly users. This exercises the
+  core member experience (invite, signup, booking, events, notifications)
+  that the majority of real pilot members will have.
+- A **pro** account may be added during or after Phase 21D if a pro is
+  part of the pilot plan, but is not required to complete this rollout.
+
+**URL:** All friendly users must use `https://court-time.vercel.app`
+exclusively. This is not optional — invite links and email confirmation
+links are built against this URL and will not work from any other origin.
+
+**Sandbox isolation:** Riverside is the operator sandbox. Friendly users
+must not be given Riverside invite links or credentials. Any user who
+somehow lands in Riverside will see test data and not the real pilot
+club. Verify every invite link sent is for North Shore Towers:
+
+```sql
+-- Confirm the invite belongs to North Shore Towers
+select ci.code, c.name as club_name, c.slug, ci.role, ci.email,
+       ci.created_at, ci.expires_at
+from club_invites ci
+join clubs c on c.id = ci.club_id
+where ci.code = '<paste-invite-code-here>';
+-- Expected: club_name = 'North Shore Towers'; slug = 'north-shore-towers'
+```
+
+---
+
+### Part 2 — Invite plan
+
+**Who sends invites:** The pilot club admin sends all Phase 21D invites
+from `/admin/members`. The operator does not send invites directly.
+
+**How to create an invite:**
+
+1. Admin navigates to `/admin/members` → **Invite**.
+2. Select role **member**.
+3. For friendly users whose emails are known in advance: enter the email
+   in the email-restriction field. This ensures the link can only be
+   used by that person.
+4. Copy the generated `/join/<code>` URL.
+5. Share it with the user via direct message, email, or text — whatever
+   channel the admin normally uses to communicate with this person.
+
+**Email restriction recommendation:** Use email-restricted invites for
+all Phase 21D users. The friendly-user wave is small enough that the admin
+knows each person's email, and restriction prevents the link from being
+forwarded and accidentally consumed by someone else.
+
+**What to tell users before sending the invite:**
+
+Send this context along with the invite link, before they tap it:
+
+> You're one of the first people to try the North Shore Towers booking app.
+> Follow the link below to create your account and join the club.
+>
+> A few things to know:
+> - Open the link on your phone or tablet — it's designed for mobile.
+> - You'll be asked to confirm your email. The confirmation link comes
+>   from `no-reply@court-time.app`; check spam if you don't see it within
+>   a minute or two.
+> - After confirming, you'll land on the app and can start exploring.
+> - Court bookings and events are real — any booking you make will show
+>   up for other members, so keep that in mind while testing.
+> - If anything feels broken or confusing, let me know directly.
+>
+> Link: `https://court-time.vercel.app/join/<code>`
+
+---
+
+### Part 3 — Friendly-user test script
+
+Ask each friendly user to work through this sequence on their own, on a
+real mobile device, without hand-holding. The goal is to surface issues
+that only appear during unassisted, real-device use.
+
+Check each item as you confirm the user has completed it (either by
+their report or by checking the DB/admin pages).
+
+**Account setup**
+
+- [ ] User receives the invite link and opens it at
+      `https://court-time.vercel.app/join/<code>`.
+- [ ] `/join/<code>` page shows the club name (North Shore Towers), the
+      invited role (member), and a **Create account** option.
+- [ ] User taps **Create account** → enters their email and a password →
+      submits the signup form.
+- [ ] Confirmation email arrives from `Court Time <no-reply@court-time.app>`
+      within a few minutes. User checks spam if not in inbox.
+- [ ] User clicks the confirmation link → lands directly on `/welcome`
+      (no additional sign-in step required; invite is auto-accepted).
+- [ ] User enters first and last name on `/welcome` → submits → lands on
+      `/calendar`.
+- [ ] Verify in DB:
+  ```sql
+  select p.first_name, p.last_name, p.role, p.status,
+         ci.accepted_at
+  from profiles p
+  join clubs c on c.id = p.club_id
+  join auth.users u on u.id = p.id
+  left join club_invites ci on ci.accepted_by = p.id
+    and ci.club_id = c.id
+  where c.slug = 'north-shore-towers'
+    and u.email = '<user-email>';
+  -- Expected: role = 'member'; status = 'active'; names set;
+  --           accepted_at is not null
+  ```
+
+**Calendar and court booking**
+
+- [ ] User opens `/calendar`. Court columns are visible. Today's date is
+      highlighted. Slots outside operating hours are greyed.
+- [ ] User taps an open future time slot → booking sheet opens showing
+      court name, date, time, and duration options (30/60/90/120 min).
+- [ ] User selects a duration and taps **Confirm Booking**. Slot appears
+      on the calendar labeled "You."
+- [ ] Verify in DB:
+  ```sql
+  select status, starts_at, ends_at
+  from reservations
+  where owner_user_id = (
+    select id from auth.users where email = '<user-email>'
+  )
+  order by created_at desc
+  limit 1;
+  -- Expected: status = 'confirmed'
+  ```
+
+**Booking cancellation — from Calendar**
+
+- [ ] User taps their "You" reservation block on the calendar.
+- [ ] Reservation detail sheet opens showing court, date, and time.
+- [ ] "Booked by" line is NOT shown (member is viewing their own booking).
+- [ ] User taps **Cancel Booking** → booking is removed from the calendar.
+- [ ] Verify: reservation row shows `status = 'cancelled'` in the DB.
+
+**Booking cancellation — from My Schedule**
+
+- [ ] User books a second court reservation.
+- [ ] User navigates to `/my-schedule`. The new reservation is listed.
+- [ ] User taps **Cancel** on the reservation row → reservation disappears
+      from My Schedule.
+- [ ] Verify: second reservation row shows `status = 'cancelled'` in the DB.
+
+**Event join**
+
+- [ ] User navigates to `/events`. At least one upcoming event is listed.
+- [ ] User taps **Join Event** on an event with open capacity.
+- [ ] Event card updates to show **Joined** badge. Participant count
+      increases.
+- [ ] User opens `/my-schedule`. The event is listed with status
+      **Confirmed**.
+
+**Waitlist**
+
+- [ ] If an event is at capacity (or create a second event at capacity=1
+      with a confirmed participant): user taps **Join Waitlist** on the
+      full event.
+- [ ] Event card shows **Waitlisted** badge with a position number.
+- [ ] User navigates to `/my-schedule`. The event is listed with status
+      **Waitlisted** and a position number.
+- [ ] Mark N/A if no full event is available during Phase 21D; test in
+      Phase 21E with more users.
+
+**Notifications**
+
+- [ ] Bell icon in the top bar shows an unread count after signup, booking,
+      and event join actions.
+- [ ] User taps the bell → notification sheet opens. Notifications for
+      reservation confirmation, event join, and any announcements are listed.
+- [ ] User taps a notification → it is marked as read. Unread count
+      decreases. Re-opening the sheet shows it as read.
+- [ ] Verify bell count updates in real time: while the user's session is
+      open, admin sends an announcement from `/admin/settings`. User's bell
+      count increments within a few seconds without a page refresh.
+
+**Notification preferences**
+
+- [ ] User navigates to `/profile/notifications`.
+- [ ] Toggleable preference kinds are listed with on/off switches.
+- [ ] User turns off **Reservation confirmed**.
+- [ ] User books another court reservation.
+- [ ] No `reservation_confirmed` notification appears in the bell.
+- [ ] User turns **Reservation confirmed** back on.
+- [ ] User books another court reservation.
+- [ ] `reservation_confirmed` notification appears in the bell.
+
+---
+
+### Part 4 — Admin monitoring checklist during rollout
+
+Check these during and immediately after each friendly user completes
+their test script.
+
+**`/admin/members`**
+
+- [ ] Each user who accepted an invite appears in the members list with
+      role **member** and status **active**.
+- [ ] No unexpected accounts have appeared (verify count matches the
+      number of invites sent).
+
+**`/admin/events`**
+
+- [ ] Event participant counts reflect the friendly users' join actions.
+      Roster sheet shows each user by name in the correct section
+      (Confirmed, Waitlisted, etc.).
+- [ ] No duplicate participant rows exist for any user.
+
+**`/admin/audit-log`**
+
+- [ ] `accept_invite` entries are present for each friendly user.
+- [ ] No unexpected or anomalous actions appear.
+
+**Supabase Auth logs (if invite or signup issues are reported)**
+
+Open Supabase dashboard → **Logs** → **Auth**. Look for:
+
+- Failed OTP exchange or code exchange errors for the affected user.
+- `email_not_confirmed` or `invalid_credentials` errors during sign-in
+  attempts.
+- Duplicate signup attempts from the same email address.
+
+Common causes and actions:
+
+| Symptom | Likely cause | Action |
+| --- | --- | --- |
+| User never receives confirmation email | Resend delivery failure or spam filter | Check Resend logs; resend invite if needed |
+| Confirmation link shows "expired or invalid" | Link clicked more than once, or mail client prefetched it | User should use `/forgot-password` to set a new password, then sign in and visit the invite URL again |
+| User lands on `/pending-invite` instead of `/welcome` | Navigated to the app root before confirmation | Direct them back to the original invite URL |
+| User lands on `/sign-in?error=confirmation_failed` | Code exchange failed | Same as above — use `/forgot-password` path |
+
+**Resend logs (if confirmation emails are not received)**
+
+Open `resend.com` dashboard → **Emails**. Filter by recipient address.
+Confirm delivery status is `delivered`. If status is `bounced` or
+`failed`, the email address may be incorrect or blocked by the recipient's
+mail server. Correct the address and resend the invite.
+
+---
+
+### Part 5 — Friendly-user feedback questions
+
+Collect responses from each friendly user after they complete the test
+script. A brief message or short conversation is sufficient — no formal
+survey required.
+
+| # | Question | What to listen for |
+| --- | --- | --- |
+| 1 | **Was signup clear?** Did you know what to expect at each step? | Confusion about the confirmation email; unexpected redirects; unclear error messages |
+| 2 | **Was booking a court clear?** Did the calendar make sense? | Duration selector confusing; time slots unclear; court columns not obvious |
+| 3 | **Was cancelling a booking clear?** Did you find the cancel option from both the Calendar and My Schedule? | Missed the "You" tap target on calendar; did not find My Schedule |
+| 4 | **Was joining an event clear?** Did you understand your status (Joined, Waitlisted, Offered)? | Difference between Join Event and Join Waitlist unclear; offer deadline not noticed |
+| 5 | **Were notifications understandable?** Did you know what each notification meant? | Notification copy unclear; bell count did not update in real time |
+| 6 | **Did anything feel broken or confusing on mobile?** | Tap targets too small; sheet does not scroll correctly; layout breaks at their screen size; any action that did not respond |
+| 7 | **Any other feedback?** | Open-ended; note anything unexpected for the post-pilot backlog |
+
+---
+
+### Part 6 — Stop/rollback criteria
+
+If any of the following are observed during Phase 21D, stop inviting
+additional friendly users immediately and investigate before continuing.
+
+These are not the same as deferred items — they represent conditions where
+continuing the rollout would cause real confusion or data integrity issues.
+
+| Condition | Immediate action |
+| --- | --- |
+| Invite or signup flow is broken (confirmation email not delivered, link errors not recoverable via `/forgot-password`) | Pause rollout; investigate Resend and Supabase Auth logs; do not send additional invites until resolved |
+| Users cannot book a court (booking sheet does not open, RPC errors on confirm) | Pause rollout; check Vercel function logs for RPC errors; identify regression |
+| Users cannot cancel a booking (cancel action fails or is not reachable from Calendar or My Schedule) | Pause rollout; check cancellation window logic and server action errors |
+| A North Shore Towers user can see Riverside data, or vice versa | **Immediate stop**; this is a cross-club RLS failure; do not invite more users until the isolation is confirmed restored |
+| A user sees another member's private data that they should not have access to | **Immediate stop**; investigate RLS policies before continuing |
+| Admin cannot manage members or events (admin pages error or do not load) | Pause rollout; check Vercel deployment status and function logs |
+| Notification bell shows incorrect or misleading state (e.g. real-time count not updating, notifications delivered to wrong user) | Pause rollout; verify the `notifications` table is in the `supabase_realtime` publication and RLS policies are correct |
+
+---
+
+### Part 7 — Go/no-go criteria for Phase 21E (broader pilot)
+
+All items below must be checked before expanding beyond the Phase 21D
+friendly-user wave.
+
+**Signup and onboarding**
+
+- [ ] At least 2 friendly users completed signup end-to-end without
+      operator intervention — invite link, email confirmation, `/welcome`,
+      `/calendar`.
+- [ ] No unresolved invite or signup failures. Any failure that occurred
+      has been root-caused and either fixed or confirmed as a one-off
+      (e.g. spam filter, user error).
+
+**Core member flows**
+
+- [ ] At least 1 court booking and cancellation (from Calendar or My
+      Schedule) completed successfully by a real user.
+- [ ] At least 1 event join completed successfully.
+- [ ] Notification bell updated in real time for at least 1 user during
+      their session.
+
+**Waitlist (if tested)**
+
+- [ ] At least 1 waitlist join completed successfully, or explicitly
+      deferred to Phase 21E with a note that waitlist was not exercised
+      in Phase 21D due to insufficient event volume.
+
+**Data integrity**
+
+- [ ] Zero instances of cross-club data exposure (North Shore Towers ↔
+      Riverside or any other club).
+- [ ] All friendly-user profiles are correctly scoped to
+      `north-shore-towers` in the DB.
+- [ ] No duplicate participant or reservation rows exist for any user.
+
+**No unresolved pilot blockers**
+
+- [ ] All stop/rollback conditions in Part 6 were either not triggered
+      or were triggered, investigated, and resolved before rollout
+      continued.
+- [ ] No new regressions were introduced since Phase 20E-C.
+
+**Feedback disposition**
+
+- [ ] All feedback collected from friendly users has been reviewed.
+- [ ] Each reported issue is either: (a) fixed before Phase 21E, (b)
+      explicitly deferred with a written note, or (c) confirmed as
+      working-as-intended with an explanation ready for real pilot members.
+- [ ] No feedback issue is left unreviewed or in an unknown state.
