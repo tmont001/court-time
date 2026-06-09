@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const DURATION_PRESETS = [30, 45, 60, 90, 120] as const;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface EventType {
@@ -112,6 +114,8 @@ export default function CreateEventSheet({
   const [submitting, setSubmitting]                   = useState(false);
   const [error, setError]                             = useState<string | null>(null);
   const [typesError, setTypesError]                   = useState<string | null>(null);
+  const [isCustomDuration, setIsCustomDuration]       = useState(false);
+  const [customDurationText, setCustomDurationText]   = useState("60");
 
   // ── Fetch event types on mount ─────────────────────────────────────────────
 
@@ -192,8 +196,11 @@ export default function CreateEventSheet({
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   function selectType(type: EventType) {
+    const defaultDur = type.default_duration_minutes;
     setSelectedType(type);
-    setDurationMinutes(type.default_duration_minutes);
+    setDurationMinutes(defaultDur);
+    setIsCustomDuration(!(DURATION_PRESETS as readonly number[]).includes(defaultDur));
+    setCustomDurationText(String(defaultDur));
     setCapacity(type.default_capacity);
     const n = Math.min(type.default_court_count, courts.length);
     let defaults = courts.slice(0, n).map(c => c.id);
@@ -210,6 +217,14 @@ export default function CreateEventSheet({
     setSelectedCourtIds(prev =>
       prev.includes(courtId) ? prev.filter(id => id !== courtId) : [...prev, courtId]
     );
+  }
+
+  function handleCustomDuration(text: string) {
+    setCustomDurationText(text);
+    const val = parseInt(text.trim(), 10);
+    if (/^\d+$/.test(text.trim()) && val > 0) {
+      setDurationMinutes(val);
+    }
   }
 
   async function handleCreate() {
@@ -249,6 +264,10 @@ export default function CreateEventSheet({
   const summaryCourtNames = selectedCourtIds
     .map(id => courts.find(c => c.id === id)?.name ?? "Court")
     .join(", ");
+
+  const customDurationValid = !isCustomDuration || (
+    /^\d+$/.test(customDurationText.trim()) && parseInt(customDurationText.trim(), 10) > 0
+  );
 
   const stepTitles: Record<1 | 2 | 3 | 4, string> = {
     1: "Event Type",
@@ -381,22 +400,58 @@ export default function CreateEventSheet({
               {/* Duration */}
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Duration (min) — ends {endTimeLabel}
+                  Duration — ends {endTimeLabel}
                 </label>
-                <input
-                  type="number"
-                  value={durationMinutes}
-                  onChange={e => setDurationMinutes(Math.max(30, Number(e.target.value)))}
-                  step={30}
-                  min={30}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                />
+                <div className="flex flex-wrap gap-2 pt-2">
+                  {DURATION_PRESETS.map(mins => (
+                    <button
+                      key={mins}
+                      type="button"
+                      onClick={() => { setDurationMinutes(mins); setIsCustomDuration(false); }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        !isCustomDuration && durationMinutes === mins
+                          ? "bg-accent text-white dark:text-gray-900 border-accent"
+                          : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                      }`}
+                    >
+                      {mins} min
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setIsCustomDuration(true); setCustomDurationText(String(durationMinutes)); }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      isCustomDuration
+                        ? "bg-accent text-white dark:text-gray-900 border-accent"
+                        : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                    }`}
+                  >
+                    Custom
+                  </button>
+                </div>
+                {isCustomDuration && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={customDurationText}
+                      onChange={e => handleCustomDuration(e.target.value)}
+                      placeholder="e.g. 75"
+                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                    />
+                    <span className="text-xs text-gray-500">min</span>
+                    {customDurationText.length > 0 && !customDurationValid && (
+                      <span className="text-xs text-red-500">Enter a whole number.</span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {error && <p className="text-xs text-red-500">{error}</p>}
 
               <button
-                disabled={!title.trim()}
+                disabled={!title.trim() || !customDurationValid}
                 onClick={() => {
                   setError(null);
                   if (startsAt <= new Date()) {
