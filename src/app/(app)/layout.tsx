@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import BottomNav from "@/components/BottomNav";
+import SideNav from "@/components/SideNav";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +29,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className={`flex flex-col min-h-screen theme-${themeKey}`}>
-      <main className="flex-1" style={{ paddingBottom: "calc(4rem + env(safe-area-inset-bottom))" }}>
-        {children}
-      </main>
+    <div className={`theme-${themeKey} min-h-screen`}>
+      {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
+      <SideNav />
+      {/* Content area: offset right of sidebar on desktop */}
+      <div className="flex flex-col min-h-screen md:pl-56">
+        <main className="flex-1 app-main-content">
+          {children}
+        </main>
+      </div>
+      {/* Bottom nav: visible on mobile, hidden on desktop where SideNav takes over */}
       <BottomNav />
     </div>
   );

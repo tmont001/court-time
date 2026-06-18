@@ -16,8 +16,13 @@ const DEFAULT_START_HOUR = 8;
 const DEFAULT_END_HOUR   = 19;
 const GUTTER_W   = 52;
 const MIN_colW  = 80;
-const MAX_colW  = 180;
-const ROW_H      = 40;
+const MAX_colW  = 320;
+// Row height is responsive: starts at MIN_ROW_H (mobile tap-target size) and
+// grows to fill available vertical space on taller viewports, up to MAX_ROW_H.
+const MIN_ROW_H  = 40;
+const MAX_ROW_H  = 64;
+// Approximate height of the sticky court-name header row (py-2 + text-xs + border).
+const COURT_HEADER_H = 33;
 const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -207,12 +212,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [nowMs, setNowMs]                 = useState(0);
   const [events, setEvents]               = useState<EventWithDetails[]>([]);
 
-  // ── Responsive column width ───────────────────────────────────────────────
-  // Starts at MIN_colW (matches old colW = 80) for consistent SSR/hydration.
-  // The useLayoutEffect below (placed after filteredCourts) updates this via
+  // ── Responsive column width / row height ──────────────────────────────────
+  // Starts at MIN_colW / MIN_ROW_H for consistent SSR/hydration.
+  // The useLayoutEffect below (placed after filteredCourts) updates these via
   // a ResizeObserver once the grid container is mounted.
   const gridContainerRef                  = useRef<HTMLDivElement>(null);
   const [colW, setColW]                   = useState(MIN_colW);
+  const [rowH, setRowH]                   = useState(MIN_ROW_H);
+  const [containerW, setContainerW]       = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<EventWithDetails | null>(null);
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
@@ -294,14 +301,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     : DEFAULT_END_HOUR;
 
   const timeSlots  = useMemo(() => buildTimeSlots(startHour, endHour), [startHour, endHour]);
-  const totalGridH = timeSlots.length * ROW_H;
+  const totalGridH = timeSlots.length * rowH;
 
   const filteredCourts = useMemo(
     () => courts.filter(c => selectedCourtIds.has(c.id)),
     [courts, selectedCourtIds]
   );
 
-  // Placed after filteredCourts to avoid the forward-reference TS error.
+  // Placed after filteredCourts/timeSlots to avoid the forward-reference TS error.
   useLayoutEffect(() => {
     const el = gridContainerRef.current;
     if (!el) return;
@@ -309,14 +316,27 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       const available = el.clientWidth - GUTTER_W;
       const count     = Math.max(filteredCourts.length, 1);
       setColW(Math.min(Math.max(Math.floor(available / count), MIN_colW), MAX_colW));
+      setContainerW(el.clientWidth);
+
+      // Stretch row height to fill available vertical space (desktop), capped
+      // so rows never shrink below tap-target size or grow absurdly tall.
+      const availableH = el.clientHeight - COURT_HEADER_H;
+      const slotCount  = Math.max(timeSlots.length, 1);
+      setRowH(Math.min(Math.max(Math.floor(availableH / slotCount), MIN_ROW_H), MAX_ROW_H));
     };
     compute();
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [filteredCourts.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filteredCourts.length, timeSlots.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const innerWidth = GUTTER_W + Math.max(filteredCourts.length * colW, colW);
+
+  // When the selected courts don't fill the available width (low court counts
+  // on desktop), center the grid instead of left-aligning it with a large
+  // blank region to the right. Once content overflows, fall back to the
+  // default left-aligned + horizontal-scroll behavior.
+  const fitsContainer = containerW > 0 && innerWidth <= containerW;
 
   // Map of courtId → set of occupied slot indices
   const occupiedSlots = useMemo(() => {
@@ -530,9 +550,9 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   return (
     <>
       <div
-        className="flex flex-col overflow-hidden bg-white dark:bg-gray-900"
+        className="relative flex flex-col overflow-hidden bg-white dark:bg-gray-900"
         data-role={userRole}
-        style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}
+        style={{ height: "var(--page-fill-height)" }}
       >
 
         {/* ── Date strip ────────────────────────────────────────────────── */}
@@ -623,7 +643,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
         {/* ── Timeline grid ─────────────────────────────────────────────── */}
         <div className="flex-1 min-h-0 overflow-auto" ref={gridContainerRef}>
-          <div style={{ width: innerWidth, minWidth: "100%" }}>
+          <div style={{ width: innerWidth, margin: fitsContainer ? "0 auto" : undefined }}>
 
             {/* Sticky court-name header */}
             <div
@@ -661,7 +681,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                   <div
                     key={i}
                     className="absolute flex justify-end pr-1.5"
-                    style={{ top: i * ROW_H, height: ROW_H, width: GUTTER_W, paddingTop: 3 }}
+                    style={{ top: i * rowH, height: rowH, width: GUTTER_W, paddingTop: 3 }}
                   >
                     {slot.isHour && (
                       <span className="text-[10px] leading-none text-gray-400 dark:text-gray-600">{slot.label}</span>
@@ -699,8 +719,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                               slot.isHour ? "border-gray-200 dark:border-gray-700/60" : "border-gray-100 dark:border-gray-800"
                             } ${!isDisabled ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/30" : "cursor-default"}`}
                             style={{
-                              top: slotIdx * ROW_H,
-                              height: ROW_H,
+                              top: slotIdx * rowH,
+                              height: rowH,
                               left: 0,
                               right: 0,
                               touchAction: "manipulation",
@@ -717,8 +737,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                       {courtRes.map(res => {
                         const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone, startHour);
                         const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
-                        const top       = (startMins / 30) * ROW_H;
-                        const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, 4);
+                        const top       = (startMins / 30) * rowH;
+                        const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, 4);
                         const isOwn     = res.owner_user_id === userId;
                         const isBlocked = res.reason !== "member_booking";
                         const isAdmin   = userRole === "admin";
@@ -787,8 +807,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         .map(ev => {
                           const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone, startHour);
                           const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone, startHour);
-                          const top       = (startMins / 30) * ROW_H;
-                          const height    = Math.max(((endMins - startMins) / 30) * ROW_H - 2, ROW_H);
+                          const top       = (startMins / 30) * rowH;
+                          const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, rowH);
                           return (
                             <button
                               key={ev.id}
@@ -831,27 +851,27 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             )}
           </div>
         </div>
-      </div>
 
-      {/* ── FAB — pro/admin only, floats above bottom nav ───────────── */}
-      {(userRole === "pro" || userRole === "admin") && (
-        <div className="fixed bottom-20 right-4 z-30 flex flex-col items-end gap-2">
-          {userRole === "admin" && (
+        {/* ── FAB — pro/admin only, anchored to the calendar content area ─ */}
+        {(userRole === "pro" || userRole === "admin") && (
+          <div className="absolute bottom-4 right-4 z-30 flex flex-col items-end gap-2">
+            {userRole === "admin" && (
+              <button
+                onClick={() => setCreatingBlock(true)}
+                className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
+              >
+                + Block
+              </button>
+            )}
             <button
-              onClick={() => setCreatingBlock(true)}
+              onClick={() => setCreatingEvent(true)}
               className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
             >
-              + Block
+              + Event
             </button>
-          )}
-          <button
-            onClick={() => setCreatingEvent(true)}
-            className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
-          >
-            + Event
-          </button>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* ── Slot action menu — pro/admin only ───────────────────────────── */}
       {pendingSlotAction && (

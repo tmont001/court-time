@@ -62,7 +62,7 @@ export default async function HelpPage() {
   return (
     <>
       <Header screenTitle="Help & Rules" />
-      <div className="overflow-y-auto" style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}>
+      <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
       <div className="px-4 py-6 space-y-5 md:max-w-2xl md:mx-auto">
         {sections.map(section => (
           <div key={section.title}>

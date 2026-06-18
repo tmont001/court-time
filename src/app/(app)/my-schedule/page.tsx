@@ -287,7 +287,7 @@ export default async function MySchedulePage() {
 
       <div
         className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
-        style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}
+        style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
         {allItems.length === 0 && pastItems.length === 0 ? (

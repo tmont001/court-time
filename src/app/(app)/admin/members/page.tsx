@@ -36,7 +36,7 @@ export default async function AdminMembersPage() {
       <Header screenTitle="Members" />
       <div
         className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
-        style={{ height: "calc(100dvh - 56px - 64px - env(safe-area-inset-bottom, 0px))" }}
+        style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">
           <MembersClient

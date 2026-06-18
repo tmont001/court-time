@@ -68,17 +68,21 @@ export default async function CalendarPage() {
   return (
     <>
       <Header screenTitle="Calendar" />
-      <CalendarShell
-        courts={courts ?? []}
-        hasError={!!courtsError}
-        userId={user.id}
-        clubId={clubId}
-        clubTimezone={clubTimezone}
-        userRole={userRole}
-        todayISO={todayISO}
-        operatingHours={operatingHours ?? []}
-        operatingHoursOverrides={operatingHoursOverrides ?? []}
-      />
+      {/* Calendar gets a generous max width; wider than normal content pages.
+          On ultra-wide displays this prevents the grid from stretching endlessly. */}
+      <div className="max-w-[1440px] mx-auto w-full">
+        <CalendarShell
+          courts={courts ?? []}
+          hasError={!!courtsError}
+          userId={user.id}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          userRole={userRole}
+          todayISO={todayISO}
+          operatingHours={operatingHours ?? []}
+          operatingHoursOverrides={operatingHoursOverrides ?? []}
+        />
+      </div>
     </>
   );
 }
