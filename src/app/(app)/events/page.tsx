@@ -93,34 +93,31 @@ export default async function EventsPage() {
 
   const clubId = profile?.club_id ?? "";
 
-  let clubTimezone = "America/New_York";
-  if (clubId) {
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("timezone")
-      .eq("id", clubId)
-      .single();
-    if (club?.timezone) clubTimezone = club.timezone;
-  }
-
-  // ── Fetch upcoming scheduled events ─────────────────────────────────────────
+  // clubs and events both only need profile.club_id — run in parallel to save
+  // one sequential round-trip vs. the previous clubs → events pattern.
   const now = new Date().toISOString();
 
-  const { data: rawEvents } = await supabase
-    .from("events")
-    .select(`
-      id, title, starts_at, ends_at, capacity, status, created_by,
-      event_types(key, label, color),
-      event_participants(profile_id, role, status, offer_expires_at),
-      event_guests(id),
-      reservations(court_id, reason, status)
-    `)
-    .eq("club_id", clubId)
-    .eq("status", "scheduled")
-    .gte("starts_at", now)
-    .order("starts_at", { ascending: true }) as { data: RawEventRow[] | null };
+  const [clubResult, eventsResult] = await Promise.all([
+    clubId
+      ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("events")
+      .select(`
+        id, title, starts_at, ends_at, capacity, status, created_by,
+        event_types(key, label, color),
+        event_participants(profile_id, role, status, offer_expires_at),
+        event_guests(id),
+        reservations(court_id, reason, status)
+      `)
+      .eq("club_id", clubId)
+      .eq("status", "scheduled")
+      .gte("starts_at", now)
+      .order("starts_at", { ascending: true }),
+  ]);
 
-  const events = rawEvents ?? [];
+  const clubTimezone = clubResult.data?.timezone ?? "America/New_York";
+  const events = (eventsResult.data ?? []) as RawEventRow[];
 
   // ── Batch-fetch court names ───────────────────────────────────────────────
   const allCourtIds = [...new Set(

@@ -18,25 +18,17 @@ export default async function CalendarPage() {
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role    ?? "member";
 
-  let clubTimezone = "America/New_York";
-  if (clubId) {
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("timezone")
-      .eq("id", clubId)
-      .single();
-    if (club?.timezone) clubTimezone = club.timezone;
-  }
-
-  // Compute today in the club's timezone on the server so CalendarShell gets a
-  // stable YYYY-MM-DD string for both SSR and client hydration.
-  const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
-
+  // All four queries only need profile.club_id — run in parallel to save
+  // one sequential round-trip vs. the previous clubs → Promise.all pattern.
   const [
+    { data: club },
     { data: courts, error: courtsError },
     { data: operatingHours },
     { data: operatingHoursOverrides },
   ] = await Promise.all([
+    clubId
+      ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+      : Promise.resolve({ data: null }),
     supabase
       .from("courts")
       .select("id, name, display_order")
@@ -49,17 +41,22 @@ export default async function CalendarPage() {
           .eq("club_id", clubId)
           .order("day_of_week")
       : Promise.resolve({ data: [] }),
-    // Phase 17C: fetch all upcoming overrides for this club (today onward).
-    // The table is small (O(tens) of rows); no upper bound is needed.
+    // Phase 17C: table is small (O(tens) of rows); CalendarShell filters by
+    // exact override_date for the selected date, so no date lower-bound needed.
     clubId
       ? supabase
           .from("operating_hours_override")
           .select("override_date, is_closed, opens_at, closes_at, note")
           .eq("club_id", clubId)
-          .gte("override_date", todayISO)
           .order("override_date")
       : Promise.resolve({ data: [] }),
   ]);
+
+  const clubTimezone = club?.timezone ?? "America/New_York";
+
+  // Compute today in the club's timezone on the server so CalendarShell gets a
+  // stable YYYY-MM-DD string for both SSR and client hydration.
+  const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
