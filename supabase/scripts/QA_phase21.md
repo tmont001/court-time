@@ -1291,3 +1291,84 @@ scoped (column widths, query order). No auth, RLS, schema, or RPC changes were
 made. Build and type-check are clean. After completing the manual QA checklist
 above, merge `phase-21x-ux-performance` to `main` and resume Phase 21D
 friendly-user rollout.
+
+---
+
+## Phase 21X-H — Notification Panel Desktop Layout Hotfix
+
+**Status: Complete ✓ — manual QA passed; pnpm tsc and pnpm build pass**
+
+Branch: `phase-21x-notification-panel-fix`
+
+### Issue found
+
+Production smoke testing after Phase 21X-B/C (responsive shell + desktop
+sidebar) revealed that the notification panel was partially covered and visually
+clipped on desktop. The panel was rendered via `BottomSheet`, which uses
+`fixed bottom-0 left-0 right-0` — a full-width mobile drawer that does not
+account for the desktop sidebar or the calendar layout. The drag handlebar was
+also visible and functional on desktop, which is not appropriate for a
+pointer-driven interface.
+
+Booking, cancellation, event detail, and event roster sheets were not affected
+because they are opened from within the content area and do not conflict with
+the sidebar.
+
+### Fix made
+
+**File changed:** `src/components/NotificationSheet.tsx` only.
+
+`NotificationSheet` now detects the screen breakpoint at mount using a lazy
+`useState` initializer (`window.matchMedia("(min-width: 768px)").matches`) plus
+a `useEffect` listener for resize. No mount flicker because the component only
+renders after a user click, so `window` is always available.
+
+- **Desktop (≥ 768px):** renders a `fixed top-14 right-4 z-50` dropdown
+  panel — `w-96`, `max-height: min(60vh, 480px)`, scrollable content, border
+  and shadow. A transparent `z-40` backdrop captures click-away. No drag
+  handlebar.
+- **Mobile (< 768px):** unchanged — `BottomSheet` with drag handle,
+  `max-h-[55vh]` scrollable list, existing touch gesture behavior.
+
+No changes to `NotificationBell`, `Header`, `BottomSheet`, auth, RLS, roles,
+RPCs, migrations, database schema, Supabase policies, or notification backend
+logic.
+
+### Manual QA results
+
+**Desktop**
+
+- [x] Bell click opens a dropdown panel directly below the header, aligned to
+      the right. No drag handlebar visible.
+- [x] Panel does not overlap or clip behind the sidebar. Full panel content
+      is visible and scrollable.
+- [x] Calendar grid remains behind the panel cleanly — no z-index conflict.
+- [x] Click anywhere outside the panel (including on the sidebar or calendar)
+      closes the panel.
+- [x] "Mark all read" button is visible and clickable; tapping it marks all
+      notifications read and hides the button.
+- [x] Individual unread notification rows are tappable; clicking marks the
+      row read and decrements the bell badge.
+- [x] Panel renders correctly in dark mode.
+
+**Mobile**
+
+- [x] Tap the bell → bottom sheet slides up with drag handlebar. Existing
+      behavior unchanged.
+- [x] Sheet does not overlap the bottom nav.
+- [x] Swipe handlebar downward or tap backdrop → sheet dismisses.
+- [x] "Mark all read" and individual read actions work correctly.
+
+**No regression**
+
+- [x] Booking detail sheet, cancellation sheet, event detail sheet, and event
+      roster sheet open and close normally on both desktop and mobile.
+      Unaffected by this change.
+- [x] Bell unread count is correct before and after opening/closing the panel.
+
+### Recommendation
+
+Phase 21X (including 21X-H) is ready to merge. Merge
+`phase-21x-notification-panel-fix` into `phase-21x-ux-performance`, then merge
+`phase-21x-ux-performance` to `main` and resume Phase 21D friendly-user
+rollout.
