@@ -1062,6 +1062,151 @@ friendly-user wave.
 
 ---
 
+### Resume note — after Phase 21X
+
+**Phase 21X (UX & Performance Stabilization) is complete and deployed to production.**
+
+All 21X sub-phases (21X-B through 21X-H) have been merged to `main` and Vercel
+has deployed the current build. Live on production:
+
+- Desktop fixed sidebar and mobile bottom nav (21X-B)
+- Calendar desktop layout — wider columns, centered for low court counts, anchored FAB (21X-C)
+- Route-level loading skeletons for `/calendar`, `/events`, `/my-schedule` (21X-F)
+- Calendar and events query parallelization (21X-G2-A)
+- Notification panel desktop clipping fix — dropdown on desktop, bottom sheet on mobile (21X-H)
+
+Friendly-user rollout can resume after a final production smoke test confirms no
+regression in the flows pilot members will use.
+
+**Resumption constraints for Phase 21D:**
+
+- First wave: **2 trusted users only.**
+- Role: **member** for all first-wave users.
+- Invites: **email-restricted** where the user's email is known in advance.
+- URL: **`https://court-time.vercel.app` only.** Invite links and email
+  confirmation links are built against this URL and will not work from any
+  other origin.
+- Riverside remains the operator sandbox. Do not send friendly users any
+  Riverside invite link or credentials.
+- **Notifications must be included in the test script.** A desktop notification
+  panel clipping issue was found and fixed in Phase 21X-H. Verify the notification
+  panel opens correctly on both desktop and mobile with a real session before the
+  rollout proceeds.
+
+---
+
+### Execution checklist
+
+Use this checklist to run the Phase 21D rollout. Refer to Parts 1–7 above for
+full context on each step. Do not duplicate those sections here — this list is
+the step-by-step operator action sequence only.
+
+**Step 1 — Final production smoke test (before inviting anyone)**
+
+- [ ] Open `https://court-time.vercel.app/sign-in`. Page loads without errors.
+- [ ] Sign in as North Shore Towers admin. Confirm redirect to `/calendar`.
+- [ ] **Desktop notification panel:** click bell → panel opens as a dropdown
+      below the header, right-aligned; no overlap with sidebar; click-away
+      closes it; no drag handlebar visible.
+- [ ] **Mobile notification panel:** tap bell → bottom sheet slides up with drag
+      handle; sheet does not overlap bottom nav; swipe or tap backdrop dismisses.
+- [ ] `/admin/members`, `/admin/events`, `/admin/settings` all load without error.
+- [ ] Create a test event (admin) → confirm it appears on `/admin/events` and
+      `/events`. Cancel the test event before proceeding.
+- [ ] Vercel dashboard: current production deployment shows **Ready** (green).
+- [ ] Resend dashboard: no delivery failures for recent auth emails.
+
+**Step 2 — Create the first 2 member invites**
+
+- [ ] Signed in as North Shore Towers admin at `https://court-time.vercel.app`.
+- [ ] `/admin/members` → **Invite** → role **member** → enter first user's email
+      address (email-restricted) → copy the `/join/<code>` URL.
+- [ ] Verify the invite belongs to North Shore Towers before sending:
+  ```sql
+  select ci.code, c.name as club_name, c.slug, ci.role, ci.email
+  from club_invites ci
+  join clubs c on c.id = ci.club_id
+  where ci.code = '<paste-invite-code-here>';
+  -- Expected: club_name = 'North Shore Towers'; slug = 'north-shore-towers'
+  ```
+- [ ] Repeat for the second friendly user.
+- [ ] Both invite URLs saved before closing the invite sheet.
+
+**Step 3 — Send invite message to friendly users**
+
+Use the message template from Part 2 above. Include with each invite:
+
+- [ ] Their personal invite URL (`https://court-time.vercel.app/join/<code>`).
+- [ ] Reminder to open it from `https://court-time.vercel.app`, not a forwarded
+      or cached link.
+- [ ] Note that court bookings and events are real and visible to other members.
+- [ ] Your direct contact method for reporting issues.
+
+**Step 4 — Monitor signup and invite flow**
+
+After each user taps the invite link:
+
+- [ ] Watch `/admin/members` — user appears as **pending** until they accept.
+- [ ] After signup completes: user status changes to **active**; role shows
+      **member**.
+- [ ] If confirmation email not received within 5 minutes: check Resend →
+      **Emails** → filter by recipient address. If `bounced` or `failed`,
+      correct the email address and resend. If `delivered`, ask user to check
+      spam.
+- [ ] If user lands on `/pending-invite` instead of `/calendar`: direct them
+      back to the original invite URL.
+- [ ] If user lands on `/sign-in?error=confirmation_failed`: direct them to
+      `/forgot-password` to set a new password, then sign in and visit the
+      invite URL.
+
+**Step 5 — Have users complete the test script**
+
+Ask each user to work through the flows from Part 3 (Friendly-user test script):
+
+- [ ] Account setup: invite link → email confirmation → `/welcome` → `/calendar`.
+- [ ] Book a court. Confirm booking appears in My Schedule.
+- [ ] Cancel a booking from the **Calendar** view (tap their own block).
+- [ ] Cancel a booking from **My Schedule**.
+- [ ] Join an event from `/events`.
+- [ ] Check the **notification bell** — confirm the badge updates in real time
+      and the panel renders correctly (dropdown on desktop, bottom sheet on
+      mobile). This is required; do not skip.
+- [ ] Toggle a notification preference from `/profile/notifications`.
+- [ ] Waitlist join — arrange a full event to trigger it. If not possible,
+      note "waitlist not exercised in Phase 21D" and defer to Phase 21E.
+
+**Step 6 — Capture feedback**
+
+After each user completes the test script, collect responses to the seven
+questions from Part 5:
+
+- [ ] Signup: was the confirmation email step clear?
+- [ ] Court booking: did the calendar make sense?
+- [ ] Cancellation: was the cancel path found from both Calendar and My Schedule?
+- [ ] Events: was Joined / Waitlisted / Offered status understood?
+- [ ] Notifications: did the bell count update in real time? Was the panel easy
+      to find and use on their device?
+- [ ] Mobile usability: anything felt broken or hard to tap?
+- [ ] Open-ended: anything else unexpected?
+
+Record each response. Cross-check against the stop/rollback criteria in Part 6
+before inviting any additional users beyond the first two.
+
+**Step 7 — Go/no-go for Phase 21E**
+
+After both friendly users complete the test script, check every item in Part 7
+above. If all criteria are met:
+
+- [ ] Mark Checkpoint 21D **Complete ✓** at the top of this section.
+- [ ] Proceed to Phase 21E (broader pilot launch).
+
+If any stop criterion from Part 6 was triggered and is not yet resolved:
+
+- [ ] Do not proceed to Phase 21E.
+- [ ] Document the issue below and resolve it before re-evaluating.
+
+---
+
 ## Phase 21X — UX & Performance Stabilization
 
 **Status: Complete ✓ — all sub-phases implemented; pnpm tsc and pnpm build pass**
