@@ -714,7 +714,7 @@ A friendly user is a real person on a real device using their real email.
 
 ## Checkpoint 21D — Friendly-User Rollout
 
-**Status: In progress — complete all items before moving to Phase 21E**
+**Status: Complete ✓ — Wave 1 passed; all go/no-go criteria met**
 
 This checkpoint runs a controlled first wave of real users through North
 Shore Towers before any broader pilot invitation. All items in Phase 21C
@@ -1059,6 +1059,35 @@ friendly-user wave.
       explicitly deferred with a written note, or (c) confirmed as
       working-as-intended with an explanation ready for real pilot members.
 - [ ] No feedback issue is left unreviewed or in an unknown state.
+
+---
+
+### Wave 1 results — operator sign-off
+
+**All go/no-go criteria for Phase 21E are met. Rollout can proceed.**
+
+Wave 1 ran after Phase 21X was deployed and the production smoke test passed.
+2 friendly users invited as members. No operator intervention was required after
+invites were sent.
+
+| Flow | Result |
+| --- | --- |
+| Invite created and sent | ✓ Pass |
+| Email confirmation delivered | ✓ Pass |
+| `/welcome` profile completion | ✓ Pass |
+| `/calendar` loads for new member | ✓ Pass |
+| Court booking | ✓ Pass |
+| Cancel booking from Calendar | ✓ Pass |
+| Cancel booking from My Schedule | ✓ Pass |
+| Event join | ✓ Pass |
+| Notification bell — real-time update | ✓ Pass |
+| Notification panel — desktop dropdown (Phase 21X fix) | ✓ Pass |
+| Notification panel — mobile bottom sheet | ✓ Pass |
+| North Shore Towers data only visible to NST members | ✓ Pass — no cross-club exposure |
+| Riverside data not visible to friendly users | ✓ Pass |
+
+No unresolved pilot blockers. No cross-club data exposure observed. No regressions
+since Phase 20E-C.
 
 ---
 
@@ -1517,3 +1546,312 @@ Phase 21X (including 21X-H) is ready to merge. Merge
 `phase-21x-notification-panel-fix` into `phase-21x-ux-performance`, then merge
 `phase-21x-ux-performance` to `main` and resume Phase 21D friendly-user
 rollout.
+
+---
+
+## Checkpoint 21E — Broader Pilot Rollout
+
+**Status: In progress — complete all items and confirm go/no-go before declaring
+pilot launched**
+
+This checkpoint expands North Shore Towers from the 2-user friendly-user wave
+(Phase 21D) to the full intended pilot audience. Phase 21D Wave 1 passed all
+go/no-go criteria. No code changes, migrations, or schema changes are required
+to run this checkpoint.
+
+No code changes. No migrations. No data deletion.
+
+---
+
+### Part 1 — Launch readiness status
+
+All prerequisites for broader pilot launch are confirmed.
+
+| Item | Status |
+| --- | --- |
+| North Shore Towers club bootstrapped | ✓ Complete (Phase 21B) |
+| Pilot club configuration and training prep | ✓ Complete (Phase 21C) |
+| Phase 21D Wave 1 — friendly-user smoke test | ✓ All flows passed |
+| Phase 21X stabilization live on production | ✓ Desktop sidebar, loading skeletons, notification panel fix |
+| Production URL | `https://court-time.vercel.app` — verified |
+| Riverside sandbox isolation | ✓ No cross-club exposure observed in Wave 1 |
+| No unresolved pilot blockers | ✓ Confirmed |
+
+**Constraints that remain in effect for Phase 21E:**
+
+- Production URL only: `https://court-time.vercel.app`. Never share localhost or
+  Vercel preview URLs with pilot members.
+- Riverside is the operator sandbox. Do not send any pilot member a Riverside
+  invite link or credentials.
+- Notifications must remain part of monitoring throughout Phase 21E. The desktop
+  notification panel fix (21X-H) is live, but real-world usage at scale is the
+  first production validation.
+- Keep at least one active North Shore Towers admin at all times.
+
+---
+
+### Part 2 — Recommended rollout size
+
+**Recommendation: 5–10 users for the next wave, not all-at-once unless the
+total intended pilot group is ≤ 10.**
+
+Rationale: Phase 21D validated the invite, signup, booking, cancellation, event,
+and notification flows with 2 users. The system is ready for real use. However,
+a few practical reasons to stay at 5–10 before going to the full group:
+
+1. **Support bandwidth.** Any signup or confirmation issue requires the admin or
+   operator to triage in real time. 5–10 users is manageable in a single pass;
+   25+ simultaneous signups can create a queue of stuck users faster than one
+   person can handle.
+2. **Feedback signal.** A second wave of 5–10 gives you a meaningful feedback
+   sample before the full group joins. If a flow is confusing to 3 of 10 users,
+   you learn that before it affects 30.
+3. **Invite management.** Email-restricted invites are easier to track at 5–10
+   than at 20+. You can confirm each user accepted before the next batch.
+
+**Exception:** If the total intended pilot group is 10 or fewer users, invite
+everyone at once. The overhead of batching is not worth it at that scale.
+
+If the operator knows the full group is small (≤ 10 total including Wave 1
+users), proceed with a single invite batch for all remaining members.
+
+---
+
+### Part 3 — Invite execution plan
+
+**Who creates invites:** The North Shore Towers admin. The operator does not
+send invites directly.
+
+**Step-by-step:**
+
+1. Admin signs in at `https://court-time.vercel.app`.
+2. Navigate to `/admin/members` → **Invite**.
+3. Role: **member** for all standard pilot members. Use **pro** only if this
+   person will actively manage events or rosters — not for regular members who
+   want early access.
+4. Enter the member's email address in the email-restriction field. This prevents
+   the link from being accepted by anyone else.
+5. Copy the `/join/<code>` URL.
+6. Verify the invite before sending:
+   ```sql
+   select ci.code, c.name as club_name, c.slug, ci.role, ci.email
+   from club_invites ci
+   join clubs c on c.id = ci.club_id
+   where ci.code = '<paste-invite-code-here>';
+   -- Expected: club_name = 'North Shore Towers'; slug = 'north-shore-towers'
+   ```
+7. Send the invite link and the pilot launch message from Part 4 to the member
+   via the channel the admin normally uses (email, text, messaging app).
+
+**Batch guidance:**
+
+- If the total remaining group is ≤ 10: create all invites in one session and
+  send them all at once.
+- If the group is > 10: send in batches of 5–8. Confirm each batch has accepted
+  and onboarded before sending the next. This keeps the support queue manageable.
+
+**Tracking who has accepted:**
+
+Check `/admin/members` after sending each batch. Members show as **pending**
+until they accept. Once they accept and complete `/welcome`, status shows
+**active**. You can also run:
+
+```sql
+select
+  p.display_name,
+  p.email,
+  p.role,
+  p.status,
+  ci.accepted_at,
+  p.created_at
+from profiles p
+left join club_invites ci on ci.accepted_by = p.id
+where p.club_id = (select id from clubs where slug = 'north-shore-towers')
+  and p.role = 'member'
+order by p.created_at desc;
+```
+
+This shows name, role, status, and when the invite was accepted for every
+member in North Shore Towers.
+
+---
+
+### Part 4 — Pilot launch message
+
+Send this message along with the invite link. Adapt the tone to fit how the
+admin normally communicates with this group — the substance should remain the
+same.
+
+---
+
+> **Subject (if email):** You're invited to the North Shore Towers booking app
+
+> Hi [name],
+>
+> We're launching the pilot version of our court booking app for North Shore
+> Towers, and you're in the first group of members to try it.
+>
+> **To get started, tap the link below and create your account:**
+> [paste `/join/<code>` URL here]
+>
+> A few things to know before you tap:
+>
+> - Open the link on your phone — the app is designed for mobile, though it
+>   also works on desktop.
+> - After you create your account, you'll get a confirmation email from
+>   `no-reply@court-time.app`. Check your spam folder if you don't see it
+>   within a minute or two. You'll need to click that link before you can
+>   sign in.
+> - Once you're in, you can book a court, join events, and check notifications
+>   using the navigation at the bottom of the screen.
+> - This is a real booking system — any court you reserve will show as
+>   unavailable to other members, so please only book what you plan to use.
+>   You can cancel from the Calendar or from My Schedule.
+> - If anything looks broken or confusing, let me know directly. This is the
+>   pilot — your feedback matters.
+>
+> Questions? Reply here or reach me at [admin contact].
+
+---
+
+---
+
+### Part 5 — First 48-hour monitoring checklist
+
+Run these checks in the first 48 hours after sending the broader rollout
+invites. No special tooling required — all checks are in the app or in the
+Supabase/Resend dashboards.
+
+**App — check once per day or after each signup batch**
+
+- [ ] `/admin/members` — every invited member shows **active** status after
+      they accept. No one stuck on **pending** for more than 24 hours without
+      explanation (some people are slow; others may need a resend).
+- [ ] `/admin/events` — events the admin created are visible with correct
+      participant counts and occupancy. No phantom participants.
+- [ ] `/admin/audit-log` — scan for any unexpected entries (errors, repeated
+      failed actions, anything that looks like a system problem rather than
+      user activity).
+
+**Notification bell/panel — spot check after any event mutation**
+
+- [ ] Create a test notification (e.g., announce an event) and confirm the
+      bell badge updates in real time on an active member session.
+- [ ] Open the notification panel on desktop: dropdown appears, no clipping,
+      content scrolls.
+- [ ] Open the notification panel on mobile: bottom sheet slides up correctly.
+
+**Supabase Auth logs — check only if signup issues are reported**
+
+1. Supabase dashboard → **Authentication** → **Users**.
+2. Filter by email or creation date.
+3. Look for users stuck in unconfirmed state (`email_confirmed_at` is null).
+4. Check the **Logs** tab → **Auth** for OTP exchange errors, invalid code
+   errors, or rate-limit hits.
+
+**Resend logs — check if a member reports not receiving confirmation email**
+
+1. Resend dashboard → **Emails** → filter by recipient address.
+2. Confirm delivery status is `delivered`. If `bounced` or `failed`: check
+   the email address for typos; resend the invite with the correct address.
+3. If `delivered` but member did not receive it: ask them to check spam;
+   the sender is `no-reply@court-time.app`.
+
+**Feedback — ongoing**
+
+- [ ] Each member's first 1–2 sessions: ask the feedback questions from
+      Phase 21D Part 5 (same 7 questions).
+- [ ] Log each response as: **fix now**, **defer to post-pilot**, or
+      **training issue** (user confusion, not a bug).
+
+---
+
+### Part 6 — Support triage
+
+Use this table when a member reports an issue or when monitoring reveals a
+problem. Check the Condition column against what the member describes, then
+follow the Action column.
+
+| Condition | Likely cause | Immediate action |
+| --- | --- | --- |
+| Member never received invite | Admin sent to wrong email, or did not send yet | Check `/admin/members` — confirm invite was created. Re-create with correct email if needed. |
+| Confirmation email not received | Resend delivery failure or spam filter | Check Resend logs; if `delivered`, ask member to check spam. If `bounced`/`failed`, correct email and resend. |
+| Confirmation link shows "expired or invalid" | Link clicked more than once, or mail client pre-fetched it | Direct member to `/forgot-password` to set a new password; sign in; visit the invite URL. |
+| Member lands on `/pending-invite` instead of `/calendar` | Navigated to app root before accepting invite | Direct them to the original `/join/<code>` URL. They must accept before accessing the app. |
+| Member lands on `/sign-in?error=confirmation_failed` | Code exchange failed (link reuse) | Same as above — `/forgot-password` → sign in → visit invite URL. |
+| Member cannot book a court | Booking window not open yet, or court unavailable | Check court availability on the calendar. Confirm `booking_window_days` covers the date they tried. If RPC error: check Vercel function logs. |
+| Member cannot cancel a booking | Cancellation window has passed | Confirm the booking is within 24 hours of the court time. If still within window and cancel fails: check Vercel function logs for `cancel_reservation` errors. |
+| Member cannot join an event | Event is full and no waitlist spot | Check capacity on `/admin/events`. If event is full, member lands on waitlist — expected behavior. |
+| Notifications confusing or bell not updating | Real-time subscription not active | Ask member to refresh the page (re-establishes the Realtime subscription). If persistent: confirm `notifications` table is in the `supabase_realtime` publication (run `verify_production_setup.sql`). |
+| Mobile layout issue | Device-specific rendering | Collect device/browser. Check if issue reproduces at the same screen size in DevTools. Log for post-pilot UX polish if not blocking. |
+| Cross-club data concern (member sees wrong data) | **Critical — RLS policy failure** | **Immediate stop.** Do not invite additional members. Identify which club's data was exposed, to which user, and via which page. Do not resolve speculatively — investigate RLS policies before any rollout resumes. |
+
+---
+
+### Part 7 — Go/no-go criteria after Phase 21E
+
+These criteria define when the pilot can be considered successfully launched.
+There is no hard deadline — the pilot is launched when all items below are
+checked, not when a calendar date arrives.
+
+**Invitations**
+
+- [ ] All intended pilot members have been invited. (Target number: confirm
+      with operator before rollout — fill in here: ___ members invited.)
+- [ ] No invite is outstanding for more than 7 days without the member having
+      acknowledged it. Follow up with anyone who has not accepted before the
+      7-day invite expiry.
+
+**Onboarding**
+
+- [ ] At least 80% of invited members have completed onboarding (accepted
+      invite, confirmed email, completed `/welcome`, landed on `/calendar`).
+- [ ] No member is stuck in an unresolved onboarding failure. Any failure that
+      occurred has been root-caused and resolved (or the member has been
+      re-invited).
+
+**Core flows used by real members**
+
+- [ ] At least 5 court bookings completed across the member group.
+- [ ] At least 2 court cancellations completed (from Calendar or My Schedule).
+- [ ] At least 1 event created by the admin and joined by at least 1 member.
+- [ ] Notification bell used by at least 1 member; real-time update confirmed
+      working in production at this scale.
+
+**Data integrity**
+
+- [ ] Zero instances of cross-club data exposure (North Shore Towers ↔
+      Riverside, or any other club).
+- [ ] All member profiles are correctly scoped to `north-shore-towers`.
+- [ ] No duplicate participant, reservation, or notification rows for any member.
+- [ ] `/admin/audit-log` shows no unexplained system-level errors.
+
+**No unresolved pilot blockers**
+
+- [ ] Every stop condition from Part 6 of Phase 21D was either not triggered,
+      or was triggered, root-caused, and resolved.
+- [ ] No new regressions introduced since Phase 20E-C or Phase 21X.
+- [ ] No critical support issue (data exposure, booking failure, signup
+      failure) is left open at the time of sign-off.
+
+**Feedback categorized**
+
+- [ ] Feedback collected from all members who responded.
+- [ ] Every reported item classified as one of:
+  - **Fix now** — blocking or significantly confusing; resolve before declaring
+    pilot launched.
+  - **Defer to post-pilot** — rough edge, cosmetic, or low-frequency; log to
+    backlog.
+  - **Training issue** — user confusion that can be addressed with a short
+    explanation to this member; not a product bug.
+- [ ] No feedback item left in an unknown state.
+
+**Sign-off**
+
+When all items above are checked, the pilot is launched. Update this section
+header to **Status: Complete ✓** and record:
+
+- Date pilot declared launched: ___
+- Members invited: ___
+- Members onboarded: ___
+- Open issues at launch: ___ (or "none")
