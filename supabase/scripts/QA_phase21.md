@@ -1059,3 +1059,235 @@ friendly-user wave.
       explicitly deferred with a written note, or (c) confirmed as
       working-as-intended with an explanation ready for real pilot members.
 - [ ] No feedback issue is left unreviewed or in an unknown state.
+
+---
+
+## Phase 21X — UX & Performance Stabilization
+
+**Status: Complete ✓ — all sub-phases implemented; pnpm tsc and pnpm build pass**
+
+Branch: `phase-21x-ux-performance`
+
+This pass ran between Checkpoint 21A-0 and the resumption of friendly-user
+rollout. It addressed responsive layout, perceived performance, and measurable
+query latency without touching auth, RLS, database schema, migrations, RPCs,
+Supabase policies, or `force-dynamic`. No new product features were added.
+
+---
+
+### 21X-B — Responsive App Shell
+
+**Files changed:**
+- `src/components/SideNav.tsx` — NEW; `"use client"`, `hidden md:flex`, fixed
+  left sidebar at `w-56` with 4 nav tabs using `usePathname` for active state.
+- `src/components/BottomNav.tsx` — added `md:hidden` so bottom nav is hidden
+  on desktop (sidebar takes over).
+- `src/app/(app)/layout.tsx` — imported `SideNav`; added `md:pl-56` offset on
+  the main content wrapper so content clears the fixed sidebar on desktop.
+- `src/app/globals.css` — added `--surface`, updated `--page-fill-height`
+  (mobile: `calc(100dvh - 3.5rem - 4rem - env(safe-area-inset-bottom, 0px))`;
+  desktop: `calc(100dvh - 3.5rem)`), `.app-main-content`, and `--accent` theme
+  tokens.
+
+**What this achieves:**
+
+On screens ≥ 768px, a fixed left sidebar replaces the bottom nav. Mobile
+layout (≤ 767px) is unchanged — bottom nav still present, sidebar hidden.
+
+---
+
+### 21X-C — Calendar Desktop Layout
+
+**Files changed:**
+- `src/app/(app)/calendar/CalendarShell.tsx` — `MAX_colW` raised from 180 →
+  320px; `rowH` is now responsive (40–64px, computed via ResizeObserver based
+  on available vertical space); `containerW` state + `fitsContainer` flag added
+  to center low-court-count layouts instead of stretching to fill the container;
+  outer wrapper made `position: relative`; FAB moved from `fixed bottom-20
+  right-4` to `absolute bottom-4 right-4`; `--page-fill-height` CSS variable
+  applied to the scroll container.
+- `src/app/(app)/calendar/page.tsx` — added `max-w-[1440px] mx-auto w-full`
+  wrapper around `<CalendarShell />` to cap grid width on ultra-wide displays.
+- Six additional page files updated to use `style={{ height:
+  "var(--page-fill-height)" }}` instead of hardcoded viewport heights.
+
+**What this achieves:**
+
+Calendar grid columns scale up to 320px on desktop rather than being capped
+at 180px. When fewer courts are selected (1–2), the grid centers horizontally
+rather than leaving blank space to the right. FAB is anchored to the calendar
+container edge rather than the viewport edge, so it does not overlap sidebar or
+bottom nav. Row height expands smoothly with available vertical space.
+
+**Issue fixed during 21X-C:** Removed `minWidth: "100%"` from both the grid
+wrapper and sticky court header — this was the root cause of the blank white
+area to the right when only 1–2 courts were selected.
+
+---
+
+### 21X-F — Perceived Performance / Loading States
+
+**Files changed (all new):**
+
+| File | Purpose |
+| --- | --- |
+| `src/app/(app)/loading.tsx` | Generic app-shell skeleton; fallback for all `(app)` routes without a specific `loading.tsx`. Renders inside layout's `{children}` slot — sidebar and bottom nav are already present from layout. |
+| `src/app/(app)/calendar/loading.tsx` | Calendar-specific skeleton matching `CalendarShell` structure: date strip (8 circle pills), court filter chips (6), sticky court header row (33px), 10 time-slot rows (40px each, 5 columns, time-gutter at 52px). Wraps in `max-w-[1440px]` to match `calendar/page.tsx`. |
+| `src/app/(app)/events/loading.tsx` | Events-specific skeleton matching `events/page.tsx`: header, page title block, date section header, 3 event card skeletons with pill/title/time/capacity rows. |
+| `src/app/(app)/my-schedule/loading.tsx` | My Schedule-specific skeleton: no page-title block (matches actual page); date section header, 3 horizontal schedule item cards, second date group with 2 event-style cards (type pill + name + time). |
+
+**What this achieves:**
+
+Route-level `loading.tsx` files act as React Suspense boundaries at the segment
+level. While the Server Component fetches Supabase data, the nearest `loading.tsx`
+is shown immediately. Each skeleton is pixel-matched to the real page so there
+is no layout shift on reveal. Pure `animate-pulse` CSS — zero JavaScript
+overhead.
+
+---
+
+### 21X-G2-A — Low-Risk Query Parallelization
+
+**Files changed:**
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/calendar/page.tsx` | `clubs.select("timezone")` moved into the same `Promise.all` as courts, operating_hours, and operating_hours_override. All four queries now fire in parallel once `profile.club_id` is available. Removed `.gte("override_date", todayISO)` filter from the overrides query — table is small; CalendarShell filters by exact date. `clubTimezone` and `todayISO` derived after the parallel batch. |
+| `src/app/(app)/events/page.tsx` | `clubs.select("timezone")` moved into a `Promise.all` with the events query. Both only need `profile.club_id`. Previously sequential; now parallel. |
+
+**What this eliminates:**
+
+Both pages had a hidden waterfall:
+`getUser → profiles → clubs (timezone) → page data`.
+After this change the chain is:
+`getUser → profiles → [clubs + page data in parallel]`.
+
+One sequential Supabase round-trip saved on both `/calendar` and `/events` on
+every page load.
+
+**Constraints respected:** No auth changes. No RLS changes. No schema changes.
+No migrations. No `React.cache()` added. No `force-dynamic` changes. No caching
+layer added. No server.ts changes.
+
+---
+
+### Route timing observations (dev server, warm connection)
+
+These are approximate ranges measured in development. Production on Vercel
+with warm Edge functions and connection pooling via Supabase will be faster.
+First-render in dev has high variance due to cold module loading.
+
+| Route transition | Approximate range | Notes |
+| --- | --- | --- |
+| `/calendar` → `/events` | ~460–495 ms | Parallelized clubs + events query in 21X-G2-A |
+| `/events` → `/calendar` | ~600–655 ms | Slightly slower — 4 parallel queries vs. 2 |
+| `/calendar` → `/my-schedule` | ~490 ms | Includes profile + two sequential queries |
+
+These timings are illustrative. They depend on dev server state, Supabase edge
+region, and connection pool warmth. Do not treat them as production benchmarks.
+
+---
+
+### Deferred work
+
+| Item | Reason deferred |
+| --- | --- |
+| **21X-G3: Calendar SSR initial data** | Pass `initialReservations` and `initialEvents` as props from `calendar/page.tsx` to `CalendarShell` to eliminate the empty-grid flash on `/events → /calendar`. Deferred before pilot: touches sensitive date-boundary logic in `getDayBoundsUTC` / `tzOffsetMs`; app now feels acceptable without it; best revisited with test coverage post-pilot. |
+| **DB-side optimization** | Short-circuit `getUser` / profiles with `React.cache()` or middleware session read; batch multi-day reservation queries. Deferred: requires `force-dynamic` audit and Supabase connection-pool analysis to size correctly. |
+| **21X-D quick wins** | Tab labels, title text cleanup, empty state copy. Deferred to post-pilot UX polish. |
+| **21X-E sheet changes** | Migrate remaining sheets to `BottomSheet` component. Deferred to Phase 17/18 backlog per prior decision. |
+
+---
+
+### Build and type-check status
+
+```
+pnpm tsc --noEmit   → no output (clean)
+pnpm build          → succeeded; no new warnings introduced by 21X work
+```
+
+One pre-existing warning about the `/sign-up` route (`force-dynamic` + cookies)
+was confirmed unrelated to all 21X changes.
+
+---
+
+### Manual QA checklist for 21X branch
+
+Complete before merging to `main` and resuming friendly-user rollout.
+
+**Responsive shell — mobile (< 768 px)**
+
+- [ ] Bottom nav is visible on all `(app)` routes.
+- [ ] Sidebar is not visible on mobile.
+- [ ] `--page-fill-height` fills the viewport correctly accounting for the
+      bottom nav and safe area insets (no overflow; no clipped content).
+- [ ] `/calendar`, `/events`, `/my-schedule`, `/profile`, `/admin/*` all load
+      without layout breakage on mobile.
+
+**Responsive shell — desktop (≥ 768 px)**
+
+- [ ] Fixed left sidebar is visible with 4 nav tabs.
+- [ ] Active tab is highlighted based on current route.
+- [ ] Bottom nav is not visible on desktop.
+- [ ] Main content is offset by `md:pl-56` — no content hidden behind sidebar.
+- [ ] `--page-fill-height` fills the remaining viewport height correctly (no
+      bottom nav subtracted on desktop).
+
+**Calendar desktop layout**
+
+- [ ] Calendar grid columns reach up to 320 px on a wide screen; do not
+      exceed that width regardless of viewport size.
+- [ ] Selecting 1–2 courts: grid centers horizontally in the available area;
+      no large blank white space to the right.
+- [ ] Grid is capped at `max-w-[1440px]` on ultra-wide displays.
+- [ ] FAB is positioned at the bottom-right of the calendar container, not
+      the viewport edge; does not overlap the sidebar on desktop.
+- [ ] Row height expands on tall viewports; time slots are more readable on
+      desktop than on mobile.
+
+**Loading skeletons**
+
+- [ ] Navigating to `/calendar` on a slow connection (or with Network throttle
+      in DevTools set to Slow 3G) shows the calendar skeleton (date strip +
+      court chips + time grid) before the real page renders. No blank white
+      flash.
+- [ ] Same test for `/events`: skeleton shows page title block + 3 event card
+      outlines.
+- [ ] Same test for `/my-schedule`: skeleton shows date group header + 3
+      schedule item cards (no page-title block).
+- [ ] Generic `(app)/loading.tsx` is shown as fallback for any route that does
+      not have its own `loading.tsx` (e.g. `/profile`).
+- [ ] No layout shift when the real page replaces the skeleton — dimensions
+      should be closely matched.
+
+**Query parallelization — no regression**
+
+- [ ] `/calendar` loads correctly with the correct timezone applied to the
+      date strip and time slots.
+- [ ] `/events` loads correctly with dates grouped by the club's timezone.
+- [ ] All operating hours overrides are correctly applied in CalendarShell
+      (verify by checking a date with a configured override if one exists in
+      the sandbox).
+- [ ] No errors in browser console or Vercel function logs related to the
+      parallelized queries.
+
+**Cross-cutting**
+
+- [ ] Auth flow unchanged: `/sign-in` → `/calendar`; unauthenticated access to
+      any `(app)` route redirects to `/sign-in`.
+- [ ] RLS isolation unchanged: Riverside sandbox user cannot see North Shore
+      Towers data and vice versa.
+- [ ] Admin pages (`/admin/*`) load correctly on both mobile and desktop with
+      the new shell.
+- [ ] Notification bell updates in real time during a session (Supabase
+      Realtime subscription unchanged).
+
+---
+
+### Recommendation
+
+All 21X changes are non-breaking, additive (loading skeletons) or narrowly
+scoped (column widths, query order). No auth, RLS, schema, or RPC changes were
+made. Build and type-check are clean. After completing the manual QA checklist
+above, merge `phase-21x-ux-performance` to `main` and resume Phase 21D
+friendly-user rollout.
