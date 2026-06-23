@@ -1559,7 +1559,53 @@ This checkpoint expands North Shore Towers from the 2-user friendly-user wave
 go/no-go criteria. No code changes, migrations, or schema changes are required
 to run this checkpoint.
 
-No code changes. No migrations. No data deletion.
+No code changes. No migrations.
+
+---
+
+### Pre-launch cleanup — test member hard-deleted
+
+**Status: Complete ✓**
+
+One test account created during Phase 21D friendly-user testing was hard-deleted
+from North Shore Towers before broader rollout. This was not a real pilot member.
+
+| Field | Value |
+| --- | --- |
+| Email | `thomasjmontanaro+ct3@gmail.com` |
+| Club | North Shore Towers (`north-shore-towers`) |
+| Role at deletion | `member` |
+| Reason | Fake test account from Phase 21D Wave 1 smoke test; not a real pilot member |
+
+**What was removed:**
+
+- Auth user (`auth.users` row)
+- Profile (`profiles` row)
+- Accepted invite row (`club_invites` row for this email in NST)
+- Court reservations (`reservations`)
+- Event participation rows (`event_participants`)
+- Notifications and notification deliveries (`notifications`, `notification_deliveries`)
+- Notification preferences (`notification_preferences`)
+- Audit log entries attributed to this test account (`audit_log`)
+
+No app code changed. No migrations changed. No Riverside or other club data
+was touched. Deletion was performed via a targeted SQL `DO $$` block run in the
+Supabase SQL Editor with safety guards (exact email match, exactly one auth user,
+profile club verified, role verified as `member`, aborts on unexpected events /
+guests / cross-user cancellations).
+
+**Verification checklist**
+
+- [x] `auth.users` — 0 rows for `thomasjmontanaro+ct3@gmail.com`.
+- [x] `profiles` — 0 rows for that email/UUID.
+- [x] `club_invites` — 0 rows for that email or `accepted_by` UUID in
+      `north-shore-towers`.
+- [x] `/admin/members` (North Shore Towers) — test member no longer appears in
+      the member list.
+- [x] No Riverside data touched; Riverside member list and event/reservation
+      history unchanged.
+
+North Shore Towers is clean and ready for broader pilot rollout.
 
 ---
 
@@ -1573,6 +1619,7 @@ All prerequisites for broader pilot launch are confirmed.
 | Pilot club configuration and training prep | ✓ Complete (Phase 21C) |
 | Phase 21D Wave 1 — friendly-user smoke test | ✓ All flows passed |
 | Phase 21X stabilization live on production | ✓ Desktop sidebar, loading skeletons, notification panel fix |
+| Pre-launch test member cleanup | ✓ Test account hard-deleted; club is clean |
 | Production URL | `https://court-time.vercel.app` — verified |
 | Riverside sandbox isolation | ✓ No cross-club exposure observed in Wave 1 |
 | No unresolved pilot blockers | ✓ Confirmed |
