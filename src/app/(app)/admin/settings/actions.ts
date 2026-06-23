@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sendSms } from "@/lib/sms";
+import { sendEmailNotification } from "@/lib/email";
+import { announcementTemplate } from "@/lib/email-templates";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:           "You must be signed in.",
@@ -242,10 +244,47 @@ export async function sendAnnouncementAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to send announcement. Please try again." };
   }
 
+  try {
+    await dispatchAnnouncementEmails(user.id, title);
+  } catch {
+    // Email dispatch must never block announcement success or surface to the user.
+  }
+
   revalidatePath("/admin/settings");
   return {
     success:        true,
     message:        `Announcement sent to ${recipientCount ?? 0} member${(recipientCount ?? 0) === 1 ? "" : "s"}.`,
     recipientCount: recipientCount ?? 0,
   };
+}
+
+async function dispatchAnnouncementEmails(
+  actorUserId: string,
+  title:       string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  // Query notifications created by this send_announcement call (within 5 s).
+  const cutoff = new Date(Date.now() - 5000).toISOString();
+
+  const { data: notifications } = await supabase
+    .from("notifications")
+    .select("id, body, user_id")
+    .eq("kind", "announcement")
+    .gte("created_at", cutoff);
+
+  if (!notifications?.length) return;
+
+  for (const notification of notifications) {
+    // Do not email the admin who sent the announcement.
+    if (notification.user_id === actorUserId) continue;
+
+    await sendEmailNotification(
+      supabase,
+      notification.id,
+      notification.user_id,
+      "announcement",
+      (clubName) => announcementTemplate(clubName, title, notification.body),
+    );
+  }
 }

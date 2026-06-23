@@ -8,7 +8,11 @@ import { updateNotificationPreference } from "./actions";
 type ConfigurableKind =
   | "reservation_confirmed"
   | "reservation_cancelled_by_member"
+  | "reservation_cancelled_by_admin"
   | "event_joined"
+  | "event_cancelled"
+  | "waitlist_offer"
+  | "waitlist_promoted"
   | "announcement";
 
 interface PreferenceRow {
@@ -34,21 +38,35 @@ const CONFIGURABLE_KINDS: { kind: ConfigurableKind; label: string; description: 
     description: "When you cancel one of your own reservations.",
   },
   {
+    kind:        "reservation_cancelled_by_admin",
+    label:       "Booking cancelled by club",
+    description: "When your club cancels one of your court reservations.",
+  },
+  {
     kind:        "event_joined",
     label:       "Event join confirmations",
     description: "When you join a confirmed spot in an event.",
+  },
+  {
+    kind:        "event_cancelled",
+    label:       "Event cancellations",
+    description: "When an event you joined is cancelled.",
+  },
+  {
+    kind:        "waitlist_offer",
+    label:       "Waitlist spot offers",
+    description: "When a spot opens up in an event you're waitlisted for.",
+  },
+  {
+    kind:        "waitlist_promoted",
+    label:       "Waitlist confirmations",
+    description: "When you accept a waitlist offer and are confirmed.",
   },
   {
     kind:        "announcement",
     label:       "Club announcements",
     description: "Broadcast messages sent by your club admin.",
   },
-];
-
-const MANDATORY_KINDS = [
-  "Reservation cancelled by your club",
-  "Event cancellation notices",
-  "Waitlist promotions",
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -134,31 +152,12 @@ export default function NotificationPreferencesForm({ preferences }: Props) {
         })}
       </div>
 
-      {/* ── SMS note ──────────────────────────────────────────────────── */}
+      {/* ── Footer note ───────────────────────────────────────────────── */}
       <p className="text-xs text-gray-400 dark:text-gray-500 px-1">
-        Text messages follow these preferences when SMS is enabled on your Profile.
+        These settings control email delivery. Important in-app updates — such as
+        cancellations by your club — always appear in your notification bell. Text
+        messages also follow these preferences when SMS is enabled on your Profile.
       </p>
-
-      {/* ── Mandatory kinds ───────────────────────────────────────────── */}
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-1">
-          Always delivered
-        </p>
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
-          {MANDATORY_KINDS.map(label => (
-            <div
-              key={label}
-              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800"
-            >
-              <p className="text-sm text-gray-600 dark:text-gray-400">{label}</p>
-              <span className="text-xs text-gray-400 dark:text-gray-500">Always on</span>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 px-1">
-          These notifications cannot be disabled.
-        </p>
-      </div>
 
     </div>
   );

@@ -1,0 +1,122 @@
+// Server-only. Do not import from client components.
+import { Resend } from "resend";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/lib/db/types";
+
+const FROM = "Court Time <no-reply@court-time.app>";
+
+export async function sendEmail(
+  to:      string,
+  subject: string,
+  html:    string,
+  text:    string,
+): Promise<{ messageId: string | null; error: string | null }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return { messageId: null, error: "Email is not configured." };
+
+  try {
+    const resend = new Resend(apiKey);
+    const { data, error } = await resend.emails.send({ from: FROM, to, subject, html, text });
+    if (error) return { messageId: null, error: error.message };
+    return { messageId: data?.id ?? null, error: null };
+  } catch (err) {
+    return { messageId: null, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// sendEmailNotification — shared delivery helper for all 8 notification kinds.
+//
+// Guards (in order):
+//   1. RESEND_API_KEY absent → return (avoids spurious 'failed' rows in
+//      notification_deliveries for unconfigured environments).
+//   2. Duplicate-send check via email_already_delivered() (security definer,
+//      bypasses admin-only RLS on notification_deliveries) → return if sent.
+//   3. Preference check via user_pref_enabled() (security definer, works
+//      cross-user) → record opted_out + return if disabled.
+//   4. Email fetch via get_user_email_for_notification() (security definer,
+//      same-club + same-user-or-admin/pro check) → return if null.
+//
+// Never throws.
+export async function sendEmailNotification(
+  supabase:        SupabaseClient<Database>,
+  notificationId:  string,
+  recipientUserId: string,
+  kind:            string,
+  buildTemplate:   (clubName: string) => { subject: string; html: string; text: string },
+): Promise<void> {
+  // Guard 1: skip entirely if Resend is not configured.
+  if (!process.env.RESEND_API_KEY) return;
+
+  // Guard 2: duplicate-send check — skip if an email was already successfully
+  // sent for this notification. email_already_delivered() is security definer
+  // and readable by any authenticated role including regular members.
+  const { data: alreadySent } = await supabase.rpc("email_already_delivered", {
+    p_notification_id: notificationId,
+  });
+  if (alreadySent) return;
+
+  // Guard 3: preference check — user_pref_enabled() is security definer and
+  // works cross-user (e.g. admin cancelling a member's reservation). Default
+  // ON: a missing row returns true, so new kinds are enabled without any action.
+  const { data: prefEnabled } = await supabase.rpc("user_pref_enabled", {
+    p_user_id: recipientUserId,
+    p_kind:    kind,
+  });
+  if (prefEnabled === false) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notificationId,
+      p_channel:         "email",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  // Guard 4: fetch recipient email via notification-scoped security-definer
+  // RPC. The function verifies: caller is authenticated; both caller and
+  // notification are in the same club; caller is the recipient OR is admin/pro.
+  // Returns null on any authorization failure (e.g. regular-member-triggered
+  // waitlist offer where recipient is a different member).
+  const { data: recipientEmail } = await supabase.rpc("get_user_email_for_notification", {
+    p_notification_id: notificationId,
+  });
+  if (!recipientEmail) return;
+
+  // Fetch club name for the template (club_id on profiles is safe to read
+  // for own profile or admin context).
+  let clubName = "Court Time";
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id")
+    .eq("id", recipientUserId)
+    .single();
+  if (profile?.club_id) {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("name")
+      .eq("id", profile.club_id)
+      .single();
+    if (club?.name) clubName = club.name;
+  }
+
+  const { subject, html, text } = buildTemplate(clubName);
+  const { messageId, error: emailError } = await sendEmail(recipientEmail, subject, html, text);
+
+  if (messageId) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notificationId,
+      p_channel:             "email",
+      p_status:              "sent",
+      p_provider:            "resend",
+      p_provider_message_id: messageId,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notificationId,
+      p_channel:         "email",
+      p_status:          "failed",
+      p_provider:        "resend",
+      p_error:           emailError ?? "Unknown error",
+    });
+  }
+}

@@ -3,6 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sendSms } from "@/lib/sms";
+import { sendEmailNotification } from "@/lib/email";
+import {
+  reservationConfirmedTemplate,
+  reservationCancelledByMemberTemplate,
+  reservationCancelledByAdminTemplate,
+  eventJoinedTemplate,
+  eventCancelledTemplate,
+  waitlistOfferTemplate,
+  waitlistPromotedTemplate,
+} from "@/lib/email-templates";
 
 // ---------------------------------------------------------------------------
 // createReservation
@@ -31,6 +41,12 @@ export async function createReservation(params: {
     await dispatchBookingConfirmSms(user.id);
   } catch {
     // SMS dispatch must never block booking success or surface to the user.
+  }
+
+  try {
+    await dispatchBookingConfirmEmail(user.id);
+  } catch {
+    // Email dispatch must never block booking success or surface to the user.
   }
 
   return {};
@@ -105,6 +121,29 @@ async function dispatchBookingConfirmSms(ownerUserId: string): Promise<void> {
   }
 }
 
+async function dispatchBookingConfirmEmail(ownerUserId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("user_id", ownerUserId)
+    .eq("kind", "reservation_confirmed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    ownerUserId,
+    "reservation_confirmed",
+    (clubName) => reservationConfirmedTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // joinEvent
 // Wraps the join_event RPC so that SMS dispatch can run server-side.
@@ -129,6 +168,12 @@ export async function joinEvent(
       await dispatchEventJoinSms(user.id, eventId);
     } catch {
       // SMS dispatch must never block join success or surface to the user.
+    }
+
+    try {
+      await dispatchEventJoinEmail(user.id, eventId);
+    } catch {
+      // Email dispatch must never block join success or surface to the user.
     }
   }
 
@@ -211,6 +256,35 @@ async function dispatchEventJoinSms(
   }
 }
 
+async function dispatchEventJoinEmail(
+  userId:  string,
+  eventId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", userId)
+    .eq("kind", "event_joined")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    userId,
+    "event_joined",
+    (clubName) => eventJoinedTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // adminCancelReservation
 // Calls the admin_cancel_reservation RPC, then attempts to send an SMS to
@@ -234,6 +308,12 @@ export async function adminCancelReservation(
     await dispatchAdminCancelSms(reservation.owner_user_id);
   } catch {
     // SMS dispatch must never surface as a user-facing error.
+  }
+
+  try {
+    await dispatchAdminCancelEmail(reservation.owner_user_id);
+  } catch {
+    // Email dispatch must never surface as a user-facing error.
   }
 
   return {};
@@ -309,6 +389,29 @@ async function dispatchAdminCancelSms(ownerUserId: string): Promise<void> {
   }
 }
 
+async function dispatchAdminCancelEmail(ownerUserId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("user_id", ownerUserId)
+    .eq("kind", "reservation_cancelled_by_admin")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    ownerUserId,
+    "reservation_cancelled_by_admin",
+    (clubName) => reservationCancelledByAdminTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // notifyMemberReservationCancelled
 // Called from my-schedule/page.tsx after a member self-cancels a reservation.
@@ -333,6 +436,12 @@ export async function notifyMemberReservationCancelled(
     await dispatchMemberCancelSms(userId);
   } catch {
     // SMS dispatch must never block or surface errors.
+  }
+
+  try {
+    await dispatchMemberCancelEmail(userId);
+  } catch {
+    // Email dispatch must never block or surface errors.
   }
 }
 
@@ -405,6 +514,29 @@ async function dispatchMemberCancelSms(ownerUserId: string): Promise<void> {
   }
 }
 
+async function dispatchMemberCancelEmail(ownerUserId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("user_id", ownerUserId)
+    .eq("kind", "reservation_cancelled_by_member")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    ownerUserId,
+    "reservation_cancelled_by_member",
+    (clubName) => reservationCancelledByMemberTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // leaveEvent
 // Calls leave_event RPC and dispatches SMS to the next offered user (if any).
@@ -426,6 +558,12 @@ export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
     await dispatchWaitlistOfferSms(eventId, offeredProfileId);
   } catch {
     // SMS dispatch must never surface as a user-facing error.
+  }
+
+  try {
+    await dispatchWaitlistOfferEmail(eventId, offeredProfileId);
+  } catch {
+    // Email dispatch must never surface as a user-facing error.
   }
 
   return {};
@@ -511,6 +649,37 @@ async function dispatchWaitlistOfferSms(
   }
 }
 
+async function dispatchWaitlistOfferEmail(
+  eventId:          string,
+  offeredProfileId: string | null,
+): Promise<void> {
+  if (!offeredProfileId) return;
+
+  const supabase = await createClient();
+
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", offeredProfileId)
+    .eq("kind", "waitlist_offer")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    offeredProfileId,
+    "waitlist_offer",
+    (clubName) => waitlistOfferTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // acceptWaitlistOffer
 // Calls accept_waitlist_offer RPC, then dispatches SMS for the waitlist_promoted
@@ -535,6 +704,12 @@ export async function acceptWaitlistOffer(
     await dispatchAcceptOfferSms(user.id, eventId);
   } catch {
     // SMS dispatch must never block accept success or surface to the user.
+  }
+
+  try {
+    await dispatchAcceptOfferEmail(user.id, eventId);
+  } catch {
+    // Email dispatch must never block accept success or surface to the user.
   }
 
   return {};
@@ -615,6 +790,35 @@ async function dispatchAcceptOfferSms(
   }
 }
 
+async function dispatchAcceptOfferEmail(
+  userId:  string,
+  eventId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: candidates } = await supabase
+    .from("notifications")
+    .select("id, body, metadata")
+    .eq("user_id", userId)
+    .eq("kind", "waitlist_promoted")
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const notification = candidates?.find(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  ) ?? null;
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    userId,
+    "waitlist_promoted",
+    (clubName) => waitlistPromotedTemplate(clubName, notification.body),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // declineWaitlistOffer
 // Calls decline_waitlist_offer RPC. No SMS is dispatched on decline.
@@ -655,6 +859,12 @@ export async function cancelEvent(eventId: string): Promise<{ error?: string }> 
     await dispatchEventCancelSms(eventId, actorUserId);
   } catch {
     // SMS dispatch must never surface as a user-facing error.
+  }
+
+  try {
+    await dispatchEventCancelEmail(eventId, actorUserId);
+  } catch {
+    // Email dispatch must never surface as a user-facing error.
   }
 
   return {};
@@ -738,6 +948,39 @@ async function dispatchEventCancelSms(
         p_error:           smsError ?? "Unknown error",
       });
     }
+  }
+}
+
+async function dispatchEventCancelEmail(
+  eventId:     string,
+  actorUserId: string | null,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const cutoff = new Date(Date.now() - 5000).toISOString();
+
+  const { data: notifications } = await supabase
+    .from("notifications")
+    .select("id, body, user_id, metadata")
+    .eq("kind", "event_cancelled")
+    .gte("created_at", cutoff);
+
+  if (!notifications?.length) return;
+
+  const relevant = notifications.filter(
+    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
+  );
+
+  for (const notification of relevant) {
+    if (notification.user_id === actorUserId) continue;
+
+    await sendEmailNotification(
+      supabase,
+      notification.id,
+      notification.user_id,
+      "event_cancelled",
+      (clubName) => eventCancelledTemplate(clubName, notification.body),
+    );
   }
 }
 

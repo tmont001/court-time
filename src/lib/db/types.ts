@@ -1184,6 +1184,14 @@ export type Database = {
         Args: { p_user_id: string; p_kind: string };
         Returns: boolean;
       };
+      get_user_email_for_notification: {
+        Args: { p_notification_id: string };
+        Returns: string | null;
+      };
+      email_already_delivered: {
+        Args: { p_notification_id: string };
+        Returns: boolean;
+      };
       upsert_operating_hours_override: {
         Args: {
           p_override_date: string;

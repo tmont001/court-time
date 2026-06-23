@@ -20,8 +20,9 @@ export default async function NotificationPreferencesPage() {
       <div className="px-4 py-6 space-y-4 md:max-w-lg md:mx-auto">
         <div className="space-y-1">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Choose which alerts you receive. Turning off a notification type
-            stops both in-app and text alerts for that category.
+            Choose which email alerts you receive. Turning off a type stops
+            email delivery for that category. Important updates always appear
+            in your notification bell.
           </p>
         </div>
 

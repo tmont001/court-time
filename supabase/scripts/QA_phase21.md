@@ -1551,15 +1551,149 @@ rollout.
 
 ## Checkpoint 21E — Broader Pilot Rollout
 
-**Status: In progress — complete all items and confirm go/no-go before declaring
-pilot launched**
+**Status: In progress — Phase 21E-A complete; rollout steps pending**
 
 This checkpoint expands North Shore Towers from the 2-user friendly-user wave
 (Phase 21D) to the full intended pilot audience. Phase 21D Wave 1 passed all
-go/no-go criteria. No code changes, migrations, or schema changes are required
-to run this checkpoint.
+go/no-go criteria.
 
-No code changes. No migrations. No data deletion.
+Phase 21E-A (app-generated email notifications) was implemented before broader
+rollout. See the Phase 21E-A section below for deployment steps.
+
+---
+
+## Phase 21E-A — App-Generated Email Notifications
+
+**Status: Complete ✓ — implemented on branch `phase21e-email-notifications`;
+pnpm tsc and pnpm build pass**
+
+### What was implemented
+
+Email delivery for all 8 notification kinds via Resend. All email notifications
+are default-ON and members can opt out of any category via Profile → Notification
+preferences. In-app notification behavior is unchanged.
+
+### Migration required before deploy
+
+**`0055_expand_notification_preferences.sql`** — apply in Supabase SQL Editor
+before or immediately after deploying this branch to production:
+
+1. Adds `get_user_email(p_user_id uuid)` — security-definer function that
+   reads `email` from `auth.users` without requiring the service-role key.
+2. Expands the `notification_preferences.kind` CHECK constraint to all 8 kinds
+   (previously only 4 were allowed).
+3. Replaces `update_notification_preference` RPC with an expanded allowlist
+   covering all 8 kinds.
+
+`user_pref_enabled()` is **not changed** — it is already generic and returns
+`coalesce(enabled, true)` for any kind (no row = ON by default).
+
+### Vercel environment variables required
+
+| Variable | Source | Notes |
+| --- | --- | --- |
+| `RESEND_API_KEY` | resend.com → API Keys | **Server-side only** — no `NEXT_PUBLIC_` prefix |
+
+Domain `court-time.app` is already verified in Resend. Sender address is:
+`Court Time <no-reply@court-time.app>` (same as Supabase Auth emails).
+
+### Files changed
+
+| File | Change |
+| --- | --- |
+| `supabase/migrations/0055_expand_notification_preferences.sql` | New migration — see above |
+| `src/lib/email.ts` | New — `sendEmail()` (Resend wrapper) + `sendEmailNotification()` (shared dispatch helper) |
+| `src/lib/email-templates.ts` | New — 8 template functions (inline HTML + plain-text fallback) |
+| `src/app/(app)/calendar/actions.ts` | Added 7 email dispatch functions; wired into all 6 action entry points |
+| `src/app/(app)/admin/settings/actions.ts` | Added `dispatchAnnouncementEmails`; wired into `sendAnnouncementAction` |
+| `src/app/(app)/profile/notifications/NotificationPreferencesForm.tsx` | Expanded to 8 configurable kinds; removed mandatory section; updated footer note |
+| `src/app/(app)/profile/notifications/page.tsx` | Updated description to mention email |
+| `.env.example` | Added `RESEND_API_KEY` entry |
+| `src/lib/db/types.ts` | Added `get_user_email` to Database Functions type |
+
+### Architecture notes
+
+- `sendEmailNotification` is the shared helper. Guards run in order:
+  1. `RESEND_API_KEY` absent → return immediately (no delivery row written).
+  2. `email_already_delivered(notification_id)` — security-definer duplicate
+     guard; skips if a `sent` email row already exists for this notification.
+  3. `user_pref_enabled(user_id, kind)` — security-definer preference check;
+     records `opted_out` and returns if the user has disabled this kind.
+  4. `get_user_email_for_notification(notification_id)` — security-definer email
+     fetch; verifies caller is authenticated, in the same club as the
+     notification, and is the recipient themselves OR has role admin/pro.
+     Returns null on any authorization failure; email is not sent.
+- Email uses the same `notification_deliveries` records as SMS (`channel = 'email'`).
+  `p_provider = 'resend'` for all email records.
+- When `RESEND_API_KEY` is unset: email dispatch returns immediately with no
+  `notification_deliveries` row written. In-app and SMS are unaffected.
+- SMS dispatch is unchanged. Email runs in a separate `try/catch` after each
+  SMS dispatch so SMS and email failures are independent.
+- Announcement emails exclude the sending admin (`actorUserId` check).
+- Event cancellation emails exclude the actor who cancelled the event.
+
+### SMS deferred note
+
+SMS dispatch is tested internally via Admin → Settings → Send test SMS but is
+not activated for members. The Twilio env vars must all be set to enable SMS.
+Until then, `sendSms()` returns early with `"SMS is not configured."` and no
+SMS is delivered. This behavior is unchanged by Phase 21E-A.
+
+### Known limitations
+
+- **Waitlist offer email**: when a regular member leaves an event and triggers a
+  waitlist offer, `get_user_email_for_notification` returns null (caller is
+  'member' role, target is a different member). The email is not sent. The
+  in-app notification always delivers. Fix post-pilot: a dedicated server-side
+  admin-context dispatch or a trusted internal route.
+- **No per-channel preferences**: one toggle controls both email and in-app for
+  the 4 originally-configurable kinds. For the 4 formerly-mandatory kinds
+  (admin cancel, event cancel, waitlist offer, waitlist promoted), turning the
+  toggle off stops email only; in-app notifications for those kinds still always
+  deliver. Per-channel preferences are a post-pilot enhancement.
+
+### Deployment checklist
+
+Follow these steps in order. The migration must be applied before the app code
+is deployed, because the app calls RPCs defined in the migration.
+
+- [ ] **Step 1 — Add env var.** Add `RESEND_API_KEY` to Vercel → Settings →
+      Environment Variables (Production; server-only — no `NEXT_PUBLIC_` prefix).
+      Do not redeploy yet.
+- [ ] **Step 2 — Apply migration.** Run `0055_expand_notification_preferences.sql`
+      in Supabase SQL Editor. Confirm all 4 statements execute without error.
+- [ ] **Step 3 — Deploy app code.** Push `phase21e-email-notifications` to `main`
+      (or trigger a Vercel redeploy). The new RPCs from Step 2 will be available
+      when the deployment goes live.
+- [ ] **Step 4 — Production QA.** Trigger a court booking; check Resend dashboard
+      (resend.com → Emails) for a delivered email within ~10 seconds.
+- [ ] Verify: Profile → Notification preferences shows all 8 toggles; turning
+      one off and back on saves without error.
+
+### QA checklist for Phase 21E-A
+
+**Email delivery (requires `RESEND_API_KEY` set in production)**
+
+- [ ] Booking confirmed → member receives email with subject "Court booked — North Shore Towers"
+- [ ] Admin cancels booking → member receives email "Your booking was cancelled — North Shore Towers"
+- [ ] Member self-cancels → member receives email "Booking cancelled — North Shore Towers"
+- [ ] Member joins event (confirmed spot) → receives email "You're in — North Shore Towers"
+- [ ] Event cancelled → all participants receive email "Event cancelled — North Shore Towers" (actor excluded)
+- [ ] Waitlist offer created → offered member receives email "Spot available — North Shore Towers"
+- [ ] Member accepts waitlist offer → receives email "You're confirmed — North Shore Towers"
+- [ ] Announcement sent → all members (except sender) receive email with announcement title as subject
+
+**Preference opt-out**
+
+- [ ] Member turns off "Booking confirmations" in Profile → Notification preferences → saves ✓
+- [ ] Member books a court → no booking confirmation email is sent
+- [ ] Member turns "Booking confirmations" back on → subsequent bookings resume sending email
+
+**Email not configured (no `RESEND_API_KEY`)**
+
+- [ ] With `RESEND_API_KEY` unset, all 8 notification flows complete normally
+- [ ] No errors surfaced to the user; no `notification_deliveries` rows written for email
+- [ ] In-app notification bell continues to work normally
 
 ---
 
