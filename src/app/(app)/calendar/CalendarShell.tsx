@@ -584,14 +584,17 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         {/* ── Court filter chips ────────────────────────────────────────── */}
         <div className="flex gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 overflow-x-auto shrink-0 hide-scrollbar">
           <button
-            onClick={() => setSelectedCourtIds(new Set(courts.map(c => c.id)))}
+            onClick={() => {
+              const allSelected = courts.length > 0 && selectedCourtIds.size === courts.length;
+              setSelectedCourtIds(allSelected ? new Set() : new Set(courts.map(c => c.id)));
+            }}
             className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium ${
-              selectedCourtIds.size === courts.length
+              courts.length > 0 && selectedCourtIds.size === courts.length
                 ? "bg-accent text-white dark:text-gray-900"
                 : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
             }`}
           >
-            All
+            {courts.length > 0 && selectedCourtIds.size === courts.length ? "Deselect all" : "Select all"}
           </button>
           {courts.map(court => (
             <button

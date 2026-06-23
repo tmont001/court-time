@@ -2027,3 +2027,104 @@ header to **Status: Complete ✓** and record:
 - Members invited: ___
 - Members onboarded: ___
 - Open issues at launch: ___ (or "none")
+
+---
+
+## Phase 21E-C — Account & Calendar Polish
+
+**Status: Complete ✓ — pnpm tsc and pnpm build pass**
+
+### Part A — Logged-in password change
+
+**Goal:** Allow a logged-in user to change their password from the Profile area without requiring the forgot-password email flow.
+
+**Files added**
+
+| File | Description |
+|---|---|
+| `src/app/(app)/profile/security/page.tsx` | Server component — auth guard + renders `ChangePasswordForm` |
+| `src/app/(app)/profile/security/ChangePasswordForm.tsx` | Client component — two password fields, validation, `updateUser` call, success/error state |
+
+**Files changed**
+
+| File | Change |
+|---|---|
+| `src/app/(app)/profile/page.tsx` | Added Security section (between Notifications and Help) with link to `/profile/security` |
+
+**Implementation notes**
+
+- Uses `supabase.auth.updateUser({ password })` on the browser client — the existing session cookie is sufficient proof of identity. No current password is required.
+- No migration required — password validation is handled by Supabase Auth.
+- Does not affect `/forgot-password`, `/reset-password`, or `/auth/confirm` flows.
+- Fields clear on success. Success message auto-clears after 3 s.
+
+**Known limitation: current password not required**
+
+`updateUser({ password })` for a session-authenticated user does not require the current password. The active session proves identity. Supabase does not expose a simple reauthentication-before-change API without an OTP flow, which is disproportionate for a private club pilot. Flag as post-pilot hardening if needed.
+
+**Deferred: email change**
+
+`updateUser({ email })` triggers confirmation emails to both old and new addresses and requires PKCE confirmation. Deferred to a future profile polish phase.
+
+**QA checklist**
+
+Happy path:
+- [ ] `/profile` shows a Security section with a "Change password" row and `›` chevron
+- [ ] Tapping it navigates to `/profile/security` with Header title "Change Password"
+- [ ] Page description: "Enter a new password for your account."
+- [ ] Entering matching passwords ≥ 8 chars → button shows "Saving…" → "Password updated." (green, 3 s)
+- [ ] Password fields clear after success
+- [ ] Sign out → sign back in with new password → success
+- [ ] Old password rejected after change
+
+Validation (no API call):
+- [ ] One field empty → "Please fill in both fields."
+- [ ] Passwords don't match → "Passwords do not match."
+- [ ] Password < 8 characters → "Password must be at least 8 characters."
+
+Error handling:
+- [ ] Supabase error → error message shown inline, form stays active
+- [ ] Unauthenticated user hits `/profile/security` directly → redirects to `/sign-in`
+
+Regression:
+- [ ] `/forgot-password` flow unaffected
+- [ ] `/reset-password` (token-based) unaffected
+- [ ] `/profile` edit form (name/phone) saves correctly
+- [ ] `/profile/notifications` navigates and saves correctly
+
+---
+
+### Part B — Calendar Select all / Deselect all
+
+**Goal:** Replace the ambiguous `All` court filter button with a clearer two-state `Select all` / `Deselect all` control.
+
+**File changed**
+
+| File | Change |
+|---|---|
+| `src/app/(app)/calendar/CalendarShell.tsx` | Court filter "All" button replaced with `Select all` / `Deselect all` toggle |
+
+**Filter model (unchanged)**
+
+`selectedCourtIds` is a `Set<string>`. It starts with all court IDs. `filteredCourts` derives from this set. Individual court chips toggle membership; `toggleCourt` prevents deselecting the last court via individual chips. A placeholder column renders when the set is empty.
+
+**Select all / Deselect all behavior**
+
+| State | Button label | Click action |
+|---|---|---|
+| Not all courts selected | `Select all` | Sets `selectedCourtIds` to all courts |
+| All courts selected | `Deselect all` | Sets `selectedCourtIds` to empty set |
+
+- "All courts selected" is determined by `courts.length > 0 && selectedCourtIds.size === courts.length`.
+- The button styling (accent when all selected, gray when not) is unchanged.
+- No booking logic, court data fetching, or database schema changed.
+
+**QA checklist — desktop and mobile**
+
+- [ ] `/calendar` loads with all courts selected; button shows "Deselect all" (accent color)
+- [ ] Clicking "Deselect all" clears all court columns; button switches to "Select all" (gray)
+- [ ] Clicking "Select all" restores all courts; button switches back to "Deselect all" (accent color)
+- [ ] Clicking an individual court chip from all-selected state deselects it; button switches to "Select all"
+- [ ] Clicking "Select all" from a partial selection selects all courts
+- [ ] Booking a court slot still works after selecting/deselecting courts
+- [ ] Filter state does not persist across date changes (date change re-renders; filter state is in local React state, not URL)
