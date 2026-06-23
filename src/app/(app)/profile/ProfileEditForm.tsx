@@ -1,25 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateProfile, updateSmsPreference } from "./actions";
+import { updateProfile } from "./actions";
 
 interface Props {
   firstName: string | null;
   lastName:  string | null;
   phone:     string | null;
-  smsOptIn:  boolean;
 }
 
-export default function ProfileEditForm({ firstName, lastName, phone, smsOptIn }: Props) {
-  const [isPending,    startTransition]    = useTransition();
-  const [smsPending,   startSmsTransition] = useTransition();
-  const [saved,        setSaved]           = useState(false);
-  const [saveError,    setSaveError]       = useState<string | null>(null);
-  const [smsChecked,   setSmsChecked]      = useState(smsOptIn);
-  const [smsSaved,     setSmsSaved]        = useState(false);
-  const [smsError,     setSmsError]        = useState<string | null>(null);
-  // Track the current phone value so the no-phone guard can read it client-side
-  const [currentPhone, setCurrentPhone]    = useState(phone ?? "");
+export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
+  const [isPending,    startTransition] = useTransition();
+  const [saved,        setSaved]        = useState(false);
+  const [saveError,    setSaveError]    = useState<string | null>(null);
+  const [currentPhone, setCurrentPhone] = useState(phone ?? "");
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -32,30 +26,6 @@ export default function ProfileEditForm({ firstName, lastName, phone, smsOptIn }
       } else {
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
-      }
-    });
-  }
-
-  function handleSmsChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const nextChecked = e.target.checked;
-    setSmsError(null);
-
-    // Client-side guard: block opt-in if the phone field is currently empty.
-    // The server action performs the authoritative check.
-    if (nextChecked && currentPhone.replace(/\D/g, "").length === 0) {
-      setSmsError("Add a phone number first.");
-      return;
-    }
-
-    setSmsChecked(nextChecked);
-    startSmsTransition(async () => {
-      const result = await updateSmsPreference(nextChecked);
-      if (result?.error) {
-        setSmsError(result.error);
-        setSmsChecked(!nextChecked); // revert on error
-      } else {
-        setSmsSaved(true);
-        setTimeout(() => setSmsSaved(false), 2000);
       }
     });
   }
@@ -112,36 +82,6 @@ export default function ProfileEditForm({ firstName, lastName, phone, smsOptIn }
         )}
         {saveError && (
           <p className="text-xs font-medium text-red-500">{saveError}</p>
-        )}
-      </div>
-
-      <hr className="border-gray-100 dark:border-gray-800" />
-
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          Text notifications
-        </p>
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={smsChecked}
-            onChange={handleSmsChange}
-            disabled={smsPending}
-            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 focus:ring-gray-400 disabled:opacity-40"
-          />
-          <span className="text-sm text-gray-700 dark:text-gray-300 leading-snug">
-            Text me when my reservation is cancelled, an event I&apos;m in is cancelled,
-            or I&apos;m moved off the waitlist.
-          </span>
-        </label>
-        <p className="text-xs text-gray-400 dark:text-gray-500 pl-7">
-          Standard message rates apply. Reply STOP at any time to unsubscribe.
-        </p>
-        {smsSaved && (
-          <p className="text-xs font-medium text-green-600 pl-7">Updated</p>
-        )}
-        {smsError && (
-          <p className="text-xs font-medium text-red-500 pl-7">{smsError}</p>
         )}
       </div>
     </form>

@@ -1697,6 +1697,44 @@ is deployed, because the app calls RPCs defined in the migration.
 
 ---
 
+## Phase 21E-B — SMS UI Hidden for Pilot Clarity
+
+**Status: Complete ✓ — implemented on branch `phase21e-email-notifications`;
+pnpm tsc and pnpm build pass**
+
+### What was changed
+
+SMS (Twilio) remains deferred and inactive for the pilot. The member-facing
+SMS opt-in UI was hidden from `/profile` to avoid confusion — members seeing
+the checkbox might assume they would receive text messages, which they will not.
+
+**No schema changes. No Supabase data changes. No Twilio activation.**
+All SMS backend code (`updateSmsPreference` action, `sms_opt_in` column,
+`sendSms` utility, `dispatchXxxSms` dispatch functions) is preserved intact
+and can be surfaced again when Twilio is configured.
+
+### Files changed
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/profile/ProfileEditForm.tsx` | Removed SMS opt-in section (checkbox, label, footnote) and all related dead state (`smsChecked`, `smsSaved`, `smsError`, `smsPending`, `handleSmsChange`). Removed `updateSmsPreference` import and `smsOptIn` prop. |
+| `src/app/(app)/profile/page.tsx` | Removed `smsOptIn` prop from `<ProfileEditForm>` call. |
+| `src/app/(app)/profile/notifications/NotificationPreferencesForm.tsx` | Removed the sentence about text messages following these preferences. New copy: "These settings control email delivery. Important in-app updates, such as cancellations by your club, may still appear in your notification bell." |
+
+### SMS re-activation path (post-pilot)
+
+To re-enable the member-facing SMS opt-in UI:
+
+1. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` in Vercel.
+2. Restore the `smsOptIn` prop and SMS section in `ProfileEditForm.tsx` and
+   update `page.tsx` to pass `smsOptIn={profile?.sms_opt_in ?? false}`.
+3. Update the `NotificationPreferencesForm` footer to mention text messages.
+4. Test via Admin → Settings → Send test SMS to confirm Twilio delivery.
+
+The `updateSmsPreference` server action and all dispatch code require no changes.
+
+---
+
 ### Part 1 — Launch readiness status
 
 All prerequisites for broader pilot launch are confirmed.

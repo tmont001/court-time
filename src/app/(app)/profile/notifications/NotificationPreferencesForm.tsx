@@ -154,9 +154,8 @@ export default function NotificationPreferencesForm({ preferences }: Props) {
 
       {/* ── Footer note ───────────────────────────────────────────────── */}
       <p className="text-xs text-gray-400 dark:text-gray-500 px-1">
-        These settings control email delivery. Important in-app updates — such as
-        cancellations by your club — always appear in your notification bell. Text
-        messages also follow these preferences when SMS is enabled on your Profile.
+        These settings control email delivery. Important in-app updates, such as
+        cancellations by your club, may still appear in your notification bell.
       </p>
 
     </div>
