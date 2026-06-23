@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent page-level horizontal overflow.
+   Setting this on html (not body) is safe with position:fixed — the iOS Safari
+   fixed-element bug only triggers on body, not html. */
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 /* ── Accent theme tokens ───────────────────────────────────────────────────── */
 /* --surface is a subtle, theme-tinted page background (used behind content,
    e.g. the gutters around the centered /calendar grid on wide screens).
@@ -26,6 +34,20 @@
 .theme-royal-purple   { --accent: #7e22ce; --surface: #f8f3fc; }
 @media (prefers-color-scheme: dark) {
   .theme-royal-purple { --accent: #c084fc; --surface: #160d1f; }
+}
+
+/* Prevent iOS Safari auto-zoom on input focus.
+   Safari zooms in whenever a focused form control has font-size < 16px.
+   This app uses text-sm (14px) on inputs for visual compactness; the rule
+   below overrides that only on mobile screens. !important is required because
+   Tailwind class selectors (.text-sm) outrank bare element selectors (input).
+   Manual pinch-zoom remains fully available — we are not disabling user-zoom. */
+@media screen and (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 /* Hide scrollbar while keeping scroll behaviour */
@@ -57,9 +79,23 @@
 .app-main-content {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
   background-color: var(--surface);
+  /* Belt-and-suspenders: prevent any child from expanding the main element
+     wider than the viewport, which would break position:fixed on iOS Safari. */
+  overflow-x: hidden;
 }
 @media (min-width: 768px) {
   .app-main-content {
     padding-bottom: 0;
+  }
+}
+
+/* FAB (+ Event / + Block) bottom offset — sits above the bottom nav on mobile,
+   falls to a simple viewport-edge offset on desktop (no bottom nav). */
+:root {
+  --fab-bottom: calc(4rem + env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
+@media (min-width: 768px) {
+  :root {
+    --fab-bottom: 1rem;
   }
 }

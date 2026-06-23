@@ -550,7 +550,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   return (
     <>
       <div
-        className="relative flex flex-col overflow-hidden bg-white dark:bg-gray-900"
+        className="relative flex flex-col overflow-hidden bg-white dark:bg-gray-900 w-full min-w-0"
         data-role={userRole}
         style={{ height: "var(--page-fill-height)" }}
       >
@@ -852,9 +852,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           </div>
         </div>
 
-        {/* ── FAB — pro/admin only, anchored to the calendar content area ─ */}
+        {/* ── FAB — pro/admin only. Fixed to the viewport so overflow:hidden on
+             the calendar shell never clips them, and they stay above the bottom
+             nav on mobile via --fab-bottom (defined in globals.css). ────────── */}
         {(userRole === "pro" || userRole === "admin") && (
-          <div className="absolute bottom-4 right-4 z-30 flex flex-col items-end gap-2">
+          <div
+            className="fixed right-4 z-30 flex flex-col items-end gap-2"
+            style={{ bottom: "var(--fab-bottom)" }}
+          >
             {userRole === "admin" && (
               <button
                 onClick={() => setCreatingBlock(true)}

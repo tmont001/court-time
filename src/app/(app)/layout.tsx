@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div className={`theme-${themeKey} min-h-screen`}>
+    <div className={`theme-${themeKey} min-h-screen overflow-x-hidden`}>
       {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
       <SideNav />
       {/* Content area: offset right of sidebar on desktop */}
