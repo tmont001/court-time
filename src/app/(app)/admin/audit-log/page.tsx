@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import AuditLogTable from "./AuditLogTable";
@@ -32,6 +33,11 @@ export default async function AdminAuditLogPage() {
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">
+          <div className="px-4 pt-3 pb-0">
+            <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+              ← Back to Profile
+            </Link>
+          </div>
         {error ? (
           <div className="mx-4 mt-6 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
             <p className="text-sm font-semibold text-red-700">Failed to load audit log</p>

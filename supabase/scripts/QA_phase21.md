@@ -2128,3 +2128,57 @@ Regression:
 - [ ] Clicking "Select all" from a partial selection selects all courts
 - [ ] Booking a court slot still works after selecting/deselecting courts
 - [ ] Filter state does not persist across date changes (date change re-renders; filter state is in local React state, not URL)
+
+---
+
+## Phase 21E-D — Back Navigation Polish
+
+**Status: Complete ✓ — pnpm tsc and pnpm build pass**
+
+### Goal
+
+Add a clear `← Back to Profile` link to all deep sub-pages so users (especially on mobile) are never left without an obvious return path.
+
+### Context
+
+There is no `/admin` landing page. All admin sub-pages are accessed via the Profile page (Admin section). The Profile tab exists in both the bottom nav (mobile) and the side nav (desktop), but sub-pages and admin pages don't have an explicit back affordance. This change adds a consistent link to the top of every affected page.
+
+### Pages updated
+
+| Page | Back link | Placement |
+|---|---|---|
+| `/profile/notifications` | `← Back to Profile` | Between Header and content |
+| `/profile/security` | `← Back to Profile` | Between Header and content |
+| `/admin/courts` | `← Back to Profile` | Between Header and content |
+| `/admin/settings` | `← Back to Profile` | Between Header and content |
+| `/admin/members` | `← Back to Profile` | Inside scroll container, top |
+| `/admin/audit-log` | `← Back to Profile` | Inside scroll container, top |
+| `/admin/events` | `← Back to Profile` | Inside scroll container, top |
+| `/help` | `← Back to Profile` | Inside scroll container, top |
+
+**Scroll-container pages** use `height: var(--page-fill-height)` to fill the viewport. Adding content outside these containers would break the height calculation, so the back link is placed as the first element inside the container.
+
+### Pages intentionally unchanged
+
+| Page | Reason |
+|---|---|
+| `/calendar` | Root nav tab — no parent to return to |
+| `/events` | Root nav tab — no parent to return to |
+| `/my-schedule` | Root nav tab — no parent to return to |
+| `/profile` | Root nav tab — no parent to return to |
+| `/book` | Immediately redirects to `/calendar` |
+
+### QA checklist
+
+- [ ] `/profile/notifications` — "← Back to Profile" link visible at top; tapping navigates to `/profile`
+- [ ] `/profile/security` — "← Back to Profile" link visible at top; tapping navigates to `/profile`
+- [ ] `/admin/courts` — "← Back to Profile" link visible at top; tapping navigates to `/profile`
+- [ ] `/admin/settings` — "← Back to Profile" link visible at top; tapping navigates to `/profile`
+- [ ] `/admin/members` — "← Back to Profile" link visible at top inside scroll area; tapping navigates to `/profile`
+- [ ] `/admin/audit-log` — "← Back to Profile" link visible at top inside scroll area; tapping navigates to `/profile`
+- [ ] `/admin/events` (admin) — "← Back to Profile" link visible at top inside scroll area; tapping navigates to `/profile`
+- [ ] `/help` — "← Back to Profile" link visible at top inside scroll area; tapping navigates to `/profile`
+- [ ] Desktop: back link renders cleanly below the Header, left-aligned within the page's max-width container
+- [ ] Mobile: back link is reachable without scrolling on all above pages
+- [ ] No regression: bottom nav and side nav still work correctly on all pages
+- [ ] No regression: page content and scroll behavior unaffected on all pages

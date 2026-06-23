@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import AdminEventsClient from "./AdminEventsClient";
@@ -51,6 +52,11 @@ export default async function AdminEventsPage() {
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">
+          <div className="px-4 pt-3 pb-0">
+            <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+              ← Back to Profile
+            </Link>
+          </div>
           <div className="px-4 pt-5 pb-1">
             <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">All Events</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">

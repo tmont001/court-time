@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 
@@ -63,6 +64,11 @@ export default async function HelpPage() {
     <>
       <Header screenTitle="Help & Rules" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
+      <div className="px-4 pt-3 pb-0 md:max-w-2xl md:mx-auto">
+        <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+          ← Back to Profile
+        </Link>
+      </div>
       <div className="px-4 py-6 space-y-5 md:max-w-2xl md:mx-auto">
         {sections.map(section => (
           <div key={section.title}>
