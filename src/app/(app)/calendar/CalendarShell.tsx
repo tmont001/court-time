@@ -733,7 +733,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                             onClick={() => handleSlotTap(court, slotIdx)}
                             className={`absolute border-t ${
                               slot.isHour ? "border-gray-200 dark:border-gray-700/60" : "border-gray-100 dark:border-gray-800"
-                            } ${!isDisabled ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/30" : "cursor-default"}`}
+                            } ${!isDisabled ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/25 active:bg-gray-200 dark:active:bg-gray-700/40" : "cursor-default"}`}
                             style={{
                               top: slotIdx * rowH,
                               height: rowH,
@@ -872,14 +872,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             {userRole === "admin" && (
               <button
                 onClick={() => setCreatingBlock(true)}
-                className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
+                className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.97] motion-safe:hover:-translate-y-0.5 motion-safe:transition-all motion-safe:duration-150"
               >
                 + Block
               </button>
             )}
             <button
               onClick={() => setCreatingEvent(true)}
-              className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md"
+              className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.97] motion-safe:hover:-translate-y-0.5 motion-safe:transition-all motion-safe:duration-150"
             >
               + Event
             </button>
@@ -894,8 +894,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             className="fixed inset-0 bg-black/30 z-40"
             onClick={() => setPendingSlotAction(null)}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+            <div className="ct-handlebar mx-auto mb-4" />
             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pendingSlotAction.court.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-5">
               {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
@@ -905,20 +905,20 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             <div className="space-y-2">
               <button
                 onClick={openBookingFromSlot}
-                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
               >
                 Book Court
               </button>
               <button
                 onClick={openEventFromSlot}
-                className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium"
+                className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
               >
                 Create Event
               </button>
               {userRole === "admin" && (
                 <button
                   onClick={openBlockFromSlot}
-                  className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium"
+                  className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
                 >
                   Maintenance Block
                 </button>
@@ -993,8 +993,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             className="fixed inset-0 bg-black/30 z-40"
             onClick={() => { setBookingSlot(null); setBookingError(null); }}
           />
-          <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+            <div className="ct-handlebar mx-auto mb-4" />
 
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{bookingSlot.court.name}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{sheetDateLabel}</p>

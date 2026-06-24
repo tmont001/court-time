@@ -2996,3 +2996,667 @@ the manual dark mode toggle (contributing to flicker).
 - [ ] `prefers-reduced-motion: reduce` — toggle is instant (no transition), `animate-pulse` skeletons stop
 - [ ] No new console warnings or errors
 
+---
+
+## Phase 21H-B — Visible Polish Layer
+
+**Status: Complete ✓ — pnpm tsc --noEmit passes; pnpm build passes**
+
+### What was changed
+
+A clearly visible but pilot-safe polish layer applied on top of the 21H-A
+theme toggle and surface fixes. No layout changes, no new packages, no
+migrations, no logic changes.
+
+**Components (visible on every page):**
+- `ThemeToggle.tsx` — hover background fill (`bg-gray-100 / dark:bg-gray-800`),
+  active-press background, `rounded-lg`, `motion-safe:transition-all`
+- `NotificationBell.tsx` — same hover/active fill treatment as ThemeToggle
+- `SideNav.tsx` — inactive nav links gain `active:bg-gray-200 dark:active:bg-gray-700`
+  pressed state; `transition-colors` → `transition-all`
+- `BottomNav.tsx` — inactive tabs gain `active:opacity-60` pressed feel;
+  `transition-colors` → `transition-all`
+
+**Profile page:**
+- `profile/page.tsx` — all list-row links gain `active:bg-gray-100 dark:active:bg-gray-700/70`
+  and `motion-safe:duration-100` for snappier tap feedback
+- `SignOutButton.tsx` — `active:scale-[0.98]`, `active:bg-gray-100 dark:active:bg-gray-700`,
+  `motion-safe:transition-all`
+
+**Forms:**
+- `ProfileEditForm.tsx` — inputs: `focus:ring-2 focus:ring-accent` (was ring-1 + gray);
+  Save button: `shadow-sm`, `hover:brightness-110`, `active:scale-[0.97]`,
+  `motion-safe:transition-all`, `disabled:cursor-not-allowed`
+- `BookingRulesForm.tsx` — same input focus ring and button improvements
+
+**Cards:**
+- `events/page.tsx` — event cards get `shadow-sm` for elevation;
+  all inline action buttons (Join, Leave, Accept, Pass, Rejoin) get
+  `hover:opacity-75 active:scale-95 motion-safe:transition-all motion-safe:duration-100`
+- `my-schedule/page.tsx` — reservation and event cards get `shadow-sm`;
+  Cancel and Leave/Leave Waitlist buttons get same hover/active treatment as above
+
+**Auth:**
+- `sign-in/SignInForm.tsx` — Sign in button: `shadow-sm`, `hover:brightness-110`,
+  `active:scale-[0.98]`, `motion-safe:transition-all`, `disabled:cursor-not-allowed`
+
+### Design principles applied
+
+- All transitions: `motion-safe:transition-all motion-safe:duration-150` (or 100ms for
+  quick-tap inline buttons)
+- Active/pressed states use `active:scale-[0.97–0.98]` on solid buttons,
+  `active:opacity-60` on nav tabs, `active:bg-*` fill on icon buttons and rows
+- `hover:brightness-110` on solid-color buttons (works with CSS variable --accent)
+- `shadow-sm` on content cards for visual elevation in light mode
+- `focus:ring-2 focus:ring-accent` on form inputs (was ring-1 + hardcoded gray)
+- `prefers-reduced-motion: reduce` blanket rule in globals.css still suppresses all
+
+### QA checklist — Phase 21H-B (first attempt — marked SUPERSEDED)
+
+> **Note:** This first attempt was too subtle. `active:` states only show while pressing,
+> `shadow-sm` was invisible in practice, `hover:opacity-75` felt flat. All superseded by
+> the Phase 21H-B Refinement below.
+
+---
+
+## Phase 21H-B Refinement — Clearly Visible Polish
+
+**Status: Complete ✓ — pnpm tsc --noEmit passes; pnpm build passes**
+
+### Root cause of the original attempt being too subtle
+
+- `active:` pseudo-class only fires while finger/mouse is depressed — invisible in normal desktop hover
+- `shadow-sm` is a 1px shadow at 5% opacity — barely distinguishable in practice
+- `hover:opacity-75` on inline buttons just fades them — not a premium feeling
+- No hover states on sidebar nav meant desktop felt completely static
+- Focus rings only visible during keyboard navigation, not mouse/touch
+
+### What changed in the refinement
+
+**New global CSS utility classes in `globals.css`:**
+
+- `.ct-button-primary` — accent button with real CSS `filter: brightness(1.1)` hover,
+  `box-shadow` lift on hover (`0 4px 6px -1px rgb(0 0 0 / 0.14)`), `scale(0.97)` on press,
+  and `outline: 2px solid var(--accent)` focus-visible. Transition via CSS
+  `@media (prefers-reduced-motion: no-preference)`, not Tailwind utility chains.
+- `.ct-input` — form control with `border-color: var(--accent)` + `box-shadow: 0 0 0 1px var(--accent)`
+  on focus. Smooth `border-color 150ms ease-out, box-shadow 150ms ease-out` transition.
+- `.ct-card` — content card with `box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07)` (2× shadow-sm)
+  and proper dark-mode surface. Dark mode gets stronger border, no shadow.
+- `.ct-row-interactive` — list row with hover background AND an `inset 3px 0 0 var(--accent)`
+  left stripe that appears on hover — clearly visible in any theme color.
+
+**SideNav (most impactful desktop change):**
+- Inactive links: `hover:text-accent` — icon + text snap to accent color on hover.
+  Previously `hover:text-gray-900` (barely visible). Now the hovered item matches the
+  active item color, making the interaction feel intentional.
+- Active links: added `font-semibold` for slightly stronger visual weight.
+
+**BottomNav:**
+- Inactive tabs: `active:text-accent` — color snaps to accent on tap press.
+  More satisfying than `active:opacity-60`.
+
+**Profile page rows:**
+- All 6+ clickable Link rows replaced with `ct-row-interactive` — provides both
+  hover background change AND accent left stripe on hover/active.
+
+**Forms — primary buttons:**
+- `ProfileEditForm.tsx`, `BookingRulesForm.tsx`, `ClubBrandingSection.tsx`,
+  `AnnouncementsSection.tsx`, `ChangePasswordForm.tsx`: all accent buttons
+  now use `ct-button-primary` — real hover lift + shadow, not just opacity.
+
+**Forms — inputs:**
+- `ProfileEditForm.tsx`, `BookingRulesForm.tsx`, `ClubBrandingSection.tsx`,
+  `AnnouncementsSection.tsx`, `ChangePasswordForm.tsx`, `MembersClient.tsx`,
+  `sign-in/SignInForm.tsx`: all use `ct-input` — accent border + ring on focus.
+- `OperatingHoursEditor.tsx`, `DateOverridesEditor.tsx` (narrow time inputs):
+  `focus:ring-2 focus:ring-accent focus:border-accent` (keeping original sizing).
+
+**Sign-in page:**
+- Inputs: `ct-input` (accent focus ring).
+- Button: `ct-button-primary w-full` — full-width with hover lift. On sign-in page
+  `--accent` resolves to `:root` default (`#374151` dark gray in light,
+  `#d1d5db` light gray in dark) — still looks correct.
+
+**Cards:**
+- `events/page.tsx` event cards: `ct-card px-4 py-3` — better shadow, proper dark surface.
+- `my-schedule/page.tsx` reservation + event cards: `ct-card mx-4 mb-3 px-4 py-3 ...`.
+- `admin/members/MembersClient.tsx` member cards: `ct-card mx-4 mb-3` — consistent.
+
+**Sign Out button:**
+- Visible `hover:border-gray-400 hover:text-gray-800` state — border darkens and text
+  gets darker on hover. `active:scale-[0.98]` press scale.
+
+### Hover interactions now visible in normal use
+
+| Element | Before | After |
+|---|---|---|
+| SideNav inactive link | Gray text → slightly darker gray | Gray → **accent color** (very visible) |
+| SideNav active link | `text-accent bg-gray-100` | Same + `font-semibold` |
+| BottomNav inactive | dims on press only | Snaps to accent color on press |
+| Profile rows | Light gray fill on hover | Light fill + **accent left stripe** |
+| Primary buttons | Brightness + scale (Tailwind) | **Shadow lift + brightness** (CSS, reliable) |
+| Form inputs | Gray ring on focus | **Accent border + accent ring** on focus |
+| Cards | `shadow-sm` | `shadow-sm` equivalent + **darker in light, bordered in dark** |
+
+### Known limitations (unchanged from 21H-A)
+
+- ThemeToggle placeholder div before hydration (intentional, prevents layout shift)
+- Calendar own-reservation block still uses blue (`border-2 border-blue-500 bg-blue-50`) —
+  intentional design choice (blue = your booking); safe to leave.
+
+---
+
+## Phase 21H-B Header Alignment — Consistent Interaction System
+
+**Status: Complete ✓ — pnpm tsc --noEmit passes; pnpm build passes**
+
+### Problem
+
+Header controls (ThemeToggle, NotificationBell) had a different hover behavior from the
+sidebar: they changed from gray-500 → gray-700 on hover (barely visible) with no accent
+color. After the sidebar polish, the controls felt like they belonged to a different app.
+
+### What changed
+
+**New global CSS utility classes in `globals.css`:**
+
+- `.ct-icon-button` — icon button (w-8 × h-8, rounded-lg) with:
+  - Hover: `bg-gray-100 / dark:bg-gray-800` fill + `color: var(--accent)` (matches sidebar)
+  - Active: darker fill + accent color + `scale(0.9)` press
+  - Focus-visible: `outline: 2px solid var(--accent); outline-offset: 2px`
+  - `transition: background-color, color, transform 150ms ease-out`
+  - Same accent-color hover as the sidebar — all header controls now feel unified
+
+- `.ct-button-secondary` — composable bordered button (no hardcoded padding):
+  - Resting: neutral border + gray text
+  - Hover: `border-color: var(--accent)` + `color: var(--accent)` + subtle bg fill
+  - Active: `scale(0.97)` press
+  - Composable — pair with Tailwind `px-*` `py-*` `text-*` classes for sizing
+
+**ThemeToggle.tsx:**
+- Replaced 12-class inline string with `className="ct-icon-button"`
+- Hover now snaps to accent color (same as sidebar nav links)
+- Press scales down to 0.9 for tactile feel
+
+**NotificationBell.tsx:**
+- Same: replaced with `ct-icon-button`
+- Bell icon + badge now change to accent color on hover
+
+**CalendarShell.tsx — safe slot hover fix:**
+- Open slot hover: `hover:bg-blue-50 dark:hover:bg-blue-900/20` →
+  `hover:bg-gray-100 dark:hover:bg-gray-700/25`
+- Active slot: `active:bg-blue-100 dark:active:bg-blue-900/30` →
+  `active:bg-gray-200 dark:active:bg-gray-700/40`
+- The blue was hardcoded and theme-inconsistent; gray is neutral for all 5 themes
+- Booking logic, event positioning, and RPC calls: unchanged
+
+**Back-to-profile navigation links (8 files):**
+- All `← Back to Profile` links: `hover:text-gray-700 dark:hover:text-gray-300` →
+  `hover:text-accent motion-safe:transition-colors`
+- Files: admin/settings, admin/courts, admin/audit-log, admin/events, admin/members,
+  profile/security, profile/notifications, help
+- Consistent with the sidebar's `hover:text-accent` treatment
+
+**help/page.tsx:**
+- Section cards use `ct-card` — proper shadow + dark surface
+
+**admin/members/MembersClient.tsx:**
+- `+ Invite` button: `hover:border-accent hover:text-accent` with transition
+- Confirm dialog Cancel button: `hover:border-accent hover:text-accent` with transition
+
+### Unified hover interaction system
+
+| Control | Hover behavior |
+|---|---|
+| SideNav inactive link | Gray → **accent color** |
+| SideNav active link | **accent color** (always) + bg fill |
+| ThemeToggle | Gray icon → **accent icon** + bg fill |
+| NotificationBell | Gray icon → **accent icon** + bg fill |
+| BottomNav inactive | Snaps to **accent color** on press |
+| Profile rows | Gray fill + **accent left stripe** |
+| Back-nav links | Gray → **accent color** |
+| Secondary buttons | Border → **accent border** + accent text |
+| Primary buttons | Lifts (shadow) + brightens |
+| Form inputs | Border + ring → **accent color** |
+
+All accent-color hover effects use `var(--accent)` so they adapt to each club's theme.
+
+### QA checklist — Phase 21H-B Header Alignment
+
+**Header controls:**
+- [ ] ThemeToggle: icon turns accent color on hover (same as sidebar links)
+- [ ] ThemeToggle: background fills on hover (gray-100 / gray-800)
+- [ ] ThemeToggle: scales down on press (0.9×)
+- [ ] ThemeToggle: accent outline on keyboard focus
+- [ ] NotificationBell: same hover/press/focus treatment
+- [ ] NotificationBell badge still displays correctly (no layout shift)
+- [ ] ThemeToggle placeholder div matches button dimensions (no layout shift)
+
+**Navigation consistency:**
+- [ ] SideNav + header icons feel like the same interaction system
+- [ ] All `← Back to Profile` links turn accent color on hover
+- [ ] Back-nav color transition is smooth (150ms)
+
+**Calendar slot hover:**
+- [ ] Open slots show gray hover tint (no longer blue)
+- [ ] Calendar booking flow works end-to-end (hover → tap → booking sheet → confirm)
+- [ ] Own reservation blocks still show blue border/fill (intentional, not changed)
+
+**Help page:**
+- [ ] Section cards have shadow in light mode (ct-card)
+- [ ] Section cards show dark surface in dark mode
+
+**Admin members:**
+- [ ] `+ Invite` button shows accent border + text on hover
+- [ ] Confirm dialog cancel button shows accent border + text on hover
+
+**Reduced motion:**
+- [ ] `ct-icon-button` scale + transition suppressed under reduced motion
+
+**No regressions:**
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓ (pre-existing /sign-up cookies warning only)
+- [ ] Theme toggle still works (dark/light toggle, localStorage, no FOUC)
+- [ ] Booking logic unchanged
+- [ ] Event/waitlist logic unchanged
+- [ ] Admin permissions unchanged
+
+### QA checklist — Phase 21H-B Refinement
+
+**Desktop hover (primary test):**
+- [ ] SideNav inactive link: text + icon turn accent color on hover (clearly visible)
+- [ ] SideNav active link: font-semibold weight noticeable
+- [ ] Profile rows show light gray fill + accent left stripe on hover
+- [ ] Profile rows retain stripe during active press
+- [ ] Sign Out border darkens, text darkens on hover
+
+**Buttons:**
+- [ ] Save / Send / Submit buttons: shadow lifts and brightens on hover (light mode)
+- [ ] Buttons scale down (0.97) on press, shadow drops back
+- [ ] Disabled buttons: opacity 40%, cursor not-allowed
+- [ ] Focus-visible ring (2px solid accent) visible via keyboard navigation
+
+**Form inputs:**
+- [ ] Inputs show accent-colored border + thin ring on focus
+- [ ] Transition is smooth (150ms) not instantaneous
+- [ ] Mobile Safari zoom prevention still works (iOS, text inputs stay at 16px)
+
+**Cards:**
+- [ ] Event cards (events page) have visible shadow in light mode
+- [ ] Schedule cards (my-schedule) have visible shadow in light mode
+- [ ] Member cards (admin members) have visible shadow in light mode
+- [ ] Dark mode: cards have border only (no shadow), surface correct
+
+**Mobile tap (secondary test):**
+- [ ] BottomNav tabs snap to accent color on tap (not just dim)
+- [ ] Profile rows show accent stripe on tap
+- [ ] Buttons show scale + shadow changes on tap
+
+**Dark mode:**
+- [ ] SideNav `hover:text-accent` visible in dark mode (uses dark-mode accent colors)
+- [ ] Profile row accent stripe uses correct dark-mode accent
+- [ ] ct-button-primary uses dark text (`color: rgb(17 24 39)`) on light accent backgrounds
+- [ ] ct-card dark surface + border correct (gray-800 bg, gray-700 border)
+
+**Theme consistency:**
+- [ ] forest-green theme: sidebar hover turns green, rows show green stripe
+- [ ] classic-gray theme: sidebar hover turns gray, rows show gray stripe
+- [ ] ocean-blue theme: sidebar hover turns blue, rows show blue stripe
+
+**Reduced motion:**
+- [ ] `prefers-reduced-motion: reduce`: all transitions suppressed; `ct-button-primary`
+  hover/active animations suppressed; `ct-input` transition suppressed
+- [ ] Interactions still functional, just instant
+
+**No regressions:**
+- [ ] Calendar still works (layout, booking)
+- [ ] Event join/leave/accept/pass still works
+- [ ] Waitlist offer flow still works
+- [ ] Admin member management still works
+- [ ] No new console errors
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓ (pre-existing /sign-up cookies warning only)
+
+---
+
+## Phase 21H-C — Button, Card, Row, Form-Flow Interaction Polish
+
+**Status: Complete ✓ — pnpm tsc --noEmit passes; pnpm build passes**
+
+### Problem
+
+Header/nav now felt polished but buttons, clickable cards, and creation forms still felt
+static. Specific issues: `+ Block` / `+ Event` FABs didn't respond on hover; Create Event /
+Block Court sheets used `focus:ring-gray-900` instead of the accent color; card hover states
+were not connected to the interaction system; action buttons used `hover:opacity-75` which
+affected the whole element and looked dull.
+
+### New global CSS utility classes added
+
+**`.ct-card-interactive`** — card surface that lifts 1px on hover with accent border:
+- Hover: `border-color: var(--accent)`, `box-shadow` lift, `transform: translateY(-1px)`
+- Active: `transform: translateY(0)` reset
+- Focus-visible: `outline: 2px solid var(--accent)`
+- 150ms `ease-out` transitions for border, shadow, transform
+
+**`.ct-button-danger`** — red destructive button with clear hover shift:
+- Resting: `bg-red-50 border-red-200 text-red-600` (dark: tinted red-900)
+- Hover: `bg-red-100 border-red-500 text-red-700`
+- Active: `scale(0.97)` press
+- Focus-visible: `outline: 2px solid rgb(239 68 68)`
+
+**`.ct-button-ghost`** — no border, subtle fill on hover:
+- Resting: transparent bg, `text-gray-600`
+- Hover: `bg-gray-100 text-gray-900` (dark: `bg-gray-700 text-gray-100`)
+- Active: `scale(0.97)` press
+- Focus-visible: `outline: 2px solid var(--accent)`
+
+**`.ct-button-primary` updated:**
+- Hover now includes `transform: translateY(-2px)` (slight float) in addition to the
+  existing `filter: brightness(1.1)` and shadow lift
+- Active: `scale(0.97) translateY(0)` — resets the float on press for tactile feel
+
+### Calendar — `+ Block` and `+ Event` FAB buttons
+
+Before: `px-4 py-2 rounded-full bg-accent ... shadow-md` (no motion states)
+
+After: added `hover:shadow-lg active:scale-[0.97] motion-safe:hover:-translate-y-0.5
+motion-safe:transition-all motion-safe:duration-150`
+
+Effect on desktop hover: button floats up 2px, shadow deepens. On click: scales to 0.97×
+with no delay. Shape (rounded-full) and colors unchanged.
+
+### Calendar — slot action sheet buttons (Book Court / Create Event / Maintenance Block)
+
+"Book Court" (accent fill): added `hover:brightness-110 active:scale-[0.98]
+motion-safe:transition-all motion-safe:duration-150`
+
+"Create Event" / "Maintenance Block" (secondary border): added `hover:border-accent
+hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150`
+
+No navigation, action, or booking logic changed.
+
+### CreateEventSheet — form flow polish
+
+**Focus rings:** all `focus:ring-gray-900` → `focus:ring-accent focus:border-accent`
+(affects title input, start time select, custom duration input, capacity select)
+
+**Event type cards (step 1):** added `hover:border-accent hover:bg-gray-50
+dark:hover:bg-gray-600/60 active:bg-gray-100 motion-safe:transition-all`
+
+**Back button:** added `hover:text-accent motion-safe:transition-colors`
+
+**Duration / Custom pills:** inactive pills get `hover:border-accent hover:text-accent`;
+added `active:scale-95` to all pill buttons
+
+**Court pills (step 3):** inactive get `hover:border-accent hover:text-accent`;
+added `active:scale-95`
+
+**Continue / Create Event buttons:** added `hover:brightness-110
+motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98]
+motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150`
+
+No form field names, submitted values, validation rules, or server actions changed.
+
+### CreateMaintenanceSheet — form flow polish
+
+**Focus rings:** all `focus:ring-gray-900` → `focus:ring-accent focus:border-accent`
+(start time, end time selects; notes input)
+
+**Pre-existing bug fixed:** start/end time selects had duplicate `dark:bg-gray-700` class
+(pre-existing before this phase); cleaned up.
+
+**Court pills:** inactive get `hover:border-accent hover:text-accent`; added `active:scale-95`
+
+**Block Court(s) submit button:** added `hover:brightness-110 motion-safe:hover:-translate-y-0.5
+motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0
+motion-safe:transition-all motion-safe:duration-150`
+
+No form behavior, server actions, or block logic changed.
+
+### Events page (`/events`)
+
+**Cards:** upgraded from `ct-card` to `ct-card-interactive` — event cards now lift 1px with
+accent border on hover
+
+**Action buttons:** replaced `hover:opacity-75` (which fades the whole element) with semantic
+hover color shifts:
+- Join / Join Waitlist / Rejoin (blue): `hover:text-blue-800 dark:hover:text-blue-400`
+- Leave / Leave Waitlist (red): `hover:text-red-700 dark:hover:text-red-400`
+- Accept (green): `hover:text-green-800 dark:hover:text-green-400`
+- Pass (gray): `hover:text-gray-700 dark:hover:text-gray-200`
+
+### My Schedule page (`/my-schedule`)
+
+**Cancel / Leave buttons:** replaced `hover:opacity-75` with
+`hover:text-red-700 dark:hover:text-red-400`
+
+### Admin Events (`/admin/events`)
+
+**Cards:** migrated from inline `bg-white dark:bg-gray-800 rounded-xl border ...` to `ct-card`
+(adds consistent shadow, border-radius, dark-mode surface)
+
+**Load More button:** migrated to `ct-button-secondary px-4 py-2 text-sm` (gets accent hover,
+border transition, active scale from the CSS class)
+
+### Admin Courts (`/admin/courts`) — CourtManagementList
+
+**Delete confirm button:** added `hover:bg-red-700 active:scale-95 motion-safe:transition-all`
+
+**Rename input:** focus ring upgraded from `focus:ring-gray-400` to `focus:ring-accent
+focus:border-accent`
+
+**Rename Save / Cancel buttons:** Save gets `hover:text-green-800 dark:hover:text-green-300`;
+Cancel gets `hover:text-gray-700 dark:hover:text-gray-200`
+
+**Move ↑ / ↓ buttons, Rename button:** `hover:text-gray-700/300` → `hover:text-accent`
+
+### Unified button system summary
+
+| Class | Shape | Hover | Active |
+|---|---|---|---|
+| `.ct-button-primary` | Accent fill, `rounded-lg` | brightness + shadow lift + float up | scale 0.97, float reset |
+| `.ct-button-secondary` | Border, `rounded-lg` | accent border + accent text | scale 0.97 |
+| `.ct-button-danger` | Red-50/border, `rounded-lg` | red-100/border-red-500/text-red-700 | scale 0.97 |
+| `.ct-button-ghost` | Transparent, `rounded-lg` | gray-100 fill + dark text | scale 0.97 |
+| `.ct-icon-button` | Transparent, `rounded-lg`, 2rem | gray fill + accent icon | scale 0.9 |
+| FAB (`+ Block`/`+ Event`) | Accent fill, `rounded-full` | shadow-lg + float up | scale 0.97 |
+
+### QA checklist — Phase 21H-C
+
+**Calendar FAB buttons:**
+- [ ] `+ Event` button floats up 2px on hover (desktop)
+- [ ] `+ Block` button floats up 2px on hover (desktop)
+- [ ] Both scale to 0.97× on click (no delay, no bounce)
+- [ ] Shadow grows on hover, returns on release
+- [ ] Booking/event/block creation still opens correctly
+
+**Calendar slot action sheet:**
+- [ ] "Book Court" brightens on hover; scales on press
+- [ ] "Create Event" border + text turns accent on hover; scales on press
+- [ ] "Maintenance Block" same treatment
+- [ ] All three still trigger the correct action
+
+**CreateEventSheet form flow:**
+- [ ] Focus ring on all inputs is accent-colored (not gray)
+- [ ] Step 1 event type cards show accent border on hover
+- [ ] ← Back button turns accent on hover
+- [ ] Duration pills (30/45/60/90/120/Custom) show accent border + text on hover
+- [ ] Court pills show accent border + text on hover (active/selected stay accent-filled)
+- [ ] Continue button floats + brightens on hover; presses on click
+- [ ] Disabled Continue (empty title) stays faded, no hover effect
+- [ ] Create Event button same hover/press as Continue
+
+**CreateMaintenanceSheet form flow:**
+- [ ] Focus ring on selects and notes input is accent-colored
+- [ ] Court pills show accent border + text on hover
+- [ ] Block Court(s) button floats + brightens on hover; presses on click
+- [ ] Disabled Block (no courts selected) stays faded, no hover effect
+
+**Events page cards:**
+- [ ] Event cards lift 1px on hover with accent border
+- [ ] Join button darkens on hover (blue → blue-800)
+- [ ] Leave button darkens on hover (red-500 → red-700)
+- [ ] Accept button darkens on hover (green-600 → green-800)
+- [ ] Pass button darkens on hover (gray-500 → gray-700)
+- [ ] Rejoin button darkens on hover
+
+**My Schedule page:**
+- [ ] Cancel booking button darkens on hover (red-500 → red-700)
+- [ ] Leave Event / Leave Waitlist button darkens on hover
+
+**Admin Events page:**
+- [ ] Event cards use ct-card surface (shadow, rounded-xl)
+- [ ] Load More button shows accent border + text on hover
+
+**Admin Courts page:**
+- [ ] ↑ / ↓ move buttons turn accent on hover
+- [ ] Rename button turns accent on hover
+- [ ] Delete confirm (red bg) darkens on hover
+- [ ] Rename input has accent focus ring
+- [ ] Rename Save turns green-800 on hover; Cancel turns gray-700
+
+**Reduced motion:**
+- [ ] All `motion-safe:hover:-translate-y-0.5` suppressed under reduced motion
+- [ ] `ct-button-primary` float suppressed under reduced motion
+- [ ] `ct-card-interactive` lift suppressed under reduced motion
+
+**No regressions:**
+- [ ] Header/nav unchanged (no new classes on SideNav, BottomNav, ThemeToggle, NotificationBell)
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+- [ ] Calendar booking flow end-to-end unchanged
+- [ ] Event creation flow end-to-end unchanged
+- [ ] Block court flow end-to-end unchanged
+- [ ] Event join/leave/waitlist unchanged
+- [ ] Admin permission checks unchanged
+
+---
+
+## Phase 21H-D — Overlay and Sheet Motion Polish
+
+**Status: Complete ✓ — pnpm tsc --noEmit passes; pnpm build passes**
+
+### Summary
+
+Phase 21H-D adds entrance animations to all bottom sheet surfaces and the desktop
+notification popover, polishes notification row hover states, and standardizes the
+handlebar pill across all sheets.
+
+No exit animations were added — components unmount immediately, and exit animations
+require retained-mount or portal patterns that add non-trivial complexity. Entrance-only
+is sufficient for the premium feel requested.
+
+True drag-to-close was intentionally NOT added to the non-BottomSheet surfaces. The
+`BottomSheet` component already has full touch + pointer drag-to-close (prior to this
+phase), and those surfaces were left untouched.
+
+### New global CSS utility classes
+
+**`@keyframes ct-sheet-enter-keyframes`**:
+`translateY(16px) + opacity:0` → `translateY(0) + opacity:1`
+
+**`.ct-sheet-enter`**: 180ms `ease-out` entrance animation (`fill-mode: both`).
+Wrapped in `@media (prefers-reduced-motion: no-preference)` — reduced-motion users see
+the sheet appear instantly. The existing globals.css blanket rule (`animation-duration:
+0.01ms`) would also suppress it, making the guard doubly safe.
+
+**Safety with BottomSheet drag**: `BottomSheet` uses direct DOM `style.transform` mutations
+during gestures. Inline styles always win over animation fills in the CSS cascade, so the
+drag logic (`setPos()`) cleanly overrides the entrance animation during a gesture. The
+entrance animation's `fill-mode: both` holds `opacity:1, translateY(0)` after 180ms,
+which is consistent with the drag resting position.
+
+**`@keyframes ct-popover-enter-keyframes`**:
+`translateY(-8px) + scale(0.97) + opacity:0` → `translateY(0) + scale(1) + opacity:1`
+
+**`.ct-popover-enter`**: 160ms `ease-out` entrance, `transform-origin: top right` so the
+panel appears to drop from the notification bell corner.
+
+**`.ct-handlebar`**: Standardized handlebar pill.
+- Width: `2.5rem` (40px — same as previous `w-10`)
+- Height: `4px` (same as previous `h-1`)
+- Color: `rgb(209 213 219)` / gray-300 (light), `rgb(75 85 99)` / gray-600 (dark)
+- Slightly more visible than the previous `bg-gray-200` (gray-200 = `rgb(229 231 235)`)
+- No cursor or interactive state (decorative on non-draggable sheets; the `BottomSheet`
+  handle container retains `cursor-grab active:cursor-grabbing` from the wrapper div)
+
+### Sheets updated
+
+| File | What changed |
+|---|---|
+| `BottomSheet.tsx` | Added `ct-sheet-enter` to panel; handlebar → `ct-handlebar` |
+| `CreateEventSheet.tsx` | Added `ct-sheet-enter` to panel; handlebar → `ct-handlebar mx-auto mb-4` |
+| `CreateMaintenanceSheet.tsx` | Added `ct-sheet-enter` to panel; handlebar → `ct-handlebar mx-auto mb-4` |
+| `CalendarShell.tsx` slot action | Added `ct-sheet-enter`; handlebar → `ct-handlebar mx-auto mb-4` |
+| `CalendarShell.tsx` booking sheet | Added `ct-sheet-enter`; handlebar → `ct-handlebar mx-auto mb-4` |
+| `EventDetailSheet.tsx` | Added `ct-sheet-enter`; handlebar → `ct-handlebar mx-auto mb-4` |
+| `EventRosterSheet.tsx` | Added `ct-sheet-enter`; handlebar → `ct-handlebar mx-auto mb-4` |
+| `InviteSheet.tsx` | Added `ct-sheet-enter`; handlebar → `ct-handlebar mx-auto mb-4` |
+
+### Notification panel
+
+**Desktop dropdown** (`NotificationSheet.tsx`):
+- Added `ct-popover-enter` to the panel div: smooth drop-down from the bell icon position
+- "Mark all read" button: added `hover:text-blue-800 dark:hover:text-blue-300` + transition
+
+**Notification rows**:
+- Unread rows (interactive, `cursor-pointer`): added `hover:bg-gray-50 dark:hover:bg-gray-700/40 rounded-lg -mx-2 px-2 motion-safe:transition-colors`
+- The `-mx-2 px-2` offset makes the hover background extend to the edge of the panel padding without overflow
+- Read rows: unchanged (no interactivity, no hover state)
+
+**Mobile** (uses `BottomSheet`): inherits the `ct-sheet-enter` animation from `BottomSheet.tsx`.
+
+### What was intentionally deferred
+
+- **Exit animations**: would require retained-mount or portal patterns. Entrance-only is
+  sufficient for this phase.
+- **Drag-to-close on CreateEventSheet / CreateMaintenanceSheet / slot action / booking sheet**:
+  these are multi-step forms or calendar-specific flows. Adding drag behavior risks
+  accidental dismissal mid-form. The `BottomSheet` reusable component (used by
+  `NotificationSheet` and others) already has full drag-to-close.
+- **Backdrop fade-in**: the user requested sheet surface animation only.
+
+### QA checklist — Phase 21H-D
+
+**Desktop notification popover:**
+- [ ] Clicking the bell opens the panel with a smooth drop-down (160ms)
+- [ ] Panel origin feels anchored to the top-right (bell corner)
+- [ ] No layout shift on open
+- [ ] Unread notification rows show hover background on mouse-over
+- [ ] Read notification rows unchanged (no hover state)
+- [ ] "Mark all read" button darkens on hover
+- [ ] Click-away backdrop closes the panel (unchanged behavior)
+- [ ] Notification read/unread logic unchanged
+
+**Mobile notification panel:**
+- [ ] Panel slides up 16px + fades in when opened (180ms)
+- [ ] Drag handle looks slightly more prominent (gray-300 vs previous gray-200)
+- [ ] Drag-to-dismiss still works (BottomSheet logic unchanged)
+
+**Event/block/booking sheets:**
+- [ ] CreateEventSheet slides up + fades in on open
+- [ ] CreateMaintenanceSheet slides up + fades in on open
+- [ ] CalendarShell slot action sheet slides up + fades in on open
+- [ ] CalendarShell booking confirmation sheet slides up + fades in on open
+- [ ] EventDetailSheet slides up + fades in on open
+- [ ] EventRosterSheet slides up + fades in on open
+- [ ] InviteSheet slides up + fades in on open
+
+**Handlebars:**
+- [ ] All handlebars appear slightly more visible (gray-300 vs gray-200)
+- [ ] BottomSheet drag handle retains `cursor-grab` (draggable)
+- [ ] Non-draggable handlebars have default cursor (not grab — consistent with "no fake draggable cursor" requirement)
+
+**Reduced motion:**
+- [ ] Under `prefers-reduced-motion: reduce`, sheets appear instantly (no slide)
+- [ ] Notification popover appears instantly (no drop animation)
+- [ ] Existing button/card hover transitions already suppressed by globals.css blanket rule
+
+**No regressions:**
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+- [ ] Booking flow works end-to-end (no logic change)
+- [ ] Event creation flow works end-to-end (no logic change)
+- [ ] Block court flow works end-to-end (no logic change)
+- [ ] Notification fetch / read / unread / realtime subscription unchanged
+- [ ] BottomSheet drag-to-close still works on mobile
+- [ ] Header/nav polish from 21H-B/C unchanged
+

@@ -97,9 +97,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         return (
           <div
             key={ev.id}
-            className={`mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 ${
-              isCancelled ? "opacity-50" : ""
-            }`}
+            className={`ct-card mx-4 mb-3 px-4 py-3 ${isCancelled ? "opacity-50" : ""}`}
           >
             {/* Type pill + status badge */}
             <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
@@ -163,7 +161,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           <button
             onClick={handleLoadMore}
             disabled={isPending}
-            className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm text-gray-700 dark:text-gray-300 font-medium disabled:opacity-40"
+            className="ct-button-secondary px-4 py-2 text-sm disabled:opacity-40"
           >
             {isPending ? "Loading…" : "Load more"}
           </button>

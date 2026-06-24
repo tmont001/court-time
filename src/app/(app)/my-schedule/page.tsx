@@ -323,7 +323,7 @@ export default async function MySchedulePage() {
                       return (
                         <div
                           key={res.id}
-                          className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-between"
+                          className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between"
                         >
                           <div>
                             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
@@ -337,7 +337,7 @@ export default async function MySchedulePage() {
                               <input type="hidden" name="id" value={res.id} />
                               <button
                                 type="submit"
-                                className="text-xs font-medium text-red-500 ml-4 shrink-0"
+                                className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
                               >
                                 Cancel
                               </button>
@@ -368,7 +368,7 @@ export default async function MySchedulePage() {
                     return (
                       <div
                         key={ev.id}
-                        className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-start justify-between"
+                        className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
@@ -397,7 +397,7 @@ export default async function MySchedulePage() {
                             <input type="hidden" name="event_id" value={ev.id} />
                             <button
                               type="submit"
-                              className="text-xs font-medium text-red-500 ml-4 shrink-0"
+                              className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
                             >
                               {isWaitlisted ? "Leave Waitlist" : "Leave"}
                             </button>
@@ -427,7 +427,7 @@ export default async function MySchedulePage() {
                   return (
                     <div
                       key={ev.id}
-                      className="mx-4 mb-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-start justify-between"
+                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">

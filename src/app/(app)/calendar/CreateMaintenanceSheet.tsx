@@ -193,11 +193,11 @@ export default function CreateMaintenanceSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
+      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
 
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-handlebar mx-auto mb-4" />
           <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
         </div>
 
@@ -217,10 +217,10 @@ export default function CreateMaintenanceSheet({
                     key={court.id}
                     type="button"
                     onClick={() => toggleCourt(court.id)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                       isSelected
                         ? "bg-accent text-white dark:text-gray-900 border-accent"
-                        : "bg-white text-gray-600 border-gray-200 dark:border-gray-700"
+                        : "bg-white text-gray-600 border-gray-200 dark:border-gray-700 hover:border-accent hover:text-accent"
                     }`}
                   >
                     {court.name}
@@ -269,7 +269,7 @@ export default function CreateMaintenanceSheet({
             <select
               value={`${startHour}:${startMinute}`}
               onChange={e => handleStartChange(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
             >
               {startSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -289,7 +289,7 @@ export default function CreateMaintenanceSheet({
                 setEndHour(h);
                 setEndMinute(m);
               }}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
             >
               {endSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -307,7 +307,7 @@ export default function CreateMaintenanceSheet({
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="e.g. Resurfacing, Equipment repair"
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             />
           </div>
 
@@ -338,7 +338,7 @@ export default function CreateMaintenanceSheet({
           <button
             disabled={submitting || selectedCourtIds.length === 0 || endSlots.length === 0}
             onClick={handleSubmit}
-            className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
+            className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
           >
             {submitting ? "Blocking…" : "Block Court" + (selectedCourtIds.length !== 1 ? "s" : "")}
           </button>

@@ -256,12 +256,12 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
 
       {/* Sheet */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl flex flex-col"
+        className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl flex flex-col"
         style={{ zIndex: 70, maxHeight: "80dvh" }}
       >
         {/* Header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-handlebar mx-auto mb-4" />
           <div className="flex items-center justify-between">
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
             <button onClick={onClose} className="text-sm text-gray-400 font-medium">Close</button>

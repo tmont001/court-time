@@ -286,10 +286,10 @@ export default function EventDetailSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
 
         {/* Handle */}
-        <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+        <div className="ct-handlebar mx-auto mb-4" />
 
         {/* Event type pill */}
         <span

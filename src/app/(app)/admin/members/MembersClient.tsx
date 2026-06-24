@@ -233,7 +233,7 @@ export default function MembersClient({
         </p>
         <button
           onClick={() => setSheetOpen(true)}
-          className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+          className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:border-accent hover:text-accent hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-all motion-safe:duration-150"
         >
           + Invite
         </button>
@@ -287,7 +287,7 @@ export default function MembersClient({
             return (
               <div
                 key={m.id}
-                className={`mx-4 mb-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden transition-opacity${
+                className={`ct-card mx-4 mb-3 overflow-hidden transition-opacity${
                   !isActive ? " opacity-60" : ""
                 }`}
               >
@@ -322,7 +322,7 @@ export default function MembersClient({
                       value={m.role}
                       disabled={controlsDisabled || changingRoleId === m.id}
                       onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                      className="text-xs font-medium rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                      className="ct-input py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {ROLE_OPTIONS.map(({ value, label }) => (
                         <option key={value} value={value}>{label}</option>
@@ -463,7 +463,7 @@ export default function MembersClient({
                 <button
                   disabled={!!statusChangingId}
                   onClick={() => setConfirmDialog(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50"
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50"
                 >
                   Cancel
                 </button>

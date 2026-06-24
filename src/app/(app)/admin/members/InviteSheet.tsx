@@ -78,11 +78,11 @@ export default function InviteSheet({ onClose }: Props) {
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
 
       {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
+      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
 
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-handlebar mx-auto mb-4" />
           <div className="flex items-center justify-between">
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {generatedCode ? "Invite Link Ready" : "Send Invite"}

@@ -336,7 +336,7 @@ export default function DateOverridesEditor({ clubId, clubTimezone }: Props) {
               min={todayISO}
               disabled={!!editingDate} // date is immutable when editing
               onChange={(e) => setFormDate(e.target.value)}
-              className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed w-full max-w-xs"
+              className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent disabled:opacity-50 disabled:cursor-not-allowed w-full max-w-xs"
             />
             {editingDate && (
               <p className="text-xs text-gray-400 dark:text-gray-500">
@@ -369,7 +369,7 @@ export default function DateOverridesEditor({ clubId, clubTimezone }: Props) {
               value={formOpensAt}
               disabled={formIsClosed}
               onChange={(e) => setFormOpensAt(e.target.value)}
-              className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+              className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             />
             <span className="text-xs text-gray-400 dark:text-gray-500 select-none">to</span>
             <input
@@ -377,7 +377,7 @@ export default function DateOverridesEditor({ clubId, clubTimezone }: Props) {
               value={formClosesAt}
               disabled={formIsClosed}
               onChange={(e) => setFormClosesAt(e.target.value)}
-              className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+              className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
             />
           </div>
 
@@ -392,7 +392,7 @@ export default function DateOverridesEditor({ clubId, clubTimezone }: Props) {
               maxLength={80}
               placeholder="e.g. Thanksgiving, Private event"
               onChange={(e) => setFormNote(e.target.value)}
-              className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500 w-full max-w-sm"
+              className="border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent w-full max-w-sm"
             />
           </div>
 

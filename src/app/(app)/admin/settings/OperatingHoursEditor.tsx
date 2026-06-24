@@ -198,7 +198,7 @@ export default function OperatingHoursEditor({ clubId }: Props) {
                 value={d.opens_at}
                 disabled={d.is_closed}
                 onChange={(e) => updateDay(d.day_of_week, { opens_at: e.target.value })}
-                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
               />
               <span className="text-xs text-gray-400 dark:text-gray-500 select-none">to</span>
               <input
@@ -206,7 +206,7 @@ export default function OperatingHoursEditor({ clubId }: Props) {
                 value={d.closes_at}
                 disabled={d.is_closed}
                 onChange={(e) => updateDay(d.day_of_week, { closes_at: e.target.value })}
-                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
               />
             </div>
           </div>

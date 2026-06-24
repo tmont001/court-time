@@ -66,7 +66,7 @@ export default async function HelpPage() {
       <Header screenTitle="Help & Rules" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
       <div className="px-4 pt-3 pb-0 md:max-w-2xl md:mx-auto">
-        <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+        <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
           ← Back to Profile
         </Link>
       </div>
@@ -76,7 +76,7 @@ export default async function HelpPage() {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               {section.title}
             </p>
-            <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+            <div className="ct-card divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
               {section.items.map(item => (
                 <p key={item} className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300 leading-snug">
                   {item}

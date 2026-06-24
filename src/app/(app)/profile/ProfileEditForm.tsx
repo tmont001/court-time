@@ -40,7 +40,7 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
           type="text"
           name="first_name"
           defaultValue={firstName ?? ""}
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
       </div>
 
@@ -52,7 +52,7 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
           type="text"
           name="last_name"
           defaultValue={lastName ?? ""}
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
       </div>
 
@@ -65,7 +65,7 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
           name="phone"
           value={currentPhone}
           onChange={(e) => setCurrentPhone(e.target.value)}
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
       </div>
 
@@ -73,7 +73,7 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
         <button
           type="submit"
           disabled={isPending}
-          className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+          className="ct-button-primary"
         >
           {isPending ? "Saving…" : "Save"}
         </button>

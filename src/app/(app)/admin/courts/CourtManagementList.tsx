@@ -226,7 +226,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
                     <button
                       onClick={() => handleDeleteConfirm(court)}
                       disabled={isPending && pendingId === court.id}
-                      className="px-2 py-1 rounded bg-red-600 text-white text-xs font-medium disabled:opacity-40"
+                      className="px-2 py-1 rounded bg-red-600 text-white text-xs font-medium disabled:opacity-40 hover:bg-red-700 active:scale-95 motion-safe:transition-all motion-safe:duration-150"
                     >
                       {isPending && pendingId === court.id ? "Deleting…" : "Delete"}
                     </button>
@@ -250,18 +250,18 @@ export default function CourtManagementList({ initialCourts }: Props) {
                       if (e.key === "Escape") handleRenameCancel();
                     }}
                     maxLength={60}
-                    className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+                    className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
                   />
                   <button
                     onClick={() => handleRenameSubmit(court.id)}
                     disabled={isPending && pendingId === court.id}
-                    className="text-xs font-medium text-green-600 dark:text-green-400 disabled:opacity-40"
+                    className="text-xs font-medium text-green-600 dark:text-green-400 disabled:opacity-40 hover:text-green-800 dark:hover:text-green-300 motion-safe:transition-colors motion-safe:duration-150"
                   >
                     {isPending && pendingId === court.id ? "Saving…" : "Save"}
                   </button>
                   <button
                     onClick={handleRenameCancel}
-                    className="text-xs font-medium text-gray-500 dark:text-gray-400"
+                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-150"
                   >
                     Cancel
                   </button>
@@ -288,7 +288,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
                     <button
                       onClick={() => handleMove(idx, "up")}
                       disabled={idx === 0 || anyPending}
-                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30"
+                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
                       aria-label="Move up"
                     >
                       ↑
@@ -296,7 +296,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
                     <button
                       onClick={() => handleMove(idx, "down")}
                       disabled={idx === courts.length - 1 || anyPending}
-                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30"
+                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
                       aria-label="Move down"
                     >
                       ↓
@@ -307,7 +307,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
                     <button
                       onClick={() => handleRenameStart(court)}
                       disabled={anyPending}
-                      className="px-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-30"
+                      className="px-1 text-gray-500 dark:text-gray-400 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
                     >
                       Rename
                     </button>

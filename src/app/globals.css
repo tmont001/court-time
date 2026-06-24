@@ -95,3 +95,353 @@
     padding-bottom: 0;
   }
 }
+
+/* ── Reusable component patterns ────────────────────────────────────────── */
+/* Applied consistently across primary buttons, inputs, cards, and interactive
+   rows. Using CSS classes here rather than per-element Tailwind strings keeps
+   hover/focus behavior consistent and avoids silent divergence over time. */
+
+/* Icon button — header controls (ThemeToggle, NotificationBell).
+   Accent-color hover matches the sidebar's hover:text-accent treatment so
+   all interactive controls feel like a unified system. */
+.ct-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.5rem;
+  color: rgb(107 114 128);             /* gray-500 */
+  cursor: pointer;
+}
+.dark .ct-icon-button { color: rgb(156 163 175); } /* gray-400 */
+.ct-icon-button:hover {
+  background-color: rgb(243 244 246);  /* gray-100 */
+  color: var(--accent);                /* matches sidebar hover:text-accent */
+}
+.dark .ct-icon-button:hover {
+  background-color: rgb(31 41 55);     /* gray-800 */
+  color: var(--accent);
+}
+.ct-icon-button:active {
+  background-color: rgb(229 231 235);  /* gray-200 */
+  color: var(--accent);
+}
+.dark .ct-icon-button:active {
+  background-color: rgb(55 65 81);     /* gray-700 */
+  color: var(--accent);
+}
+.ct-icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ct-icon-button {
+    transition: background-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-icon-button:active { transform: scale(0.9); }
+}
+
+/* Secondary bordered button — composable; set padding and font-size externally.
+   Hover: accent border + accent text for clear visual response. */
+.ct-button-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  border: 1px solid rgb(209 213 219); /* gray-300 */
+  background-color: white;
+  color: rgb(75 85 99);               /* gray-600 */
+  cursor: pointer;
+}
+.dark .ct-button-secondary {
+  border-color: rgb(75 85 99);        /* gray-600 */
+  background-color: rgb(31 41 55);    /* gray-800 */
+  color: rgb(209 213 219);           /* gray-300 */
+}
+.ct-button-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgb(249 250 251); /* gray-50 */
+}
+.dark .ct-button-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: rgba(55, 65, 81, 0.4);
+}
+.ct-button-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ct-button-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ct-button-secondary {
+    transition: border-color 150ms ease-out, color 150ms ease-out,
+                background-color 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-button-secondary:not(:disabled):active { transform: scale(0.97); }
+}
+
+/* Primary accent-filled button with visible lift on hover */
+.ct-button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background-color: var(--accent);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
+  cursor: pointer;
+}
+.dark .ct-button-primary { color: rgb(17 24 39); } /* readable on light accent in dark mode */
+.ct-button-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ct-button-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ct-button-primary {
+    transition: filter 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-button-primary:not(:disabled):hover {
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.14), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+  }
+  .ct-button-primary:not(:disabled):active {
+    transform: scale(0.97) translateY(0);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
+  }
+}
+
+/* Form inputs — accent focus ring with smooth border transition */
+.ct-input {
+  width: 100%;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid rgb(209 213 219);   /* gray-300 */
+  background-color: white;
+  color: rgb(17 24 39);                 /* gray-900 */
+}
+.dark .ct-input {
+  border-color: rgb(75 85 99);          /* gray-600 */
+  background-color: rgb(31 41 55);      /* gray-800 */
+  color: rgb(243 244 246);             /* gray-100 */
+}
+.ct-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ct-input { transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
+}
+
+/* Content card surface — slightly more shadow than shadow-sm */
+.ct-card {
+  background-color: white;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(229 231 235);  /* gray-200 */
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+}
+.dark .ct-card {
+  background-color: rgb(31 41 55);     /* gray-800 */
+  border-color: rgb(55 65 81);         /* gray-700 */
+  box-shadow: none;
+}
+
+/* Clickable list row — accent accent stripe on hover, visible in light and dark */
+.ct-row-interactive {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  background-color: white;
+  color: rgb(17 24 39);                /* gray-900 */
+}
+.dark .ct-row-interactive {
+  background-color: rgb(31 41 55);     /* gray-800 */
+  color: rgb(243 244 246);            /* gray-100 */
+}
+.ct-row-interactive:hover {
+  background-color: rgb(249 250 251);  /* gray-50 */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.dark .ct-row-interactive:hover {
+  background-color: rgba(55, 65, 81, 0.55);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.ct-row-interactive:active {
+  background-color: rgb(243 244 246);  /* gray-100 */
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.dark .ct-row-interactive:active {
+  background-color: rgba(55, 65, 81, 0.8);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ct-row-interactive { transition: background-color 100ms ease-out, box-shadow 100ms ease-out; }
+}
+
+/* Clickable card surface — lifts on hover, accent border tint, subtle shadow */
+.ct-card-interactive {
+  background-color: white;
+  border-radius: 0.75rem;
+  border: 1px solid rgb(229 231 235);  /* gray-200 */
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+  cursor: pointer;
+}
+.dark .ct-card-interactive {
+  background-color: rgb(31 41 55);     /* gray-800 */
+  border-color: rgb(55 65 81);         /* gray-700 */
+  box-shadow: none;
+}
+.ct-card-interactive:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+}
+.dark .ct-card-interactive:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px 0 rgb(0 0 0 / 0.25);
+}
+.ct-card-interactive:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ct-card-interactive {
+    transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-card-interactive:hover  { transform: translateY(-1px); }
+  .ct-card-interactive:active { transform: translateY(0); }
+}
+
+/* Danger / destructive button — clear red with hover shift */
+.ct-button-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  border: 1px solid rgb(254 202 202); /* red-200 */
+  background-color: rgb(254 242 242); /* red-50 */
+  color: rgb(220 38 38);              /* red-600 */
+  cursor: pointer;
+}
+.dark .ct-button-danger {
+  border-color: rgb(153 27 27);       /* red-800 */
+  background-color: rgba(127, 29, 29, 0.25);
+  color: rgb(252 165 165);            /* red-300 */
+}
+.ct-button-danger:hover {
+  background-color: rgb(254 226 226); /* red-100 */
+  border-color: rgb(239 68 68);       /* red-500 */
+  color: rgb(185 28 28);              /* red-700 */
+}
+.dark .ct-button-danger:hover {
+  background-color: rgba(127, 29, 29, 0.45);
+  border-color: rgb(239 68 68);
+  color: rgb(248 113 113);            /* red-400 */
+}
+.ct-button-danger:focus-visible {
+  outline: 2px solid rgb(239 68 68);
+  outline-offset: 2px;
+}
+.ct-button-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ct-button-danger {
+    transition: background-color 150ms ease-out, border-color 150ms ease-out,
+                color 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-button-danger:not(:disabled):active { transform: scale(0.97); }
+}
+
+/* Ghost button — no border, subtle hover background fill */
+.ct-button-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  color: rgb(75 85 99);               /* gray-600 */
+  cursor: pointer;
+  background-color: transparent;
+}
+.dark .ct-button-ghost { color: rgb(156 163 175); } /* gray-400 */
+.ct-button-ghost:hover {
+  background-color: rgb(243 244 246); /* gray-100 */
+  color: rgb(17 24 39);               /* gray-900 */
+}
+.dark .ct-button-ghost:hover {
+  background-color: rgb(55 65 81);    /* gray-700 */
+  color: rgb(243 244 246);            /* gray-100 */
+}
+.ct-button-ghost:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ct-button-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ct-button-ghost {
+    transition: background-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-button-ghost:not(:disabled):active { transform: scale(0.97); }
+}
+
+/* ── Sheet entrance animation ──────────────────────────────────────────── */
+/* Applied to fixed bottom sheets (booking, event, block, slot action).
+   Slides up 16px + fades in over 180ms. Exit is skipped — components
+   unmount immediately, which avoids needing exit-animation state.
+   fill-mode: both applies the `from` state (opacity:0) before the first
+   paint, so there is no flash. The BottomSheet drag logic overrides
+   style.transform with inline styles during gestures — inline styles win
+   over animation fills in the cascade, so there is no conflict. */
+@keyframes ct-sheet-enter-keyframes {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-sheet-enter {
+    animation: ct-sheet-enter-keyframes 180ms ease-out both;
+  }
+}
+
+/* ── Popover entrance animation ────────────────────────────────────────── */
+/* Applied to the desktop notification dropdown: drops from above the bell,
+   combining opacity + translate-y + a subtle scale.
+   transform-origin: top right anchors it to the bell corner. */
+@keyframes ct-popover-enter-keyframes {
+  from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.ct-popover-enter {
+  transform-origin: top right;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-popover-enter {
+    animation: ct-popover-enter-keyframes 160ms ease-out both;
+  }
+}
+
+/* ── Handlebar pill ────────────────────────────────────────────────────── */
+/* Used on both the draggable BottomSheet handle and the decorative
+   handlebars in CreateEventSheet, CreateMaintenanceSheet, and the
+   slot action sheet. Slightly more visible than the previous bg-gray-200
+   hairline (now gray-300 / gray-600). Same 40px width as the old w-10 class.
+   Centering and margin-bottom are applied per-use-site. */
+.ct-handlebar {
+  width: 2.5rem;
+  height: 4px;
+  border-radius: 9999px;
+  background-color: rgb(209 213 219);   /* gray-300 */
+  flex-shrink: 0;
+}
+.dark .ct-handlebar {
+  background-color: rgb(75 85 99);      /* gray-600 */
+}

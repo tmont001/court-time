@@ -281,17 +281,17 @@ export default function CreateEventSheet({
   return (
     <>
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
+      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
 
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full mx-auto mb-4" />
+          <div className="ct-handlebar mx-auto mb-4" />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {step > 1 && (
                 <button
                   onClick={() => { setStep((s) => (s - 1) as 1 | 2 | 3 | 4); setError(null); }}
-                  className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500"
+                  className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
                 >
                   ← Back
                 </button>
@@ -319,7 +319,7 @@ export default function CreateEventSheet({
                   <button
                     key={type.id}
                     onClick={() => selectType(type)}
-                    className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 flex items-start gap-3 active:bg-gray-50 dark:active:bg-gray-600"
+                    className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-4 py-3 flex items-start gap-3 hover:border-accent hover:bg-gray-50 dark:hover:bg-gray-600/60 active:bg-gray-100 dark:active:bg-gray-600 motion-safe:transition-all motion-safe:duration-150"
                     style={{ borderLeftWidth: 4, borderLeftColor: type.color }}
                   >
                     <div className="min-w-0">
@@ -346,7 +346,7 @@ export default function CreateEventSheet({
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder={selectedType.label}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                 />
               </div>
 
@@ -387,7 +387,7 @@ export default function CreateEventSheet({
                     setStartHour(h);
                     setStartMinute(m);
                   }}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                 >
                   {TIME_SLOTS.map(slot => (
                     <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -408,10 +408,10 @@ export default function CreateEventSheet({
                       key={mins}
                       type="button"
                       onClick={() => { setDurationMinutes(mins); setIsCustomDuration(false); }}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                         !isCustomDuration && durationMinutes === mins
                           ? "bg-accent text-white dark:text-gray-900 border-accent"
-                          : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                          : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:border-accent hover:text-accent"
                       }`}
                     >
                       {mins} min
@@ -420,10 +420,10 @@ export default function CreateEventSheet({
                   <button
                     type="button"
                     onClick={() => { setIsCustomDuration(true); setCustomDurationText(String(durationMinutes)); }}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                       isCustomDuration
                         ? "bg-accent text-white dark:text-gray-900 border-accent"
-                        : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                        : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 hover:border-accent hover:text-accent"
                     }`}
                   >
                     Custom
@@ -438,7 +438,7 @@ export default function CreateEventSheet({
                       value={customDurationText}
                       onChange={e => handleCustomDuration(e.target.value)}
                       placeholder="e.g. 75"
-                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                     />
                     <span className="text-xs text-gray-500">min</span>
                     {customDurationText.length > 0 && !customDurationValid && (
@@ -460,7 +460,7 @@ export default function CreateEventSheet({
                   }
                   setStep(3);
                 }}
-                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
               >
                 Continue
               </button>
@@ -480,12 +480,12 @@ export default function CreateEventSheet({
                       <button
                         key={court.id}
                         onClick={() => toggleCourt(court.id)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                           hasConflict
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : isSelected
                             ? "bg-accent text-white dark:text-gray-900 border-accent"
-                            : "bg-white text-gray-600 border-gray-200 dark:border-gray-700"
+                            : "bg-white text-gray-600 border-gray-200 dark:border-gray-700 hover:border-accent hover:text-accent"
                         }`}
                       >
                         {court.name}{hasConflict ? " ⚠" : ""}
@@ -509,7 +509,7 @@ export default function CreateEventSheet({
               <button
                 disabled={selectedCourtIds.length === 0}
                 onClick={() => { setError(null); setStep(4); }}
-                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
               >
                 Continue
               </button>
@@ -526,7 +526,7 @@ export default function CreateEventSheet({
                 <select
                   value={capacity}
                   onChange={e => setCapacity(Number(e.target.value))}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 bg-white"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 bg-white motion-safe:transition-all motion-safe:duration-150"
                 >
                   {Array.from({ length: Math.max(50, capacity) }, (_, i) => i + 1).map(n => (
                     <option key={n} value={n}>{n}</option>
@@ -552,7 +552,7 @@ export default function CreateEventSheet({
               <button
                 disabled={submitting || capacity < 1}
                 onClick={handleCreate}
-                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
+                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
               >
                 {submitting ? "Creating…" : "Create Event"}
               </button>

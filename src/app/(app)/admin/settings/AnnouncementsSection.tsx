@@ -71,7 +71,7 @@ export default function AnnouncementsSection() {
             maxLength={TITLE_MAX + 10}
             required
             disabled={isPending}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500 disabled:opacity-40"
+            className="ct-input disabled:opacity-40"
           />
         </div>
 
@@ -93,7 +93,7 @@ export default function AnnouncementsSection() {
             maxLength={BODY_MAX + 10}
             required
             disabled={isPending}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500 resize-none disabled:opacity-40"
+            className="ct-input resize-none disabled:opacity-40"
           />
         </div>
 
@@ -112,7 +112,7 @@ export default function AnnouncementsSection() {
                 type="button"
                 onClick={handleConfirm}
                 disabled={isPending}
-                className="px-3 py-1.5 rounded-lg bg-accent text-white dark:text-gray-900 text-xs font-medium disabled:opacity-40"
+                className="ct-button-primary px-3 py-1.5 text-xs"
               >
                 {isPending ? "Sending…" : "Yes, send it"}
               </button>
@@ -131,7 +131,7 @@ export default function AnnouncementsSection() {
             <button
               type="submit"
               disabled={isPending || !canSubmit}
-              className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+              className="ct-button-primary"
             >
               {isPending ? "Sending…" : "Send Announcement"}
             </button>

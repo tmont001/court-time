@@ -110,8 +110,10 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
         <div
           key={n.id}
           onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
-          className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 ${
-            !n.is_read ? "cursor-pointer" : ""
+          className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 rounded-lg -mx-2 px-2 ${
+            !n.is_read
+              ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"
+              : ""
           }`}
         >
           {/* Unread dot — amber for announcements, blue for all others */}
@@ -149,7 +151,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
         <div className="fixed inset-0 z-40" onClick={onClose} />
 
         <div
-          className="fixed top-14 right-4 z-50 w-96 max-w-[calc(100vw-5rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
+          className="ct-popover-enter fixed top-14 right-4 z-50 w-96 max-w-[calc(100vw-5rem)] bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
           style={{ maxHeight: "min(60vh, 480px)" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -159,7 +161,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
             {hasUnread && (
               <button
                 onClick={handleMarkAllRead}
-                className="text-xs text-blue-600 dark:text-blue-400 font-medium"
+                className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:text-blue-800 dark:hover:text-blue-300 motion-safe:transition-colors motion-safe:duration-100"
               >
                 Mark all read
               </button>
@@ -185,7 +187,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
           {hasUnread && (
             <button
               onClick={handleMarkAllRead}
-              className="text-xs text-blue-600 dark:text-blue-400 font-medium"
+              className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:text-blue-800 dark:hover:text-blue-300 motion-safe:transition-colors motion-safe:duration-100"
             >
               Mark all read
             </button>

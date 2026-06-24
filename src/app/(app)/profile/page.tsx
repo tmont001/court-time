@@ -63,28 +63,28 @@ export default async function ProfilePage() {
                   <>
                     <Link
                       href="/admin/members"
-                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+                      className="ct-row-interactive"
                     >
                       Members
                       <span className="text-gray-400 dark:text-gray-500">›</span>
                     </Link>
                     <Link
                       href="/admin/courts"
-                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+                      className="ct-row-interactive"
                     >
                       Courts
                       <span className="text-gray-400 dark:text-gray-500">›</span>
                     </Link>
                     <Link
                       href="/admin/settings"
-                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+                      className="ct-row-interactive"
                     >
                       Settings
                       <span className="text-gray-400 dark:text-gray-500">›</span>
                     </Link>
                     <Link
                       href="/admin/audit-log"
-                      className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+                      className="ct-row-interactive"
                     >
                       Audit Log
                       <span className="text-gray-400 dark:text-gray-500">›</span>
@@ -93,7 +93,7 @@ export default async function ProfilePage() {
                 )}
                 <Link
                   href="/admin/events"
-                  className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+                  className="ct-row-interactive"
                 >
                   Events
                   <span className="text-gray-400 dark:text-gray-500">›</span>
@@ -113,7 +113,7 @@ export default async function ProfilePage() {
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <Link
               href="/profile/notifications"
-              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+              className="ct-row-interactive"
             >
               <div>
                 <p>Notification Preferences</p>
@@ -136,7 +136,7 @@ export default async function ProfilePage() {
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <Link
               href="/profile/security"
-              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+              className="ct-row-interactive"
             >
               <div>
                 <p>Change password</p>
@@ -158,7 +158,7 @@ export default async function ProfilePage() {
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <Link
               href="/help"
-              className="flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors text-sm text-gray-900 dark:text-gray-100"
+              className="ct-row-interactive"
             >
               Help &amp; Rules
               <span className="text-gray-400 dark:text-gray-500">›</span>

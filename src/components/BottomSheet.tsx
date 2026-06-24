@@ -152,7 +152,7 @@ export default function BottomSheet({ onClose, children, className }: BottomShee
           NOT via React state, to avoid per-frame re-renders during gesture. */}
       <div
         ref={panelRef}
-        className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl"
+        className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle
@@ -171,7 +171,7 @@ export default function BottomSheet({ onClose, children, className }: BottomShee
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         >
-          <div className="w-10 h-1 bg-gray-200 dark:bg-gray-600 rounded-full" />
+          <div className="ct-handlebar" />
         </div>
 
         {/* Content */}

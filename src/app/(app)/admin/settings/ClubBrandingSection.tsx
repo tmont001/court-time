@@ -43,7 +43,7 @@ export default function ClubBrandingSection({ clubName, logoUrl, themeKey }: Pro
             defaultValue={clubName}
             required
             maxLength={100}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+            className="ct-input"
           />
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
             Shown in the app header for all members.
@@ -53,7 +53,7 @@ export default function ClubBrandingSection({ clubName, logoUrl, themeKey }: Pro
           <button
             type="submit"
             disabled={isPending}
-            className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+            className="ct-button-primary"
           >
             {isPending ? "Saving…" : "Save"}
           </button>

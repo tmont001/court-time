@@ -47,7 +47,7 @@ export default function BookingRulesForm({
           min={1}
           max={365}
           required
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           How many days ahead members can book (1–365).
@@ -65,7 +65,7 @@ export default function BookingRulesForm({
           min={0}
           max={168}
           required
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           Minimum hours before a reservation that members can cancel (0–168).
@@ -83,7 +83,7 @@ export default function BookingRulesForm({
           min={0}
           max={60}
           required
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           Allows members to cancel accidental bookings shortly after creation, even inside the
@@ -102,7 +102,7 @@ export default function BookingRulesForm({
           min={1}
           max={72}
           required
-          className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+          className="ct-input"
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           How long a waitlisted member has to accept a spot offer (1–72 hours).
@@ -113,7 +113,7 @@ export default function BookingRulesForm({
         <button
           type="submit"
           disabled={isPending}
-          className="px-4 py-2 rounded-lg bg-accent text-white dark:text-gray-900 text-sm font-medium disabled:opacity-40"
+          className="ct-button-primary"
         >
           {isPending ? "Saving…" : "Save"}
         </button>

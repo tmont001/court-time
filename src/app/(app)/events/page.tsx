@@ -224,7 +224,7 @@ export default async function EventsPage() {
                       return (
                         <div
                           key={ev.id}
-                          className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3"
+                          className="ct-card-interactive px-4 py-3"
                         >
                           {/* Type pill + status badge */}
                           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
@@ -291,7 +291,7 @@ export default async function EventsPage() {
                                 /* Expired — let them rejoin */
                                 <form action={joinEventAction}>
                                   <input type="hidden" name="event_id" value={ev.id} />
-                                  <button type="submit" className="text-xs font-medium text-blue-600">
+                                  <button type="submit" className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
                                     Rejoin
                                   </button>
                                 </form>
@@ -300,13 +300,13 @@ export default async function EventsPage() {
                                 <div className="flex items-center gap-3">
                                   <form action={declineWaitlistOfferAction}>
                                     <input type="hidden" name="event_id" value={ev.id} />
-                                    <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                    <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
                                       Pass
                                     </button>
                                   </form>
                                   <form action={acceptWaitlistOfferAction}>
                                     <input type="hidden" name="event_id" value={ev.id} />
-                                    <button type="submit" className="text-xs font-semibold text-green-600">
+                                    <button type="submit" className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
                                       Accept
                                     </button>
                                   </form>
@@ -317,7 +317,7 @@ export default async function EventsPage() {
                                 <input type="hidden" name="event_id" value={ev.id} />
                                 <button
                                   type="submit"
-                                  className="text-xs font-medium text-red-500"
+                                  className="text-xs font-medium text-red-500 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
                                 >
                                   {isWaitlisted ? "Leave Waitlist" : "Leave"}
                                 </button>
@@ -327,7 +327,7 @@ export default async function EventsPage() {
                                 <input type="hidden" name="event_id" value={ev.id} />
                                 <button
                                   type="submit"
-                                  className="text-xs font-medium text-blue-600"
+                                  className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
                                 >
                                   {isFull ? "Join Waitlist" : "Join Event"}
                                 </button>

@@ -77,10 +77,10 @@ export default function SideNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium motion-safe:transition-colors duration-150 ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm motion-safe:transition-all motion-safe:duration-150 ${
                 isActive
-                  ? "bg-gray-100 dark:bg-gray-800 text-accent"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"
+                  ? "bg-gray-100 dark:bg-gray-800 text-accent font-semibold"
+                  : "font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-accent active:bg-gray-200 dark:active:bg-gray-700 active:text-accent"
               }`}
             >
               <tab.Icon />

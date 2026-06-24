@@ -74,10 +74,10 @@ export default function BottomNav() {
           <Link
             key={tab.href}
             href={tab.href}
-            className={`flex-1 flex flex-col items-center justify-center gap-1 h-16 motion-safe:transition-colors duration-150 ${
+            className={`flex-1 flex flex-col items-center justify-center gap-1 h-16 motion-safe:transition-all motion-safe:duration-100 ${
               isActive
                 ? "text-accent border-t-2 border-accent"
-                : "text-gray-400 dark:text-gray-500"
+                : "text-gray-400 dark:text-gray-500 active:text-accent"
             }`}
           >
             <tab.Icon />
