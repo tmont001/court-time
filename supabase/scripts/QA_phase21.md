@@ -1551,7 +1551,7 @@ rollout.
 
 ## Checkpoint 21E — Broader Pilot Rollout
 
-**Status: In progress — Phase 21E-A complete; rollout steps pending**
+**Status: Phases 21E-A through 21E-D complete — ready for controlled member pilot**
 
 This checkpoint expands North Shore Towers from the 2-user friendly-user wave
 (Phase 21D) to the full intended pilot audience. Phase 21D Wave 1 passed all
@@ -2182,3 +2182,224 @@ There is no `/admin` landing page. All admin sub-pages are accessed via the Prof
 - [ ] Mobile: back link is reachable without scrolling on all above pages
 - [ ] No regression: bottom nav and side nav still work correctly on all pages
 - [ ] No regression: page content and scroll behavior unaffected on all pages
+
+---
+
+## North Shore Towers Pilot — Final Launch Checklist
+
+**Status: Ready for execution**
+
+Work through this top to bottom before inviting any members. Checkpoint 21E Parts 1–7 cover rollout logistics and monitoring in detail; this checklist is the sequential "do this now" execution flow. Do not skip steps or reorder them.
+
+---
+
+### Step 1 — Coordinator admin setup
+
+Establish the coordinator as a second admin before any members are invited. This ensures the pilot can be managed independently without depending on the original admin for every action.
+
+**A. Invite the coordinator**
+
+- [ ] Sign in as the original admin at `https://court-time.vercel.app`
+- [ ] Go to `/profile` → Admin → Members → **Invite**
+- [ ] Set role to **admin**
+- [ ] Enter the coordinator's verified email address in the email-restriction field
+- [ ] Copy the `/join/<code>` URL
+- [ ] Send the link to the coordinator directly with context ("You are being added as a club admin, not a regular member")
+
+**B. Coordinator onboarding verification**
+
+- [ ] Coordinator accepts the invite and completes `/welcome`
+- [ ] Coordinator appears in `/admin/members` with role **admin** and status **active**
+- [ ] Coordinator signs in and confirms their display name is correct on `/profile`
+- [ ] Coordinator navigates to `/profile` and can reach all admin pages: Members, Courts, Settings, Audit Log, Events
+- [ ] Coordinator can view the member list on `/admin/members`
+- [ ] Coordinator creates a test event on `/admin/events` and confirms it appears on `/calendar`
+- [ ] Coordinator deletes or cancels the test event after confirming
+- [ ] Coordinator changes their temporary password: `/profile` → Security → Change password → confirms "Password updated."
+
+**C. Backup admin confirmed**
+
+- [ ] Original admin account remains active and retains the **admin** role
+- [ ] Both admin accounts are visible in `/admin/members`
+- [ ] Do not remove or downgrade the original admin at any point during the pilot
+
+---
+
+### Step 2 — Pre-member launch checks
+
+Run all of these before sending any member invites. If any item fails, resolve it before proceeding to Step 3.
+
+**Club configuration**
+
+- [ ] `/admin/courts` — all active courts are visible, named correctly, and in the correct display order; no inactive courts are showing
+- [ ] `/admin/settings` → Booking Rules — `booking_window_days` matches the intended advance window
+- [ ] `/admin/settings` → Booking Rules — `cancellation_window_hours` matches the club's policy
+- [ ] `/admin/settings` → Operating Hours — all days of the week are configured correctly; any closed dates or holidays are marked
+- [ ] Club name appears correctly in the app Header for both admin accounts
+
+**Email notifications**
+
+- [ ] `RESEND_API_KEY` is present in Vercel → Project → Settings → Environment Variables (value must not be empty or a placeholder)
+- [ ] Coordinator sends a test announcement via `/admin/settings` → Announcements; confirms the email arrives at their own address within 2 minutes
+- [ ] Resend dashboard → Emails — the test announcement shows delivery status `delivered`
+
+**SMS — confirmed deferred**
+
+- [ ] `/profile` does not show a "Text Notifications" section — confirmed hidden
+- [ ] No Twilio environment variables are active; no SMS will be sent to members
+
+**Password change**
+
+- [ ] `/profile` shows a Security section with a "Change password" link
+- [ ] Coordinator has already changed their own password (Step 1B above)
+
+**Back navigation**
+
+- [ ] `/profile/notifications`, `/profile/security`, `/admin/members`, `/admin/courts`, `/admin/settings`, `/admin/audit-log`, `/admin/events`, `/help` all show "← Back to Profile" at the top
+
+**Pilot hygiene**
+
+- [ ] `/admin/members` — no test or dummy accounts remain active in North Shore Towers; any accounts created during development or smoke testing are removed or confirmed as real participants
+- [ ] No Riverside invite links or Riverside credentials are accessible to any North Shore Towers participant
+- [ ] Production URL confirmed: `https://court-time.vercel.app` loads without error on mobile and desktop
+
+---
+
+### Step 3 — First member wave
+
+**Target:** 5–10 members. See Checkpoint 21E Part 2 for batching rationale.
+
+**Who to invite first:** Members who are digitally comfortable, use courts regularly, and will give direct feedback. Avoid the most tech-averse members in the first wave — save them for wave 2 once the flows are validated with more confident users.
+
+**Invite process:** Follow Checkpoint 21E Part 3. Role: **member** for all standard pilot members. Send the invite message from Checkpoint 21E Part 4.
+
+**What members should do in their first session**
+
+1. Accept the invite and create their account
+2. Complete `/welcome`
+3. Book a court reservation for a near-future date
+4. Cancel that reservation from Calendar or My Schedule
+5. Check the notification bell after each action
+6. Browse `/events` to see posted events
+7. Visit `/profile/security` → Change password → confirm it works
+
+**Feedback to collect after each member's first 1–2 sessions**
+
+1. Did you receive the signup confirmation email? Did it go to spam?
+2. Was the invite → signup → calendar flow clear? Where did you hesitate?
+3. Did you book a court successfully? If not, what happened?
+4. Did you receive a booking confirmation email?
+5. Did the notification bell update after booking or joining an event?
+6. Was anything confusing, broken, or missing?
+7. Did you change your password? Did it work?
+
+Classify each response as: **fix now** / **defer to post-pilot** / **training issue** (user confusion, not a product bug).
+
+---
+
+### Step 4 — Support and monitoring
+
+**When a member reports an issue, always request:**
+
+- Exact page or action they were on (e.g., "I was booking a court on the calendar")
+- What they expected and what happened instead
+- A screenshot if possible
+- Their device and browser (e.g., iPhone 15 / Safari, Android / Chrome)
+
+**First 24 hours — check once per day**
+
+- [ ] `/admin/members` — every invited member who has accepted shows **active** status; no one stuck on **pending** without explanation for more than 24 hours
+- [ ] `/admin/audit-log` — scan for unexpected system errors or repeated failed actions
+- [ ] Resend dashboard — no unexpected delivery failures for notification emails sent to members
+- [ ] Vercel → Functions logs — no repeated 500 errors on booking, cancellation, or profile routes
+
+**First 48 hours — extended checks**
+
+All 24-hour items, plus:
+
+- [ ] `/admin/events` — participant counts and event statuses are correct; no phantom participants
+- [ ] At least one booking and one cancellation completed by a real member (visible in `/admin/audit-log`)
+- [ ] At least one notification email delivered to a member (check Resend → Emails with a member's email address)
+- [ ] Notification bell and panel: spot-check on mobile and desktop during an active member session
+- [ ] First-wave feedback collected and classified (Step 3)
+
+**Supabase areas to check if issues are reported**
+
+- Authentication → Users: find accounts stuck in unconfirmed state (`email_confirmed_at` is null)
+- Authentication → Logs: look for OTP exchange errors, invalid code errors, or rate-limit hits
+- Database → Table Editor → `notification_deliveries`: check for unexpected `failed` rows
+
+**Resend areas to check**
+
+- Dashboard → Emails → filter by recipient email: confirm `delivered`
+- `bounced` → email address has a typo; re-invite with the corrected address
+- `failed` → check the error message; likely a configuration or domain issue
+
+---
+
+### Step 5 — Stop and pause conditions
+
+**Stop immediately — do not invite additional members — if any of the following occur:**
+
+| Condition | Action |
+|---|---|
+| Cross-club data exposure — any NST member sees Riverside data or vice versa | Stop all invites immediately. Do not investigate or fix speculatively. Escalate to the developer. No rollout resumes until the RLS exposure path is identified and confirmed closed. |
+| Any member cannot sign up after following all triage steps (invite link failure, email not delivered, PKCE error) | Pause new invites until the root cause is confirmed fixed. |
+| Any member cannot book a court after successful onboarding | Pause new invites. Check Vercel logs for `create_reservation` errors. Do not dismiss as user error without checking logs. |
+| Coordinator loses admin access or cannot manage the pilot independently | Restore from the backup admin. Do not expand the member wave until coordinator access is confirmed restored. |
+| A new unresolved data integrity issue appears in `/admin/audit-log` | Investigate before inviting more members. |
+
+**Pause new invites (but do not stop existing members) if:**
+
+- 3 or more members report the same confusing flow in the first wave — collect details before expanding
+- A non-critical bug appears that measurably affects all users (e.g., booking confirmation not showing)
+- Email notifications are failing consistently across multiple members — diagnose before expanding
+
+**Email delivery failure is a soft-fail:** if emails are not delivering but all other flows work, the pilot can continue for existing members. Resolve before expanding to the next wave.
+
+---
+
+### Step 6 — Known pilot limitations
+
+Do not promise these features to members during the pilot. They are confirmed deferred.
+
+| Limitation | Details |
+|---|---|
+| SMS / text notifications | Deferred post-pilot. Twilio is not configured. The opt-in UI is hidden from `/profile`. No text messages will be sent. |
+| Email change from profile | Not available in-app. Email addresses are set at invite time. If a member needs an email change, remove their account and re-invite with the correct address. |
+| Current password not required when changing password | The active session proves identity. A member on an unlocked device could change the password without knowing the original. Acceptable for a private club pilot; post-pilot hardening if needed. |
+| Multi-club account switching | Not implemented. Each account belongs to exactly one club. |
+| Waitlist promotion mode toggle | Deferred. Currently using offer-confirm mode only: admin promotes members from the waitlist manually after a spot opens. |
+| Coordinator cannot create courts | Courts are configured in `/admin/courts` by an admin. Coordinators can manage events, rosters, and members but court configuration requires the original admin. |
+
+---
+
+### Step 7 — Go/no-go decision
+
+**All of the following must be checked before inviting any members:**
+
+- [ ] Coordinator has completed Step 1 in full (admin access, test event, password changed)
+- [ ] All Step 2 pre-member checks pass with no unresolved items
+- [ ] Original admin account is active and confirmed as backup
+- [ ] Email notifications confirmed working (test announcement delivered in Resend)
+- [ ] No fake/test member accounts remain in North Shore Towers
+- [ ] Production URL `https://court-time.vercel.app` is stable
+
+**All of the following must be checked before expanding beyond the first wave:**
+
+- [ ] All first-wave members have onboarded successfully — no stuck signups
+- [ ] At least 3 members have completed at least one booking
+- [ ] No unresolved stop conditions from Step 5
+- [ ] First-wave feedback collected and classified — no item marked **fix now** is left open
+- [ ] Coordinator has independently triaged at least one member support question
+- [ ] 48-hour monitoring (Step 4) shows no unexpected system errors or delivery failures
+
+**Sign-off**
+
+When all go/no-go items above are checked, record:
+
+- Date first members invited: ___
+- Members in first wave: ___
+- Members onboarded successfully: ___
+- Date expanded to full group (if applicable): ___
+- Open issues at expansion: ___ (or "none")
