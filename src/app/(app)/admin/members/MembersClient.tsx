@@ -104,6 +104,7 @@ export default function MembersClient({
   const [revokeError, setRevokeError]   = useState<string | null>(null);
   const [revokingCode, setRevokingCode] = useState<string | null>(null);
   const [copiedCode, setCopiedCode]     = useState<string | null>(null);
+  const [copyError,  setCopyError]      = useState<string | null>(null);
   const [, startTransition]             = useTransition();
 
   // Sort
@@ -162,10 +163,12 @@ export default function MembersClient({
     const url = `${window.location.origin}/join/${code}`;
     try {
       await navigator.clipboard.writeText(url);
+      setCopyError(null);
       setCopiedCode(code);
       setTimeout(() => setCopiedCode((prev) => (prev === code ? null : prev)), 2000);
     } catch {
-      // clipboard unavailable — silent fail
+      setCopyError(code);
+      setTimeout(() => setCopyError((prev) => (prev === code ? null : prev)), 3000);
     }
   }
 
@@ -412,7 +415,11 @@ export default function MembersClient({
                     onClick={() => handleCopy(inv.code)}
                     className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                   >
-                    {copiedCode === inv.code ? "Copied!" : "Copy Link"}
+                    {copiedCode === inv.code
+                      ? "Copied!"
+                      : copyError === inv.code
+                      ? "Copy failed — select manually."
+                      : "Copy Link"}
                   </button>
                   <span className="text-gray-200 dark:text-gray-700 select-none">|</span>
                   <button

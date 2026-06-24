@@ -44,11 +44,11 @@ export default async function HelpPage() {
       ],
     },
     {
-      title: "SMS Notifications",
+      title: "Notifications",
       items: [
-        "SMS reminders are optional. You can opt in or out from your Profile.",
-        "Standard message and data rates may apply.",
-        "Reply STOP to any message to opt out immediately.",
+        "Booking confirmations and event updates are delivered via in-app notifications and email.",
+        "Manage which email alerts you receive in Profile → Notification Preferences.",
+        "Text (SMS) notifications are not currently available.",
       ],
     },
     {
@@ -56,6 +56,7 @@ export default async function HelpPage() {
       items: [
         "For booking issues, account questions, or anything else, contact the club admin directly.",
         "Your admin can adjust your role, reset your password, or update court availability.",
+        "When reporting an issue, include: what you were trying to do, which page you were on, what happened, and your device or browser if relevant. A screenshot is always helpful.",
       ],
     },
   ];

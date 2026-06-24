@@ -308,6 +308,19 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     [courts, selectedCourtIds]
   );
 
+  // Pre-index events by court so the render loop does a Map lookup instead of
+  // scanning the full events array for every court column on every render.
+  const eventsByCourtId = useMemo(() => {
+    const map = new Map<string, EventWithDetails[]>();
+    for (const ev of events) {
+      for (const cid of ev.court_ids) {
+        if (!map.has(cid)) map.set(cid, []);
+        map.get(cid)!.push(ev);
+      }
+    }
+    return map;
+  }, [events]);
+
   // Placed after filteredCourts/timeSlots to avoid the forward-reference TS error.
   useLayoutEffect(() => {
     const el = gridContainerRef.current;
@@ -805,9 +818,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                       })}
 
                       {/* Event blocks — colored, tappable, span the full column */}
-                      {events
-                        .filter(ev => ev.court_ids.includes(court.id))
-                        .map(ev => {
+                      {(eventsByCourtId.get(court.id) ?? []).map(ev => {
                           const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone, startHour);
                           const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone, startHour);
                           const top       = (startMins / 30) * rowH;
@@ -1010,7 +1021,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
             {bookingConflict && (
               <p className="mt-3 text-xs text-amber-600">
-                Conflicts with an existing booking — try 60 min or a different slot.
+                Conflicts with an existing booking. Try a shorter duration or a different slot.
               </p>
             )}
             {bookingError && (

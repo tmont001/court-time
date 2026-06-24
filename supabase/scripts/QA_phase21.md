@@ -2403,3 +2403,116 @@ When all go/no-go items above are checked, record:
 - Members onboarded successfully: ___
 - Date expanded to full group (if applicable): ___
 - Open issues at expansion: ___ (or "none")
+
+---
+
+## Phase 21F — Pilot Hardening & Calendar Performance Polish
+
+**Status: Complete ✓ — pnpm tsc and pnpm build pass**
+
+### Scope
+
+Low-risk improvements implemented while waiting for first-wave pilot feedback. No migrations. No booking/event/notification logic changed.
+
+### Changes made
+
+#### 1 — Calendar: event-by-court memoization
+
+**File:** `src/app/(app)/calendar/CalendarShell.tsx`
+
+Previously, the render loop ran `events.filter(ev => ev.court_ids.includes(court.id))` inside every court column on every render — scanning the full events array once per court. Added a `useMemo` (`eventsByCourtId`) that pre-indexes events into a `Map<courtId, EventWithDetails[]>` keyed by court. The render loop now does a single O(1) Map lookup per court column instead of O(events) filtering. The map rebuilds only when `events` changes.
+
+No change to event fetching, refreshTick behavior, or booking logic.
+
+#### 2 — Calendar: booking conflict message
+
+**File:** `src/app/(app)/calendar/CalendarShell.tsx`
+
+Changed the hardcoded conflict warning from:
+> "Conflicts with an existing booking — try 60 min or a different slot."
+
+To:
+> "Conflicts with an existing booking. Try a shorter duration or a different slot."
+
+The old message always said "try 60 min" regardless of the currently selected duration, which was confusing when the member was already on 60 min.
+
+#### 3 — Help page: SMS section replaced with accurate Notifications section
+
+**File:** `src/app/(app)/help/page.tsx`
+
+Removed the "SMS Notifications" section that told members to opt in/out from Profile (the opt-in UI was hidden in Phase 21E-B). Replaced with a "Notifications" section with accurate pilot-ready copy:
+- Email and in-app notifications are active
+- Notification Preferences are in Profile
+- SMS/text is not currently available
+
+#### 4 — Help page: issue reporting guidance added to "Need Help?"
+
+**File:** `src/app/(app)/help/page.tsx`
+
+Added a third item to the "Need Help?" section:
+> "When reporting an issue, include: what you were trying to do, which page you were on, what happened, and your device or browser if relevant. A screenshot is always helpful."
+
+#### 5 — Admin members: invite copy failure made visible
+
+**File:** `src/app/(app)/admin/members/MembersClient.tsx`
+
+Previously, if browser clipboard access was denied, the "Copy Link" button failed silently. Now:
+- On success: shows "Copied!" (unchanged)
+- On failure: shows "Copy failed — select manually." for 3 seconds, then resets
+
+Added `copyError` state alongside the existing `copiedCode` state.
+
+#### 6 — Admin announcement: confirmation copy updated
+
+**File:** `src/app/(app)/admin/settings/AnnouncementsSection.tsx`
+
+The confirmation step (amber inline box) already existed. Updated the copy to explicitly state what happens when an announcement is sent:
+> "All active members will receive an in-app notification. Members with announcement emails enabled will also receive an email. This cannot be undone."
+
+Previously the confirmation only said "Send this announcement to all active members?" with no mention of email.
+
+### Deferred items (not in this phase)
+
+| Item | Reason deferred |
+|---|---|
+| SMS/Twilio activation | Not configured; opt-in UI intentionally hidden for pilot |
+| Email change from profile | Requires PKCE flow; deferred post-pilot |
+| Multi-club account switching | Not in scope |
+| `fetchEvents` / `refreshTick` decoupling | Medium risk; needs usage data before changing |
+| Offset → cursor-based pagination | Acceptable at pilot scale; low practical risk |
+| Resend retry system | Pilot failures can be triaged in Resend dashboard manually |
+| External embeddable calendar / lobby/TV display | Future post-pilot feature; not in scope for Phase 21 |
+| Recurring events complexity | Post-pilot |
+| Payments | Post-pilot |
+
+### QA checklist
+
+**Calendar event optimization**
+- [ ] `/calendar` loads with all events displayed on the correct court columns
+- [ ] Events still appear when filtering to a single court (Select/Deselect all works correctly)
+- [ ] No console errors related to event rendering
+- [ ] Creating a new event (admin/pro) still appears on the calendar after refresh
+
+**Calendar conflict message**
+- [ ] Tap an occupied slot, set duration to 60 min → conflict message does not say "try 60 min"
+- [ ] Conflict message reads: "Conflicts with an existing booking. Try a shorter duration or a different slot."
+- [ ] "Confirm Booking" button remains disabled while conflict flag is set
+
+**Help page**
+- [ ] `/help` shows "Notifications" section (not "SMS Notifications")
+- [ ] Notifications section says SMS is not currently available
+- [ ] Notifications section mentions Profile → Notification Preferences
+- [ ] "Need Help?" section includes issue-reporting guidance
+- [ ] All other sections (Booking Rules, Cancellation Policy) still appear correctly
+
+**Invite copy failure**
+- [ ] `/admin/members` → pending invite → Copy Link → success: shows "Copied!" for 2 s
+- [ ] Simulate clipboard denial (DevTools → Permissions → Clipboard API → deny) → Copy Link → shows "Copy failed — select manually." for 3 s, then resets
+- [ ] Both copiedCode and copyError reset independently without affecting each other
+
+**Announcement confirmation**
+- [ ] `/admin/settings` → Announcements → fill in subject and message → click "Send Announcement"
+- [ ] Amber confirmation box appears with: "Send to all active members?" and the explanation about in-app + email + cannot be undone
+- [ ] "Yes, send it" sends the announcement; success message appears
+- [ ] "Cancel" dismisses confirmation; form values are preserved
+- [ ] Empty subject or body keeps "Send Announcement" button disabled

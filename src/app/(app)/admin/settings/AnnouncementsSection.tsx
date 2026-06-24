@@ -101,7 +101,11 @@ export default function AnnouncementsSection() {
         {confirming ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-3 py-2.5 space-y-2">
             <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-              Send this announcement to all active members?
+              Send to all active members?
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              All active members will receive an in-app notification. Members with
+              announcement emails enabled will also receive an email. This cannot be undone.
             </p>
             <div className="flex gap-2">
               <button
