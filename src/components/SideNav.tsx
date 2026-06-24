@@ -61,7 +61,7 @@ export default function SideNav() {
 
   return (
     <nav
-      className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-56 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40"
+      className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-56 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40 motion-safe:transition-colors motion-safe:duration-150"
       aria-label="Main navigation"
     >
       {/* Brand header — same height as the page Header (h-14 = 3.5rem) */}
@@ -77,7 +77,7 @@ export default function SideNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium motion-safe:transition-colors duration-150 ${
                 isActive
                   ? "bg-gray-100 dark:bg-gray-800 text-accent"
                   : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"

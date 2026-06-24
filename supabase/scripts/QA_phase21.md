@@ -2647,3 +2647,352 @@ No migrations. No RLS changes. No RPC changes. No component-level edits.
 - [ ] Custom duration text input in CreateEventSheet (Step 2) no longer zooms on mobile
 - [ ] Booking rules admin form inputs no longer zoom on mobile
 
+
+---
+
+## Phase 21H-A — Visual Design Polish: Theme Toggle
+
+**Status: Implemented — pending QA and commit**
+
+Branch: `phase-21h-theme-visual-polish`
+
+### Summary
+
+Phase 21H-A adds a manual light/dark mode toggle and a controlled set of
+low-risk visual polish improvements. No booking, event, waitlist, notification,
+auth, or admin permission logic was changed. No migrations. No schema changes.
+No new packages added.
+
+---
+
+### Dark mode toggle implementation
+
+Tailwind's `darkMode` was changed from `"media"` (OS-only) to `"class"` (class-controlled).
+All existing `dark:` classes throughout the app continue to work identically —
+they now respond to the presence of the `dark` class on `<html>` instead of the
+OS media query.
+
+**Flash-of-wrong-theme prevention:**
+A small synchronous inline `<script>` is injected in `<head>` before the first
+paint. It reads `localStorage.getItem('court-time-theme')` and adds the `dark`
+class to `<html>` immediately if: (a) the user has explicitly saved a preference
+of `"dark"`, or (b) no preference is saved and the OS prefers dark. This
+eliminates the flash on hard refresh without any external package.
+
+**Hydration mismatch prevention:**
+`suppressHydrationWarning` is added to `<html>`. React ignores class differences
+on this element during hydration, avoiding the "class mismatch" warning caused by
+the blocking script running before React can compare server/client output.
+
+**Preference storage:**
+`localStorage` key `court-time-theme` stores `"light"` or `"dark"` (or is absent
+for "follow system"). This is a device-local UI preference — it is not stored in
+Supabase or the user profile.
+
+**Package used:** None. No `next-themes` or other library.
+
+---
+
+### ThemeToggle component
+
+**File:** `src/components/ThemeToggle.tsx` (new)
+
+- Client component (`"use client"`)
+- Renders a `32×32` accessible button with sun (in dark mode) or moon (in light
+  mode) SVG icon, toggling the `dark` class on `document.documentElement` and
+  writing to `localStorage`
+- Before mount (`useState(false)` → `useEffect` sets `true`): renders a
+  same-size `<div aria-hidden>` placeholder to avoid React hydration diff
+- `aria-label` is dynamic: `"Switch to dark mode"` / `"Switch to light mode"`
+- Includes `focus-visible:ring-2 focus-visible:ring-accent` for keyboard
+  navigation
+- Hover: `hover:text-gray-700 dark:hover:text-gray-200`
+- Motion: `motion-safe:transition-colors` only
+
+**Placement:** Injected in `src/components/Header.tsx` immediately left of the
+`<NotificationBell />`, grouped in a `flex items-center gap-0.5` wrapper. The
+three-element header layout (logo | title | actions) is unchanged.
+
+---
+
+### Safe visual polish
+
+| Component | Change |
+|---|---|
+| `SideNav.tsx` | Changed `transition-colors` → `motion-safe:transition-colors duration-150` on nav links |
+| `BottomNav.tsx` | Added `motion-safe:transition-colors duration-150` to tab link items |
+| `NotificationBell.tsx` | Added `hover:text-gray-700 dark:hover:text-gray-200`, `motion-safe:transition-colors`, `focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2`, `rounded` to the button |
+| `profile/page.tsx` | Added `hover:bg-gray-50 dark:hover:bg-gray-700/50 motion-safe:transition-colors` to all 6 profile list link rows |
+| `globals.css` | Added `@media (prefers-reduced-motion: reduce)` blanket rule suppressing all transitions/animations at the CSS level as a safety net |
+
+---
+
+### Reduced motion
+
+Two layers of protection:
+
+1. **Tailwind `motion-safe:` variant** — all new transition classes added in
+   this phase use `motion-safe:transition-colors` instead of `transition-colors`.
+   Users with `prefers-reduced-motion: reduce` never see these transitions.
+
+2. **CSS-level blanket rule in `globals.css`** — sets `transition-duration:
+   0.01ms !important` and `animation-duration: 0.01ms !important` for all
+   elements when reduced motion is requested. Catches any transitions not using
+   the Tailwind variant.
+
+---
+
+### Explicitly deferred
+
+| Item | Reason |
+|---|---|
+| Calendar slot hover color (blue → accent tint) | `bg-accent/5` requires CSS variable in RGB triplet format; current `--accent` is hex. Non-trivial to change safely mid-pilot. Defer to calendar polish phase. |
+| Sheet/modal entrance animations | Moderate risk on mobile Safari; not approved for this phase. |
+| Focus ring sweep across form components | Would create large diff; limited to ThemeToggle and NotificationBell only per approved scope. |
+| SideNav dark mode toggle placement | Only placed in Header; sidebar option deferred as it would require client-side SideNav refactor. |
+| SVG chevron component for profile rows | Low user impact; defer to general component polish. |
+| Page transition animations | Not approved for pilot phase. |
+| FAB shadow/hover polish | Low priority; defer. |
+| Calendar loading skeleton | Complex to geometry-match the timeline grid; defer. |
+
+---
+
+### Files changed
+
+| File | What changed |
+|---|---|
+| `tailwind.config.ts` | `darkMode: "media"` → `"class"` |
+| `src/app/layout.tsx` | Added `suppressHydrationWarning` on `<html>`, explicit `<head>` with blocking theme script |
+| `src/components/ThemeToggle.tsx` | **New file** — sun/moon toggle component |
+| `src/components/Header.tsx` | Added `<ThemeToggle />` in right-side action group |
+| `src/components/SideNav.tsx` | `transition-colors` → `motion-safe:transition-colors duration-150` |
+| `src/components/BottomNav.tsx` | Added `motion-safe:transition-colors duration-150` |
+| `src/components/NotificationBell.tsx` | Added hover, focus-visible, and motion-safe transition to button |
+| `src/app/(app)/profile/page.tsx` | Added hover + transition to all 6 list link rows |
+| `src/app/globals.css` | Added reduced-motion blanket rule |
+
+No new npm packages. No migrations. No schema changes. No RLS changes.
+
+---
+
+### QA checklist — Phase 21H-A
+
+#### Theme toggle — behavior
+
+- [ ] Toggle icon appears in the header to the left of the notification bell on all pages
+- [ ] Toggle shows moon icon in light mode and sun icon in dark mode
+- [ ] Clicking toggle immediately switches the entire app to dark/light without flash or layout shift
+- [ ] Refreshing the page preserves the toggled mode (localStorage persisted)
+- [ ] Opening a new tab reflects the saved preference
+- [ ] Clearing `localStorage` and refreshing falls back to OS system preference
+- [ ] Toggle `aria-label` is correct: "Switch to dark mode" in light, "Switch to light mode" in dark
+
+#### Theme toggle — hydration and flash
+
+- [ ] Hard refresh in Chrome/Safari/Firefox: no flash-of-wrong-theme in either light or dark saved state
+- [ ] No React hydration warnings in browser console
+- [ ] No "Prop className did not match" warnings
+
+#### Theme toggle — all 5 club themes
+
+Test by changing the club theme in Admin → Settings → Branding:
+
+- [ ] Classic Gray: light and dark look correct with toggle
+- [ ] Forest Green: light and dark look correct with toggle
+- [ ] Clay Court: light and dark look correct with toggle
+- [ ] Ocean Blue: light and dark look correct with toggle
+- [ ] Royal Purple: light and dark look correct with toggle
+
+#### Theme toggle — OS preference override
+
+- [ ] OS set to dark + toggle explicitly set to light: app shows light mode
+- [ ] OS set to light + toggle explicitly set to dark: app shows dark mode
+- [ ] After clearing localStorage, OS preference takes over again
+
+#### Navigation polish
+
+- [ ] SideNav active link: `bg-gray-100 dark:bg-gray-800 text-accent` — unchanged
+- [ ] SideNav link hover transitions at ~150ms smoothly
+- [ ] BottomNav active tab: `border-t-2 border-accent text-accent` — unchanged
+- [ ] BottomNav tab changes apply a brief color transition
+- [ ] Notification bell has visible hover color change on mouse-over
+- [ ] Notification bell has visible focus ring on keyboard Tab navigation
+
+#### Profile page
+
+- [ ] Tapping/hovering any list row shows a subtle background tint
+- [ ] Touch targets are unchanged (rows are still full-width tappable)
+- [ ] Active/visited state of links unchanged
+
+#### Reduced motion
+
+- [ ] With OS `prefers-reduced-motion: reduce` enabled: no transitions fire on
+      nav hover, notification bell hover, or profile row hover
+- [ ] With `prefers-reduced-motion: no-preference`: transitions fire normally
+
+#### Accessibility
+
+- [ ] ThemeToggle button is reachable by keyboard Tab and activatable with Enter/Space
+- [ ] ThemeToggle focus ring is visible in both light and dark mode
+- [ ] NotificationBell focus ring is visible in both light and dark mode
+- [ ] No interactive element lost its focus indicator
+
+#### Regression — core flows unchanged
+
+- [ ] Court booking on `/calendar`: tap slot → booking sheet → confirm → slot shows "You"
+- [ ] Event join on `/events`: join → Joined badge appears
+- [ ] Notification bell: unread count increments in real time; sheet opens correctly
+- [ ] Admin pages load without visual regression in both light and dark mode
+- [ ] Calendar dark mode grid borders, date pills, and event blocks render correctly
+
+#### Desktop layout
+
+- [ ] Header: logo | title | [toggle][bell] layout correct; no crowding on narrow desktop
+- [ ] SideNav visible; sidebar and content still properly offset by `md:pl-56`
+- [ ] ThemeToggle and NotificationBell both visible at `768px` viewport width
+
+#### Mobile layout
+
+- [ ] Header elements fit within `h-14` at 375px (iPhone SE width)
+- [ ] BottomNav visible; safe area insets respected
+- [ ] ThemeToggle tap target is reachable (button is 32×32; well within reach zone)
+
+
+---
+
+## Phase 21H-A Refinement Note
+
+**Status: Implemented — replaces initial Phase 21H-A implementation above**
+
+Branch: `phase-21h-theme-visual-polish`
+
+### Issues found in review and root causes
+
+**Issue 1 — Profile dark background in light mode**
+
+Root cause: `globals.css` defined `--accent` and `--surface` using
+`@media (prefers-color-scheme: dark)`. After switching Tailwind to
+`darkMode: "class"`, Tailwind's `dark:` utilities correctly follow the
+`.dark` class on `<html>`, but `--surface` (used by `.app-main-content`
+on every page) still followed the OS. When the user's OS preference and
+manual toggle disagreed — e.g. OS dark + user toggled to light — `--surface`
+stayed dark while all other backgrounds went light, producing a very dark
+profile/content-area background in a light-mode session.
+
+**Issue 2 — Navigation flicker**
+
+Same root cause as issue 1. During page transitions, `.app-main-content`
+briefly shows its `background-color: var(--surface)` while the loading
+skeleton elements draw on top. When `--surface` was media-query-driven,
+the color was inconsistent with the Tailwind dark: classes on the skeleton
+elements, creating a visible flash. Secondary cause: `events/loading.tsx`
+and `my-schedule/loading.tsx` had explicit `bg-gray-50 dark:bg-gray-900`
+on their content wrapper instead of inheriting from `app-main-content`.
+Five real-page scroll containers across `/events`, `/my-schedule`, and
+three admin pages also hardcoded `bg-gray-50 dark:bg-gray-900`, overriding
+`var(--surface)` and breaking the per-club theme surface on non-gray themes.
+
+**Issue 3 — Toggle abrupt feel**
+
+No `transition` was present on the key layout surfaces (body, header, sidebar,
+bottom nav, page content area). Switching the `.dark` class caused all
+backgrounds to snap instantly.
+
+---
+
+### Fixes applied
+
+**`globals.css` — CSS variable selectors rewritten**
+
+Replaced all `@media (prefers-color-scheme: dark)` overrides for `--accent`
+and `--surface` with `.dark` and `.dark .theme-*` class selectors:
+
+```css
+/* Before (wrong — follows OS, not toggle) */
+:root { --accent: #374151; --surface: #f4f5f6; }
+@media (prefers-color-scheme: dark) {
+  :root { --accent: #d1d5db; --surface: #11161f; }
+}
+
+/* After (correct — follows .dark class on <html>) */
+:root { --accent: #374151; --surface: #f4f5f6; }
+.dark { --accent: #d1d5db; --surface: #11161f; }
+.theme-forest-green       { --accent: #15803d; --surface: #f0faf3; }
+.dark .theme-forest-green { --accent: #4ade80; --surface: #0e1a13; }
+/* … same pattern for clay-court, ocean-blue, royal-purple */
+```
+
+`.dark` specificity (0,1,0) — same as `:root` — wins via source order.
+`.dark .theme-*` specificity (0,2,0) — wins over `.theme-*` (0,1,0). CSS
+variables inherit, so the correct surface and accent cascade to all
+descendants of the theme div.
+
+**`globals.css` — `app-main-content` transition**
+
+Added `transition: background-color 150ms ease-out` under
+`@media (prefers-reduced-motion: no-preference)` so the page content area
+transitions smoothly when the toggle fires (the background changes because
+`var(--surface)` changes).
+
+**`src/app/layout.tsx` — body and wrapper transition**
+
+Added `motion-safe:transition-colors motion-safe:duration-150` to `<body>`
+and the `min-h-screen` wrapper div.
+
+**`src/components/Header.tsx` — header transition**
+
+Added `motion-safe:transition-colors motion-safe:duration-150` to `<header>`.
+
+**`src/components/SideNav.tsx` — sidebar transition**
+
+Added `motion-safe:transition-colors motion-safe:duration-150` to `<nav>`.
+
+**`src/components/BottomNav.tsx` — bottom nav transition**
+
+Added `motion-safe:transition-colors motion-safe:duration-150` to `<nav>`.
+
+**Background cleanup — 7 files**
+
+Removed `bg-gray-50 dark:bg-gray-900` from scroll container wrappers in:
+- `src/app/(app)/events/loading.tsx`
+- `src/app/(app)/my-schedule/loading.tsx`
+- `src/app/(app)/events/page.tsx`
+- `src/app/(app)/my-schedule/page.tsx`
+- `src/app/(app)/admin/audit-log/page.tsx`
+- `src/app/(app)/admin/members/page.tsx`
+- `src/app/(app)/admin/events/page.tsx`
+
+These elements all live inside `<main class="app-main-content">` which
+provides `background-color: var(--surface)`. The explicit override was
+incorrect: it used a flat gray regardless of club theme, and it ignored
+the manual dark mode toggle (contributing to flicker).
+
+---
+
+### Known remaining limitations
+
+- The calendar's open-slot hover uses `hover:bg-blue-50 dark:hover:bg-blue-900/20`
+  (hardcoded blue, not accent tint). This is a pre-Phase 21H limitation deferred
+  because `bg-accent/5` requires the CSS variable to be a space-separated RGB
+  triplet, not hex. Defer to a dedicated calendar polish phase.
+- The `/calendar` loading skeleton is not themed to `var(--surface)` (it uses
+  `bg-white dark:bg-gray-900` for the grid background, which is intentional for
+  calendar rendering).
+- On first server-render (before hydration), ThemeToggle shows a same-size `<div>`
+  placeholder. It snaps to the correct icon immediately on hydration. No layout
+  shift because the placeholder dimensions match the button.
+
+---
+
+### Additional QA items for the refinement
+
+- [ ] `/profile` background in light mode matches the rest of the app (no dark gutter)
+- [ ] `/profile` background in dark mode is correct (dark surface, white cards)
+- [ ] OS dark + manual toggle to light → profile, events, my-schedule, admin pages all show light surface
+- [ ] OS light + manual toggle to dark → all pages show dark surface
+- [ ] `/events`, `/my-schedule`, `/admin/members`, `/admin/events`, `/admin/audit-log` surfaces now match `var(--surface)` for all 5 club themes
+- [ ] Theme toggle: header, sidebar, bottom nav, and page content all transition in 150ms — no snapping
+- [ ] Navigation between `/events` and `/my-schedule` no longer flickers gray-50 before the real page loads
+- [ ] `prefers-reduced-motion: reduce` — toggle is instant (no transition), `animate-pulse` skeletons stop
+- [ ] No new console warnings or errors
+

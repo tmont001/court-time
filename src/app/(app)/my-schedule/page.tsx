@@ -286,7 +286,7 @@ export default async function MySchedulePage() {
       <Header screenTitle="My Schedule" />
 
       <div
-        className="overflow-y-auto bg-gray-50 dark:bg-gray-900"
+        className="overflow-y-auto"
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">

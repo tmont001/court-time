@@ -57,7 +57,7 @@ export default function NotificationBell() {
       <button
         onClick={() => setOpen(o => !o)}
         aria-label="Notifications"
-        className="w-8 h-8 flex items-center justify-center text-gray-500"
+        className="w-8 h-8 flex items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
         <span className="relative">
           <svg

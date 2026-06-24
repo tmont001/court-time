@@ -13,7 +13,7 @@ export default function EventsLoading() {
       </header>
 
       <div
-        className="overflow-hidden bg-gray-50 dark:bg-gray-900"
+        className="overflow-hidden"
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
