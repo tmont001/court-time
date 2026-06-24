@@ -523,13 +523,15 @@ export default function CreateEventSheet({
               {/* Capacity */}
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Capacity (spots)</label>
-                <input
-                  type="number"
+                <select
                   value={capacity}
-                  onChange={e => setCapacity(Math.max(1, Number(e.target.value)))}
-                  min={1}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
-                />
+                  onChange={e => setCapacity(Number(e.target.value))}
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 bg-white"
+                >
+                  {Array.from({ length: Math.max(50, capacity) }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Summary */}

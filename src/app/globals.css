@@ -50,6 +50,19 @@
   }
 }
 
+/* ── Mobile Safari input zoom prevention ────────────────────────────────────── */
+/* iOS Safari auto-zooms when a focused form control has font-size < 16px.
+   This sets a 16px floor on mobile without changing desktop sizing (text-sm
+   classes remain effective on sm: breakpoints and above). Checkboxes and
+   radio buttons are excluded — they are not text inputs and should not change. */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* AppLayout main content: on mobile pads for the fixed bottom nav;
    on desktop (sidebar mode) the sidebar is horizontal so no bottom pad.
    The subtle theme surface shows through in any gutters around centered

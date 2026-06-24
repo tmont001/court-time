@@ -2516,3 +2516,134 @@ Previously the confirmation only said "Send this announcement to all active memb
 - [ ] "Yes, send it" sends the announcement; success message appears
 - [ ] "Cancel" dismisses confirmation; form values are preserved
 - [ ] Empty subject or body keeps "Send Announcement" button disabled
+
+---
+
+## Phase 21G — Mobile Numeric Input Polish
+
+**Status: Complete ✓ — pnpm tsc and pnpm build pass**
+
+### Goal
+
+Replace clunky `type="number"` inputs with native `<select>` controls where the field is bounded and small-range, so mobile users get a native picker instead of a numeric keyboard.
+
+### Numeric inputs audited
+
+| File | Field | Action | Reason |
+|---|---|---|---|
+| `CreateEventSheet.tsx` (Step 4) | Capacity (spots) | **Converted to `<select>`** | Bounded 1–50, small range, mobile usability complaint |
+| `CreateEventSheet.tsx` (Step 2) | Custom duration (`inputMode="numeric"`) | Left unchanged | Freeform arbitrary value; existing pill buttons already handle common cases |
+| `BookingRulesForm.tsx` | Booking window days (1–365) | Left unchanged | Range too wide for select; admin-only form; desktop primary use |
+| `BookingRulesForm.tsx` | Cancellation window hours (0–168) | Left unchanged | Range too wide; admin-only |
+| `BookingRulesForm.tsx` | Cancellation grace period minutes (0–60) | Left unchanged | Admin-only; arbitrary values useful |
+| `BookingRulesForm.tsx` | Waitlist offer window hours (1–72) | Left unchanged | Range too wide; admin-only |
+
+### What changed
+
+**File:** `src/app/(app)/calendar/CreateEventSheet.tsx`
+
+`type="number"` capacity input in Step 4 replaced with `<select>`.
+
+**Before:** A plain number input requiring numeric keyboard entry on mobile. No max defined; `Math.max(1, ...)` guard in onChange.
+
+**After:** A native `<select>` showing options 1–50 (dynamically expanded if `event_type.default_capacity` exceeds 50). Mobile users see a native picker wheel. Desktop users see a dropdown. No `Math.max` guard needed since only valid options are selectable.
+
+**Option range:** 1–50. If the event type's `default_capacity` is above 50 (unusual for a tennis club), the select expands to include it: `Array.from({ length: Math.max(50, capacity) }, ...)`.
+
+**Form submission:** Unchanged. `capacity` state is passed directly as `p_capacity` to the `createEvent` action — no FormData, no name attribute to change.
+
+**Backend validation:** The `create_event` RPC takes `p_capacity int` with no explicit max CHECK constraint. The only enforced minimum is `NOT NULL`. The frontend `capacity < 1` submit guard is preserved.
+
+**Default values:** Preserved. `setCapacity(type.default_capacity)` fires when a type is selected (line ~204); the select shows the event type's default pre-selected.
+
+### Mobile QA checklist
+
+- [ ] Admin/pro: tap `+ Event` on calendar → proceed to Step 4 → Capacity field shows a native picker (not a numeric keyboard) on mobile
+- [ ] Capacity picker shows options 1 through at least 50
+- [ ] Default value matches the event type's configured default capacity
+- [ ] Changing capacity updates the event summary line below the select (e.g. "4 spots")
+- [ ] Creating an event with capacity 1 works correctly
+- [ ] Creating an event with capacity 10 works correctly (joins fill up at 10, 11th join hits waitlist)
+- [ ] "Create Event" button remains disabled if capacity drops below 1 (edge case guard unchanged)
+
+### Desktop QA checklist
+
+- [ ] Capacity field renders as a clean dropdown on desktop
+- [ ] Dropdown styling matches surrounding form elements (border, padding, font size, dark mode)
+- [ ] Dark mode: select background matches the input style (`dark:bg-gray-700`)
+
+### Regression checklist
+
+- [ ] Step 4 summary line shows correct capacity count
+- [ ] Event creation completes and event appears on calendar
+- [ ] Custom duration (pill buttons + Custom text input) in Step 2 unaffected
+- [ ] BookingRulesForm fields unaffected
+
+---
+
+## Phase 21G-B — Mobile Safari Input Zoom Fix
+
+**Status: Complete ✓ — pnpm tsc and pnpm build pass**
+
+### Problem
+
+iOS Safari automatically zooms in when a focused form control (`<input>`, `<select>`, or `<textarea>`) has `font-size < 16px`. The app's standard Tailwind class `text-sm` is 14px (0.875rem), which triggers this zoom on virtually every form field in the app — sign-in, profile, event creation, admin settings, announcements, etc.
+
+The fix must not disable user-initiated zoom (`user-scalable=no` is prohibited; it violates WCAG 1.4.4 and harms low-vision users).
+
+### Approach
+
+A single global CSS rule in `src/app/globals.css` sets a 16px floor on mobile (below the Tailwind `sm:` breakpoint of 640px). At `sm:` and above, no override is applied — Tailwind's `text-sm` classes continue to control sizing on desktop. This covers all form controls in the entire app without touching individual component files.
+
+Checkboxes and radio buttons are excluded (`input:not([type="checkbox"]):not([type="radio"])`) — they have no text to resize.
+
+The rule uses `max-width: 639px` (one pixel below Tailwind's `sm: 640px`) so it activates on exactly the same breakpoint boundary as `sm:` Tailwind classes.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/globals.css` | Added `@media (max-width: 639px)` rule setting `font-size: 16px` on `input`, `select`, `textarea` (excluding checkbox and radio) |
+
+No migrations. No RLS changes. No RPC changes. No component-level edits.
+
+### CSS added
+
+```css
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+```
+
+### What is NOT changed
+
+- `user-scalable` is not changed. User-initiated pinch-to-zoom is fully preserved.
+- Viewport meta tag is not touched.
+- Desktop font sizes (`text-sm`, `text-xs`) are unchanged — this rule fires only below 640px.
+- Component class lists are unchanged — no per-file edits were required.
+
+### Mobile QA checklist
+
+- [ ] Sign-in page: tap email field → page does NOT zoom in on iOS Safari
+- [ ] Sign-in page: tap password field → page does NOT zoom in
+- [ ] Profile → Notification Preferences: toggle labels do not trigger zoom (no inputs there)
+- [ ] Profile → Change Password: tap "New password" field → no zoom
+- [ ] Calendar → Create event (admin/pro): tap Title field (Step 2) → no zoom
+- [ ] Calendar → Create event (admin/pro): open Capacity select (Step 4) → no zoom
+- [ ] Admin → Settings → Announcements: tap Subject field → no zoom
+- [ ] Admin → Settings → Announcements: tap Message textarea → no zoom
+- [ ] Admin → Settings → Booking Rules: tap any numeric input → no zoom
+- [ ] Pinch-to-zoom still works on all pages (user zoom not disabled)
+- [ ] Sign-in form appearance looks correct (no oversized text at sm: and above)
+
+### Regression checklist
+
+- [ ] Desktop: all form fields display `text-sm` sizing (14px) as before — global rule does not apply above 639px
+- [ ] Dark mode: no styling regressions on inputs/selects/textareas
+- [ ] Custom duration text input in CreateEventSheet (Step 2) no longer zooms on mobile
+- [ ] Booking rules admin form inputs no longer zoom on mobile
+
