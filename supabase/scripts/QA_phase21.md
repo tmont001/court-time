@@ -3660,3 +3660,94 @@ panel appears to drop from the notification bell corner.
 - [ ] BottomSheet drag-to-close still works on mobile
 - [ ] Header/nav polish from 21H-B/C unchanged
 
+---
+
+## Checkpoint 21H-E — Mobile Safari form-control theme bugfix
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass; awaiting real-device QA**
+
+### Problem
+
+On a real iPhone in light mode, text inputs inside bottom sheets rendered with a black
+background. Surrounding sheet was white; inputs were black. Affected:
+- Block Court sheet Reason input (CreateMaintenanceSheet.tsx)
+- Create Event Title input (CreateEventSheet.tsx)
+Did not reproduce in desktop responsive mode (Chrome DevTools).
+
+### Root cause
+
+Two compounding issues:
+
+1. `colorScheme: "light dark"` in `layout.tsx` Viewport generates
+   `<meta name="color-scheme" content="light dark">`. This tells Safari the page
+   supports both color schemes. Without a CSS `color-scheme` property set to override
+   this, Safari resolves form control appearance using the **OS system preference** —
+   not the app's class-based manual toggle. If the iPhone OS is "Dark Mode" but the
+   app is in light mode, Safari renders `<input>`, `<select>`, `<textarea>` system
+   chrome in dark mode (black backgrounds, white text).
+
+2. Three inputs in the sheet forms lacked an explicit `bg-white` (`background-color:
+   white`) for light mode. They relied on browser defaults which, under the dark
+   `color-scheme` context Safari selected, rendered as dark.
+
+### Fix
+
+**`src/app/globals.css`** — Added `color-scheme` to the `:root` and `.dark` blocks.
+These map exactly to the manual theme toggle (blocking `<script>` in `layout.tsx`
+adds/removes `.dark` on `<html>` from `localStorage`). CSS `color-scheme` on `:root`
+takes precedence over the meta tag for all form controls within the page.
+
+```css
+:root { --accent: #374151; --surface: #f4f5f6; color-scheme: light; }
+.dark { --accent: #d1d5db; --surface: #11161f; color-scheme: dark;  }
+```
+
+**`src/app/(app)/calendar/CreateEventSheet.tsx`** — Added `bg-white` to:
+- Title input (was missing; had `dark:bg-gray-700` but no light-mode bg)
+- Custom duration input (same issue)
+
+**`src/app/(app)/calendar/CreateMaintenanceSheet.tsx`** — Added `bg-white` to:
+- Notes/Reason input (was missing; had `dark:bg-gray-700` but no light-mode bg)
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/globals.css` | Added `color-scheme: light` to `:root` block; `color-scheme: dark` to `.dark` block |
+| `src/app/(app)/calendar/CreateEventSheet.tsx` | Added `bg-white` to title input (line 349) and custom duration input (line 441) |
+| `src/app/(app)/calendar/CreateMaintenanceSheet.tsx` | Added `bg-white` to notes input (line 310) |
+
+No migrations. No logic changes. No new packages.
+
+### Manual QA checklist
+
+**Light mode on real iPhone (primary test):**
+- [ ] Block Court sheet Reason input: white background, dark text, readable placeholder
+- [ ] Create Event sheet Title input: white background, dark text, readable placeholder
+- [ ] Create Event sheet custom duration input: white background, dark text
+- [ ] All other sheet inputs/selects look correct in light mode
+- [ ] Profile form inputs (profile page, security page, notifications page) look correct in light mode
+
+**Dark mode on real iPhone:**
+- [ ] Block Court sheet Reason input: dark background (gray-700), light text, readable placeholder
+- [ ] Create Event sheet Title input: dark background, light text, readable placeholder
+- [ ] All other sheet inputs/selects look correct in dark mode
+
+**OS dark + App light (the original bug case):**
+- [ ] iPhone OS set to Dark Mode; app manually toggled to light mode
+- [ ] Block Court sheet Reason input renders with white background (not black)
+- [ ] Create Event sheet Title input renders with white background (not black)
+
+**16px zoom fix preserved:**
+- [ ] Tapping any input on iPhone does NOT trigger page zoom
+- [ ] `user-scalable` is NOT set (user can still pinch-zoom)
+
+**No regressions:**
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+- [ ] Sheet animations from 21H-D unchanged
+- [ ] Button/card/form-flow polish from 21H-C unchanged
+- [ ] Header controls alignment from 21H-B unchanged
+- [ ] Booking flow works end-to-end (no logic change)
+- [ ] Event creation flow works end-to-end (no logic change)
+- [ ] Block court flow works end-to-end (no logic change)
+

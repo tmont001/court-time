@@ -346,7 +346,7 @@ export default function CreateEventSheet({
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder={selectedType.label}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                 />
               </div>
 
@@ -438,7 +438,7 @@ export default function CreateEventSheet({
                       value={customDurationText}
                       onChange={e => handleCustomDuration(e.target.value)}
                       placeholder="e.g. 75"
-                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                     />
                     <span className="text-xs text-gray-500">min</span>
                     {customDurationText.length > 0 && !customDurationValid && (

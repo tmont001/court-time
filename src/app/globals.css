@@ -9,8 +9,8 @@
    the OS media query. Prior to Phase 21H, @media (prefers-color-scheme: dark)
    was used here, which caused --surface to disagree with Tailwind's dark:
    classes when the user's OS preference and manual toggle differed. */
-:root                { --accent: #374151; --surface: #f4f5f6; } /* classic-gray light */
-.dark                { --accent: #d1d5db; --surface: #11161f; } /* classic-gray dark  */
+:root                { --accent: #374151; --surface: #f4f5f6; color-scheme: light; } /* classic-gray light */
+.dark                { --accent: #d1d5db; --surface: #11161f; color-scheme: dark;  } /* classic-gray dark  */
 
 .theme-forest-green       { --accent: #15803d; --surface: #f0faf3; }
 .dark .theme-forest-green { --accent: #4ade80; --surface: #0e1a13; }
