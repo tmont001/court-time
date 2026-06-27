@@ -19,9 +19,10 @@ export default async function AdminMembersPage() {
 
   if (profile?.role !== "admin") redirect("/calendar");
 
-  const [membersResult, invitesResult] = await Promise.all([
+  const [membersResult, invitesResult, rosterResult] = await Promise.all([
     supabase.rpc("get_members"),
     supabase.rpc("get_club_invites"),
+    supabase.rpc("get_roster_members"),
   ]);
 
   const now = new Date();
@@ -47,6 +48,7 @@ export default async function AdminMembersPage() {
           </div>
           <MembersClient
             members={membersResult.data ?? []}
+            rosterMembers={rosterResult.data ?? []}
             pendingInvites={pendingInvites}
             currentUserId={user.id}
             membersError={membersResult.error?.message ?? null}

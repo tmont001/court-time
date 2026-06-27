@@ -3906,3 +3906,147 @@ No existing tables altered. No existing RLS policies changed. No UI changes.
 - [ ] Booking flow works end-to-end
 - [ ] Event join/leave flows work
 - [ ] Notifications unchanged
+
+---
+
+## Checkpoint 21I-B — Admin Add Member UI + Unified List
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass; awaiting real-device QA**
+
+### What was added
+
+Admin UI on `/admin/members` for creating, editing, and deleting offline/unclaimed
+roster members. The member list now shows both auth-linked members (from
+`get_members`) and unclaimed roster members (from `get_roster_members`) in a
+single unified, sortable view.
+
+### UI behavior
+
+**Add Member button:**
+- Solid dark button next to existing "+ Invite" button
+- Opens `AddMemberSheet` bottom sheet
+
+**AddMemberSheet form:**
+- Title: "Add Member"
+- Helper text: "Add someone to the club roster. They do not need an online account yet."
+- Fields: First name (required), Last name (required), Email (optional), Phone (optional), Role (pill buttons: Member/Pro/Admin, default Member), Notes (optional)
+- Email helper: "Optional — you can add this later if they want to sign in."
+- Role helper: "For your reference. App access requires signing up."
+- On success: green banner "Added [Name] to the roster." with "Add Another" and "Done" buttons
+- On error: red text below submit button with friendly messages
+
+**Edit mode:**
+- Same sheet with title "Edit Member", pre-filled fields
+- Submit calls `update_roster_member` RPC
+- On success: closes sheet and refreshes
+
+**Unified member list:**
+- Auth-linked members: same card design as before (name, status badge, email, phone, join date, role dropdown, deactivate button)
+- Roster members: card with name, amber "No account yet" badge, email/phone/notes if present, role label, "Added [date]"
+- Roster member actions: Edit, Remove, Send Invite (only if email present)
+- Sort controls work across both types (first name, last name, role, status)
+- Roster members sort as "no_account" status (after active and inactive)
+- Total member count shown in header
+
+**Delete roster member:**
+- Confirmation dialog: "Remove [Name] from the roster?"
+- Helper: "This only removes the roster entry. It does not affect any signed-in account."
+- Cancel / Remove buttons
+
+**Send Invite for roster member:**
+- Opens existing InviteSheet pre-filled with the roster member's email
+- InviteSheet gained an `initialEmail` prop (minimal change)
+
+### Error messages
+
+| RPC error | User-facing message |
+|---|---|
+| `first_name_required` | Please enter a first name. |
+| `last_name_required` | Please enter a last name. |
+| `email_already_on_roster` | This email is already on the roster. |
+| `email_already_a_member` | This email already belongs to a member. |
+| `roster_member_not_found` | Roster member not found. |
+| `roster_member_already_claimed` | This member has already created an account. |
+| `insufficient_role` | Only admins can manage members. |
+| fallback | Something went wrong. Please try again. |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/admin/members/AddMemberSheet.tsx` | New: add/edit roster member sheet component |
+| `src/app/(app)/admin/members/MembersClient.tsx` | Rewritten: unified list, roster cards, edit/delete dialogs, invite prefill |
+| `src/app/(app)/admin/members/actions.ts` | Added: `addRosterMemberAction`, `updateRosterMemberAction`, `deleteRosterMemberAction` + roster error messages |
+| `src/app/(app)/admin/members/InviteSheet.tsx` | Added: `initialEmail` optional prop |
+| `src/app/(app)/admin/members/page.tsx` | Added: `get_roster_members` RPC call, passes `rosterMembers` prop |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No migrations. No existing tables altered. No existing RLS changed.
+
+### Explicitly deferred items
+
+- Bulk CSV import (21I-C)
+- Profile → Settings nav rename (21I-D)
+- Header user menu / profile dropdown (21I-D)
+- Photo / avatar upload (future)
+- Multi-profile switching (future)
+
+### QA checklist
+
+**Add member — happy path:**
+- [ ] Admin can add member with first/last name only → appears with "No account yet" badge
+- [ ] Admin can add member with email → email shown on card
+- [ ] Admin can add member with phone → phone shown on card
+- [ ] Admin can add member with notes → notes shown on card (italic)
+- [ ] Admin can add member with Pro or Admin role → role shown on card
+- [ ] Success message shows member name: "Added John Smith to the roster."
+- [ ] "Add Another" resets form and allows adding more
+- [ ] "Done" closes sheet
+
+**Add member — validation:**
+- [ ] Missing first name → "Please enter a first name."
+- [ ] Missing last name → "Please enter a last name."
+- [ ] Duplicate email (already on roster) → "This email is already on the roster."
+- [ ] Duplicate email (already a member) → "This email already belongs to a member."
+
+**Unified member list:**
+- [ ] Auth-linked members show with Active/Inactive badge, role dropdown, deactivate button
+- [ ] Roster members show with "No account yet" amber badge, Edit/Remove/Send Invite buttons
+- [ ] Sort by First Name works across both types
+- [ ] Sort by Last Name works across both types
+- [ ] Sort by Role works across both types
+- [ ] Sort by Status works (active → inactive → no account)
+- [ ] Total count shown in header
+
+**Edit roster member:**
+- [ ] Edit button opens sheet pre-filled with existing data
+- [ ] Title shows "Edit Member"
+- [ ] Changing name and saving works → card updates
+- [ ] Adding email to previously email-less member works
+- [ ] Duplicate email check fires on edit
+
+**Delete roster member:**
+- [ ] Remove button opens confirmation dialog
+- [ ] Dialog shows member name and explanation text
+- [ ] Cancel closes dialog without deleting
+- [ ] Remove deletes member and refreshes list
+- [ ] Cannot delete claimed roster member (error shown)
+
+**Send Invite:**
+- [ ] "Send Invite" button only appears on roster members with email
+- [ ] Clicking opens InviteSheet with email pre-filled
+- [ ] Invite sheet works normally with pre-filled email
+
+**Existing features unchanged:**
+- [ ] Existing invite flow (+ Invite button) still works
+- [ ] Member role dropdown still works for auth-linked members
+- [ ] Deactivate/Reactivate still works for auth-linked members
+- [ ] Pending invites section unchanged
+- [ ] Non-admin redirected to /calendar
+
+**Mobile + dark mode:**
+- [ ] All new UI works on mobile (sheets, cards, dialogs)
+- [ ] Add Member sheet scrollable on small screens
+- [ ] All components render correctly in dark mode
+- [ ] Large tap targets on buttons (≥ 44px)
+- [ ] No regressions: pnpm tsc --noEmit ✓ / pnpm build ✓

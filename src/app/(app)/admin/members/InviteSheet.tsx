@@ -20,13 +20,14 @@ const EXPIRY_OPTIONS = [
 
 interface Props {
   onClose: () => void;
+  initialEmail?: string;
 }
 
-export default function InviteSheet({ onClose }: Props) {
+export default function InviteSheet({ onClose, initialEmail }: Props) {
   const router = useRouter();
 
   const [role, setRole]                 = useState<Role>("member");
-  const [email, setEmail]               = useState("");
+  const [email, setEmail]               = useState(initialEmail ?? "");
   const [expiryDays, setExpiryDays]     = useState(7);
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);

@@ -3,7 +3,14 @@
 import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import InviteSheet from "./InviteSheet";
-import { revokeInviteAction, setMemberRoleAction, setMemberStatusAction } from "./actions";
+import AddMemberSheet from "./AddMemberSheet";
+import type { EditRosterMember } from "./AddMemberSheet";
+import {
+  revokeInviteAction,
+  setMemberRoleAction,
+  setMemberStatusAction,
+  deleteRosterMemberAction,
+} from "./actions";
 
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
@@ -29,13 +36,12 @@ const SORT_OPTIONS: { field: SortField; label: string }[] = [
   { field: "status",     label: "Status"     },
 ];
 
-// Defined order for role (admin → pro → member) and status (active → inactive).
 const ROLE_ORDER:   Record<string, number> = { admin: 0, pro: 1, member: 2 };
-const STATUS_ORDER: Record<string, number> = { active: 0, inactive: 1 };
+const STATUS_ORDER: Record<string, number> = { active: 0, inactive: 1, no_account: 2 };
 
 function cmp(a: string | null, b: string | null): number {
   if (a === null && b === null) return 0;
-  if (a === null) return 1;   // nulls last
+  if (a === null) return 1;
   if (b === null) return -1;
   return a.toLowerCase().localeCompare(b.toLowerCase());
 }
@@ -54,6 +60,8 @@ function formatExpiry(iso: string): string {
   });
 }
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
 type Member = {
   id:         string;
   first_name: string | null;
@@ -63,6 +71,18 @@ type Member = {
   status:     string;
   created_at: string;
   email:      string | null;
+};
+
+export type RosterMember = {
+  id:         string;
+  first_name: string;
+  last_name:  string;
+  email:      string | null;
+  phone:      string | null;
+  role:       string;
+  notes:      string | null;
+  created_by: string;
+  created_at: string;
 };
 
 type PendingInvite = {
@@ -77,6 +97,10 @@ type PendingInvite = {
   created_at:  string;
 };
 
+type ListItem =
+  | { kind: "profile"; data: Member }
+  | { kind: "roster";  data: RosterMember };
+
 type ConfirmDialog = {
   memberId:   string;
   memberName: string;
@@ -84,8 +108,17 @@ type ConfirmDialog = {
   error?:     string;
 };
 
+type DeleteDialog = {
+  id:   string;
+  name: string;
+  error?: string;
+};
+
+// ── Component ────────────────────────────────────────────────────────────────
+
 interface Props {
   members:        Member[];
+  rosterMembers:  RosterMember[];
   pendingInvites: PendingInvite[];
   currentUserId:  string;
   membersError?:  string | null;
@@ -94,18 +127,22 @@ interface Props {
 
 export default function MembersClient({
   members,
+  rosterMembers,
   pendingInvites,
   currentUserId,
   membersError,
   invitesError,
 }: Props) {
   const router = useRouter();
-  const [sheetOpen, setSheetOpen]       = useState(false);
-  const [revokeError, setRevokeError]   = useState<string | null>(null);
-  const [revokingCode, setRevokingCode] = useState<string | null>(null);
-  const [copiedCode, setCopiedCode]     = useState<string | null>(null);
-  const [copyError,  setCopyError]      = useState<string | null>(null);
-  const [, startTransition]             = useTransition();
+  const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
+  const [inviteEmail, setInviteEmail]         = useState<string | undefined>();
+  const [addSheetOpen, setAddSheetOpen]       = useState(false);
+  const [editMember, setEditMember]           = useState<EditRosterMember | undefined>();
+  const [revokeError, setRevokeError]         = useState<string | null>(null);
+  const [revokingCode, setRevokingCode]       = useState<string | null>(null);
+  const [copiedCode, setCopiedCode]           = useState<string | null>(null);
+  const [copyError,  setCopyError]            = useState<string | null>(null);
+  const [, startTransition]                   = useTransition();
 
   // Sort
   const [sortField, setSortField] = useState<SortField>("first_name");
@@ -119,39 +156,54 @@ export default function MembersClient({
   const [confirmDialog, setConfirmDialog]       = useState<ConfirmDialog | null>(null);
   const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
 
-  // How many active admins are in this member list?
-  // Derived from the original prop — not sortedMembers — so the count is
-  // stable and the last-admin guard is never affected by sort order.
+  // Delete roster member
+  const [deleteDialog, setDeleteDialog]     = useState<DeleteDialog | null>(null);
+  const [deletingId, setDeletingId]         = useState<string | null>(null);
+
   const activeAdminCount = members.filter(
     (m) => m.role === "admin" && m.status === "active"
   ).length;
 
-  // Sorted view of members — never mutates the prop.
-  const sortedMembers = useMemo(() => {
-    const sorted = [...members].sort((a, b) => {
+  const totalCount = members.length + rosterMembers.length;
+
+  // Unified sorted list
+  const sortedItems = useMemo(() => {
+    const items: ListItem[] = [
+      ...members.map((m): ListItem => ({ kind: "profile", data: m })),
+      ...rosterMembers.map((r): ListItem => ({ kind: "roster", data: r })),
+    ];
+    items.sort((a, b) => {
       let result = 0;
+      const aFirst = a.data.first_name;
+      const bFirst = b.data.first_name;
+      const aLast  = a.data.last_name;
+      const bLast  = b.data.last_name;
+      const aRole  = a.data.role;
+      const bRole  = b.data.role;
+      const aStatus = a.kind === "profile" ? a.data.status : "no_account";
+      const bStatus = b.kind === "profile" ? b.data.status : "no_account";
+
       switch (sortField) {
         case "first_name":
-          result = cmp(a.first_name, b.first_name);
+          result = cmp(aFirst, bFirst);
           break;
         case "last_name":
-          result = cmp(a.last_name, b.last_name);
+          result = cmp(aLast, bLast);
           break;
         case "role":
-          result = (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99);
+          result = (ROLE_ORDER[aRole] ?? 99) - (ROLE_ORDER[bRole] ?? 99);
           break;
         case "status":
-          result = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+          result = (STATUS_ORDER[aStatus] ?? 99) - (STATUS_ORDER[bStatus] ?? 99);
           break;
       }
       return sortDir === "asc" ? result : -result;
     });
-    return sorted;
-  }, [members, sortField, sortDir]);
+    return items;
+  }, [members, rosterMembers, sortField, sortDir]);
 
   function handleSortChip(field: SortField) {
     if (field === sortField) {
-      // Toggle direction on the active field.
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortField(field);
@@ -224,23 +276,79 @@ export default function MembersClient({
     });
   }
 
+  function openDeleteDialog(rm: RosterMember) {
+    const name = [rm.first_name, rm.last_name].filter(Boolean).join(" ");
+    setDeleteDialog({ id: rm.id, name });
+  }
+
+  function handleConfirmDelete() {
+    if (!deleteDialog) return;
+    setDeletingId(deleteDialog.id);
+    startTransition(async () => {
+      const result = await deleteRosterMemberAction(deleteDialog.id);
+      setDeletingId(null);
+      if (result.error) {
+        setDeleteDialog((prev) => (prev ? { ...prev, error: result.error } : null));
+      } else {
+        setDeleteDialog(null);
+        router.refresh();
+      }
+    });
+  }
+
+  function openEditSheet(rm: RosterMember) {
+    setEditMember({
+      id:         rm.id,
+      first_name: rm.first_name,
+      last_name:  rm.last_name,
+      email:      rm.email,
+      phone:      rm.phone,
+      role:       rm.role,
+      notes:      rm.notes,
+    });
+  }
+
+  function openInviteForRoster(email: string) {
+    setInviteEmail(email);
+    setInviteSheetOpen(true);
+  }
+
+  function closeInviteSheet() {
+    setInviteSheetOpen(false);
+    setInviteEmail(undefined);
+  }
+
+  function closeEditSheet() {
+    setEditMember(undefined);
+  }
+
   return (
     <>
-      {/* Invite button row */}
+      {/* Action row */}
       <div className="mx-4 pt-4 pb-2 flex items-center justify-between">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          Members
-        </p>
+        <div>
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Members
+            {totalCount > 0 && (
+              <span className="ml-1.5 text-gray-400 dark:text-gray-500 font-normal">
+                ({totalCount})
+              </span>
+            )}
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-[260px] leading-relaxed">
+            Add someone to the roster, even if they do not have an email address yet.
+          </p>
+        </div>
         <button
-          onClick={() => setSheetOpen(true)}
-          className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:border-accent hover:text-accent hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-all motion-safe:duration-150"
+          onClick={() => setAddSheetOpen(true)}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
         >
-          + Invite
+          + Add Member
         </button>
       </div>
 
       {/* Sort controls */}
-      {!membersError && members.length > 1 && (
+      {!membersError && totalCount > 1 && (
         <div className="mx-4 mb-3 flex gap-1.5 overflow-x-auto hide-scrollbar">
           {SORT_OPTIONS.map(({ field, label }) => {
             const isActive = sortField === field;
@@ -268,94 +376,37 @@ export default function MembersClient({
           <p className="text-sm font-semibold text-red-700">Failed to load members</p>
           <p className="text-xs text-red-500 mt-1 break-all">{membersError}</p>
         </div>
-      ) : !members || members.length === 0 ? (
-        <div className="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500 text-sm">
-          No members yet.
+      ) : totalCount === 0 ? (
+        <div className="flex flex-col items-center justify-center h-32 gap-1">
+          <p className="text-gray-400 dark:text-gray-500 text-sm">No members yet.</p>
+          <p className="text-gray-400 dark:text-gray-500 text-xs">
+            Tap <strong>Add Member</strong> to add someone to the roster.
+          </p>
         </div>
       ) : (
         <div className="pb-2">
-          {sortedMembers.map((m) => {
-            const fullName =
-              [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
-            const isActive    = m.status === "active";
-            const isSelf      = m.id === currentUserId;
-            const isLastAdmin = m.role === "admin" && activeAdminCount <= 1;
-            // Controls are disabled for own row OR if this is the last active admin.
-            const controlsDisabled = isSelf || isLastAdmin;
-            const roleError = roleErrors[m.id];
-
-            return (
-              <div
-                key={m.id}
-                className={`ct-card mx-4 mb-3 overflow-hidden transition-opacity${
-                  !isActive ? " opacity-60" : ""
-                }`}
-              >
-                {/* Info section */}
-                <div className="px-4 pt-3 pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
-                      {fullName}
-                    </p>
-                    {isActive ? (
-                      <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                        Active
-                      </span>
-                    ) : (
-                      <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {m.email ?? "—"}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {m.phone ?? "—"} · Joined {formatJoinDate(m.created_at)}
-                  </p>
-                </div>
-
-                {/* Action row */}
-                <div className="px-4 pb-3 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <select
-                      value={m.role}
-                      disabled={controlsDisabled || changingRoleId === m.id}
-                      onChange={(e) => handleRoleChange(m.id, e.target.value)}
-                      className="ct-input py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {ROLE_OPTIONS.map(({ value, label }) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                    {changingRoleId === m.id && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500">Saving…</p>
-                    )}
-                    {roleError && (
-                      <p className="text-xs text-red-600 dark:text-red-400">{roleError}</p>
-                    )}
-                    {isLastAdmin && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500">
-                        Last admin — cannot change.
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    disabled={controlsDisabled}
-                    onClick={() => openConfirmDialog(m)}
-                    className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                      isActive
-                        ? "border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    }`}
-                  >
-                    {isActive ? "Deactivate" : "Reactivate"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {sortedItems.map((item) =>
+            item.kind === "profile" ? (
+              <ProfileCard
+                key={`p-${item.data.id}`}
+                member={item.data}
+                currentUserId={currentUserId}
+                activeAdminCount={activeAdminCount}
+                changingRoleId={changingRoleId}
+                roleErrors={roleErrors}
+                onRoleChange={handleRoleChange}
+                onStatusToggle={openConfirmDialog}
+              />
+            ) : (
+              <RosterCard
+                key={`r-${item.data.id}`}
+                roster={item.data}
+                onEdit={openEditSheet}
+                onDelete={openDeleteDialog}
+                onInvite={openInviteForRoster}
+              />
+            )
+          )}
         </div>
       )}
 
@@ -490,8 +541,222 @@ export default function MembersClient({
         </>
       )}
 
+      {/* Delete roster member confirmation dialog */}
+      {deleteDialog && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => { if (!deletingId) setDeleteDialog(null); }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm px-6 py-6">
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Remove {deleteDialog.name} from the roster?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                This only removes the roster entry. It does not affect any signed-in account.
+              </p>
+              {deleteDialog.error && (
+                <p className="mt-3 text-sm text-red-600 dark:text-red-400">
+                  {deleteDialog.error}
+                </p>
+              )}
+              <div className="mt-5 flex gap-3">
+                <button
+                  disabled={!!deletingId}
+                  onClick={() => setDeleteDialog(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!!deletingId}
+                  onClick={handleConfirmDelete}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 dark:bg-red-500 text-white text-sm font-medium disabled:opacity-50"
+                >
+                  {deletingId ? "Removing…" : "Remove"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Invite sheet */}
-      {sheetOpen && <InviteSheet onClose={() => setSheetOpen(false)} />}
+      {inviteSheetOpen && (
+        <InviteSheet onClose={closeInviteSheet} initialEmail={inviteEmail} />
+      )}
+
+      {/* Add member sheet */}
+      {addSheetOpen && (
+        <AddMemberSheet onClose={() => setAddSheetOpen(false)} />
+      )}
+
+      {/* Edit member sheet */}
+      {editMember && (
+        <AddMemberSheet onClose={closeEditSheet} editMember={editMember} />
+      )}
     </>
+  );
+}
+
+// ── Profile card (auth-linked member) ────────────────────────────────────────
+
+function ProfileCard({
+  member: m,
+  currentUserId,
+  activeAdminCount,
+  changingRoleId,
+  roleErrors,
+  onRoleChange,
+  onStatusToggle,
+}: {
+  member:           Member;
+  currentUserId:    string;
+  activeAdminCount: number;
+  changingRoleId:   string | null;
+  roleErrors:       Record<string, string>;
+  onRoleChange:     (id: string, role: string) => void;
+  onStatusToggle:   (m: Member) => void;
+}) {
+  const fullName =
+    [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
+  const isActive    = m.status === "active";
+  const isSelf      = m.id === currentUserId;
+  const isLastAdmin = m.role === "admin" && activeAdminCount <= 1;
+  const controlsDisabled = isSelf || isLastAdmin;
+  const roleError = roleErrors[m.id];
+
+  return (
+    <div
+      className={`ct-card mx-4 mb-3 overflow-hidden transition-opacity${
+        !isActive ? " opacity-60" : ""
+      }`}
+    >
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+            {fullName}
+          </p>
+          {isActive ? (
+            <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+              Active
+            </span>
+          ) : (
+            <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+              Inactive
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          {m.email ?? "—"}
+        </p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {m.phone ?? "—"} · Joined {formatJoinDate(m.created_at)}
+        </p>
+      </div>
+
+      <div className="px-4 pb-3 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <select
+            value={m.role}
+            disabled={controlsDisabled || changingRoleId === m.id}
+            onChange={(e) => onRoleChange(m.id, e.target.value)}
+            className="ct-input py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {ROLE_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          {changingRoleId === m.id && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">Saving…</p>
+          )}
+          {roleError && (
+            <p className="text-xs text-red-600 dark:text-red-400">{roleError}</p>
+          )}
+          {isLastAdmin && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Last admin — cannot change.
+            </p>
+          )}
+        </div>
+
+        <button
+          disabled={controlsDisabled}
+          onClick={() => onStatusToggle(m)}
+          className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            isActive
+              ? "border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+              : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+          }`}
+        >
+          {isActive ? "Deactivate" : "Reactivate"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Roster card (unclaimed member) ───────────────────────────────────────────
+
+function RosterCard({
+  roster: rm,
+  onEdit,
+  onDelete,
+  onInvite,
+}: {
+  roster:   RosterMember;
+  onEdit:   (rm: RosterMember) => void;
+  onDelete: (rm: RosterMember) => void;
+  onInvite: (email: string) => void;
+}) {
+  const fullName = [rm.first_name, rm.last_name].filter(Boolean).join(" ");
+  const details = [rm.email, rm.phone].filter(Boolean).join(" · ");
+
+  return (
+    <div className="ct-card mx-4 mb-3 overflow-hidden">
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+            {fullName}
+          </p>
+          <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+            No account yet
+          </span>
+        </div>
+        {details && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{details}</p>
+        )}
+        {rm.notes && (
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 italic">{rm.notes}</p>
+        )}
+        <p className="text-xs text-gray-400 mt-0.5">
+          {ROLE_LABELS[rm.role] ?? rm.role} · Added {formatJoinDate(rm.created_at)}
+        </p>
+      </div>
+
+      <div className="px-4 pb-3 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
+        <button
+          onClick={() => onEdit(rm)}
+          className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => onDelete(rm)}
+          className="px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-all motion-safe:duration-150"
+        >
+          Remove
+        </button>
+        {rm.email && (
+          <button
+            onClick={() => onInvite(rm.email!)}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150"
+          >
+            Send Invite
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
