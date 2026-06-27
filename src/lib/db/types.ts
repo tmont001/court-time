@@ -821,6 +821,59 @@ export type Database = {
           }
         ];
       };
+      roster_members: {
+        Row: {
+          id:         string;
+          club_id:    string;
+          first_name: string;
+          last_name:  string;
+          email:      string | null;
+          phone:      string | null;
+          role:       "member" | "pro" | "admin";  // display/intent only — does not grant permissions
+          notes:      string | null;
+          claimed_by: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?:         string;
+          club_id:     string;
+          first_name:  string;
+          last_name:   string;
+          email?:      string | null;
+          phone?:      string | null;
+          role?:       "member" | "pro" | "admin";
+          notes?:      string | null;
+          claimed_by?: string | null;
+          created_by:  string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?:         string;
+          club_id?:    string;
+          first_name?: string;
+          last_name?:  string;
+          email?:      string | null;
+          phone?:      string | null;
+          role?:       "member" | "pro" | "admin";
+          notes?:      string | null;
+          claimed_by?: string | null;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "roster_members_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -1273,6 +1326,48 @@ export type Database = {
       };
       admin_remove_guest: {
         Args: { p_event_id: string; p_guest_id: string };
+        Returns: undefined;
+      };
+      // Phase 21I-A: roster member RPCs
+      get_roster_members: {
+        Args: Record<string, never>;
+        Returns: {
+          id:         string;
+          first_name: string;
+          last_name:  string;
+          email:      string | null;
+          phone:      string | null;
+          role:       string;
+          notes:      string | null;
+          created_by: string;
+          created_at: string;
+        }[];
+      };
+      add_roster_member: {
+        Args: {
+          p_first_name: string;
+          p_last_name:  string;
+          p_email?:     string | null;
+          p_phone?:     string | null;
+          p_role?:      string;
+          p_notes?:     string | null;
+        };
+        Returns: string;  // new roster_member id
+      };
+      update_roster_member: {
+        Args: {
+          p_id:         string;
+          p_first_name: string;
+          p_last_name:  string;
+          p_email?:     string | null;
+          p_phone?:     string | null;
+          p_role?:      string;
+          p_notes?:     string | null;
+        };
+        Returns: undefined;
+      };
+      delete_roster_member: {
+        Args: { p_id: string };
         Returns: undefined;
       };
     };

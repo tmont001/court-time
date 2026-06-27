@@ -3751,3 +3751,158 @@ No migrations. No logic changes. No new packages.
 - [ ] Event creation flow works end-to-end (no logic change)
 - [ ] Block court flow works end-to-end (no logic change)
 
+---
+
+## Checkpoint 21I-A — Roster Members Data Model
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass; awaiting SQL Editor deployment + QA**
+
+### What was added
+
+A new `roster_members` table that allows admins to maintain a club membership
+directory even when members do not yet have a Supabase Auth account or email
+address. This is the data-model foundation for Phase 21I (member roster, bulk
+import, and elder-friendly navigation).
+
+### Why profiles was not altered
+
+`profiles.id` is a FK to `auth.users(id)` with CASCADE DELETE. Every RLS policy,
+every RPC, and every FK reference (event_participants, reservations, audit_log)
+assumes `profiles.id = auth.uid()`. Removing or weakening that FK would require
+rewriting every query and policy in the system. A separate `roster_members` table
+is additive-only and carries zero risk to existing flows.
+
+### Data model decision
+
+`roster_members` has its own UUID primary key (not tied to auth.users). Key columns:
+
+- `first_name text NOT NULL`, `last_name text NOT NULL` — required
+- `email text` — nullable (the whole point: members without email)
+- `phone text` — nullable
+- `role text default 'member'` — display/intent only, does NOT grant app permissions
+- `notes text` — admin notes
+- `claimed_by uuid UNIQUE references auth.users(id) ON DELETE SET NULL` — links to
+  auth user when member later creates an account
+- `created_by uuid NOT NULL references auth.users(id)` — which admin created the entry
+- Partial unique index on `(club_id, lower(email)) WHERE email IS NOT NULL` prevents
+  duplicate emails within a club
+
+### RLS / security
+
+All four RLS policies (SELECT, INSERT, UPDATE, DELETE) restrict access to admins
+in the same club, using existing `current_user_club_id()` and `current_user_role()`
+helper functions. Non-admin members cannot see roster_members at all.
+
+All CRUD RPCs are SECURITY DEFINER with the same admin-only gate pattern used by
+`set_member_role`, `set_member_status`, `get_members`, etc.
+
+### Claim / link behavior
+
+`accept_club_invite()` was modified (CREATE OR REPLACE, same signature) to add an
+auto-link step after the existing audit log entry:
+
+1. Gets the accepting user's email from `auth.users`
+2. Searches `roster_members` for an unclaimed row in the same club with matching
+   email (case-insensitive)
+3. If found: sets `claimed_by = auth.uid()`, copies phone to profile if profile
+   phone is null, writes `claim_roster_member` audit entry
+4. If not found: does nothing — normal invite acceptance is unaffected
+
+This is a non-blocking convenience. If auto-link fails or no match exists, the
+user still joins the club normally through the existing invite flow.
+
+### RPCs added
+
+| RPC | Purpose | Returns |
+|---|---|---|
+| `get_roster_members()` | Admin: list unclaimed roster members in club | Table of id, names, email, phone, role, notes, created_by, created_at |
+| `add_roster_member(...)` | Admin: create roster member with validation + email dedup | New roster_member UUID |
+| `update_roster_member(...)` | Admin: update unclaimed roster member | void |
+| `delete_roster_member(p_id)` | Admin: delete unclaimed roster member (blocks if claimed) | void |
+
+### RLS policies added
+
+| Policy | Operation | Condition |
+|---|---|---|
+| `roster_members_select_admin` | SELECT | `club_id = current_user_club_id() AND current_user_role() = 'admin'` |
+| `roster_members_insert_admin` | INSERT | same |
+| `roster_members_update_admin` | UPDATE | same |
+| `roster_members_delete_admin` | DELETE | same |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `supabase/migrations/0056_roster_members.sql` | New: table, indexes, RLS, RPCs, accept_club_invite modification |
+| `src/lib/db/types.ts` | Added `roster_members` table types + 4 RPC function signatures |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No existing tables altered. No existing RLS policies changed. No UI changes.
+
+### Explicitly deferred items
+
+- Add Member UI (21I-B)
+- Bulk CSV import (21I-C)
+- Profile → Settings nav rename (21I-D)
+- Header user menu / profile dropdown (21I-D)
+- Photo / avatar upload (future)
+- Multi-profile switching (future)
+- `bulk_add_roster_members` RPC (21I-C, when CSV import UI is built)
+
+### Risks and limitations
+
+- `role` on `roster_members` is display/intent only — it is stored for future
+  use in the admin UI and CSV import, but does not grant any app permissions.
+  Actual permissions come from `profiles.role` after claiming.
+- Roster members without email cannot be auto-linked. Admin must manually add
+  their email before generating an invite.
+- If the accepting user's email differs from the roster entry's email (e.g.,
+  admin typed it wrong), auto-link won't match. Admin would reconcile manually.
+- `claimed_by` is UNIQUE — one auth user can only claim one roster entry.
+- The `accept_club_invite` modification is wrapped in the same transaction as the
+  existing invite acceptance. If the roster_members table doesn't exist yet
+  (migration not applied), the function will fail — so the migration must be
+  applied before any new code deploys.
+
+### QA checklist
+
+**Migration deployment (SQL Editor):**
+- [ ] Apply 0056_roster_members.sql in Supabase SQL Editor
+- [ ] Verify `roster_members` table exists with correct columns
+- [ ] Verify RLS is enabled
+- [ ] Verify all 4 RLS policies exist
+- [ ] Verify all 4 RPCs exist
+- [ ] Verify `accept_club_invite()` was replaced (check for `v_roster_id` variable)
+
+**RPC smoke tests (SQL Editor or Supabase dashboard):**
+- [ ] `get_roster_members()` returns empty array for a club with no roster members
+- [ ] `add_roster_member('John', 'Smith')` succeeds and returns a UUID
+- [ ] `add_roster_member('Jane', 'Doe', 'jane@example.com')` succeeds
+- [ ] `add_roster_member('Jim', 'Doe', 'jane@example.com')` fails with `email_already_on_roster`
+- [ ] `add_roster_member('', 'Blank')` fails with `first_name_required`
+- [ ] `get_roster_members()` returns both John and Jane, ordered by last name
+- [ ] `update_roster_member(john_id, 'Jonathan', 'Smith')` succeeds
+- [ ] `delete_roster_member(john_id)` succeeds
+- [ ] Non-admin user calling any RPC gets `insufficient_role`
+
+**Claim flow (after member signs up via invite):**
+- [ ] Admin creates roster member with email (e.g., `test@example.com`)
+- [ ] Admin creates invite restricted to that email
+- [ ] New user signs up with `test@example.com`, accepts invite
+- [ ] `roster_members.claimed_by` is set to the new user's auth ID
+- [ ] If roster entry had phone and profile had no phone, phone was copied
+- [ ] Audit log contains `claim_roster_member` entry
+- [ ] `get_roster_members()` no longer returns the claimed entry
+
+**Invite flow without roster match:**
+- [ ] User signs up and accepts invite with no matching roster entry
+- [ ] Invite acceptance works normally (no errors)
+- [ ] No `claim_roster_member` audit entry
+
+**No regressions:**
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+- [ ] Existing invite flow unchanged (generate → share → accept)
+- [ ] Existing member role/status management unchanged
+- [ ] Booking flow works end-to-end
+- [ ] Event join/leave flows work
+- [ ] Notifications unchanged
