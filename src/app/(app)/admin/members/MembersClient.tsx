@@ -9,6 +9,7 @@ import {
   revokeInviteAction,
   setMemberRoleAction,
   setMemberStatusAction,
+  setMemberNotesAction,
   deleteRosterMemberAction,
 } from "./actions";
 
@@ -63,14 +64,15 @@ function formatExpiry(iso: string): string {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type Member = {
-  id:         string;
-  first_name: string | null;
-  last_name:  string | null;
-  phone:      string | null;
-  role:       string;
-  status:     string;
-  created_at: string;
-  email:      string | null;
+  id:          string;
+  first_name:  string | null;
+  last_name:   string | null;
+  phone:       string | null;
+  role:        string;
+  status:      string;
+  created_at:  string;
+  email:       string | null;
+  admin_notes: string | null;
 };
 
 export type RosterMember = {
@@ -619,6 +621,12 @@ function ProfileCard({
   onRoleChange:     (id: string, role: string) => void;
   onStatusToggle:   (m: Member) => void;
 }) {
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesValue, setNotesValue]     = useState(m.admin_notes ?? "");
+  const [notesSaving, setNotesSaving]   = useState(false);
+  const [notesSaved, setNotesSaved]     = useState(false);
+  const [notesError, setNotesError]     = useState<string | null>(null);
+
   const fullName =
     [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
   const isActive    = m.status === "active";
@@ -626,6 +634,25 @@ function ProfileCard({
   const isLastAdmin = m.role === "admin" && activeAdminCount <= 1;
   const controlsDisabled = isSelf || isLastAdmin;
   const roleError = roleErrors[m.id];
+
+  async function saveNotes() {
+    const trimmed = notesValue.trim();
+    if (trimmed === (m.admin_notes ?? "")) {
+      setNotesEditing(false);
+      return;
+    }
+    setNotesSaving(true);
+    setNotesError(null);
+    const result = await setMemberNotesAction(m.id, trimmed || null);
+    setNotesSaving(false);
+    if (result.error) {
+      setNotesError(result.error);
+      return;
+    }
+    setNotesEditing(false);
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 2000);
+  }
 
   return (
     <div
@@ -654,6 +681,49 @@ function ProfileCard({
         <p className="text-xs text-gray-400 mt-0.5">
           {m.phone ?? "—"} · Joined {formatJoinDate(m.created_at)}
         </p>
+
+        {/* Admin notes */}
+        <div className="mt-1.5">
+          {notesEditing ? (
+            <div className="flex gap-1.5 items-start">
+              <input
+                type="text"
+                value={notesValue}
+                onChange={e => setNotesValue(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveNotes(); if (e.key === "Escape") { setNotesEditing(false); setNotesValue(m.admin_notes ?? ""); } }}
+                placeholder="Add notes…"
+                autoFocus
+                className="flex-1 min-w-0 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 px-2 py-1 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <button
+                disabled={notesSaving}
+                onClick={saveNotes}
+                className="shrink-0 text-xs font-medium text-accent disabled:opacity-40"
+              >
+                {notesSaving ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => { setNotesEditing(false); setNotesValue(m.admin_notes ?? ""); setNotesError(null); }}
+                className="shrink-0 text-xs text-gray-400"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setNotesEditing(true); setNotesValue(m.admin_notes ?? ""); }}
+              className="text-xs text-left"
+            >
+              {m.admin_notes ? (
+                <span className="text-gray-400 dark:text-gray-500 italic">{m.admin_notes}</span>
+              ) : (
+                <span className="text-gray-300 dark:text-gray-600">Add notes</span>
+              )}
+            </button>
+          )}
+          {notesSaved && <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">Saved</p>}
+          {notesError && <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{notesError}</p>}
+        </div>
       </div>
 
       <div className="px-4 pb-3 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">

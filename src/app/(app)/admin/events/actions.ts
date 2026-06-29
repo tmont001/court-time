@@ -57,18 +57,21 @@ export async function fetchMoreAdminEvents(
 // These codes are raised as exceptions by the admin_* RPCs in 0051.
 // ---------------------------------------------------------------------------
 const ERROR_MESSAGES: Record<string, string> = {
-  not_authenticated:     "You must be signed in.",
-  admin_required:        "You do not have permission to manage this roster.",
-  event_not_found:       "Event not found.",
-  event_cancelled:       "This event has been cancelled.",
-  member_not_found:      "That member could not be found.",
-  member_inactive:       "That member is inactive.",
-  participant_not_found: "That participant could not be found.",
-  already_joined:        "That member is already on this roster.",
-  offer_already_active:  "Another member already has an active offer. Expire that offer first.",
-  no_capacity_for_offer: "There is no open spot to offer.",
-  guest_not_found:       "That guest could not be found.",
-  invalid_guest_name:    "Enter a guest name.",
+  not_authenticated:              "You must be signed in.",
+  admin_required:                 "Only admins and pros can manage event rosters.",
+  insufficient_role:              "Only admins and pros can manage event rosters.",
+  event_not_found:                "Event not found.",
+  event_cancelled:                "This event has been cancelled.",
+  member_not_found:               "That member could not be found.",
+  member_inactive:                "That member is inactive.",
+  participant_not_found:          "That participant could not be found.",
+  already_joined:                 "That member is already on this roster.",
+  offer_already_active:           "Another member already has an active offer. Expire that offer first.",
+  no_capacity_for_offer:          "There is no open spot to offer.",
+  guest_not_found:                "That guest could not be found.",
+  invalid_guest_name:             "Enter a guest name.",
+  roster_member_not_found:        "That roster member could not be found.",
+  roster_member_already_claimed:  "This member already has an account. Add them as a signed-in member instead.",
 };
 
 function rpcError(error: { message?: string } | null): string {
@@ -195,6 +198,32 @@ export async function adminAddGuest(
 
   const row = data as { id: string; display_name: string } | null;
   return { data: row ?? undefined };
+}
+
+// ---------------------------------------------------------------------------
+// adminAddRosterMemberToEvent
+// Adds an unclaimed roster member to an event as a linked guest.
+// Always occupies a capacity slot. No waitlist behavior.
+// ---------------------------------------------------------------------------
+export async function adminAddRosterMemberToEvent(
+  eventId:        string,
+  rosterMemberId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("admin_add_roster_member_to_event", {
+    p_event_id:         eventId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) {
+    const msg = error.message?.trim() ?? "";
+    if (msg.includes("event_guests_roster_member_uniq") || msg.includes("duplicate") || msg.includes("unique")) {
+      return { error: "This member is already on the event roster." };
+    }
+    return { error: rpcError(error) };
+  }
+  return {};
 }
 
 // ---------------------------------------------------------------------------

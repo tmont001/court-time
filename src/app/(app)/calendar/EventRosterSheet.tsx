@@ -10,6 +10,7 @@ import {
   adminRemoveGuest,
   adminAddMember,
   adminAddGuest,
+  adminAddRosterMemberToEvent,
 } from "@/app/(app)/admin/events/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -22,11 +23,13 @@ interface RosterRow {
   attendance_status: string | null;
   offer_expires_at:  string | null;
   waitlist_position: number | null;
+  roster_member_id:  string | null;
 }
 
 interface MemberOption {
   id:           string;
   display_name: string;
+  source:       "profile" | "roster";
 }
 
 // Minimal participant shape needed by parent components to update occupancy counts.
@@ -174,24 +177,43 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
       return;
     }
 
-    const activeInEvent = new Set(
+    const activeProfileIds = new Set(
       rows
         .filter(r => r.status !== "cancelled" && r.role !== "guest")
         .map(r => r.profile_id),
     );
+    const activeRosterIds = new Set(
+      rows
+        .filter(r => r.role === "guest" && r.roster_member_id)
+        .map(r => r.roster_member_id!),
+    );
 
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, first_name, last_name")
-      .eq("club_id", clubId)
-      .eq("status", "active");
+    const [profilesResult, rosterResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("id, first_name, last_name")
+        .eq("club_id", clubId)
+        .eq("status", "active"),
+      supabase.rpc("get_roster_members"),
+    ]);
 
-    const eligible: MemberOption[] = (profiles ?? [])
-      .filter(p => !activeInEvent.has(p.id))
+    const profileOptions: MemberOption[] = (profilesResult.data ?? [])
+      .filter(p => !activeProfileIds.has(p.id))
       .map(p => ({
         id:           p.id,
         display_name: [p.first_name, p.last_name].filter(Boolean).join(" ") || "Unknown",
-      }))
+        source:       "profile" as const,
+      }));
+
+    const rosterOptions: MemberOption[] = (rosterResult.data ?? [])
+      .filter(r => !activeRosterIds.has(r.id))
+      .map(r => ({
+        id:           r.id,
+        display_name: `${[r.first_name, r.last_name].filter(Boolean).join(" ")} (No account yet)`,
+        source:       "roster" as const,
+      }));
+
+    const eligible = [...profileOptions, ...rosterOptions]
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
     setMemberList(eligible);
@@ -203,7 +225,12 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
     if (!selectedMemberId) return;
     setAddMemberLoading(true);
     setAddMemberError(null);
-    const result = await adminAddMember(eventId, selectedMemberId);
+
+    const selected = memberList.find(m => m.id === selectedMemberId);
+    const result = selected?.source === "roster"
+      ? await adminAddRosterMemberToEvent(eventId, selectedMemberId)
+      : await adminAddMember(eventId, selectedMemberId);
+
     setAddMemberLoading(false);
     if (result.error) {
       setAddMemberError(result.error);
@@ -589,15 +616,16 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                     </div>
                   )}
 
-                  {/* ── Guests ───────────────────────────────────────────── */}
+                  {/* ── Guests & roster members ─────────────────────────── */}
                   {guests.length > 0 && (
                     <div className="mb-5">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                         Guests ({guests.length})
                       </p>
                       {guests.map(row => {
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const isUpdating  = rowUpdating.has(row.profile_id);
+                        const rowError    = rowErrors.get(row.profile_id);
+                        const isRosterLinked = !!row.roster_member_id;
                         return (
                           <div
                             key={row.profile_id}
@@ -608,6 +636,13 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                                   {row.display_name}
                                 </p>
+                                <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  isRosterLinked
+                                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                }`}>
+                                  {isRosterLinked ? "No account yet" : "Guest"}
+                                </span>
                               </div>
                               {isAdmin && (
                                 <button

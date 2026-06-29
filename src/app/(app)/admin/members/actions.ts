@@ -107,6 +107,26 @@ export async function revokeInviteAction(
   return {};
 }
 
+// ── Admin notes on signed-in members ─────────────────────────────────────
+
+export async function setMemberNotesAction(
+  targetUserId: string,
+  notes: string | null
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_member_notes", {
+    p_target_user_id: targetUserId,
+    p_notes:          notes || null,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
+}
+
 // ── Roster member actions ────────────────────────────────────────────────
 
 export async function addRosterMemberAction(

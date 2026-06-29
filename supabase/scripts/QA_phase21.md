@@ -3970,7 +3970,78 @@ single unified, sortable view.
 | `insufficient_role` | Only admins can manage members. |
 | fallback | Something went wrong. Please try again. |
 
+---
+
+## Checkpoint 21I-C-A — Migration + RPCs for Member Notes and Roster Events
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass; awaiting SQL Editor deployment + QA**
+
+### What was added
+
+Data model and RPC foundation for two features:
+
+1. **Admin notes on signed-in members** — `profiles.admin_notes` column + `set_member_notes` RPC
+   + updated `get_members()` to return admin_notes.
+2. **Roster members in events** — `event_guests.roster_member_id` FK + `admin_add_roster_member_to_event`
+   RPC + updated `get_event_roster()` to return roster_member_id.
+
+### Data model decisions
+
+**Admin notes:**
+- Column: `profiles.admin_notes text` (nullable, default null)
+- Admin-editable only via `set_member_notes` SECURITY DEFINER RPC
+- Returned by `get_members()` (admin-only RPC) for admin UI use
+- Known limitation: `profiles_select_same_club` RLS means club members could technically
+  read admin_notes by querying profiles directly. Acceptable for pilot — app UI only
+  shows notes to admins. For non-sensitive operational notes only.
+
+**Roster members in events:**
+- Column: `event_guests.roster_member_id uuid references roster_members(id) on delete set null`
+- Partial unique index: `(event_id, roster_member_id) WHERE roster_member_id IS NOT NULL`
+  prevents adding the same roster member to an event twice
+- Roster members are stored as event_guests (always count toward capacity, no waitlist,
+  no notifications) — this reuses existing guest capacity/removal logic with zero
+  changes to waitlist/offer/notification flows
+- ON DELETE SET NULL: if roster member is deleted, guest entry stays but link is lost
+
+### Known limitations
+
+- admin_notes are for operational, non-sensitive notes only (see RLS caveat above)
+- Roster event entries do NOT auto-convert when a roster member later claims an
+  account. The admin must manually remove the guest and add the now-signed-in member
+  as a real participant. Auto-conversion deferred to a future phase.
+- Roster-linked guests have no waitlist/offer flow (they can't respond — no account)
+- Roster-linked guests receive no notifications
+
+### Security notes
+
+- `set_member_notes`: admin-only gate, same-club scoped, audit logged. No self-edit
+  restriction (admins can note themselves). No last-admin guard needed.
+- `admin_add_roster_member_to_event`: admin/pro gate (matches admin_add_guest pattern),
+  same-club scoped, validates event is scheduled and roster member is in same club.
+  Audit logged with was_over_capacity field.
+- No existing RLS policies changed. No existing tables altered beyond adding columns.
+
+### RPCs added / modified
+
+| RPC | Type | Notes |
+|---|---|---|
+| `set_member_notes(p_target_user_id, p_notes)` | New | Admin-only, writes profiles.admin_notes |
+| `admin_add_roster_member_to_event(p_event_id, p_roster_member_id)` | New | Admin/pro, creates linked event_guests row |
+| `get_members()` | Modified | Added `admin_notes` to return columns |
+| `get_event_roster(p_event_id)` | Modified | Added `roster_member_id` to return columns |
+
+### Columns / indexes added
+
+| Table | Column / Index | Details |
+|---|---|---|
+| `profiles` | `admin_notes text` | Nullable, admin-editable only |
+| `event_guests` | `roster_member_id uuid` | FK to roster_members, ON DELETE SET NULL |
+| `event_guests` | `event_guests_roster_member_uniq` | Partial unique on (event_id, roster_member_id) |
+
 ### Files changed
+
+#### 21I-B files
 
 | File | Change |
 |---|---|
@@ -3983,15 +4054,29 @@ single unified, sortable view.
 
 No migrations. No existing tables altered. No existing RLS changed.
 
+#### 21I-C-A files
+
+| File | Change |
+|---|---|
+| `supabase/migrations/0057_member_notes_and_roster_events.sql` | New migration |
+| `src/lib/db/types.ts` | Updated profiles, event_guests, get_members, get_event_roster types; added set_member_notes, admin_add_roster_member_to_event signatures |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No UI changes. No existing tables altered beyond adding nullable columns.
+
 ### Explicitly deferred items
 
-- Bulk CSV import (21I-C)
-- Profile → Settings nav rename (21I-D)
-- Header user menu / profile dropdown (21I-D)
+- Admin member card inline notes editing UI (21I-C-B)
+- EventRosterSheet unified member picker with roster members (21I-C-B)
+- Event roster "No account yet" badge display (21I-C-B)
+- Server actions for set_member_notes and admin_add_roster_member_to_event (21I-C-B)
+- Bulk CSV import (21I-D)
+- Profile → Settings nav rename (future)
+- Header user menu / profile dropdown (future)
 - Photo / avatar upload (future)
 - Multi-profile switching (future)
 
-### QA checklist
+### QA checklist — 21I-B (Admin Add Member UI)
 
 **Add member — happy path:**
 - [ ] Admin can add member with first/last name only → appears with "No account yet" badge
@@ -4050,3 +4135,150 @@ No migrations. No existing tables altered. No existing RLS changed.
 - [ ] All components render correctly in dark mode
 - [ ] Large tap targets on buttons (≥ 44px)
 - [ ] No regressions: pnpm tsc --noEmit ✓ / pnpm build ✓
+
+### QA checklist — 21I-C-A (Migration + RPCs)
+
+**Migration deployment (SQL Editor):**
+- [ ] Apply 0057_member_notes_and_roster_events.sql
+- [ ] Verify profiles.admin_notes column exists
+- [ ] Verify event_guests.roster_member_id column exists
+- [ ] Verify event_guests_roster_member_uniq index exists
+- [ ] Verify set_member_notes function exists
+- [ ] Verify admin_add_roster_member_to_event function exists
+- [ ] Verify get_members returns admin_notes
+- [ ] Verify get_event_roster returns roster_member_id
+
+**set_member_notes RPC smoke tests:**
+- [ ] Admin calls set_member_notes('target_id', 'Test note') → succeeds
+- [ ] get_members() returns admin_notes='Test note' for that member
+- [ ] Admin calls set_member_notes('target_id', null) → clears notes
+- [ ] Admin calls set_member_notes('target_id', '  ') → normalises to null
+- [ ] Non-admin gets insufficient_role error
+- [ ] Cross-club target gets user_not_found error
+- [ ] Audit log contains set_member_notes entry
+
+**admin_add_roster_member_to_event RPC smoke tests:**
+- [ ] Admin creates roster member, creates event, calls admin_add_roster_member_to_event → event_guests row created
+- [ ] get_event_roster returns the roster-linked guest with roster_member_id set
+- [ ] Regular guests in same event have roster_member_id = null
+- [ ] Adding same roster member to same event twice → unique constraint error
+- [ ] Non-admin/non-pro gets admin_required error
+- [ ] Cancelled event → event_cancelled error
+- [ ] Roster member from different club → roster_member_not_found error
+- [ ] Claimed roster member → roster_member_already_claimed error
+- [ ] Removing roster-linked guest via admin_remove_guest works (triggers queue advance if slot freed)
+- [ ] Capacity counting includes roster-linked guest (same as regular guest)
+- [ ] Audit log contains admin_add_roster_member_to_event entry with was_over_capacity
+
+**Existing behavior preserved:**
+- [ ] get_members still returns all existing columns correctly
+- [ ] get_event_roster still returns members and guests correctly (new column is null for members, null for unlinked guests)
+- [ ] admin_add_guest still works for anonymous guests (roster_member_id defaults to null)
+- [ ] admin_remove_guest still works
+- [ ] join_event / leave_event unchanged
+- [ ] Waitlist offer/accept/decline flows unchanged
+- [ ] Notifications unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21I-C-B — Admin Notes UI + Roster Members in Events UI
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+**Known limitation:** Full browser testing requires applying 0056 and 0057 in Supabase first.
+
+### What was added
+
+UI for two features:
+
+1. **Admin notes on signed-in members** — inline editable notes on each ProfileCard
+   in `/admin/members`. Click "Add notes" or existing notes text to edit. Save on
+   Enter or Save button. Cancel on Escape. Shows "Saving…" and "Saved" feedback.
+2. **Roster members in events** — the "Add Member" picker in EventRosterSheet now
+   includes unclaimed roster members alongside signed-in members. Roster members
+   are labeled "(No account yet)" in the picker. When added, they are stored as
+   linked event_guests (counting toward capacity). The roster shows "No account yet"
+   badge for roster-linked guests and "Guest" for anonymous guests.
+
+### UI behavior
+
+**Admin notes on ProfileCards:**
+- Empty state: gray "Add notes" text
+- Populated state: italic gray notes text
+- Click → inline text input with Save/Cancel buttons
+- Enter key saves, Escape cancels
+- "Saving…" during RPC call, "Saved" flash on success
+- Error message on failure
+- Does not show on member-facing profile pages
+
+**Event roster add-member picker:**
+- Fetches both `profiles` (active, same club) and `get_roster_members()` (unclaimed)
+- Signed-in members: "First Last"
+- Roster members: "First Last (No account yet)"
+- Sorted alphabetically across both types
+- Selecting a signed-in member → calls `adminAddMember` (existing flow, with waitlist)
+- Selecting a roster member → calls `adminAddRosterMemberToEvent` (new, always confirmed)
+- Members already in the event are excluded from both lists
+
+**Event roster guest display:**
+- Roster-linked guests: amber "No account yet" badge
+- Anonymous guests: gray "Guest" badge
+- Both use existing Remove action via `adminRemoveGuest`
+
+### Error messages added
+
+Event roster errors:
+- `roster_member_not_found` → "That roster member could not be found."
+- `roster_member_already_claimed` → "This member already has an account. Add them as a signed-in member instead."
+- Duplicate unique constraint → "This member is already on the event roster."
+- `admin_required` / `insufficient_role` → "Only admins and pros can manage event rosters."
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/admin/members/MembersClient.tsx` | Added `admin_notes` to Member type; ProfileCard now has inline notes editing with save/cancel/feedback |
+| `src/app/(app)/admin/members/actions.ts` | Added `setMemberNotesAction` server action |
+| `src/app/(app)/admin/events/actions.ts` | Added `adminAddRosterMemberToEvent` server action + roster error messages |
+| `src/app/(app)/calendar/EventRosterSheet.tsx` | Unified add-member picker (profiles + roster members); roster-linked guest badges; `roster_member_id` on RosterRow |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+### QA checklist — Admin notes
+
+- [ ] Signed-in member card shows "Add notes" when notes are empty
+- [ ] Clicking "Add notes" opens inline text input
+- [ ] Typing and pressing Enter saves notes
+- [ ] "Saving…" shown during save
+- [ ] "Saved" shown briefly after success
+- [ ] Notes appear as italic text on card after save
+- [ ] Clicking existing notes opens edit mode pre-filled
+- [ ] Pressing Escape cancels edit without saving
+- [ ] Clearing text and saving removes notes (shows "Add notes" again)
+- [ ] Error message shown if RPC fails
+- [ ] Roster member notes (from roster_members.notes) still display correctly
+- [ ] Admin notes are NOT visible on member-facing profile pages
+
+### QA checklist — Roster members in events
+
+- [ ] EventRosterSheet "Add Member" picker shows signed-in members without suffix
+- [ ] Picker also shows roster members with "(No account yet)" suffix
+- [ ] Members already in the event are excluded from picker
+- [ ] Selecting a signed-in member and clicking Add → uses admin_add_member flow
+- [ ] Selecting a roster member and clicking Add → uses admin_add_roster_member_to_event flow
+- [ ] Added roster member appears in Guests section with "No account yet" badge
+- [ ] Anonymous guests still show "Guest" badge
+- [ ] Removing a roster-linked guest works (uses admin_remove_guest)
+- [ ] Adding same roster member twice → "This member is already on the event roster."
+- [ ] Adding a claimed roster member → friendly error message
+- [ ] Capacity counting includes roster-linked guests
+- [ ] Signed-in member add/remove/waitlist/offer behavior unchanged
+- [ ] Guest add/remove behavior unchanged
+
+### QA checklist — No regressions
+
+- [ ] Existing signed-in member cards work (role dropdown, deactivate)
+- [ ] Add Member sheet for roster members works
+- [ ] Edit/delete roster members works
+- [ ] Pending invites section works
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

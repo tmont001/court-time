@@ -100,6 +100,7 @@ export type Database = {
           sms_opt_in: boolean;
           sms_opted_in_at: string | null;
           sms_opted_in_ip: string | null;
+          admin_notes: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -114,6 +115,7 @@ export type Database = {
           sms_opt_in?: boolean;
           sms_opted_in_at?: string | null;
           sms_opted_in_ip?: string | null;
+          admin_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -128,6 +130,7 @@ export type Database = {
           sms_opt_in?: boolean;
           sms_opted_in_at?: string | null;
           sms_opted_in_ip?: string | null;
+          admin_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -539,25 +542,28 @@ export type Database = {
       };
       event_guests: {
         Row: {
-          id:           string;
-          event_id:     string;
-          display_name: string;
-          added_by:     string;
-          created_at:   string;
+          id:                string;
+          event_id:          string;
+          display_name:      string;
+          added_by:          string;
+          roster_member_id:  string | null;
+          created_at:        string;
         };
         Insert: {
-          id?:          string;
-          event_id:     string;
-          display_name: string;
-          added_by:     string;
-          created_at?:  string;
+          id?:               string;
+          event_id:          string;
+          display_name:      string;
+          added_by:          string;
+          roster_member_id?: string | null;
+          created_at?:       string;
         };
         Update: {
-          id?:           string;
-          event_id?:     string;
-          display_name?: string;
-          added_by?:     string;
-          created_at?:   string;
+          id?:               string;
+          event_id?:         string;
+          display_name?:     string;
+          added_by?:         string;
+          roster_member_id?: string | null;
+          created_at?:       string;
         };
         Relationships: [
           {
@@ -1063,6 +1069,7 @@ export type Database = {
           status: string;
           created_at: string;
           email: string | null;
+          admin_notes: string | null;
         }[];
       };
       update_club_settings: {
@@ -1122,6 +1129,7 @@ export type Database = {
           attendance_status: string | null;
           offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted/guest
           waitlist_position: number | null;
+          roster_member_id:  string | null;  // Phase 21I-C: non-null for roster-linked guests
         }[];
       };
       mark_attendance: {
@@ -1369,6 +1377,22 @@ export type Database = {
       delete_roster_member: {
         Args: { p_id: string };
         Returns: undefined;
+      };
+      // Phase 21I-C-A: member notes + roster members in events
+      set_member_notes: {
+        Args: { p_target_user_id: string; p_notes: string | null };
+        Returns: undefined;
+      };
+      admin_add_roster_member_to_event: {
+        Args: { p_event_id: string; p_roster_member_id: string };
+        Returns: {
+          id:               string;
+          event_id:         string;
+          display_name:     string;
+          added_by:         string;
+          roster_member_id: string | null;
+          created_at:       string;
+        };
       };
     };
     Enums: { [_ in never]: never };
