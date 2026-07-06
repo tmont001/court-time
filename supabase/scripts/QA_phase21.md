@@ -4282,3 +4282,77 @@ Event roster errors:
 - [ ] Edit/delete roster members works
 - [ ] Pending invites section works
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21I-D — Event Roster Label Polish
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+The event roster sheet now separates roster-linked no-account members from
+anonymous guests into distinct sections instead of grouping them together under
+"Guests." No database changes.
+
+**Before:** All guest-role rows appeared under one "GUESTS (N)" section with
+inline badges ("No account yet" or "Guest") to distinguish them.
+
+**After:** Three possible sections in the guest area:
+- **NO ACCOUNT YET (N)** — amber header, roster-linked members only
+- **GUESTS (N)** — gray header, anonymous guests only
+
+Sections only appear when they have rows. Removal behavior is unchanged
+(both use `adminRemoveGuest`). Capacity counting is unchanged (both types
+count toward capacity as event_guests).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/calendar/EventRosterSheet.tsx` | Split `guests` array into `rosterGuests` + `anonGuests`; render as two separate sections |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No database changes. No migration changes. No logic changes.
+
+### QA checklist
+
+- [ ] Roster-linked no-account members appear under "NO ACCOUNT YET" section (amber header)
+- [ ] Anonymous guests appear under "GUESTS" section (gray header)
+- [ ] Section counts are correct for each
+- [ ] Sections only appear when they have rows
+- [ ] Remove button works on roster-linked members (uses adminRemoveGuest)
+- [ ] Remove button works on anonymous guests (uses adminRemoveGuest)
+- [ ] Signed-in members still appear under SIGNED-IN MEMBERS / OFFERED / WAITLISTED
+- [ ] Add Member picker still shows both signed-in and roster members
+- [ ] Capacity counting unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21I-D addendum — Roster wording clarification
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+- Added "N attending" total below the "Roster" title (counts confirmed signed-in
+  members + no-account roster members + anonymous guests; excludes waitlisted/offered)
+- Renamed the confirmed section from "CONFIRMED (N)" to "SIGNED-IN MEMBERS (N)"
+- OFFERED / WAITLISTED / NO ACCOUNT YET / GUESTS sections unchanged
+
+No database changes. No logic changes.
+
+### QA checklist
+
+- [ ] "N attending" total shown under Roster title
+- [ ] Total counts confirmed + no-account + guests (not waitlisted, not offered)
+- [ ] Total hidden while loading or on error
+- [ ] Total hidden when 0 attending
+- [ ] Section header reads "SIGNED-IN MEMBERS (N)" not "CONFIRMED (N)"
+- [ ] OFFERED section unchanged
+- [ ] WAITLISTED section unchanged
+- [ ] NO ACCOUNT YET section unchanged
+- [ ] GUESTS section unchanged
+- [ ] No database files changed
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

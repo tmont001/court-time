@@ -265,10 +265,15 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
 
   // ── Derived ────────────────────────────────────────────────────────────────
 
-  const guests    = rows.filter(r => r.role === "guest");
-  const confirmed = rows.filter(r => r.status === "confirmed" && r.role !== "guest");
-  const offered   = rows.filter(r => r.status === "offered");
-  const waitlisted = rows.filter(r => r.status === "waitlisted");
+  const rosterGuests = rows.filter(r => r.role === "guest" && r.roster_member_id);
+  const anonGuests   = rows.filter(r => r.role === "guest" && !r.roster_member_id);
+  // Exclude host rows from the attending display — creators are recorded via
+  // events.created_by and join the roster only if explicitly added (Phase 21I-D).
+  // Old events may still carry a legacy host row; filtering prevents double-counting.
+  const confirmed    = rows.filter(r => r.status === "confirmed" && r.role !== "guest" && r.role !== "host");
+  const offered      = rows.filter(r => r.status === "offered");
+  const waitlisted   = rows.filter(r => r.status === "waitlisted");
+  const totalAttending = confirmed.length + rosterGuests.length + anonGuests.length;
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -290,7 +295,14 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
         <div className="shrink-0 px-6 pt-5 pb-3">
           <div className="ct-handlebar mx-auto mb-4" />
           <div className="flex items-center justify-between">
-            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
+            <div>
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
+              {!loading && !error && totalAttending > 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {totalAttending} attending
+                </p>
+              )}
+            </div>
             <button onClick={onClose} className="text-sm text-gray-400 font-medium">Close</button>
           </div>
         </div>
@@ -411,11 +423,11 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                 </p>
               ) : (
                 <>
-                  {/* ── Confirmed ───────────────────────────────────────── */}
+                  {/* ── Signed-in members ─────────────────────────────── */}
                   {confirmed.length > 0 && (
                     <div className="mb-5">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                        Confirmed ({confirmed.length})
+                        Signed-In Members ({confirmed.length})
                       </p>
                       {confirmed.map(row => {
                         const isUpdating = rowUpdating.has(row.profile_id);
@@ -616,16 +628,15 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                     </div>
                   )}
 
-                  {/* ── Guests & roster members ─────────────────────────── */}
-                  {guests.length > 0 && (
+                  {/* ── No account yet (roster-linked) ──────────────────── */}
+                  {rosterGuests.length > 0 && (
                     <div className="mb-5">
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                        Guests ({guests.length})
+                      <p className="text-xs font-semibold text-amber-600 dark:text-amber-500 uppercase tracking-wide mb-2">
+                        No Account Yet ({rosterGuests.length})
                       </p>
-                      {guests.map(row => {
-                        const isUpdating  = rowUpdating.has(row.profile_id);
-                        const rowError    = rowErrors.get(row.profile_id);
-                        const isRosterLinked = !!row.roster_member_id;
+                      {rosterGuests.map(row => {
+                        const isUpdating = rowUpdating.has(row.profile_id);
+                        const rowError   = rowErrors.get(row.profile_id);
                         return (
                           <div
                             key={row.profile_id}
@@ -636,13 +647,47 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                                   {row.display_name}
                                 </p>
-                                <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                  isRosterLinked
-                                    ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                                }`}>
-                                  {isRosterLinked ? "No account yet" : "Guest"}
-                                </span>
+                              </div>
+                              {isAdmin && (
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleAdminAction(row.profile_id, () =>
+                                    adminRemoveGuest(eventId, row.profile_id)
+                                  )}
+                                  className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
+                                >
+                                  {isUpdating ? "…" : "Remove"}
+                                </button>
+                              )}
+                            </div>
+                            {rowError && (
+                              <p className="text-xs text-red-500 mt-1">{rowError}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* ── Guests (anonymous) ─────────────────────────────── */}
+                  {anonGuests.length > 0 && (
+                    <div className="mb-5">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Guests ({anonGuests.length})
+                      </p>
+                      {anonGuests.map(row => {
+                        const isUpdating = rowUpdating.has(row.profile_id);
+                        const rowError   = rowErrors.get(row.profile_id);
+                        return (
+                          <div
+                            key={row.profile_id}
+                            className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
+                          >
+                            <div className="flex items-center">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                  {row.display_name}
+                                </p>
                               </div>
                               {isAdmin && (
                                 <button
