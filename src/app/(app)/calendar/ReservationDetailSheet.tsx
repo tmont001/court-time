@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { adminCancelReservation } from "./actions";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,10 +125,14 @@ export default function ReservationDetailSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <BottomSheet onClose={onClose} className="px-6 pt-5 pb-8">
+    <ResponsiveSheet onClose={onClose} variant="modal">
+      <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
+
+      {/* Handle — hidden on desktop */}
+      <div className="ct-handlebar mx-auto mb-4 md:hidden" />
 
       {/* Court */}
-      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{courtName}</p>
+      <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{courtName}</p>
 
       {/* Date */}
       <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{dateLabel}</p>
@@ -169,6 +173,7 @@ export default function ReservationDetailSheet({
         {loading ? "Cancelling…" : "Cancel Booking"}
       </button>
 
-    </BottomSheet>
+      </div>
+    </ResponsiveSheet>
   );
 }

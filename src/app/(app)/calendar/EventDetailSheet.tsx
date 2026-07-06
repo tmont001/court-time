@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
@@ -103,6 +104,7 @@ export default function EventDetailSheet({
   const [cancelLoading, setCancelLoading]             = useState(false);
   const [cancelError, setCancelError]                 = useState<string | null>(null);
   const [rosterOpen, setRosterOpen]                   = useState(false);
+  const [rosterRefreshTick, setRosterRefreshTick]     = useState(0);
   const [offerLoading, setOfferLoading]               = useState<"accept" | "pass" | null>(null);
   const [offerError, setOfferError]                   = useState<string | null>(null);
 
@@ -194,6 +196,7 @@ export default function EventDetailSheet({
       setLoading(false);
       return;
     }
+    setRosterRefreshTick(t => t + 1);
     onRefresh();
     onClose();
   }
@@ -207,6 +210,7 @@ export default function EventDetailSheet({
       setLoading(false);
       return;
     }
+    setRosterRefreshTick(t => t + 1);
     onRefresh();
     onClose();
   }
@@ -285,11 +289,11 @@ export default function EventDetailSheet({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
+      <ResponsiveSheet onClose={onClose} variant="modal">
+        <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
 
-        {/* Handle */}
-        <div className="ct-handlebar mx-auto mb-4" />
+        {/* Handle — hidden on desktop (ResponsiveSheet provides close button) */}
+        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
 
         {/* Event type pill */}
         <span
@@ -456,7 +460,8 @@ export default function EventDetailSheet({
           </div>
         )}
 
-      </div>
+        </div>
+      </ResponsiveSheet>
 
       {/* ── Event Roster Sheet — admin/pro only, layers above this sheet ── */}
       {rosterOpen && (
@@ -464,6 +469,7 @@ export default function EventDetailSheet({
           eventId={event.id}
           clubTimezone={clubTimezone}
           userRole={userRole}
+          refreshTick={rosterRefreshTick}
           onClose={() => setRosterOpen(false)}
           onRosterChange={(rows: RosterParticipantRow[], gc: number) => {
             setLocalParticipants(rows);

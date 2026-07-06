@@ -8,6 +8,7 @@ import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import { createReservation, cancelMemberReservation } from "./actions";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -489,20 +490,38 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     setBookingSlot({ court: pendingSlotAction.court, slotStart: pendingSlotAction.slotStart, slotIdx: pendingSlotAction.slotIdx });
     setBookingDuration(60);
     setBookingError(null);
-    setPendingSlotAction(null);
+    // Keep pendingSlotAction so Back button can return to the slot menu.
   }
 
   function openEventFromSlot() {
     if (!pendingSlotAction) return;
     setSlotPreFill(pendingSlotAction);
     setCreatingEvent(true);
-    setPendingSlotAction(null);
+    // Keep pendingSlotAction so Back button can return to the slot menu.
   }
 
   function openBlockFromSlot() {
     if (!pendingSlotAction) return;
     setSlotPreFill(pendingSlotAction);
     setCreatingBlock(true);
+    // Keep pendingSlotAction so Back button can return to the slot menu.
+  }
+
+  function backToSlotMenu() {
+    setBookingSlot(null);
+    setBookingError(null);
+    setCreatingEvent(false);
+    setCreatingBlock(false);
+    setSlotPreFill(null);
+    // pendingSlotAction stays set — the slot menu reappears.
+  }
+
+  function closeSlotFlow() {
+    setBookingSlot(null);
+    setBookingError(null);
+    setCreatingEvent(false);
+    setCreatingBlock(false);
+    setSlotPreFill(null);
     setPendingSlotAction(null);
   }
 
@@ -887,16 +906,12 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         )}
       </div>
 
-      {/* ── Slot action menu — pro/admin only ───────────────────────────── */}
-      {pendingSlotAction && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={() => setPendingSlotAction(null)}
-          />
-          <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="ct-handlebar mx-auto mb-4" />
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pendingSlotAction.court.name}</p>
+      {/* ── Slot action menu — hidden when sub-form is active ──────────── */}
+      {pendingSlotAction && !bookingSlot && !creatingEvent && !creatingBlock && (
+        <ResponsiveSheet onClose={closeSlotFlow} variant="modal">
+          <div className="px-6 pt-5 pb-8">
+            <div className="ct-handlebar mx-auto mb-4 md:hidden" />
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 pr-8">{pendingSlotAction.court.name}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-5">
               {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
                 timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
@@ -925,7 +940,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               )}
             </div>
           </div>
-        </>
+        </ResponsiveSheet>
       )}
 
       {/* ── Create event sheet ───────────────────────────────────────────── */}
@@ -934,8 +949,9 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
-          onClose={() => { setCreatingEvent(false); setSlotPreFill(null); }}
-          onCreated={() => { setRefreshTick(t => t + 1); setCreatingEvent(false); setSlotPreFill(null); }}
+          onClose={closeSlotFlow}
+          onCreated={() => { setRefreshTick(t => t + 1); closeSlotFlow(); }}
+          onBack={slotPreFill ? backToSlotMenu : undefined}
           initialDate={slotPreFill ? selectedDate : undefined}
           initialHour={slotPreFill ? Math.floor((startHour * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
           initialMinute={slotPreFill ? (startHour * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
@@ -962,8 +978,9 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           courts={courts}
           clubTimezone={clubTimezone}
           selectedDate={selectedDate}
-          onClose={() => { setCreatingBlock(false); setSlotPreFill(null); }}
-          onCreated={() => { setRefreshTick(t => t + 1); setCreatingBlock(false); setSlotPreFill(null); }}
+          onClose={closeSlotFlow}
+          onCreated={() => { setRefreshTick(t => t + 1); closeSlotFlow(); }}
+          onBack={slotPreFill ? backToSlotMenu : undefined}
           defaultCourtId={slotPreFill?.court.id}
           defaultStartHour={slotPreFill ? Math.floor((startHour * 60 + slotPreFill.slotIdx * 30) / 60) : undefined}
           defaultStartMinute={slotPreFill ? (startHour * 60 + slotPreFill.slotIdx * 30) % 60 : undefined}
@@ -988,15 +1005,24 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
       {/* ── Booking sheet ────────────────────────────────────────────────── */}
       {bookingSlot && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={() => { setBookingSlot(null); setBookingError(null); }}
-          />
-          <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 px-6 pt-5 pb-8 shadow-xl">
-            <div className="ct-handlebar mx-auto mb-4" />
+        <ResponsiveSheet
+          onClose={closeSlotFlow}
+          variant="modal"
+        >
+          <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
+            <div className="ct-handlebar mx-auto mb-4 md:hidden" />
 
-            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{bookingSlot.court.name}</p>
+            <div className="flex items-center gap-3 mb-3">
+              {pendingSlotAction && (
+                <button
+                  onClick={backToSlotMenu}
+                  className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+                >
+                  ← Back
+                </button>
+              )}
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{bookingSlot.court.name}</p>
+            </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{sheetDateLabel}</p>
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">
               {sheetStartLabel} – {sheetEndLabel}
@@ -1036,7 +1062,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               {bookingLoading ? "Booking…" : "Confirm Booking"}
             </button>
           </div>
-        </>
+        </ResponsiveSheet>
       )}
     </>
   );

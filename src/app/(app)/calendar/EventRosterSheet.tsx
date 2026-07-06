@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import {
   adminRemoveParticipant,
   adminForceConfirm,
@@ -40,6 +41,8 @@ interface Props {
   onClose:          () => void;
   clubTimezone?:    string;
   userRole?:        string;
+  // Increment to trigger a roster reload (e.g. after join/leave in parent).
+  refreshTick?:     number;
   // Called after every successful roster fetch so parents can update occupancy counts.
   onRosterChange?: (participantRows: RosterParticipantRow[], guestCount: number) => void;
 }
@@ -57,7 +60,7 @@ function formatExpiryTime(isoString: string, tz?: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, onRosterChange }: Props) {
+export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, refreshTick, onRosterChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const isAdmin  = userRole === "admin" || userRole === "pro";
 
@@ -123,6 +126,12 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
         .then(({ data }) => { if (data?.club_id) setClubId(data.club_id); });
     }
   }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload roster when parent signals a join/leave has occurred.
+  useEffect(() => {
+    if (refreshTick === undefined || refreshTick === 0) return;
+    loadRoster();
+  }, [refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Attendance handler ────────────────────────────────────────────────────
 
@@ -278,37 +287,34 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <>
-      {/* Backdrop — above EventDetailSheet (z-50) */}
-      <div
-        className="fixed inset-0 bg-black/50"
-        style={{ zIndex: 60 }}
-        onClick={onClose}
-      />
-
-      {/* Sheet */}
-      <div
-        className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl flex flex-col"
-        style={{ zIndex: 70, maxHeight: "80dvh" }}
-      >
-        {/* Header */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4" />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
-              {!loading && !error && totalAttending > 0 && (
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {totalAttending} attending
-                </p>
-              )}
-            </div>
-            <button onClick={onClose} className="text-sm text-gray-400 font-medium">Close</button>
+    // On mobile: z-60 backdrop / z-70 panel to layer above EventDetailSheet.
+    // On desktop: ResponsiveSheet uses default z-40/z-50 (EventDetailSheet not visible).
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="panel"
+      mobileBackdropZ={60}
+      mobilePanelZ={70}
+    >
+      {/* Header */}
+      <div className="shrink-0 px-6 pt-5 pb-3">
+        {/* Handle — mobile only */}
+        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
+        <div className="flex items-center justify-between pr-8">
+          <div>
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
+            {!loading && !error && totalAttending > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {totalAttending} attending
+              </p>
+            )}
           </div>
+          {/* Close — mobile only; desktop uses ResponsiveSheet × button */}
+          <button onClick={onClose} className="text-sm text-gray-400 font-medium md:hidden">Close</button>
         </div>
+      </div>
 
-        {/* Scrollable body */}
-        <div className="overflow-y-auto px-6 pb-8">
+      {/* Scrollable body — flex-1 so panel fills height on desktop */}
+      <div className="overflow-y-auto flex-1 px-6 pb-8">
 
           {loading && (
             <p className="text-sm text-gray-400 py-8 text-center">Loading roster…</p>
@@ -715,7 +721,6 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
           )}
 
         </div>
-      </div>
-    </>
+    </ResponsiveSheet>
   );
 }

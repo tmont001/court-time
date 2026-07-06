@@ -4424,3 +4424,192 @@ No database changes. No migrations.
 - [ ] Join/Leave/Accept/Pass actions work on /events
 - [ ] My Schedule upcoming items unchanged
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21J-B — Responsive Event Overlays
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+Added a shared `ResponsiveSheet` component and wired four event-related overlays
+to use it. On mobile (< 768px) behavior is unchanged — all four continue to slide
+up from the bottom. On desktop (≥ 768px) they no longer behave as bottom sheets.
+
+### New component: `src/components/ResponsiveSheet.tsx`
+
+Detects viewport via `matchMedia("min-width: 768px")` on mount and live. Two
+desktop variants:
+- `variant="modal"` — centered dialog, `max-w-lg max-h-[85vh]`, `ct-modal-enter`
+  fade-in + scale animation, semi-transparent backdrop, × close button, Escape key.
+- `variant="panel"` — right-side panel, `w-[440px]`, `ct-panel-enter` slide-in
+  animation, semi-transparent backdrop, × close button, Escape key, independent scroll.
+
+Mobile path: `fixed bottom-0 left-0 right-0 rounded-t-2xl ct-sheet-enter` (same
+as before, no drag-to-dismiss — use BottomSheet directly if that's needed).
+
+### Two new animation classes in `globals.css`
+- `ct-modal-enter` — fade-in + scale(0.97→1), 150ms ease-out
+- `ct-panel-enter` — translateX(24px→0) + fade-in, 180ms ease-out
+
+### Wired overlays
+
+| Overlay | Mobile | Desktop |
+|---|---|---|
+| EventDetailSheet | Bottom sheet (unchanged) | Centered modal |
+| EventRosterSheet | Bottom sheet z-60/70 (unchanged) | Right-side panel |
+| CalendarShell slot action menu | Bottom sheet (unchanged) | Centered modal |
+| CalendarShell booking confirmation | Bottom sheet (unchanged) | Centered modal |
+
+### What was NOT changed (deferred)
+- `CreateEventSheet` — still bottom sheet on desktop
+- `CreateMaintenanceSheet` — still bottom sheet on desktop
+- `InviteSheet` — still bottom sheet on desktop
+- `AddMemberSheet` — still bottom sheet on desktop
+- `BottomSheet.tsx` — unchanged
+- `NotificationSheet.tsx` — unchanged (already had its own responsive logic)
+
+### Mobile/desktop behavior details
+
+**EventDetailSheet (desktop modal):**
+- Centered, `max-w-lg`. Handle pill hidden on desktop (`md:hidden`).
+- ResponsiveSheet provides × close button top-right.
+- All Join/Leave/Accept/Pass/Cancel Event actions unchanged.
+- Event Roster sheet opens on top (z-50+) when admin taps View Roster.
+
+**EventRosterSheet (desktop right panel):**
+- `w-[440px]` panel slides in from right. Independent scroll (`overflow-y-auto flex-1`).
+- Handle pill and inline "Close" button hidden on desktop (`md:hidden`).
+- ResponsiveSheet provides × close button top-right (title row padded `pr-8` to avoid overlap).
+- Mobile z-index overrides preserved: backdrop z-60, panel z-70 (layers above EventDetailSheet).
+- All roster actions (add member, add roster member, add guest, force confirm, offer spot, remove) unchanged.
+
+**CalendarShell slot action + booking confirmation (desktop modal):**
+- Centered modal. Handle pill hidden on desktop. Title padded `pr-8` to clear × button.
+- All booking/slot actions unchanged.
+
+### QA checklist
+
+**Mobile (< 768px) — must behave exactly as before:**
+- [ ] EventDetailSheet slides up from bottom, backdrop click closes
+- [ ] EventRosterSheet slides up from bottom (z-70), handle pill visible
+- [ ] Slot action menu slides up from bottom
+- [ ] Booking confirmation slides up from bottom
+
+**Desktop (≥ 768px) — new behavior:**
+- [ ] EventDetailSheet opens as centered modal (not bottom pull-up)
+- [ ] EventDetailSheet handle pill NOT visible on desktop
+- [ ] EventDetailSheet × close button visible top-right
+- [ ] EventDetailSheet backdrop click closes
+- [ ] EventDetailSheet Escape key closes
+- [ ] EventDetailSheet Join/Leave/Accept/Pass/Cancel Event all work
+- [ ] EventRosterSheet opens as right-side panel (not bottom pull-up)
+- [ ] EventRosterSheet panel has independent scroll for long rosters
+- [ ] EventRosterSheet "Close" text hidden on desktop (× button used instead)
+- [ ] EventRosterSheet handle pill NOT visible on desktop
+- [ ] EventRosterSheet backdrop click closes
+- [ ] EventRosterSheet add member picker works
+- [ ] EventRosterSheet remove/force confirm/offer spot all work
+- [ ] Slot action menu opens as centered modal
+- [ ] Booking confirmation opens as centered modal with duration picker working
+- [ ] All desktop overlays have semi-transparent backdrop
+- [ ] All desktop overlays have × close button
+
+**No regressions:**
+- [ ] NotificationSheet desktop popover unchanged
+- [ ] NotificationSheet mobile bottom sheet unchanged
+- [ ] CreateEventSheet still works (not changed in this phase)
+- [ ] CreateMaintenanceSheet still works (not changed)
+- [ ] InviteSheet / AddMemberSheet still work (not changed)
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21J-B addendum — Four QA fixes
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### Root causes and fixes
+
+**Issue 1 — CreateEventSheet and CreateMaintenanceSheet still bottom sheets on desktop**
+Both used hardcoded `fixed bottom-0 ... max-h-[88dvh]` containers. Wrapped both
+with `<ResponsiveSheet variant="modal">`. CreateEventSheet uses `size="wide"` (max-w-2xl)
+because of the multi-step court selection layout. Handle pills hidden on desktop.
+
+**Issue 2 — No Back button in slot flow**
+`openBookingFromSlot/openEventFromSlot/openBlockFromSlot` all called
+`setPendingSlotAction(null)`, losing the ability to return to the slot menu.
+Fix: removed those `setPendingSlotAction(null)` calls. Added `backToSlotMenu()`
+(clears sub-form state, keeps pendingSlotAction) and `closeSlotFlow()` (clears
+everything). Slot menu now hides via `!bookingSlot && !creatingEvent && !creatingBlock`
+condition. Added a "← Back" button in the booking confirmation sheet (when arrived
+from a slot). Added `onBack?: () => void` prop to CreateEventSheet (shows "← Back"
+at step 1) and CreateMaintenanceSheet. CalendarShell passes `onBack={slotPreFill ?
+backToSlotMenu : undefined}` so Back only appears when the sheet was opened from a slot.
+
+**Issue 3 — Backdrop click not closing desktop modal**
+The centering flex div (`fixed inset-0 z-50`) sat above the backdrop (`z-40`), so
+clicks outside the modal box hit the flex container silently. Fix: added
+`onClick={onClose}` to the centering div. Inner modal div's `stopPropagation()`
+prevents modal content clicks from triggering it.
+
+**Issue 4 — Roster not updating after join/leave**
+EventRosterSheet only reloaded on mount and after its own admin actions. After a
+user joined/left via EventDetailSheet's buttons, the open roster panel showed stale
+data. Fix: added `refreshTick?: number` prop to EventRosterSheet; a `useEffect`
+calls `loadRoster()` whenever refreshTick increments. EventDetailSheet now has a
+`rosterRefreshTick` state that increments on successful join and leave.
+
+### Files changed in this addendum
+
+| File | Change |
+|---|---|
+| `src/components/ResponsiveSheet.tsx` | Backdrop click fix; removed extra scroll wrapper; added `size` prop (default/wide) |
+| `src/app/(app)/calendar/EventDetailSheet.tsx` | Added rosterRefreshTick; passes to EventRosterSheet; content div gets overflow-y-auto flex-1 |
+| `src/app/(app)/calendar/EventRosterSheet.tsx` | Added `refreshTick` prop; reloads roster when tick increments |
+| `src/app/(app)/calendar/CreateEventSheet.tsx` | Wrapped with ResponsiveSheet (size="wide"); added onBack prop |
+| `src/app/(app)/calendar/CreateMaintenanceSheet.tsx` | Wrapped with ResponsiveSheet; added onBack prop |
+| `src/app/(app)/calendar/CalendarShell.tsx` | backToSlotMenu/closeSlotFlow helpers; Back button in booking sheet; onBack/onClose for CreateEvent/CreateMaintenance |
+
+### QA checklist — four fixes
+
+**Issue 1 (Create sheets on desktop):**
+- [ ] Creating an event from FAB button opens as desktop modal
+- [ ] Creating event from empty slot tap opens as desktop modal
+- [ ] "← Back" (between steps) still works inside CreateEventSheet
+- [ ] Step counter "1 of 4" still visible
+- [ ] Creating a maintenance block opens as desktop modal
+- [ ] Both are still bottom sheets on mobile
+
+**Issue 2 (Back button in slot flow):**
+- [ ] Tap empty slot → slot menu appears
+- [ ] Tap "Book Court" → booking form opens, "← Back" visible
+- [ ] Tap "← Back" → returns to slot menu (same slot, not closed)
+- [ ] Tap "Create Event" → event form opens, "← Back" visible at step 1
+- [ ] Tap "← Back" in event form → returns to slot menu
+- [ ] Tap "Maintenance Block" → block form opens, "← Back" visible
+- [ ] Tap "← Back" in block form → returns to slot menu
+- [ ] × (close) closes entire slot flow (slot menu + form)
+- [ ] Clicking backdrop on desktop closes entire slot flow
+- [ ] Escape key closes entire slot flow
+- [ ] FAB "Create Event" button: opens event form with NO "← Back" (not from slot)
+- [ ] FAB "+ Block" button: opens block form with NO "← Back" (not from slot)
+
+**Issue 3 (Backdrop click):**
+- [ ] Click outside event detail modal → modal closes
+- [ ] Click inside event detail modal → modal stays open
+- [ ] Click outside event roster panel → panel closes
+- [ ] Click outside booking confirmation modal → modal closes
+- [ ] Click outside slot action modal → modal closes
+- [ ] Click outside Create Event modal → modal closes
+- [ ] Click outside Create Maintenance modal → modal closes
+
+**Issue 4 (Roster updates after join/leave):**
+- [ ] Open event detail, open roster panel, join event → roster reloads showing new participant
+- [ ] Open event detail, open roster panel, leave event → roster reloads removing participant
+- [ ] Waitlist join: roster shows member as waitlisted after joining full event
+
+**No regressions:**
+- [ ] All existing modal and panel behaviors from 21J-B still work
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

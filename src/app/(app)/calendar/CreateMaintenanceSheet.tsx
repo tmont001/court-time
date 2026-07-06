@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -34,6 +35,8 @@ interface Props {
   selectedDate:     Date;
   onClose:          () => void;
   onCreated:        () => void;
+  // Optional: return to slot action menu instead of closing
+  onBack?:          () => void;
   // Optional pre-fill from slot click
   defaultCourtId?:    string;
   defaultStartHour?:  number;
@@ -77,7 +80,7 @@ function mapBlockError(code: string | undefined, message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CreateMaintenanceSheet({
-  courts, clubTimezone, selectedDate, onClose, onCreated,
+  courts, clubTimezone, selectedDate, onClose, onCreated, onBack,
   defaultCourtId, defaultStartHour, defaultStartMinute,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -191,14 +194,21 @@ export default function CreateMaintenanceSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
-
+    <ResponsiveSheet onClose={onClose} variant="modal">
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4" />
-          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
+          <div className="ct-handlebar mx-auto mb-4 md:hidden" />
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+              >
+                ← Back
+              </button>
+            )}
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
+          </div>
         </div>
 
         {/* Scrollable content */}
@@ -344,7 +354,6 @@ export default function CreateMaintenanceSheet({
           </button>
 
         </div>
-      </div>
-    </>
+    </ResponsiveSheet>
   );
 }
