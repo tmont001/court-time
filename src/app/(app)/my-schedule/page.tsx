@@ -130,6 +130,12 @@ function formatDateHeader(iso: string, tz: string): string {
   });
 }
 
+function formatDateShort(iso: string, tz: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: tz, weekday: "short", month: "short", day: "numeric",
+  });
+}
+
 function dateKey(iso: string, tz: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
 }
@@ -416,7 +422,11 @@ export default async function MySchedulePage() {
                 <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Past Events
                 </p>
+                <p className="px-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
+                  Your event history. Past events are read-only.
+                </p>
                 {pastItems.map(({ ev, myRole, myStatus, myAttendance }) => {
+                  const date  = formatDateShort(ev.starts_at, clubTimezone);
                   const start = formatTime(ev.starts_at, clubTimezone);
                   const end   = formatTime(ev.ends_at,   clubTimezone);
                   const evCourtNames = ev.reservations
@@ -427,7 +437,7 @@ export default async function MySchedulePage() {
                   return (
                     <div
                       key={ev.id}
-                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between"
+                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between opacity-75"
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
@@ -445,7 +455,7 @@ export default async function MySchedulePage() {
                         </div>
                         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {start} – {end}
+                          {date} · {start} – {end}
                           {evCourtNames ? ` · ${evCourtNames}` : ""}
                         </p>
                       </div>
@@ -456,7 +466,7 @@ export default async function MySchedulePage() {
                       ) : myAttendance === "no_show" ? (
                         <span className="text-xs font-medium text-red-500 ml-4 shrink-0">No-show</span>
                       ) : (
-                        <span className="text-xs text-gray-300 ml-4 shrink-0">—</span>
+                        <span className="text-xs text-gray-400 dark:text-gray-500 ml-4 shrink-0">Past</span>
                       )}
                     </div>
                   );

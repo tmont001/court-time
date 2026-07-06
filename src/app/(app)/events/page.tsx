@@ -8,7 +8,7 @@ import {
   acceptWaitlistOffer as dispatchAcceptWaitlistOffer,
   declineWaitlistOffer as dispatchDeclineWaitlistOffer,
 } from "@/app/(app)/calendar/actions";
-import EventRosterButton from "./EventRosterButton";
+import EventCardClient from "./EventCardClient";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -222,11 +222,68 @@ export default async function EventsPage() {
                       const endLabel   = formatTime(ev.ends_at,   clubTimezone);
 
                       return (
-                        <div
+                        <EventCardClient
                           key={ev.id}
-                          className="ct-card-interactive px-4 py-3"
+                          eventId={ev.id}
+                          userRole={profile?.role}
+                          clubTimezone={clubTimezone}
+                          rosterCount={confirmedCount + offeredCount + waitlistCount}
+                          actionArea={
+                            <div className="flex items-center justify-between mt-2">
+                              <p className="text-xs text-gray-400 dark:text-gray-500">
+                                {confirmedCount + offeredCount + guestCount} / {ev.capacity} joined
+                                {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
+                              </p>
+
+                              {isHost ? null : isOffered ? (
+                                offerExpiredServerSide ? (
+                                  <form action={joinEventAction}>
+                                    <input type="hidden" name="event_id" value={ev.id} />
+                                    <button type="submit" className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
+                                      Rejoin
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <div className="flex items-center gap-3">
+                                    <form action={declineWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
+                                        Pass
+                                      </button>
+                                    </form>
+                                    <form action={acceptWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button type="submit" className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
+                                        Accept
+                                      </button>
+                                    </form>
+                                  </div>
+                                )
+                              ) : isJoined || isWaitlisted ? (
+                                <form action={leaveEventAction}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button
+                                    type="submit"
+                                    className="text-xs font-medium text-red-500 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                  >
+                                    {isWaitlisted ? "Leave Waitlist" : "Leave"}
+                                  </button>
+                                </form>
+                              ) : (
+                                <form action={joinEventAction}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button
+                                    type="submit"
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                  >
+                                    {isFull ? "Join Waitlist" : "Join Event"}
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                          }
                         >
-                          {/* Type pill + status badge */}
+                          {/* Type pill + status badges */}
                           <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                             {type && (
                               <span
@@ -266,86 +323,19 @@ export default async function EventsPage() {
                           {/* Title */}
                           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
 
-                          {/* Time range + courts (date is in section header) */}
+                          {/* Time range + courts */}
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {startLabel} – {endLabel}
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
 
-                          {/* Offer deadline — shown only for active (non-expired) offers */}
+                          {/* Offer deadline */}
                           {isOffered && !offerExpiredServerSide && offerExpiresAt && (
                             <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
                               Accept by {formatTime(offerExpiresAt, clubTimezone)}
                             </p>
                           )}
-
-                          {/* Capacity row + action button */}
-                          <div className="flex items-center justify-between mt-2">
-                            <p className="text-xs text-gray-400 dark:text-gray-500">
-                              {confirmedCount + offeredCount + guestCount} / {ev.capacity} joined
-                              {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
-                            </p>
-
-                            {isHost ? null : isOffered ? (
-                              offerExpiredServerSide ? (
-                                /* Expired — let them rejoin */
-                                <form action={joinEventAction}>
-                                  <input type="hidden" name="event_id" value={ev.id} />
-                                  <button type="submit" className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                    Rejoin
-                                  </button>
-                                </form>
-                              ) : (
-                                /* Active offer — Accept or Pass side by side */
-                                <div className="flex items-center gap-3">
-                                  <form action={declineWaitlistOfferAction}>
-                                    <input type="hidden" name="event_id" value={ev.id} />
-                                    <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                      Pass
-                                    </button>
-                                  </form>
-                                  <form action={acceptWaitlistOfferAction}>
-                                    <input type="hidden" name="event_id" value={ev.id} />
-                                    <button type="submit" className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                      Accept
-                                    </button>
-                                  </form>
-                                </div>
-                              )
-                            ) : isJoined || isWaitlisted ? (
-                              <form action={leaveEventAction}>
-                                <input type="hidden" name="event_id" value={ev.id} />
-                                <button
-                                  type="submit"
-                                  className="text-xs font-medium text-red-500 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                >
-                                  {isWaitlisted ? "Leave Waitlist" : "Leave"}
-                                </button>
-                              </form>
-                            ) : (
-                              <form action={joinEventAction}>
-                                <input type="hidden" name="event_id" value={ev.id} />
-                                <button
-                                  type="submit"
-                                  className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                >
-                                  {isFull ? "Join Waitlist" : "Join Event"}
-                                </button>
-                              </form>
-                            )}
-                          </div>
-
-                          {/* Roster — admin / pro only */}
-                          {(profile?.role === "admin" || profile?.role === "pro") && (
-                            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                              <EventRosterButton
-                                eventId={ev.id}
-                                count={confirmedCount + offeredCount + waitlistCount}
-                                userRole={profile?.role}
-                              />
-                            </div>
-                          )}
-                        </div>
+                        </EventCardClient>
                       );
                     })}
                   </div>

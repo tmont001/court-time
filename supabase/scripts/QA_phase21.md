@@ -4356,3 +4356,71 @@ No database changes. No logic changes.
 - [ ] GUESTS section unchanged
 - [ ] No database files changed
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21J-A — Events and My Schedule Cleanup
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### Root cause of /events flicker
+
+Event cards in `/events/page.tsx` used `ct-card-interactive`, which applies
+`transform: translateY(-1px)` on `:hover`. When the cursor was near the card's
+bottom edge, the card physically moving up 1px pushed the cursor outside the
+card boundary, triggering hover-off. The card snapped back, cursor was inside
+again, hover-on fired, card moved up — and the cycle repeated infinitely.
+
+Fix: changed event cards from `ct-card-interactive` to `ct-card`. The cards
+are not interactive divs (no onClick); the action buttons inside them handle
+interaction. This eliminates the transform on hover without affecting any button
+behavior or styles.
+
+### My Schedule past events
+
+Added the event date to each past event row (`Mon, Jun 23 · 9:00 AM – 10:00 AM`).
+Past events now clearly show when they occurred. Also:
+- Added helper text: "Your event history. Past events are read-only."
+- Reduced card opacity to 0.75 to visually distinguish past from upcoming
+- Changed the empty attendance indicator from `—` to `Past`
+
+No delete functionality added — past events remain read-only history.
+
+### Navigation direction note
+
+Future intended direction:
+- `/calendar` becomes the main schedule hub
+- Future calendar views may include Day / Week / List options
+- `/events` may later become a list view within calendar or redirect
+- `/my-schedule` remains the personal member schedule and history view
+- No nav merge in this phase
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/events/page.tsx` | `ct-card-interactive` → `ct-card` on event cards (fixes flicker) |
+| `src/app/(app)/my-schedule/page.tsx` | Added `formatDateShort`; past events show date + time; helper text; visual dimming |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No database changes. No migrations.
+
+### QA checklist
+
+**Events page flicker:**
+- [ ] Hover cursor over event card edge — no flicker, no oscillation
+- [ ] Join / Leave / Accept / Pass buttons still respond to hover
+- [ ] EventRosterSheet opens correctly on click (admin/pro)
+
+**My Schedule past events:**
+- [ ] Past event rows show date (e.g., "Mon, Jun 23 · 9:00 AM – 10:00 AM")
+- [ ] Helper text "Your event history. Past events are read-only." appears
+- [ ] Past event cards are slightly dimmed
+- [ ] No delete/remove buttons on past events
+- [ ] Attendance: Attended (green), No-show (red), Past (gray default)
+- [ ] Upcoming events and reservations unchanged
+
+**No regressions:**
+- [ ] Join/Leave/Accept/Pass actions work on /events
+- [ ] My Schedule upcoming items unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
