@@ -4,6 +4,7 @@ import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import InviteSheet from "./InviteSheet";
 import AddMemberSheet from "./AddMemberSheet";
+import ImportMembersSheet from "./ImportMembersSheet";
 import type { EditRosterMember } from "./AddMemberSheet";
 import {
   revokeInviteAction,
@@ -136,10 +137,11 @@ export default function MembersClient({
   invitesError,
 }: Props) {
   const router = useRouter();
-  const [inviteSheetOpen, setInviteSheetOpen] = useState(false);
-  const [inviteEmail, setInviteEmail]         = useState<string | undefined>();
-  const [addSheetOpen, setAddSheetOpen]       = useState(false);
-  const [editMember, setEditMember]           = useState<EditRosterMember | undefined>();
+  const [inviteSheetOpen, setInviteSheetOpen]   = useState(false);
+  const [inviteEmail, setInviteEmail]           = useState<string | undefined>();
+  const [addSheetOpen, setAddSheetOpen]         = useState(false);
+  const [importSheetOpen, setImportSheetOpen]   = useState(false);
+  const [editMember, setEditMember]             = useState<EditRosterMember | undefined>();
   const [revokeError, setRevokeError]         = useState<string | null>(null);
   const [revokingCode, setRevokingCode]       = useState<string | null>(null);
   const [copiedCode, setCopiedCode]           = useState<string | null>(null);
@@ -327,26 +329,56 @@ export default function MembersClient({
   return (
     <>
       {/* Action row */}
-      <div className="mx-4 pt-4 pb-2 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Members
-            {totalCount > 0 && (
-              <span className="ml-1.5 text-gray-400 dark:text-gray-500 font-normal">
-                ({totalCount})
-              </span>
-            )}
-          </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 max-w-[260px] leading-relaxed">
-            Add someone to the roster, even if they do not have an email address yet.
-          </p>
+      <div className="mx-4 pt-4 pb-2">
+
+        {/* Title + desktop buttons (side by side on md+) */}
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Members
+              {totalCount > 0 && (
+                <span className="ml-1.5 text-gray-400 dark:text-gray-500 font-normal">
+                  ({totalCount})
+                </span>
+              )}
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 leading-relaxed">
+              Add someone to the roster, even if they do not have an email address yet.
+            </p>
+          </div>
+          {/* Desktop buttons — stacked compact on right, hidden on mobile */}
+          <div className="hidden md:flex flex-col items-end gap-1.5 shrink-0">
+            <button
+              onClick={() => setAddSheetOpen(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+            >
+              + Add Member
+            </button>
+            <button
+              onClick={() => setImportSheetOpen(true)}
+              className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-800 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-all motion-safe:duration-150"
+            >
+              Import Spreadsheet
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setAddSheetOpen(true)}
-          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-        >
-          + Add Member
-        </button>
+
+        {/* Mobile buttons — full-width stacked, hidden on desktop */}
+        <div className="flex flex-col gap-2 mt-3 md:hidden">
+          <button
+            onClick={() => setAddSheetOpen(true)}
+            className="w-full py-2.5 rounded-lg text-sm font-semibold bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+          >
+            + Add Member
+          </button>
+          <button
+            onClick={() => setImportSheetOpen(true)}
+            className="w-full py-2.5 rounded-lg border border-gray-300 dark:border-gray-500 bg-white dark:bg-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300"
+          >
+            Import Spreadsheet
+          </button>
+        </div>
+
       </div>
 
       {/* Sort controls */}
@@ -597,6 +629,14 @@ export default function MembersClient({
       {/* Edit member sheet */}
       {editMember && (
         <AddMemberSheet onClose={closeEditSheet} editMember={editMember} />
+      )}
+
+      {/* Import members sheet */}
+      {importSheetOpen && (
+        <ImportMembersSheet
+          onClose={() => setImportSheetOpen(false)}
+          rosterMembers={rosterMembers}
+        />
       )}
     </>
   );

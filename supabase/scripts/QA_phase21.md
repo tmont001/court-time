@@ -4613,3 +4613,161 @@ calls `loadRoster()` whenever refreshTick increments. EventDetailSheet now has a
 **No regressions:**
 - [ ] All existing modal and panel behaviors from 21J-B still work
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21I-E — Bulk Member Import
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What was added
+
+A bulk CSV import workflow on `/admin/members`. Admins can upload a spreadsheet
+of member names (and optionally email/phone/notes) and add them all as no-account
+roster members at once.
+
+No database schema changes. No new migrations. No new packages. Reuses the existing
+`add_roster_member` RPC via a new `importRosterMembersAction` server action.
+
+### Import flow
+
+1. Admin clicks **Import Spreadsheet** on the `/admin/members` action row.
+2. Sheet opens (desktop: wide modal; mobile: bottom sheet).
+3. Admin downloads the template CSV if needed.
+4. Admin uploads their CSV file (`.csv` only, max 200 rows).
+5. Browser parses and validates the file instantly.
+6. Preview table shows all rows with per-row status (Ready / Warning / Error).
+7. Admin reviews, optionally checks "Include rows with warnings."
+8. Admin clicks "Import N Members."
+9. Server adds each valid row as a roster member with role=member.
+10. Summary shows imported count, skipped rows, and error details.
+11. Clicking "Done" refreshes the member list.
+
+### Validation rules
+
+**Hard errors (always skipped):**
+- Missing first name
+- Missing last name
+- Invalid email format (if email provided)
+- File has > 200 data rows
+
+**Warnings (skipped by default; admin can include via checkbox):**
+- Duplicate email within the uploaded CSV
+- Duplicate first+last name within the uploaded CSV
+- Email matches an existing unclaimed roster member
+- First+last name matches an existing unclaimed roster member
+
+**Post-import server errors (shown in summary):**
+- `email_already_on_roster` — rare (race condition or existing roster member missed client-side)
+- `email_already_a_member` — email belongs to a signed-in profile (not checked client-side)
+
+### CSV parser
+
+Browser-side, no library. Handles:
+- UTF-8 BOM (Excel CSV exports)
+- CRLF and LF line endings
+- Quoted fields with embedded commas (e.g. notes: `"Likes doubles, clinics"`)
+- Escaped quotes inside quoted fields
+
+### Accepted column headers (case-insensitive)
+
+| Canonical | Also accepted |
+|---|---|
+| `first_name` | `First Name`, `firstname`, `first` |
+| `last_name` | `Last Name`, `lastname`, `last` |
+| `email` | `Email Address`, `emailaddress` |
+| `phone` | `Phone Number`, `phonenumber` |
+| `notes` | `admin notes`, `adminnotes`, `note` |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/admin/members/ImportMembersSheet.tsx` | **New** — full import wizard component |
+| `src/app/(app)/admin/members/actions.ts` | Added `importRosterMembersAction` + `ImportRowInput`/`ImportResult` types |
+| `src/app/(app)/admin/members/MembersClient.tsx` | Added "Import Spreadsheet" button; wired `ImportMembersSheet` |
+| `supabase/scripts/QA_phase21.md` | This section |
+
+No migrations. No schema changes. No new packages.
+
+### QA checklist
+
+**Template download:**
+- [ ] "Download template CSV" downloads `court-time-members-template.csv`
+- [ ] Template has headers: `first_name,last_name,email,phone,notes`
+- [ ] Template includes 2 example rows
+
+**File upload:**
+- [ ] Accepts `.csv` files
+- [ ] Rejects non-CSV files with clear message
+- [ ] Handles Excel-exported CSV (UTF-8 BOM)
+- [ ] Handles CRLF line endings
+- [ ] Handles quoted fields with embedded commas in notes
+- [ ] > 200 rows shows a clear error before preview
+- [ ] Blank rows are silently skipped
+
+**Preview table:**
+- [ ] All rows appear with correct data in columns
+- [ ] Row with missing first name shows ✗ Error status
+- [ ] Row with missing last name shows ✗ Error status
+- [ ] Row with invalid email shows ✗ Error status
+- [ ] Row with duplicate email in file shows ⚠ Warning
+- [ ] Row with duplicate name in file shows ⚠ Warning
+- [ ] Row with email matching existing roster member shows ⚠ Warning
+- [ ] Row with name matching existing roster member shows ⚠ Warning
+- [ ] Footer shows correct counts (N ready · M warnings · K errors)
+- [ ] Error rows shown with dim/strikethrough styling
+
+**Warnings checkbox:**
+- [ ] "Include rows with warnings" checkbox shown only when warnings exist
+- [ ] Checkbox defaults to unchecked
+- [ ] Checking it increases the import button count
+- [ ] Unchecking it decreases the import button count back
+
+**Import button:**
+- [ ] Button disabled when 0 rows to import (all errors, no warnings included)
+- [ ] Button label shows correct count: "Import N Members"
+- [ ] Button shows "importing" state while server call is in progress
+- [ ] Error rows are never imported regardless of checkbox state
+
+**Summary:**
+- [ ] All successful: "Added N members to the roster."
+- [ ] Partial: "Added N of M members. K rows were skipped."
+- [ ] All failed: "No members were added. See details below."
+- [ ] Server-side errors (e.g. email_already_a_member) shown in skipped list
+- [ ] Skipped rows show member name and reason
+
+**After "Done":**
+- [ ] Member list refreshes showing newly imported members
+- [ ] All imported members have "No account yet" badge
+- [ ] Imported members have correct first/last name, email, phone, notes
+
+**No regressions:**
+- [ ] "+ Add Member" (single) sheet still works
+- [ ] Edit roster member still works
+- [ ] Existing invite flow unchanged
+- [ ] Member role/status/notes management unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+**Desktop/mobile:**
+- [ ] Import sheet opens as wide desktop modal
+- [ ] Preview table scrolls horizontally on narrow screens
+- [ ] Works on mobile (file picker opens, import proceeds)
+
+**Button clarity polish (final 21I-E adjustment):**
+"Import Spreadsheet" button received a solid background (`bg-white dark:bg-gray-800`) and
+slightly stronger border (`border-gray-300 dark:border-gray-500`) so it reads clearly as a
+button rather than styled text. Hover state adds a light fill (`hover:bg-gray-50`). This
+keeps it visually secondary to "+ Add Member" while being clearly clickable.
+- [ ] "Import Spreadsheet" visually reads as a button (not just text)
+- [ ] It is clearly secondary to "+ Add Member" (outlined, no dark fill)
+- [ ] Hover state visible on desktop
+
+**Mobile header/action layout polish (final 21I-E adjustment):**
+On mobile, the action buttons now appear in their own full-width stacked section below the
+MEMBERS heading and description instead of being squeezed into a narrow right column. On
+desktop (md+) the original compact side-by-side layout is preserved exactly.
+- [ ] Mobile: "MEMBERS" heading + description on top, then full-width "+ Add Member" button, then full-width "Import Spreadsheet" below it
+- [ ] Mobile: buttons have comfortable tap targets (py-2.5, full-width)
+- [ ] Desktop: heading/description on left, two compact stacked buttons on right (unchanged)
+- [ ] Sort chips appear below the action buttons on both mobile and desktop

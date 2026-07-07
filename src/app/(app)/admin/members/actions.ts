@@ -196,3 +196,66 @@ export async function deleteRosterMemberAction(
   revalidatePath("/admin/members");
   return {};
 }
+
+// ── Bulk import ────────────────────────────────────────────────────────────
+
+export type ImportRowInput = {
+  firstName: string;
+  lastName:  string;
+  email:     string | null;
+  phone:     string | null;
+  notes:     string | null;
+};
+
+export type ImportRowError = {
+  row:     number;   // 1-based index in the submitted rows array
+  name:    string;   // "First Last" for display
+  message: string;
+};
+
+export type ImportResult = {
+  imported: number;
+  failed:   number;
+  errors:   ImportRowError[];
+};
+
+export async function importRosterMembersAction(
+  rows: ImportRowInput[]
+): Promise<{ result?: ImportResult; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const errors: ImportRowError[] = [];
+  let imported = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row  = rows[i];
+    const name = [row.firstName, row.lastName].filter(Boolean).join(" ");
+
+    const { error } = await supabase.rpc("add_roster_member", {
+      p_first_name: row.firstName,
+      p_last_name:  row.lastName,
+      p_email:      row.email   || null,
+      p_phone:      row.phone   || null,
+      p_role:       "member",
+      p_notes:      row.notes   || null,
+    });
+
+    if (error) {
+      errors.push({ row: i + 1, name, message: mapError(error.message) });
+    } else {
+      imported++;
+    }
+  }
+
+  revalidatePath("/admin/members");
+
+  return {
+    result: {
+      imported,
+      failed: errors.length,
+      errors,
+    },
+  };
+}
