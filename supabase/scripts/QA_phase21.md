@@ -4868,3 +4868,70 @@ for admin invites; only the `bg-gray-900` branch uses `ct-button-neutral`.
 - [ ] No button hover causes card boundary flicker
 - [ ] No layout shifts from radius change (border-radius is purely cosmetic)
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21J-C — Admin Member Responsive Overlays
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### Root cause
+
+`AddMemberSheet` and `InviteSheet` both used hardcoded `ct-sheet-enter fixed bottom-0
+left-0 right-0` containers — always a mobile bottom sheet regardless of viewport.
+`ImportMembersSheet` was already using `ResponsiveSheet` (converted during Phase 21I-E).
+
+### What changed
+
+Both `AddMemberSheet` and `InviteSheet` now use `<ResponsiveSheet variant="modal">`.
+
+- Mobile (< 768px): existing bottom-sheet behavior preserved. Handle pill and "Close"
+  text button shown via `md:hidden`.
+- Desktop (≥ 768px): centered modal with `ct-modal-enter` animation, × close button
+  (top-right), backdrop click closes, Escape key closes.
+
+Same pattern used in Phase 21J-B for EventDetailSheet, CreateEventSheet, etc.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/admin/members/AddMemberSheet.tsx` | Added `ResponsiveSheet` import; replaced hardcoded container with `<ResponsiveSheet variant="modal">`; handle + Close hidden on desktop |
+| `src/app/(app)/admin/members/InviteSheet.tsx` | Same |
+| `src/app/(app)/admin/members/ImportMembersSheet.tsx` | Already used `ResponsiveSheet` — no change |
+
+No database changes. No logic changes. No form behavior changes.
+
+### QA checklist
+
+**Mobile (< 768px) — behavior preserved:**
+- [ ] "+ Add Member" opens as bottom sheet, slides up from bottom
+- [ ] "Edit" roster member opens as bottom sheet
+- [ ] Handle pill visible on mobile
+- [ ] "Close" text button visible on mobile
+- [ ] "Send Invite" opens as bottom sheet
+- [ ] All form inputs, validation, and submission unchanged
+
+**Desktop (≥ 768px) — new behavior:**
+- [ ] "+ Add Member" opens as centered modal (not bottom pull-up)
+- [ ] Handle pill NOT visible on desktop
+- [ ] "Close" text button NOT visible on desktop (× provided by ResponsiveSheet)
+- [ ] × close button visible top-right on modal
+- [ ] Clicking backdrop closes modal
+- [ ] Escape key closes modal
+- [ ] "Edit" roster member opens as centered modal
+- [ ] "Send Invite" opens as centered modal
+- [ ] Form fields, role selector, notes all visible and functional in modal
+- [ ] Success state ("Member Added") appears correctly in modal
+- [ ] "Add Another" / "Done" buttons work in modal
+
+**Import Spreadsheet (unchanged):**
+- [ ] Already uses ResponsiveSheet — still opens as desktop modal
+- [ ] Mobile still bottom sheet
+
+**No regressions:**
+- [ ] Add Member form submission (add_roster_member) still works
+- [ ] Edit Member form submission (update_roster_member) still works
+- [ ] Invite generation still works
+- [ ] Import CSV flow unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

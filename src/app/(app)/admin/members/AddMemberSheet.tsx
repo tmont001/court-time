@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { addRosterMemberAction, updateRosterMemberAction } from "./actions";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 
 type Role = "member" | "pro" | "admin";
 
@@ -80,23 +81,18 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
     "mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500 motion-safe:transition-all motion-safe:duration-150";
 
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
-
-      {/* Sheet */}
-      <div className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl z-50 shadow-xl flex flex-col max-h-[88dvh]">
-
+    <ResponsiveSheet onClose={onClose} variant="modal">
         {/* Handle + header */}
         <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4" />
-          <div className="flex items-center justify-between">
+          <div className="ct-handlebar mx-auto mb-4 md:hidden" />
+          <div className="flex items-center justify-between pr-8">
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
               {successName ? "Member Added" : isEdit ? "Edit Member" : "Add Member"}
             </p>
+            {/* Close — mobile only; desktop uses ResponsiveSheet × button */}
             <button
               onClick={onClose}
-              className="text-sm text-gray-500 dark:text-gray-400"
+              className="text-sm text-gray-500 dark:text-gray-400 md:hidden"
             >
               Close
             </button>
@@ -255,7 +251,6 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
             </div>
           )}
         </div>
-      </div>
-    </>
+    </ResponsiveSheet>
   );
 }
