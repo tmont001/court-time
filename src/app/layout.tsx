@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Court Time",
-  description: "Tennis court booking platform",
+  description:
+    "Simple court booking and event roster software for tennis clubs. Less chaos. More tennis.",
 };
 
 export const viewport: Viewport = {

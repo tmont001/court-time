@@ -515,3 +515,46 @@
 .dark .ct-handlebar {
   background-color: rgb(75 85 99);      /* gray-600 */
 }
+
+/* ── Marketing page entrance animation ─────────────────────────────────────
+   Applied to the (marketing) template wrapper. Subtle fade + rise on every
+   page navigation within the marketing group. Does not affect (app) routes.
+   fill-mode: both prevents a flash of invisible content before the first
+   frame fires. */
+@keyframes mkt-page-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-page-enter {
+    animation: mkt-page-enter 320ms ease-out both;
+  }
+}
+
+/* ── Marketing scroll-reveal ────────────────────────────────────────────────
+   Elements start hidden (.mkt-reveal) and gain .mkt-reveal--visible when they
+   enter the viewport via IntersectionObserver in MarketingReveal.tsx.
+   Supports four variants:
+     default   — fade + rise
+     delay-1/2 — staggered entrance (100 / 200 ms extra wait)
+   Under prefers-reduced-motion the element is always fully visible. */
+.mkt-reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 500ms ease-out, transform 500ms ease-out;
+}
+.mkt-reveal.mkt-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.mkt-reveal.delay-1 { transition-delay: 80ms;  }
+.mkt-reveal.delay-2 { transition-delay: 160ms; }
+.mkt-reveal.delay-3 { transition-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
