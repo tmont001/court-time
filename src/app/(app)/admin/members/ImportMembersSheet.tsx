@@ -384,7 +384,7 @@ export default function ImportMembersSheet({ onClose, rosterMembers }: Props) {
               />
               <button
                 onClick={() => fileRef.current?.click()}
-                className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+                className="ct-button-neutral w-full py-3 text-sm font-semibold"
               >
                 Choose CSV file
               </button>
@@ -504,7 +504,7 @@ export default function ImportMembersSheet({ onClose, rosterMembers }: Props) {
               <button
                 disabled={rowsToImport.length === 0}
                 onClick={handleImport}
-                className="flex-1 py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
+                className="ct-button-neutral flex-1 py-3 text-sm font-semibold"
               >
                 Import {rowsToImport.length} Member{rowsToImport.length !== 1 ? "s" : ""}
               </button>
@@ -570,7 +570,7 @@ export default function ImportMembersSheet({ onClose, rosterMembers }: Props) {
 
             <button
               onClick={handleDone}
-              className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+              className="ct-button-neutral w-full py-3 text-sm font-semibold"
             >
               Done
             </button>

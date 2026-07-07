@@ -122,7 +122,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
                 </button>
                 <button
                   onClick={onClose}
-                  className="flex-1 py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+                  className="ct-button-neutral flex-1 py-3 text-sm font-semibold"
                 >
                   Done
                 </button>
@@ -246,7 +246,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               <button
                 onClick={handleSubmit}
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-50"
+                className="ct-button-neutral w-full py-3 text-sm font-semibold"
               >
                 {loading
                   ? isEdit ? "Saving…" : "Adding…"

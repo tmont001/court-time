@@ -143,32 +143,36 @@
 }
 
 /* Secondary bordered button — composable; set padding and font-size externally.
-   Hover: accent border + accent text for clear visual response. */
+   Hover: accent border + accent text + slight shadow for clear visual response. */
 .ct-button-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;             /* rounded-xl — matches sheet button aesthetic */
   font-weight: 500;
   border: 1px solid rgb(209 213 219); /* gray-300 */
   background-color: white;
   color: rgb(75 85 99);               /* gray-600 */
   cursor: pointer;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 .dark .ct-button-secondary {
   border-color: rgb(75 85 99);        /* gray-600 */
   background-color: rgb(31 41 55);    /* gray-800 */
-  color: rgb(209 213 219);           /* gray-300 */
+  color: rgb(209 213 219);            /* gray-300 */
+  box-shadow: none;
 }
 .ct-button-secondary:hover {
   border-color: var(--accent);
   color: var(--accent);
   background-color: rgb(249 250 251); /* gray-50 */
+  box-shadow: 0 2px 4px -1px rgb(0 0 0 / 0.1);
 }
 .dark .ct-button-secondary:hover {
   border-color: var(--accent);
   color: var(--accent);
   background-color: rgba(55, 65, 81, 0.4);
+  box-shadow: none;
 }
 .ct-button-secondary:focus-visible {
   outline: 2px solid var(--accent);
@@ -178,18 +182,21 @@
 @media (prefers-reduced-motion: no-preference) {
   .ct-button-secondary {
     transition: border-color 150ms ease-out, color 150ms ease-out,
-                background-color 150ms ease-out, transform 150ms ease-out;
+                background-color 150ms ease-out, box-shadow 150ms ease-out,
+                transform 150ms ease-out;
   }
-  .ct-button-secondary:not(:disabled):active { transform: scale(0.97); }
+  .ct-button-secondary:not(:disabled):active { transform: scale(0.98); }
 }
 
-/* Primary accent-filled button with visible lift on hover */
+/* Primary accent-filled button.
+   No translateY hover — eliminated to prevent hover-boundary flicker.
+   Hover: brightness shift + shadow deepen. Active: scale press. */
 .ct-button-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;            /* rounded-xl — matches sheet button aesthetic */
   background-color: var(--accent);
   color: white;
   font-size: 0.875rem;
@@ -205,12 +212,12 @@
     transition: filter 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
   }
   .ct-button-primary:not(:disabled):hover {
-    filter: brightness(1.1);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.14), 0 2px 4px -2px rgb(0 0 0 / 0.08);
+    filter: brightness(1.08);
+    box-shadow: 0 4px 8px -2px rgb(0 0 0 / 0.18), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   }
   .ct-button-primary:not(:disabled):active {
-    transform: scale(0.97) translateY(0);
+    filter: brightness(0.97);
+    transform: scale(0.98);
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   }
 }
@@ -319,12 +326,12 @@
   .ct-card-interactive:active { transform: translateY(0); }
 }
 
-/* Danger / destructive button — clear red with hover shift */
+/* Danger / destructive button — understated red; hover adds depth, not aggression. */
 .ct-button-danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;             /* rounded-xl */
   font-weight: 500;
   border: 1px solid rgb(254 202 202); /* red-200 */
   background-color: rgb(254 242 242); /* red-50 */
@@ -340,11 +347,13 @@
   background-color: rgb(254 226 226); /* red-100 */
   border-color: rgb(239 68 68);       /* red-500 */
   color: rgb(185 28 28);              /* red-700 */
+  box-shadow: 0 2px 4px -1px rgb(220 38 38 / 0.15);
 }
 .dark .ct-button-danger:hover {
   background-color: rgba(127, 29, 29, 0.45);
   border-color: rgb(239 68 68);
   color: rgb(248 113 113);            /* red-400 */
+  box-shadow: none;
 }
 .ct-button-danger:focus-visible {
   outline: 2px solid rgb(239 68 68);
@@ -354,17 +363,17 @@
 @media (prefers-reduced-motion: no-preference) {
   .ct-button-danger {
     transition: background-color 150ms ease-out, border-color 150ms ease-out,
-                color 150ms ease-out, transform 150ms ease-out;
+                color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms ease-out;
   }
-  .ct-button-danger:not(:disabled):active { transform: scale(0.97); }
+  .ct-button-danger:not(:disabled):active { transform: scale(0.98); }
 }
 
-/* Ghost button — no border, subtle hover background fill */
+/* Ghost button — no border, subtle hover background fill. */
 .ct-button-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;             /* rounded-xl */
   font-weight: 500;
   color: rgb(75 85 99);               /* gray-600 */
   cursor: pointer;
@@ -388,7 +397,42 @@
   .ct-button-ghost {
     transition: background-color 150ms ease-out, color 150ms ease-out, transform 150ms ease-out;
   }
-  .ct-button-ghost:not(:disabled):active { transform: scale(0.97); }
+  .ct-button-ghost:not(:disabled):active { transform: scale(0.98); }
+}
+
+/* Neutral-dark filled button — sheet primary CTAs.
+   Light mode: gray-900 fill. Dark mode: gray-100 fill.
+   Use for the main action in admin sheets where accent is not appropriate.
+   Compose with padding and font-size externally (e.g. w-full py-3 text-sm font-semibold). */
+.ct-button-neutral {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;              /* rounded-xl */
+  background-color: rgb(17 24 39);     /* gray-900 */
+  color: white;
+  cursor: pointer;
+}
+.dark .ct-button-neutral {
+  background-color: rgb(243 244 246);  /* gray-100 */
+  color: rgb(17 24 39);                /* gray-900 */
+}
+.ct-button-neutral:hover {
+  background-color: rgb(31 41 55);     /* gray-800 */
+}
+.dark .ct-button-neutral:hover {
+  background-color: rgb(229 231 235);  /* gray-200 */
+}
+.ct-button-neutral:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ct-button-neutral:disabled { opacity: 0.4; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .ct-button-neutral {
+    transition: background-color 150ms ease-out, transform 150ms ease-out;
+  }
+  .ct-button-neutral:not(:disabled):active { transform: scale(0.98); }
 }
 
 /* ── Sheet entrance animation ──────────────────────────────────────────── */

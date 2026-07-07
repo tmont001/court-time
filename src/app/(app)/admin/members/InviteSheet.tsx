@@ -116,7 +116,7 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                   />
                   <button
                     onClick={handleCopy}
-                    className="shrink-0 px-4 py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-medium"
+                    className="ct-button-neutral shrink-0 px-4 py-3 text-sm font-medium"
                   >
                     {copied ? "Copied!" : "Copy"}
                   </button>
@@ -225,10 +225,10 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
               <button
                 onClick={handleGenerate}
                 disabled={loading}
-                className={`w-full py-3 rounded-xl text-sm font-semibold disabled:opacity-50 ${
+                className={`w-full py-3 text-sm font-semibold disabled:opacity-50 ${
                   isAdmin
-                    ? "bg-amber-600 dark:bg-amber-500 text-white"
-                    : "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+                    ? "rounded-xl bg-amber-600 dark:bg-amber-500 text-white"
+                    : "ct-button-neutral"
                 }`}
               >
                 {loading ? "Generating…" : btnLabel}

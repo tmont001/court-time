@@ -4771,3 +4771,100 @@ desktop (md+) the original compact side-by-side layout is preserved exactly.
 - [ ] Mobile: buttons have comfortable tap targets (py-2.5, full-width)
 - [ ] Desktop: heading/description on left, two compact stacked buttons on right (unchanged)
 - [ ] Sort chips appear below the action buttons on both mobile and desktop
+
+---
+
+## Checkpoint 21K-B — Button Visual Design Polish
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+Visual-only polish to the shared button style system. No logic, server actions,
+or form behavior changed. No new packages.
+
+### CSS changes (`src/app/globals.css`)
+
+**All shared button classes: radius unified to `rounded-xl` (0.75rem, 12→16px)**
+
+Previously `ct-button-primary/secondary/danger/ghost` used `rounded-lg` (12px)
+while all sheet buttons used `rounded-xl` (16px), making the two systems look
+inconsistent at the same resolution. All shared classes now use `rounded-xl`.
+
+**`ct-button-primary` — hover behavior replaced**
+
+Previous: `transform: translateY(-2px)` on hover (known flicker risk — same root
+cause as the `/events` card flicker fixed in Phase 21J-A).
+
+New: `filter: brightness(1.08)` + shadow deepening on hover. Active state uses
+`filter: brightness(0.97) + scale(0.98)`. No vertical movement.
+
+**`ct-button-secondary` — resting shadow added**
+
+Added `box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05)` at rest; deepens slightly on
+hover. Makes the button visually distinct from flat page background.
+
+**`ct-button-danger` — hover adds subtle red shadow tint**
+
+`box-shadow: 0 2px 4px -1px rgba(220,38,38,0.15)` on hover reinforces the danger
+signal without being aggressive.
+
+**`ct-button-ghost` — radius only; no other change**
+
+**New: `ct-button-neutral`**
+
+Captures the dominant sheet primary CTA pattern (`bg-gray-900` / dark `bg-gray-100`)
+that was repeated verbatim in 8+ places. Provides gray-900/gray-100 fill, hover
+darkening, active scale, focus ring, and disabled opacity. Compose with padding and
+font-size externally.
+
+### Component changes
+
+| File | What changed |
+|---|---|
+| `AddMemberSheet.tsx` | "Done" and "Add Member" / "Save Changes" buttons → `ct-button-neutral` |
+| `ImportMembersSheet.tsx` | "Choose CSV file", "Import N Members", "Done" buttons → `ct-button-neutral` |
+| `InviteSheet.tsx` | "Copy" button and the non-admin "Generate Link" branch → `ct-button-neutral` |
+
+The conditional amber/gray Generate button in InviteSheet preserves the amber styling
+for admin invites; only the `bg-gray-900` branch uses `ct-button-neutral`.
+
+### QA checklist
+
+**Shared CSS class behavior:**
+- [ ] `ct-button-primary` hover: brightness increases, shadow deepens — NO vertical movement
+- [ ] `ct-button-primary` active: slight brightness dim + scale(0.98) press
+- [ ] `ct-button-primary` radius: `rounded-xl` (larger than before)
+- [ ] `ct-button-secondary` resting: subtle shadow visible against white background
+- [ ] `ct-button-secondary` hover: accent border/text + light bg fill + shadow deepens
+- [ ] `ct-button-danger` hover: subtle red shadow tint appears
+- [ ] All classes: disabled = opacity 0.4, cursor not-allowed
+- [ ] Dark mode: all hover states readable
+
+**`ct-button-neutral` (new):**
+- [ ] Light mode: gray-900 fill, white text
+- [ ] Dark mode: gray-100 fill, gray-900 text
+- [ ] Hover: slightly darker (gray-800) in light / slightly lighter (gray-200) in dark
+- [ ] Active: scale(0.98) press
+- [ ] Disabled: opacity 0.4
+
+**Sheet component buttons:**
+- [ ] AddMemberSheet "Add Member" CTA looks visually identical to before (same gray-900 fill)
+- [ ] AddMemberSheet "Done" looks identical
+- [ ] ImportMembersSheet "Choose CSV file", "Import N Members", "Done" look identical
+- [ ] InviteSheet "Copy" button looks identical
+- [ ] InviteSheet non-admin "Generate Link" button looks identical
+- [ ] InviteSheet admin "Generate Admin Invite" button still uses amber (not neutral)
+
+**Existing button usages (should be unaffected except improved styling):**
+- [ ] Sign-in form `ct-button-primary w-full` looks correct (radius slightly larger)
+- [ ] Profile edit save button looks correct
+- [ ] Admin settings buttons look correct
+- [ ] Admin events `ct-button-secondary` looks correct
+- [ ] Theme toggle `ct-icon-button` unchanged (not modified in this phase)
+- [ ] Notification bell `ct-icon-button` unchanged
+
+**No regressions:**
+- [ ] No button hover causes card boundary flicker
+- [ ] No layout shifts from radius change (border-radius is purely cosmetic)
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
