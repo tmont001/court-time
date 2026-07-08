@@ -4935,3 +4935,93 @@ No database changes. No logic changes. No form behavior changes.
 - [ ] Invite generation still works
 - [ ] Import CSV flow unchanged
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21M — Account Menu and Navigation Cleanup
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+Navigation label "Profile" renamed to "Account" across all surfaces. Desktop header
+gets a new account dropdown menu (initials avatar button). Mobile uses the renamed
+BottomNav tab to reach /profile directly; no header dropdown on mobile.
+
+### Navigation label changes
+
+- SideNav (desktop): "Profile" → "Account"
+- BottomNav (mobile): "Profile" → "Account"
+- Profile page Header screenTitle: "Profile" → "Account"
+- Back-links in notifications, security, help, admin/members: "← Back to Profile" → "← Back to Account"
+
+### Account menu (desktop only)
+
+- Initials avatar button added as the rightmost header control (after ThemeToggle + NotificationBell)
+- Hidden on mobile (`hidden md:block`)
+- Initials derived from first_name + last_name; falls back to first letter of email
+- Dropdown anchored `fixed top-14 right-4 z-50` using `ct-popover-enter` animation
+- Transparent click-away backdrop at z-40; Escape key also closes
+- Dropdown shows: name + email (display), Account link, Notifications link, Change Password link, Sign out
+- Sign out: calls `supabase.auth.signOut()` on client, then `router.push("/sign-in")`
+
+### Header data change
+
+`Header.tsx` now selects `first_name, last_name` alongside `club_id` from profiles
+(same query, just extended select). These are derived into `userInitials`, `userName`,
+and passed as plain strings to `AccountMenu` (client component boundary respected).
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/components/AccountMenu.tsx` | **New** — client component: initials button + dropdown |
+| `src/components/Header.tsx` | Added AccountMenu import + data fetch + component |
+| `src/components/SideNav.tsx` | "Profile" → "Account" label |
+| `src/components/BottomNav.tsx` | "Profile" → "Account" label |
+| `src/app/(app)/profile/page.tsx` | screenTitle "Profile" → "Account" |
+| `src/app/(app)/profile/notifications/page.tsx` | Back-link "Profile" → "Account" |
+| `src/app/(app)/profile/security/page.tsx` | Back-link "Profile" → "Account" |
+| `src/app/(app)/help/page.tsx` | Back-link "Profile" → "Account" |
+| `src/app/(app)/admin/members/page.tsx` | Back-link "Profile" → "Account" |
+
+No database changes. No route changes. No schema changes.
+
+### QA checklist
+
+**Navigation labels:**
+- [ ] SideNav (desktop) shows "Account" as the 4th tab, not "Profile"
+- [ ] BottomNav (mobile) shows "Account" as the 4th tab, not "Profile"
+- [ ] SideNav "Account" tab is active on /profile, /profile/notifications, /profile/security
+- [ ] Profile page Header shows "Account" as the screen title
+- [ ] /profile/notifications shows "← Back to Account"
+- [ ] /profile/security shows "← Back to Account"
+- [ ] /help shows "← Back to Account"
+- [ ] /admin/members shows "← Back to Account"
+
+**Account menu — desktop (≥ 768px):**
+- [ ] Initials avatar button visible in Header, rightmost control
+- [ ] Initials show correctly (first+last initials, or first initial, or email initial)
+- [ ] Clicking initials opens the dropdown
+- [ ] Dropdown shows user's name (if set) and email
+- [ ] "Account" link navigates to /profile
+- [ ] "Notifications" link navigates to /profile/notifications
+- [ ] "Change Password" link navigates to /profile/security
+- [ ] "Sign out" signs out and redirects to /sign-in
+- [ ] Clicking outside the dropdown closes it
+- [ ] Pressing Escape closes the dropdown
+- [ ] Dropdown uses ct-popover-enter animation
+
+**Mobile (< 768px):**
+- [ ] No account avatar button visible in Header on mobile
+- [ ] BottomNav "Account" tab navigates to /profile
+- [ ] Sign out still works from /profile page (existing SignOutButton unchanged)
+
+**Regressions:**
+- [ ] ThemeToggle still works
+- [ ] NotificationBell still works
+- [ ] /profile page content unchanged
+- [ ] /profile/notifications content unchanged
+- [ ] /profile/security content unchanged
+- [ ] All authenticated routes still protected
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

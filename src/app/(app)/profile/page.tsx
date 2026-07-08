@@ -28,7 +28,7 @@ export default async function ProfilePage() {
 
   return (
     <>
-      <Header screenTitle="Profile" />
+      <Header screenTitle="Account" />
       <div className="px-4 py-6 space-y-4 md:max-w-lg md:mx-auto">
         <div className="space-y-1">
           <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">

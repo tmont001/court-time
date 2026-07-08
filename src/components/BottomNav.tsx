@@ -60,7 +60,7 @@ const tabs: Tab[] = [
   { label: "Calendar",    href: "/calendar",    Icon: CalendarIcon },
   { label: "Events",      href: "/events",       Icon: EventsIcon },
   { label: "My Schedule", href: "/my-schedule",  Icon: ScheduleIcon, smallLabel: true },
-  { label: "Profile",     href: "/profile",      Icon: ProfileIcon },
+  { label: "Account",     href: "/profile",      Icon: ProfileIcon },
 ];
 
 export default function BottomNav() {

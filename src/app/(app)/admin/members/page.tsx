@@ -43,7 +43,7 @@ export default async function AdminMembersPage() {
         <div className="md:max-w-3xl md:mx-auto">
           <div className="px-4 pt-3 pb-0">
             <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
-              ← Back to Profile
+              ← Back to Account
             </Link>
           </div>
           <MembersClient

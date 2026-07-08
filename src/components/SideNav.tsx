@@ -53,7 +53,7 @@ const tabs = [
   { label: "Calendar",    href: "/calendar",    Icon: CalendarIcon },
   { label: "Events",      href: "/events",       Icon: EventsIcon },
   { label: "My Schedule", href: "/my-schedule",  Icon: ScheduleIcon },
-  { label: "Profile",     href: "/profile",      Icon: ProfileIcon },
+  { label: "Account",     href: "/profile",      Icon: ProfileIcon },
 ] as const;
 
 export default function SideNav() {

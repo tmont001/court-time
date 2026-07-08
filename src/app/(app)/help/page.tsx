@@ -67,7 +67,7 @@ export default async function HelpPage() {
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
       <div className="px-4 pt-3 pb-0 md:max-w-2xl md:mx-auto">
         <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
-          ← Back to Profile
+          ← Back to Account
         </Link>
       </div>
       <div className="px-4 py-6 space-y-5 md:max-w-2xl md:mx-auto">
