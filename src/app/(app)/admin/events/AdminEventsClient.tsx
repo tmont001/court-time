@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
@@ -48,6 +48,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [fetchError, setFetchError]     = useState<string | null>(null);
   const [isPending, startTransition]    = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
+
+  // Sync list when the RSC parent refreshes (router.refresh() delivers new
+  // initialEvents via prop reconciliation; useState alone won't pick it up).
+  useEffect(() => {
+    setEvents(initialEvents);
+    setHasMore(initialHasMore);
+  }, [initialEvents, initialHasMore]);
 
   function handleRosterChange(
     eventId:         string,

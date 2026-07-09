@@ -1,7 +1,8 @@
 "use client";
 
 // EventsCreateButton — shown above the Upcoming/Manage tabs on /events for admin/pro.
-// Opens CreateEventSheet on click. On success, refreshes the page to show the new event.
+// Opens CreateEventSheet on click. On success, calls the onCreated callback so the
+// parent shell can handle tab-switching and RSC refresh together.
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -13,11 +14,23 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  // When provided, the parent owns refresh + tab-switch logic.
+  // When absent, falls back to router.refresh() (e.g. standalone usage).
+  onCreated?:   () => void;
 }
 
-export default function EventsCreateButton({ courts, clubId, clubTimezone }: Props) {
+export default function EventsCreateButton({ courts, clubId, clubTimezone, onCreated }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  function handleCreated() {
+    setOpen(false);
+    if (onCreated) {
+      onCreated();
+    } else {
+      router.refresh();
+    }
+  }
 
   return (
     <>
@@ -33,7 +46,7 @@ export default function EventsCreateButton({ courts, clubId, clubTimezone }: Pro
           clubId={clubId}
           clubTimezone={clubTimezone}
           onClose={() => setOpen(false)}
-          onCreated={() => { setOpen(false); router.refresh(); }}
+          onCreated={handleCreated}
         />
       )}
     </>

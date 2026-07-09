@@ -5355,3 +5355,111 @@ Future work should add:
 
 These controls are out of scope for Phase 21N-A and should be implemented in a
 dedicated phase once the consolidated `/events` experience is stable.
+
+---
+
+## Checkpoint 21N-B — Admin/Pro Scheduling Rule Migration
+
+**Status: Pending SQL apply — migration written, app changes deployed**
+
+### What changed
+
+| Layer | File | Change |
+|-------|------|--------|
+| SQL | `create_reservation` (0059) | Booking-window guard now member-only; past-date guard preserved for all |
+| SQL | `create_event` (0059) | Past-date guard removed; admins/pros may create past events |
+| SQL | `join_event` (0059) | Server-side `event_already_started` guard added |
+| App | `CreateEventSheet.tsx` | Removed `min={todayISO}` from date input; removed UI past-date check |
+| App | `EventDetailSheet.tsx` | Added `event_already_started` to `mapJoinError` |
+
+### Migration to apply
+
+```
+supabase/migrations/0059_admin_pro_scheduling_rules.sql
+```
+
+Apply in Supabase SQL Editor (cloud only).
+
+### SQL / RPC QA checklist
+
+**create_reservation — booking-window change:**
+- [ ] Member books court within booking window → succeeds (unchanged)
+- [ ] Member books court beyond booking window → returns `outside_booking_window` (unchanged)
+- [ ] Member books court in the past → returns `cannot_book_past` (unchanged)
+- [ ] Admin books court within booking window → succeeds
+- [ ] Admin books court beyond booking window (e.g. 60 days out when window = 14) → succeeds (new)
+- [ ] Admin books court in the past → returns `cannot_book_past` (unchanged; still blocked)
+- [ ] Pro books court beyond booking window → succeeds (new)
+- [ ] Pro books court in the past → returns `cannot_book_past` (unchanged; still blocked)
+- [ ] Admin beyond-window booking still enforces operating hours → `outside_operating_hours` if applicable
+- [ ] Admin beyond-window booking still enforces court validation → `court_not_found` if court invalid
+- [ ] Conflict detection still fires for overlapping admin bookings → `23P01`
+
+**create_event — past-date change:**
+- [ ] Admin creates event with `starts_at` 7 days in the past → succeeds, event row created
+- [ ] Pro creates event with `starts_at` 7 days in the past → succeeds, event row created
+- [ ] Admin creates event 120 days in the future → succeeds (booking window never applied to events)
+- [ ] Admin creates event with invalid duration (`ends_at <= starts_at`) → returns `invalid_duration`
+- [ ] Member calling `create_event` directly → returns `insufficient_role` (unchanged)
+- [ ] Past event creation: court conflict still detected if a confirmed reservation overlaps → `23P01`
+- [ ] Past event: no host participant row inserted (Phase 21I-D behavior preserved)
+- [ ] Past event: `events.created_by` correctly records the creator's `auth.uid()`
+
+**join_event — past-date guard:**
+- [ ] Member joins a future event → succeeds (unchanged)
+- [ ] Member calls `join_event` directly on a past event → returns `event_already_started` (new)
+- [ ] Waitlist still works for future full events (unchanged)
+- [ ] `already_joined` still returned if caller is already confirmed/waitlisted (unchanged)
+- [ ] Notification sent on confirmed join (unchanged)
+- [ ] No notification sent on waitlist join (unchanged)
+
+### Application UI QA checklist
+
+**Create Event — past date selection:**
+- [ ] Admin opens Create Event sheet → date input has no `min` constraint (can type a past date)
+- [ ] Admin types a past date in the date input → sheet accepts it, moves to step 3 without showing "Events cannot be scheduled in the past."
+- [ ] Admin submits a past event → RPC succeeds; `onCreated` fires; event appears on calendar for that date
+- [ ] Admin submits a future event beyond 60-day pill strip using date input → succeeds (no regression)
+- [ ] Pro: same two checks as admin above
+- [ ] Date pill strip still starts from today (past dates not in pills; accessible via text input only)
+- [ ] Duration validation still works (short events, custom duration field)
+
+**Create Maintenance Block — no change expected:**
+- [ ] Admin creates a future maintenance block → succeeds (unchanged)
+- [ ] Admin attempts a past maintenance block via the sheet → UI still shows "Maintenance blocks cannot be scheduled in the past." and does not submit
+- [ ] No changes visible to the maintenance block sheet UI
+
+**Event join / past event:**
+- [ ] Member views a past event in EventDetailSheet → "Event has passed" shown on the join button (UI block unchanged)
+- [ ] Member views a past event → join button is disabled
+- [ ] If somehow the RPC is reached for a past event → frontend shows "This event has already started." (new error mapping)
+
+**Member court booking — no regression:**
+- [ ] Member taps a future slot within the booking window → booking modal appears, booking succeeds
+- [ ] Member taps a past time slot in CalendarShell → slot is grayed out and unclickable (unchanged)
+- [ ] Member attempts to book a slot beyond the booking window → sheet shows "That date is outside the booking window." (unchanged)
+
+**Admin court booking — new capability:**
+- [ ] Admin taps a future slot beyond the booking window → booking modal appears, booking succeeds
+- [ ] Admin taps a past time slot in CalendarShell → slot still grayed out (cannot create reservations in the past even as admin)
+
+### /events post-create refresh and tab-switch (Phase 21N-B follow-up fix)
+
+After creating an event from the `/events` admin/pro view:
+
+- [ ] Create Event sheet closes immediately on success
+- [ ] View switches to the **Manage** tab automatically (no manual tab click needed)
+- [ ] The newly created event appears in the Manage list **without a manual browser refresh**
+- [ ] A past event created from `/events` → appears in Manage (not Upcoming), without refresh
+- [ ] A future event created from `/events` → appears in Manage list, without refresh
+- [ ] The Upcoming tab still shows future events correctly when switching back
+- [ ] `/admin/events` direct route: Create Event still works and list updates on close (unchanged)
+- [ ] No duplicate "+ Create Event" button visible on `/events` for admin/pro
+
+### No regressions expected in:
+- [ ] `cancel_event` behavior (unchanged)
+- [ ] `leave_event` / waitlist promotion (unchanged)
+- [ ] Admin participant add/remove (unchanged; uses `admin_add_participant`, not `join_event`)
+- [ ] Maintenance block creation (future only; SQL and UI unchanged)
+- [ ] Notification preferences and delivery (unchanged)
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

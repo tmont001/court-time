@@ -69,7 +69,6 @@ function mapCreateError(code: string | undefined, message: string): string {
   if (code === "23P01")                              return "A court is already booked at that time.";
   if (message === "insufficient_role"
    || message === "not_authorized")                  return "Only pros and admins can create events.";
-  if (message === "cannot_create_past")              return "Events cannot be scheduled in the past.";
   if (message === "outside_booking_window")          return "That date is outside the booking window.";
   if (message === "club_closed_this_day")            return "The club is closed on that day.";
   if (message === "outside_operating_hours")         return "That time is outside operating hours.";
@@ -362,11 +361,10 @@ export default function CreateEventSheet({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</label>
-                  {/* Direct date jump — useful for dates beyond the pill strip */}
+                  {/* Direct date jump — useful for dates beyond the pill strip or in the past */}
                   <input
                     type="date"
                     value={selectedDateISO}
-                    min={todayISO}
                     onChange={e => {
                       if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
                     }}
@@ -474,10 +472,6 @@ export default function CreateEventSheet({
                 disabled={!title.trim() || !customDurationValid}
                 onClick={() => {
                   setError(null);
-                  if (startsAt <= new Date()) {
-                    setError("Events cannot be scheduled in the past.");
-                    return;
-                  }
                   setStep(3);
                 }}
                 className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"

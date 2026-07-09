@@ -9,6 +9,7 @@
 // a generic headerAction prop.
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import EventsCreateButton from "./EventsCreateButton";
 
 type Tab = "upcoming" | "manage";
@@ -23,7 +24,15 @@ interface Props {
 }
 
 export default function EventsAdminShell({ upcoming, manage, courts, clubId, clubTimezone }: Props) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("upcoming");
+
+  // After a successful create: switch to Manage (so the new event is visible)
+  // then refresh RSC data so AdminEventsClient receives updated initialEvents.
+  function handleCreated() {
+    setTab("manage");
+    router.refresh();
+  }
 
   return (
     <>
@@ -53,7 +62,7 @@ export default function EventsAdminShell({ upcoming, manage, courts, clubId, clu
         </div>
 
         {/* Owned internally — not passed as a ReactNode prop */}
-        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} />
+        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} onCreated={handleCreated} />
       </div>
 
       {/* Tab panels — both rendered; CSS hides the inactive one */}

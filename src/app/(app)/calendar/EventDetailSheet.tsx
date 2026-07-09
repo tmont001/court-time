@@ -67,9 +67,10 @@ function formatParticipantName(profile: ParticipantProfile): string {
 }
 
 function mapJoinError(message: string): string {
-  if (message === "event_full")          return "This event is now full.";
-  if (message === "already_joined")      return "You're already signed up.";
-  if (message === "event_not_available") return "This event is no longer available.";
+  if (message === "event_full")             return "This event is now full.";
+  if (message === "already_joined")         return "You're already signed up.";
+  if (message === "event_already_started")  return "This event has already started.";
+  if (message === "event_not_available")    return "This event is no longer available.";
   return "Something went wrong. Please try again.";
 }
 
