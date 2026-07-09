@@ -146,8 +146,9 @@ export default function CreateEventSheet({
   );
 
   const datePills = useMemo(() => {
+    // 60 pills: today + 59 future days, so admins can schedule farther out.
     const [ty, tm, td] = todayISO.split("-").map(Number);
-    return Array.from({ length: 15 }, (_, i) => {
+    return Array.from({ length: 60 }, (_, i) => {
       const dt = new Date(Date.UTC(ty, tm - 1, td + i, 12, 0, 0));
       return {
         dateISO: dt.toISOString().slice(0, 10),
@@ -357,10 +358,22 @@ export default function CreateEventSheet({
                 />
               </div>
 
-              {/* Date strip */}
+              {/* Date strip + date picker */}
               <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</label>
-                <div className="flex gap-1.5 overflow-x-auto pt-2 pb-1 hide-scrollbar">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</label>
+                  {/* Direct date jump — useful for dates beyond the pill strip */}
+                  <input
+                    type="date"
+                    value={selectedDateISO}
+                    min={todayISO}
+                    onChange={e => {
+                      if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
+                    }}
+                    className="text-xs text-gray-500 dark:text-gray-400 bg-transparent border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-0.5 focus:outline-none focus:border-accent motion-safe:transition-colors"
+                  />
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pt-1 pb-1 hide-scrollbar">
                   {datePills.map(pill => {
                     const isSelected = pill.dateISO === selectedDateISO;
                     const isToday    = pill.dateISO === todayISO;
@@ -373,7 +386,7 @@ export default function CreateEventSheet({
                             ? "bg-accent text-white dark:text-gray-900 font-semibold"
                             : isToday
                             ? "text-blue-600 font-medium"
-                            : "text-gray-500 dark:text-gray-400 dark:text-gray-500"
+                            : "text-gray-500 dark:text-gray-400"
                         }`}
                       >
                         <span>{pill.day}</span>

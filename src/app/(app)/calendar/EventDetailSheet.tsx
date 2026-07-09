@@ -150,6 +150,8 @@ export default function EventDetailSheet({
     ? waitlistedParticipants.findIndex(p => p.profile_id === userId) + 1
     : null;
 
+  // Members should not be able to join or waitlist for events that have already started.
+  const isPastEvent    = new Date(event.starts_at) < new Date();
   const canCancelEvent = userRole === "admin" || isHost;
   const canViewRoster  = userRole === "admin" || userRole === "pro";
 
@@ -260,19 +262,23 @@ export default function EventDetailSheet({
 
   // ── Button ────────────────────────────────────────────────────────────────
 
-  const buttonDisabled = isHost || loading;
+  // Disable join/waitlist for past events (members cannot join retroactively).
+  // Leave actions remain available so members who are already confirmed can leave.
+  const joinBlockedByPast = isPastEvent && !myPart && !isHost;
+  const buttonDisabled = isHost || loading || joinBlockedByPast;
 
   const buttonLabel = loading
     ? (isHost ? "You're the Host" : isWaitlisted || (!myPart && isFull) ? "Joining…" : "Leaving…")
-    : isHost        ? "You're the Host"
-    : isWaitlisted  ? `Leave Waitlist${myWaitlistPosition ? ` (#${myWaitlistPosition})` : ""}`
-    : myPart        ? "Leave Event"
-    : isFull        ? "Join Waitlist"
+    : isHost          ? "You're the Host"
+    : joinBlockedByPast ? "Event has passed"
+    : isWaitlisted    ? `Leave Waitlist${myWaitlistPosition ? ` (#${myWaitlistPosition})` : ""}`
+    : myPart          ? "Leave Event"
+    : isFull          ? "Join Waitlist"
     : "Join Event";
 
   const handleAction = (myPart && !isHost) ? handleLeave : handleJoin;
 
-  const buttonClass = isHost
+  const buttonClass = isHost || joinBlockedByPast
     ? "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
     : isWaitlisted
     ? "bg-amber-50 text-amber-700 border border-amber-200"

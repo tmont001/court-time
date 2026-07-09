@@ -9,6 +9,9 @@ import {
   declineWaitlistOffer as dispatchDeclineWaitlistOffer,
 } from "@/app/(app)/calendar/actions";
 import EventCardClient from "./EventCardClient";
+import EventsAdminShell from "./EventsAdminShell";
+import AdminEventsClient from "@/app/(app)/admin/events/AdminEventsClient";
+import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,13 +94,12 @@ export default async function EventsPage() {
     .eq("id", user.id)
     .single();
 
-  const clubId = profile?.club_id ?? "";
+  const clubId         = profile?.club_id ?? "";
+  const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";
+  const now            = new Date().toISOString();
 
-  // clubs and events both only need profile.club_id — run in parallel to save
-  // one sequential round-trip vs. the previous clubs → events pattern.
-  const now = new Date().toISOString();
-
-  const [clubResult, eventsResult] = await Promise.all([
+  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events)
+  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
@@ -114,10 +116,35 @@ export default async function EventsPage() {
       .eq("status", "scheduled")
       .gte("starts_at", now)
       .order("starts_at", { ascending: true }),
+    // Admin/pro: all events (past + future) for the Manage tab
+    isAdminOrPro
+      ? supabase
+          .from("events")
+          .select(`
+            id, title, starts_at, ends_at, capacity, status,
+            event_types(key, label, color),
+            event_participants(profile_id, role, status),
+            event_guests(id)
+          `)
+          .eq("club_id", clubId)
+          .order("starts_at", { ascending: false })
+          .range(0, 24)
+      : Promise.resolve({ data: null }),
+    // Admin/pro: active courts for CreateEventSheet
+    isAdminOrPro
+      ? supabase
+          .from("courts")
+          .select("id, name, display_order")
+          .eq("club_id", clubId)
+          .eq("is_active", true)
+          .order("display_order")
+      : Promise.resolve({ data: null }),
   ]);
 
-  const clubTimezone = clubResult.data?.timezone ?? "America/New_York";
-  const events = (eventsResult.data ?? []) as RawEventRow[];
+  const clubTimezone   = clubResult.data?.timezone ?? "America/New_York";
+  const events         = (eventsResult.data ?? []) as RawEventRow[];
+  const adminEvents    = (adminEventsResult.data ?? []) as AdminEventRow[];
+  const adminCourts    = adminCourtsResult.data ?? [];
 
   // ── Batch-fetch court names ───────────────────────────────────────────────
   const allCourtIds = [...new Set(
@@ -142,29 +169,24 @@ export default async function EventsPage() {
   }
   const sortedDateKeys = [...grouped.keys()].sort();
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ─── Upcoming events list (shared between member view and admin Upcoming tab) ──
 
-  return (
-    <>
-      <Header screenTitle="Events" />
+  // Wrapped in a single div (not a bare fragment) to avoid React key warnings
+  // when passed as a prop across the RSC → client component boundary.
+  const upcomingEventsContent = (
+    <div>
+      {/* Page title — only shown in the Upcoming tab / member view */}
+      <div className="px-4 pt-5 pb-1">
+        <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">Upcoming Events</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          Browse clinics, socials, leagues, and other scheduled events.
+        </p>
+      </div>
 
-      <div
-        className="overflow-y-auto"
-        style={{ height: "var(--page-fill-height)" }}
-      >
-        <div className="md:max-w-2xl md:mx-auto">
-        {/* Page title */}
-        <div className="px-4 pt-5 pb-1">
-          <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">Upcoming Events</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-            Browse clinics, socials, leagues, and other scheduled events.
-          </p>
+      {events.length === 0 ? (
+        <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
+          No upcoming events yet.
         </div>
-
-        {events.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
-            No upcoming events yet.
-          </div>
         ) : (
           <div className="pb-6">
             {sortedDateKeys.map(key => {
@@ -344,6 +366,43 @@ export default async function EventsPage() {
             })}
           </div>
         )}
+    </div>
+  );
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  return (
+    <>
+      <Header screenTitle="Events" />
+
+      <div
+        className="overflow-y-auto"
+        style={{ height: "var(--page-fill-height)" }}
+      >
+        <div className="md:max-w-2xl md:mx-auto">
+          {isAdminOrPro ? (
+            /* Admin/pro: unified shell with tabs + single Create Event button */
+            <EventsAdminShell
+              upcoming={upcomingEventsContent}
+              manage={
+                <AdminEventsClient
+                  initialEvents={adminEvents}
+                  hasMore={adminEvents.length === 25}
+                  clubTimezone={clubTimezone}
+                  userRole={profile!.role}
+                  courts={adminCourts as { id: string; name: string; display_order: number }[]}
+                  clubId={clubId}
+                  showCreateButton={false}
+                />
+              }
+              courts={adminCourts as { id: string; name: string; display_order: number }[]}
+              clubId={clubId}
+              clubTimezone={clubTimezone}
+            />
+          ) : (
+            /* Members: standard upcoming events list only */
+            upcomingEventsContent
+          )}
         </div>
       </div>
     </>

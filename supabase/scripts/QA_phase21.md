@@ -5025,3 +5025,333 @@ No database changes. No route changes. No schema changes.
 - [ ] /profile/security content unchanged
 - [ ] All authenticated routes still protected
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21N-A — Date Navigation + Admin Events Fixes
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### What changed
+
+Three improvements with no database changes:
+1. `/calendar` date navigation — jump to any future or past date
+2. `/calendar` — "Manage events ↗" link for admin/pro
+3. `/admin/events` — back-link fix, "+ Create Event" button
+
+### Calendar date navigation
+
+**Date pill re-centering:** `datePills` memo now centers on `selectedDate` (±6 days)
+instead of being fixed relative to today. Changing the date updates the visible pill range.
+
+**Today Today button:** Appears when not viewing today. Click → jumps back to today
+and re-centers the strip.
+
+**Date picker:** Native `<input type="date">` added to the right of the pill strip
+(in a fixed, non-scrolling area separated by a border). Value is bound to `selectedISO`
+(club-timezone YYYY-MM-DD). On change, converts to UTC noon and sets `selectedDate`.
+Works on desktop and mobile.
+
+**"Manage events ↗" link:** Subtle text link added above the FAB buttons (admin/pro
+only). Links directly to `/admin/events` without navigating through Account → Admin.
+
+### Admin events fixes
+
+**Back-link:** "← Back to Profile" → "← Back to Account"
+
+**Courts data:** `page.tsx` now fetches courts (active, ordered) in parallel with the
+club query. Passed as `courts` + `clubId` props to `AdminEventsClient`.
+
+**+ Create Event button:** Visible at the top of the events list. Opens existing
+`CreateEventSheet` with the club's courts, timezone, and clubId. On creation success,
+calls `router.refresh()` to reload the server-rendered event list.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `src/app/(app)/calendar/CalendarShell.tsx` | `datePills` re-centered on selectedDate; added `selectedISO` memo; date strip restructured with Today button + date input on right; "Manage events ↗" link above FABs |
+| `src/app/(app)/admin/events/page.tsx` | Back-link fixed; courts + clubId fetched and passed down |
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | Added `courts`, `clubId` props; `creatingEvent` state; `CreateEventSheet` import; "+ Create Event" button + sheet render |
+
+No database changes. No migrations.
+
+### QA checklist
+
+**Calendar date picker:**
+- [ ] Native date input visible on the right side of the pill strip
+- [ ] Entering a date 30 days in the future renders that day's calendar
+- [ ] Pill strip re-centers around the selected date (±6 days visible)
+- [ ] Today pill still highlighted in blue when visible in the strip
+- [ ] Selected date pill highlighted in accent
+- [ ] "Today" button appears when not viewing today
+- [ ] Clicking "Today" returns to today and re-centers the strip
+- [ ] Mobile: date input is usable (native picker opens on tap)
+- [ ] Club timezone applied correctly when jumping to a date
+
+**Admin events access:**
+- [ ] "Manage events ↗" link visible on /calendar for admin and pro users
+- [ ] "Manage events ↗" is NOT visible for member-role users
+- [ ] Clicking it navigates to /admin/events
+- [ ] /admin/events shows "← Back to Account" (not "← Back to Profile")
+
+**Create Event from /admin/events:**
+- [ ] "+ Create Event" button visible on /admin/events
+- [ ] Clicking opens CreateEventSheet (desktop modal / mobile bottom sheet)
+- [ ] Event creation works end-to-end
+- [ ] After creating, the events list refreshes and shows the new event
+- [ ] Sheet closes on cancel without creating an event
+
+**No regressions:**
+- [ ] Existing date pill navigation still works (clicking pills changes the date)
+- [ ] Slot booking on /calendar still works
+- [ ] Event creation via FAB on /calendar still works
+- [ ] Maintenance block creation still works
+- [ ] EventRosterSheet on /admin/events unchanged
+- [ ] /events member list unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21N-A rev2 — Date Navigation, Manage Events, Past Event Joins, Mobile Account
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### Root causes addressed
+
+1. **Mobile date picker crowding** — The inline `w-28` date input crowded the pill strip on mobile.
+2. **Manage Events too subtle** — Was rendered as `text-[10px]` faint text above FABs.
+3. **Past event join** — EventDetailSheet had no past-event check; members could theoretically join past events from the calendar.
+4. **Mobile AccountMenu** — Was `hidden md:block`; initials button not visible on mobile.
+
+### What changed in this revision
+
+**`CalendarShell.tsx`** — Date navigation redesigned:
+- New compact nav bar row (above pill strip): [‹ prev] [Wed, Jul 9 ▲ — date label with hidden input overlay] [next ›] + [Today] + [Manage] for admin/pro
+- Clicking the date label triggers the native date picker via `opacity-0` overlay
+- Prev/next buttons shift one day at a time
+- Today button appears when not viewing today
+- `Manage` button is now a proper bordered secondary button (not faint text); admin/pro only
+- Removed the old `Manage events ↗` tiny text from the FAB area
+- Pill strip kept as-is below the nav bar
+
+**`CreateEventSheet.tsx`** — Date selection expanded:
+- Date pills extended from 15 to 60 days (covers ~2 months ahead)
+- Date picker input added alongside the date label row; allows direct date entry for dates beyond the visible pills
+
+**`EventDetailSheet.tsx`** — Past event join blocked:
+- Added `isPastEvent = new Date(event.starts_at) < new Date()`
+- `joinBlockedByPast = isPastEvent && !myPart && !isHost`
+- When `joinBlockedByPast`: button shows "Event has passed", is disabled, uses neutral styling
+- Members already confirmed can still leave; admin/pro roster management unaffected
+
+**`AccountMenu.tsx`** — Now visible on mobile:
+- Removed `hidden md:block`; initials button now shows on all screen sizes
+- Dropdown `fixed top-14 right-4 w-56` works correctly on mobile viewports
+- BottomNav "Account" tab still links to /profile as before
+
+### Admin/pro booking window — MIGRATION REQUIRED (not implemented)
+
+The booking window restriction is enforced inside two SECURITY DEFINER SQL RPCs:
+- `create_reservation` (0047_create_reservation_override_check.sql, line 66–67 and 0037_set_member_status.sql, line 136–137): `if p_starts_at > now() + (v_settings.booking_window_days || ' days')::interval then raise exception 'outside_booking_window'; end if;`
+- `create_event` (0037_set_member_status.sql, line 136–137): same check; also `cannot_create_past` at line 290
+
+These RPCs already load `v_profile.role`. A migration could add a role check:
+```sql
+if v_profile.role = 'member' then
+  -- only members are restricted to booking_window_days
+  if p_starts_at > now() + (v_settings.booking_window_days || ' days')::interval then
+    raise exception 'outside_booking_window';
+  end if;
+end if;
+```
+
+And for past event creation (admin/pro record-keeping):
+```sql
+if v_profile.role = 'member' then
+  if p_starts_at < now() then raise exception 'cannot_create_past'; end if;
+end if;
+```
+
+**No migration created in this pass. Needs Phase 21N-B migration.**
+
+### QA checklist (revised 21N-A)
+
+**Calendar date navigation:**
+- [ ] Nav bar row visible above the pill strip
+- [ ] Prev (‹) and Next (›) buttons shift one day at a time
+- [ ] Date label shows current selected date (e.g. "Wed, Jul 9")
+- [ ] Tapping/clicking the date label opens native date picker
+- [ ] Selecting a date from the picker updates the calendar to that day
+- [ ] Today button appears when not on today; clicking returns to today
+- [ ] Pill strip still works (clicking pills navigates)
+- [ ] Mobile: nav bar is compact and does not crowd the grid
+- [ ] Desktop: nav bar looks clean
+
+**Manage Events button:**
+- [ ] "Manage" button visible in nav bar for admin and pro users
+- [ ] "Manage" is NOT visible for member users
+- [ ] It is styled as a bordered secondary button (not faint text)
+- [ ] Clicking navigates to /admin/events
+
+**Create Event date selection:**
+- [ ] Date pills in CreateEventSheet show 60 days (not just 15)
+- [ ] Date picker input visible next to the "Date" label
+- [ ] Admin can enter a date far in the future via the date picker
+- [ ] Existing pill-tap date selection still works
+
+**Past event join prevention:**
+- [ ] Clicking a past event on /calendar opens EventDetailSheet
+- [ ] If member is NOT already confirmed, button shows "Event has passed" (disabled)
+- [ ] If member IS already confirmed, "Leave Event" button still works
+- [ ] Admin/pro "View Roster" button still shows for past events
+- [ ] "Cancel Event" option still shows for admin/host on past events
+
+**Mobile AccountMenu:**
+- [ ] Initials button visible in header on mobile
+- [ ] Tapping initials opens the dropdown on mobile
+- [ ] Dropdown shows name, email, Account, Notifications, Change Password, Sign out
+- [ ] Dropdown width (w-56) does not overflow on narrow screens
+- [ ] Sign out from dropdown works on mobile
+- [ ] BottomNav "Account" tab still navigates to /profile
+
+**No regressions:**
+- [ ] Calendar slot booking unchanged
+- [ ] Event creation via FAB unchanged
+- [ ] Maintenance block creation unchanged
+- [ ] /admin/events Create Event button still works
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21N-A final — Events Consolidation + Calendar Cleanup
+
+**Status: Complete ✓ — pnpm tsc --noEmit and pnpm build pass**
+
+### Final scope of Phase 21N-A
+
+All changes are UI/client-only. No database migrations. No schema changes.
+
+### What changed
+
+**`CalendarShell.tsx`** (date navigation only):
+- Removed "Manage Events" link/button from the date nav bar (per product decision)
+- Removed unused `Link` import
+- Compact prev/label/next date nav bar remains
+- Pill strip remains
+- FAB unchanged (+ Block, + Event for admin/pro)
+
+**`EventsAdminTabs.tsx`** (new client component):
+- Segmented "Upcoming | Manage" control for admin/pro users on `/events`
+- Both panels rendered into DOM; `hidden` class toggles visibility
+- Preserves `AdminEventsClient` pagination state when switching tabs
+
+**`/events/page.tsx`** (events consolidation):
+- For **members**: unchanged — sees the existing upcoming events list
+- For **admin/pro**: sees a segmented tab control:
+  - **Upcoming tab**: same upcoming event list as members (with join/leave actions)
+  - **Manage tab**: `AdminEventsClient` — all events (past + future), roster management, + Create Event button (reuses existing `CreateEventSheet`)
+- Admin data fetched in parallel with upcoming events (no extra sequential round-trips)
+- `/admin/events` route still works for direct access / old links
+
+**`CreateEventSheet.tsx`** (date selection, from earlier pass):
+- Date pills: 15 → 60 days
+- Native date picker alongside the Date label
+
+**`EventDetailSheet.tsx`** (past event guard, from earlier pass):
+- `isPastEvent` check added
+- Join/Waitlist disabled for past events; shows "Event has passed" — member only
+- Leave still works if already confirmed
+
+**`AccountMenu.tsx`** (from earlier pass):
+- Removed `hidden md:block`; initials button now visible on all screen sizes
+
+### Admin/pro booking-window and past-event creation — DEFERRED (migration required)
+
+Both restrictions are enforced inside SECURITY DEFINER SQL RPCs with no role check:
+
+| RPC | Migration file | Check | Effect |
+|---|---|---|---|
+| `create_reservation` | 0047 line 66–67 | `outside_booking_window` | All users blocked beyond booking_window_days |
+| `create_event` | 0037 line 136–137 | `outside_booking_window` | All users blocked beyond booking_window_days |
+| `create_event` | 0037 line 290 | `cannot_create_past` | All users blocked from past events |
+
+**Desired fix (Phase 21N-B migration):** add `if v_profile.role = 'member' then` guards so only members are restricted; admin/pro can schedule beyond the window and create past events for record-keeping.
+
+### /events + /admin/events relationship
+
+- `/events` is now the primary visible Events destination in the nav
+- Admin/pro see Upcoming + Manage tabs on `/events`
+- `/admin/events` route continues to work (linked from Account → Admin → Events and direct access); not the main visible path
+
+### QA checklist
+
+**`/events` — Member experience (no admin/pro role):**
+- [ ] No tabs visible — just the upcoming events list
+- [ ] Join / Leave / Waitlist / Accept / Pass actions work as before
+
+**`/events` — Admin/pro experience:**
+- [ ] "Upcoming" and "Manage" tab buttons visible at the top
+- [ ] Upcoming tab shows upcoming events with join/leave actions
+- [ ] Manage tab shows all events (past + future) with roster management
+- [ ] Switching tabs preserves pagination state in Manage tab
+- [ ] "+ Create Event" button in Manage tab works (opens CreateEventSheet)
+- [ ] Creating an event from Manage tab refreshes the list
+
+**`/calendar` date navigation (final):**
+- [ ] No "Manage" button visible on the calendar
+- [ ] Nav bar visible: [‹] [date label + calendar icon] [›] [Today?]
+- [ ] Date label has hover background — clearly clickable
+- [ ] Clicking/tapping the date label reliably opens native date picker (via showPicker/click ref)
+- [ ] Native date picker can navigate to any future date
+- [ ] Prev / Next day buttons work
+- [ ] Today button appears only when not on today; clicking returns to today
+- [ ] Mobile: NO pill rail below the nav bar
+- [ ] Desktop: full-width date column rail (13 equal columns, no overflow)
+- [ ] Desktop: selected date shown as circular accent badge inside its column
+- [ ] Desktop: today column uses blue text (not a badge) when not selected
+- [ ] Desktop: unselected columns have subtle hover fill
+
+**`CreateEventSheet` date selection:**
+- [ ] 60 date pills visible (scrollable, covers ~2 months)
+- [ ] Date picker input alongside the Date label works
+
+**`EventDetailSheet` past events:**
+- [ ] "Event has passed" shown on past events for non-participant members (disabled)
+- [ ] Already-confirmed members can still leave past events
+- [ ] Admin/pro roster management unaffected for past events
+
+**`AccountMenu` mobile:**
+- [ ] Initials button visible in header on mobile
+- [ ] Dropdown opens and works on mobile
+
+**`/events` consolidation (final):**
+- [ ] Admin/pro sees Upcoming | Manage tab selector + exactly ONE "+ Create Event" button at top
+- [ ] "+ Create Event" appears once, to the right of the tab selector, visible on both tabs
+- [ ] Manage tab does NOT show a second "+ Create Event" button inside its list
+- [ ] "+ Create Event" is NOT visible to member-role users
+- [ ] Members see the plain upcoming events list only (no tabs, no create button)
+- [ ] Account/Profile page admin section has NO redundant Events link
+- [ ] /admin/events direct route still works and shows its own Create Event button
+
+**No regressions:**
+- [ ] No React key warnings in browser console (upcomingEventsContent wrapped in div)
+- [ ] /admin/events direct access still works (showCreateButton defaults to true)
+- [ ] Calendar booking / event creation / block creation unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+### Phase 21N follow-up: Events Manage tab — planned improvements (not in this branch)
+
+The Manage tab in `/events` currently shows events in reverse chronological order.
+Future work should add:
+
+- Sort by date (ascending / descending)
+- Filter by event type (clinic, social, league, etc.)
+- Filter by status (scheduled / cancelled / past)
+- Search by event title
+- Date range filter (e.g. "next 30 days", "past events", custom range)
+
+These controls are out of scope for Phase 21N-A and should be implemented in a
+dedicated phase once the consolidated `/events` experience is stable.

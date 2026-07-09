@@ -23,12 +23,12 @@ export default async function AdminEventsPage() {
   }
 
   let clubTimezone = "America/New_York";
-  const { data: club } = await supabase
-    .from("clubs")
-    .select("timezone")
-    .eq("id", profile.club_id)
-    .single();
-  if (club?.timezone) clubTimezone = club.timezone;
+  const [clubResult, courtsResult] = await Promise.all([
+    supabase.from("clubs").select("timezone").eq("id", profile.club_id).single(),
+    supabase.from("courts").select("id, name, display_order").eq("club_id", profile.club_id).eq("is_active", true).order("display_order"),
+  ]);
+  if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
+  const courts = courtsResult.data ?? [];
 
   const { data: rawEvents } = await supabase
     .from("events")
@@ -54,7 +54,7 @@ export default async function AdminEventsPage() {
         <div className="md:max-w-3xl md:mx-auto">
           <div className="px-4 pt-3 pb-0">
             <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
-              ← Back to Profile
+              ← Back to Account
             </Link>
           </div>
           <div className="px-4 pt-5 pb-1">
@@ -68,6 +68,8 @@ export default async function AdminEventsPage() {
             hasMore={initialEvents.length === 25}
             clubTimezone={clubTimezone}
             userRole={profile.role}
+            courts={courts}
+            clubId={profile.club_id}
           />
         </div>
       </div>

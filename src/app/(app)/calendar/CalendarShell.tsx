@@ -227,24 +227,47 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [creatingBlock, setCreatingBlock]             = useState(false);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
+  // Ref for the hidden native date input; opened programmatically by the date label button.
+  const datePickerRef = useRef<HTMLInputElement>(null);
   // Admin/pro only: maps owner_user_id → display name for non-own member bookings.
   const [ownerNames, setOwnerNames]                   = useState<Map<string, string>>(new Map());
 
   // ── Date pills ────────────────────────────────────────────────────────────
-  // Built from todayISO (not new Date()) so server and client produce identical output.
-  // UTC noon is used so toLocaleDateString in any tz still returns the correct calendar date.
+  // Re-centered on selectedDate: shows 6 days before and 6 after (13 total).
+  // selectedDate is stored as UTC noon so its YYYY-MM-DD ISO slice is the
+  // correct calendar date regardless of timezone.
   const datePills = useMemo(() => {
-    const [ty, tm, td] = todayISO.split("-").map(Number);
+    const [sy, sm, sd] = selectedDate.toISOString().slice(0, 10).split("-").map(Number);
     return Array.from({ length: 13 }, (_, i) => {
-      const offset = i - 2; // -2 … +10
-      const dt = new Date(Date.UTC(ty, tm - 1, td + offset, 12, 0, 0));
+      const offset = i - 6; // -6 … +6
+      const dt = new Date(Date.UTC(sy, sm - 1, sd + offset, 12, 0, 0));
       return {
         dateISO: dt.toISOString().slice(0, 10),
         day:     DAY_NAMES[dt.getUTCDay()],
         dateNum: dt.getUTCDate(),
       };
     });
-  }, [todayISO]);
+  }, [selectedDate]);
+
+  // ── Selected date as YYYY-MM-DD in club timezone (used by date strip and picker) ──
+  const selectedISO = useMemo(
+    () => selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone }),
+    [selectedDate, clubTimezone]
+  );
+
+  // Human-readable label for the navigation bar, e.g. "Wed, Jul 9"
+  const formattedNavDate = useMemo(
+    () => selectedDate.toLocaleDateString("en-US", {
+      timeZone: clubTimezone, weekday: "short", month: "short", day: "numeric",
+    }),
+    [selectedDate, clubTimezone]
+  );
+
+  // Shift selectedDate by N days (prev/next buttons)
+  function shiftDate(offset: number) {
+    const [sy, sm, sd] = selectedDate.toISOString().slice(0, 10).split("-").map(Number);
+    setSelectedDate(new Date(Date.UTC(sy, sm - 1, sd + offset, 12, 0, 0)));
+  }
 
   // ── Derived values ────────────────────────────────────────────────────────
   const dayBounds = useMemo(
@@ -587,26 +610,102 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         style={{ height: "var(--page-fill-height)" }}
       >
 
-        {/* ── Date strip ────────────────────────────────────────────────── */}
-        <div className="flex gap-1.5 overflow-x-auto px-3 py-2 border-b border-gray-100 dark:border-gray-800 shrink-0 hide-scrollbar">
+        {/* ── Date navigation bar ───────────────────────────────────────── */}
+        {/* prev | date label button (programmatically opens date picker) | next | Today */}
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-100 dark:border-gray-800 shrink-0">
+
+          {/* Hidden date input — opened via ref by the date label button below */}
+          <input
+            ref={datePickerRef}
+            type="date"
+            value={selectedISO}
+            onChange={e => {
+              if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
+            }}
+            aria-label="Jump to date"
+            className="absolute w-0 h-0 opacity-0 pointer-events-none border-0 p-0"
+            tabIndex={-1}
+          />
+
+          {/* Prev day */}
+          <button
+            onClick={() => shiftDate(-1)}
+            aria-label="Previous day"
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 motion-safe:transition-colors motion-safe:duration-100 text-base"
+          >
+            ‹
+          </button>
+
+          {/* Date label button — click opens the native date picker via ref */}
+          <button
+            onClick={() => {
+              const el = datePickerRef.current;
+              if (!el) return;
+              if (typeof (el as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
+                (el as HTMLInputElement & { showPicker: () => void }).showPicker();
+              } else {
+                el.click();
+              }
+            }}
+            className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100"
+          >
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate select-none">
+              {formattedNavDate}
+            </span>
+            {/* Calendar icon */}
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-gray-400 dark:text-gray-500">
+              <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </button>
+
+          {/* Next day */}
+          <button
+            onClick={() => shiftDate(1)}
+            aria-label="Next day"
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 motion-safe:transition-colors motion-safe:duration-100 text-base"
+          >
+            ›
+          </button>
+
+          {/* Today — only when not viewing today */}
+          {selectedISO !== todayISO && (
+            <button
+              onClick={() => setSelectedDate(new Date(todayISO + "T12:00:00Z"))}
+              className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100 whitespace-nowrap"
+            >
+              Today
+            </button>
+          )}
+        </div>
+
+        {/* ── Date column rail — desktop only, stretches full width ──────── */}
+        {/* Hidden on mobile. On desktop: 13 equal-width columns; selected date shown
+            as a circular accent badge to avoid a heavy square fill across the column. */}
+        <div className="hidden md:flex border-b border-gray-100 dark:border-gray-800 shrink-0">
           {datePills.map((pill) => {
-            const selectedISO = selectedDate.toLocaleDateString("en-CA", { timeZone: clubTimezone });
-            const isSelected  = pill.dateISO === selectedISO;
-            const isToday     = pill.dateISO === todayISO;
+            const isSelected = pill.dateISO === selectedISO;
+            const isToday    = pill.dateISO === todayISO;
             return (
               <button
                 key={pill.dateISO}
                 onClick={() => setSelectedDate(new Date(pill.dateISO + "T12:00:00Z"))}
-                className={`flex flex-col items-center justify-center rounded-full shrink-0 w-10 h-10 text-xs leading-tight ${
+                className={`flex-1 min-w-0 flex flex-col items-center justify-center py-1.5 text-xs leading-tight motion-safe:transition-colors motion-safe:duration-100 ${
                   isSelected
-                    ? "bg-accent text-white dark:text-gray-900 font-semibold"
+                    ? "text-accent dark:text-accent"
                     : isToday
-                    ? "text-blue-600 dark:text-blue-400 font-medium"
-                    : "text-gray-500 dark:text-gray-400"
+                    ? "text-blue-600 dark:text-blue-400 font-medium hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/60"
                 }`}
               >
-                <span>{pill.day}</span>
-                <span>{pill.dateNum}</span>
+                <span className="mb-0.5">{pill.day}</span>
+                {/* Circular badge for selected; plain number otherwise */}
+                {isSelected ? (
+                  <span className="w-6 h-6 flex items-center justify-center rounded-full bg-accent text-white dark:text-gray-900 font-semibold text-[11px]">
+                    {pill.dateNum}
+                  </span>
+                ) : (
+                  <span className={`font-medium ${isToday ? "" : ""}`}>{pill.dateNum}</span>
+                )}
               </button>
             );
           })}

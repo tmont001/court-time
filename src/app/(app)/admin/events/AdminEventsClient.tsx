@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
+import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
 import { fetchMoreAdminEvents } from "./actions";
 import type { AdminEventRow } from "./actions";
+
+type Court = { id: string; name: string; display_order: number };
 
 // Split date and time into separate Intl calls to avoid the browser-vs-Node
 // "at" connector divergence in en-US toLocaleString when both date and time
@@ -27,17 +31,23 @@ function formatDate(iso: string, tz: string): string {
 }
 
 interface Props {
-  initialEvents: AdminEventRow[];
-  hasMore:       boolean;
-  clubTimezone:  string;
-  userRole:      string;
+  initialEvents:     AdminEventRow[];
+  hasMore:           boolean;
+  clubTimezone:      string;
+  userRole:          string;
+  courts:            Court[];
+  clubId:            string;
+  // When false, the "+ Create Event" button is hidden (used when a parent already shows one).
+  showCreateButton?: boolean;
 }
 
-export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole }: Props) {
+export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, courts, clubId, showCreateButton = true }: Props) {
+  const router                          = useRouter();
   const [events, setEvents]             = useState<AdminEventRow[]>(initialEvents);
   const [hasMore, setHasMore]           = useState(initialHasMore);
   const [fetchError, setFetchError]     = useState<string | null>(null);
   const [isPending, startTransition]    = useTransition();
+  const [creatingEvent, setCreatingEvent] = useState(false);
 
   function handleRosterChange(
     eventId:         string,
@@ -68,16 +78,39 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     });
   }
 
+  const createEventButton = (
+    <button
+      onClick={() => setCreatingEvent(true)}
+      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+    >
+      + Create Event
+    </button>
+  );
+
   if (events.length === 0) {
     return (
-      <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
-        No events yet.
-      </div>
+      <>
+        {showCreateButton && <div className="px-4 pb-3 flex justify-end">{createEventButton}</div>}
+        <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
+          No events yet.
+        </div>
+        {creatingEvent && (
+          <CreateEventSheet
+            courts={courts}
+            clubId={clubId}
+            clubTimezone={clubTimezone}
+            onClose={() => setCreatingEvent(false)}
+            onCreated={() => { setCreatingEvent(false); router.refresh(); }}
+          />
+        )}
+      </>
     );
   }
 
   return (
+    <>
     <div className="pb-6 pt-3">
+      {showCreateButton && <div className="px-4 pb-3 flex justify-end">{createEventButton}</div>}
       {events.map(ev => {
         const type          = ev.event_types;
         const guestCount    = ev.event_guests.length;
@@ -168,5 +201,15 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         </div>
       )}
     </div>
+    {creatingEvent && (
+      <CreateEventSheet
+        courts={courts}
+        clubId={clubId}
+        clubTimezone={clubTimezone}
+        onClose={() => setCreatingEvent(false)}
+        onCreated={() => { setCreatingEvent(false); router.refresh(); }}
+      />
+    )}
+    </>
   );
 }

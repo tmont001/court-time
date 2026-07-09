@@ -91,13 +91,6 @@ export default async function ProfilePage() {
                     </Link>
                   </>
                 )}
-                <Link
-                  href="/admin/events"
-                  className="ct-row-interactive"
-                >
-                  Events
-                  <span className="text-gray-400 dark:text-gray-500">›</span>
-                </Link>
               </div>
             </div>
           </>

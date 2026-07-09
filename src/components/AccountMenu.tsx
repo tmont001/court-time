@@ -34,8 +34,8 @@ export default function AccountMenu({ userInitials, userName, userEmail }: Props
   }
 
   return (
-    // Desktop only — mobile uses BottomNav "Account" tab
-    <div className="hidden md:block relative">
+    // Visible on all screen sizes. BottomNav "Account" tab also navigates to /profile.
+    <div className="relative">
       {/* Trigger — initials avatar */}
       <button
         onClick={() => setOpen((v) => !v)}
