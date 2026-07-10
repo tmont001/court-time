@@ -5777,3 +5777,121 @@ Member event type options are derived from the upcoming scheduled events passed 
 - [ ] Roster button absent on cancelled event cards
 - [ ] Only one "+ Create Event" button visible at a time in admin/pro view
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21O-A — Event Archive Schema and RPCs
+
+**Status: Pending migration apply + QA**
+
+### What changed
+
+Added archive/unarchive capability to the `events` table. No app UI yet (comes in 21O-B). No member-visible changes yet (comes in 21O-C).
+
+| Object | Change |
+|--------|--------|
+| `events.archived_at` | New column — `timestamptz`, nullable. Null = not archived. |
+| `events.archived_by` | New column — `uuid`, FK to `profiles(id) ON DELETE SET NULL`. |
+| `events_club_starts_at_not_archived_idx` | Partial index on `(club_id, starts_at desc) WHERE archived_at IS NULL` — speeds up the default non-archived query. |
+| `events_club_archived_at_idx` | Partial index on `(club_id, archived_at, starts_at desc) WHERE archived_at IS NOT NULL` — speeds up "show archived" queries. |
+| `archive_event(p_event_id uuid)` | New SECURITY DEFINER RPC. Sets `archived_at`, `archived_by`, `updated_at`. Writes audit log. No notifications. No linked-row changes. |
+| `unarchive_event(p_event_id uuid)` | New SECURITY DEFINER RPC. Clears `archived_at` and `archived_by`. Writes audit log. No notifications. No linked-row changes. |
+
+Migration file: `supabase/migrations/0060_archive_event.sql`
+
+No app files modified. No SQL applied yet.
+
+### Permission model
+
+| Role | archive_event | unarchive_event |
+|------|--------------|-----------------|
+| admin | Any event in club | Any archived event in club |
+| pro | Only `events.created_by = self` | Only `events.created_by = self` |
+| member | `insufficient_role` | `insufficient_role` |
+
+### Archive guards
+
+| Guard | Condition | Error |
+|-------|-----------|-------|
+| Already archived | `archived_at IS NOT NULL` | `already_archived` |
+| Future scheduled | `status = 'scheduled' AND starts_at > now()` | `event_not_past` |
+
+Past scheduled events and cancelled events (including future-dated cancellations) are always archivable.
+
+### QA checklist
+
+**Migration prerequisites:**
+- [ ] Apply `0060_archive_event.sql` in Supabase SQL Editor
+- [ ] Confirm no SQL errors during apply
+
+**Schema — columns present:**
+- [ ] `events.archived_at` column exists (timestamptz, nullable)
+- [ ] `events.archived_by` column exists (uuid, nullable, FK to profiles)
+- [ ] Existing events unaffected — all have `archived_at = null`
+
+**Schema — indexes present:**
+- [ ] `events_club_starts_at_not_archived_idx` exists as a partial index (`WHERE archived_at IS NULL`)
+- [ ] `events_club_archived_at_idx` exists as a partial index (`WHERE archived_at IS NOT NULL`)
+
+**archive_event — permissions:**
+- [ ] Unauthenticated call raises `not_authenticated`
+- [ ] Member call raises `insufficient_role`
+- [ ] Pro call on an event they did NOT create raises `insufficient_role`
+- [ ] Pro call on their own past/cancelled event succeeds
+- [ ] Admin call on any past/cancelled event succeeds
+
+**archive_event — guards:**
+- [ ] Calling on an already-archived event raises `already_archived`
+- [ ] Calling on a future scheduled event raises `event_not_past`
+- [ ] Calling on a past scheduled event (starts_at < now, status = scheduled) succeeds
+- [ ] Calling on a cancelled event (any starts_at) succeeds
+
+**archive_event — data changes:**
+- [ ] `archived_at` is set to approximately now()
+- [ ] `archived_by` is set to the calling user's profile id
+- [ ] `updated_at` is updated
+- [ ] `event_participants` rows are NOT changed
+- [ ] `event_guests` rows are NOT changed
+- [ ] `reservations` rows are NOT changed
+- [ ] No notifications inserted
+
+**archive_event — audit log:**
+- [ ] One `audit_log` row inserted with `action = 'archive_event'`
+- [ ] `target_type = 'event'`, `target_id = p_event_id`
+- [ ] `metadata` contains `title`, `starts_at`, `status`
+
+**unarchive_event — permissions:**
+- [ ] Unauthenticated call raises `not_authenticated`
+- [ ] Member call raises `insufficient_role`
+- [ ] Pro call on an archived event they did NOT create raises `insufficient_role`
+- [ ] Pro call on their own archived event succeeds
+- [ ] Admin call on any archived event succeeds
+
+**unarchive_event — guards:**
+- [ ] Calling on a non-archived event raises `not_archived`
+- [ ] Calling on an archived event succeeds
+
+**unarchive_event — data changes:**
+- [ ] `archived_at` is set back to null
+- [ ] `archived_by` is set back to null
+- [ ] `updated_at` is updated
+- [ ] No linked rows modified
+- [ ] No notifications inserted
+
+**unarchive_event — audit log:**
+- [ ] One `audit_log` row inserted with `action = 'unarchive_event'`
+- [ ] `target_type = 'event'`, `target_id = p_event_id`
+- [ ] `metadata` contains `title`, `starts_at`, `status`
+
+**No hard delete:**
+- [ ] archive_event does not delete the events row
+- [ ] archive_event does not delete event_participants rows
+- [ ] archive_event does not delete event_guests rows
+- [ ] archive_event does not delete reservations rows
+
+**No regressions:**
+- [ ] cancel_event unaffected — still works as before
+- [ ] create_event unaffected
+- [ ] All admin participant action RPCs unaffected
+- [ ] Existing events queries unaffected (columns default to null, no query changes yet)
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
