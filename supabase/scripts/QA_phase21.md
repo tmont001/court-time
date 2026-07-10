@@ -5629,3 +5629,151 @@ No migrations. No SQL changes. No RPC changes. No schema changes. No changes to 
 - [ ] `cancel_event` behavior unchanged
 - [ ] Phase 21N-B scheduling rules unchanged (admin/pro booking window, past-event create, join_event past guard)
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+
+---
+
+## Checkpoint 21N-D — Events Search and Event Type Filters (Revised)
+
+**Status: Pending QA**
+
+### What changed
+
+Added client-side search and event type filtering to both the admin/pro Manage tab and the member Upcoming list on `/events`. Revised in 21N-D-rev to replace admin pill-button groups with a cleaner dropdown toolbar and improve search input styling on both surfaces.
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/events/EventsUpcomingClient.tsx` | **New.** Client component owning the Upcoming events list. Search input + event type pills + filtered date-grouped cards. Receives server actions as props from RSC parent. Search input styled with border, white bg, and shadow for visibility. |
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | Added `searchQuery` and `eventTypeFilter` state. Added `eventTypeOptions` derivation. Revised filter toolbar: search input (full-width, top row) + four compact `<select>` dropdowns (Status / When / Sort / Type) replacing the previous pill-button groups. Shared `selectClass` constant keeps all four dropdowns visually consistent. |
+| `src/app/(app)/events/page.tsx` | Removed `RawEventRow` type and `upcomingEventsContent` RSC block. Replaced with `<EventsUpcomingClient />` receiving serialized props (including server actions). Used for admin Upcoming tab and member-only view. |
+
+No migrations. No SQL changes. No RPC changes. No schema changes.
+
+### Admin Manage filter toolbar layout
+
+```
+[Search events…                          ×]
+[Scheduled ▾] [All dates ▾] [Newest ▾] [Type ▾]
+```
+
+Search is full-width on the first row. The four dropdowns sit below in a `flex-wrap` row, so they reflow naturally on narrow screens.
+
+### Dropdown options
+
+| Dropdown | Options | Default |
+|----------|---------|---------|
+| Status | Scheduled · Cancelled · All statuses | Scheduled |
+| When | All dates · Upcoming · Past | All dates |
+| Sort | Newest · Oldest | Newest |
+| Type | All types · [types in loaded events] | All types |
+
+### Filter pipeline — Admin Manage
+
+Order of application: **status → date → event type → search → sort**
+
+Load More offset always uses `events.length` (raw count), not `visibleEvents.length`. Filter state is NOT reset on RSC refresh.
+
+### Member Upcoming filter layout
+
+```
+[Search events…                          ×]
+[All] [Clinic] [Social] [League]   ← type pills, shown only when events have types
+```
+
+Member event type options are derived from the upcoming scheduled events passed in as props — no admin-only events bleed in.
+
+### QA checklist
+
+**Admin Manage — search input:**
+- [ ] Search input appears full-width above the dropdowns
+- [ ] Input has a visible border and white (light mode) / dark background (dark mode)
+- [ ] Placeholder "Search events…" is legible
+- [ ] Input does not look disabled or faint
+- [ ] Typing a partial title filters cards case-insensitively
+- [ ] × button appears when search is non-empty; clicking it clears the input
+- [ ] Search combines correctly with all four dropdown filters
+
+**Admin Manage — Status dropdown:**
+- [ ] Default shows "Scheduled"; list renders Scheduled / Cancelled / All statuses
+- [ ] Selecting "Cancelled" shows only cancelled events (same as before)
+- [ ] Selecting "All statuses" shows both scheduled and cancelled events
+- [ ] Returning to "Scheduled" re-hides cancelled events
+- [ ] Dropdown matches visual style of other three controls
+
+**Admin Manage — When dropdown:**
+- [ ] Default shows "All dates"; list renders All dates / Upcoming / Past
+- [ ] Selecting "Upcoming" shows only events with starts_at ≥ now
+- [ ] Selecting "Past" shows only events with starts_at < now
+- [ ] Returning to "All dates" restores all events
+
+**Admin Manage — Sort dropdown:**
+- [ ] Default shows "Newest"; list renders Newest / Oldest
+- [ ] Selecting "Oldest" sorts ascending (earliest at top)
+- [ ] Sort applies after all other filters
+
+**Admin Manage — Type dropdown:**
+- [ ] Hidden until at least one loaded event has an event_types value
+- [ ] Default shows "All types"
+- [ ] List shows all unique types from ALL loaded events, sorted alphabetically
+- [ ] Selecting a type filters to that type only
+- [ ] Returning to "All types" shows all events
+- [ ] After Load More, new event types appear immediately in the dropdown
+
+**Admin Manage — combined filters:**
+- [ ] Scheduled + Upcoming + type X + search: narrows correctly
+- [ ] Cancelled + All dates + search: narrows to cancelled events matching search
+- [ ] Filter state persists when switching Manage → Upcoming → back to Manage (CSS hidden)
+- [ ] RSC refresh (after creating event) does NOT reset any filter or search state
+- [ ] Newly created event appears if it matches active filters
+
+**Admin Manage — Load More with filters:**
+- [ ] Clicking Load More appends events to raw list
+- [ ] Offset is always `events.length` (raw), never `visibleEvents.length`
+- [ ] Newly loaded events flow through all active filters automatically
+- [ ] New event types from loaded batch immediately appear in Type dropdown
+
+**Admin Manage — empty states:**
+- [ ] True empty (no events at all): shows "No events yet." — unchanged
+- [ ] Search empty: `No events match "<query>".` + "Clear search & type filter" link
+- [ ] Type-only empty: "No events of this type in the loaded results." + "Clear search & type filter" link
+- [ ] When=Upcoming empty: "No upcoming events in the loaded results. Tap Load more…"
+- [ ] Status=Cancelled empty: "No cancelled events match the current filters."
+- [ ] Other combo empty: "No events match these filters."
+
+**Member Upcoming — search:**
+- [ ] Search input is full-width, has visible border and white/dark background
+- [ ] Input does not look faint or disabled
+- [ ] Typing filters events across all date groups
+- [ ] Date groups with zero matching events are hidden entirely (header too)
+- [ ] × clears search and restores all date groups
+- [ ] Filtered-empty: "No events match your search." + "Clear filters" link
+
+**Member Upcoming — event type pills:**
+- [ ] Pills shown only when at least one upcoming event has an event_types value
+- [ ] Types derive from UPCOMING scheduled events only (not admin events)
+- [ ] "All" pill active by default (dark background)
+- [ ] Tapping a type pill filters and highlights it in the type's color
+- [ ] Re-tapping the active type deselects it (returns to All)
+- [ ] Combined search + type filter works
+
+**Member Upcoming — role restrictions:**
+- [ ] Members see NO Manage tab
+- [ ] Members see NO "+ Create Event" button
+- [ ] Members see NO Status / When / Sort dropdowns
+- [ ] Members see only upcoming scheduled events (server-filtered)
+- [ ] Join / Leave / Waitlist / Accept / Pass / Rejoin actions still work
+
+**`/admin/events` direct route:**
+- [ ] Renders AdminEventsClient with `showCreateButton={true}`
+- [ ] Search input present and functional
+- [ ] All four dropdown controls present (Status, When, Sort, and Type when applicable)
+- [ ] Create Event button still works
+- [ ] Load more still works
+
+**No regressions:**
+- [ ] Calendar unaffected; date picker (21N-B1/C) unaffected
+- [ ] Phase 21N-B scheduling rules unchanged
+- [ ] Roster button opens EventRosterSheet; changes update occupancy counts
+- [ ] Roster button absent on cancelled event cards
+- [ ] Only one "+ Create Event" button visible at a time in admin/pro view
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

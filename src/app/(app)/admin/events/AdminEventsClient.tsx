@@ -12,6 +12,7 @@ type Court        = { id: string; name: string; display_order: number };
 type StatusFilter = "scheduled" | "cancelled" | "all";
 type DateFilter   = "all" | "upcoming" | "past";
 type SortOrder    = "desc" | "asc";
+type EventTypeOption = { key: string; label: string; color: string };
 
 // Split date and time into separate Intl calls to avoid the browser-vs-Node
 // "at" connector divergence in en-US toLocaleString when both date and time
@@ -52,9 +53,11 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [isPending, startTransition]      = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("scheduled");
-  const [dateFilter, setDateFilter]     = useState<DateFilter>("all");
-  const [sortOrder, setSortOrder]       = useState<SortOrder>("desc");
+  const [statusFilter,    setStatusFilter]    = useState<StatusFilter>("scheduled");
+  const [dateFilter,      setDateFilter]      = useState<DateFilter>("all");
+  const [sortOrder,       setSortOrder]       = useState<SortOrder>("desc");
+  const [eventTypeFilter, setEventTypeFilter] = useState<string | null>(null);
+  const [searchQuery,     setSearchQuery]     = useState("");
 
   // Sync list when the RSC parent refreshes (router.refresh() delivers new
   // initialEvents via prop reconciliation; useState alone won't pick it up).
@@ -95,7 +98,22 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     });
   }
 
-  // Derived: filter then sort. Original events array is never mutated.
+  // Unique event types present in ALL loaded events (not just visible). As Load More
+  // appends events, new types become available in the select immediately.
+  const eventTypeOptions: EventTypeOption[] = (() => {
+    const seen  = new Set<string>();
+    const types: EventTypeOption[] = [];
+    for (const ev of events) {
+      if (ev.event_types && !seen.has(ev.event_types.key)) {
+        seen.add(ev.event_types.key);
+        types.push(ev.event_types);
+      }
+    }
+    return types.sort((a, b) => a.label.localeCompare(b.label));
+  })();
+
+  // Derived: filter in spec order (status → date → event type → search), then sort.
+  // Original events array is never mutated.
   const nowMs = Date.now();
   const visibleEvents = [...events]
     .filter((ev) => {
@@ -103,6 +121,8 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
       const startsMs = new Date(ev.starts_at).getTime();
       if (dateFilter === "upcoming" && startsMs < nowMs) return false;
       if (dateFilter === "past"     && startsMs >= nowMs) return false;
+      if (eventTypeFilter && ev.event_types?.key !== eventTypeFilter) return false;
+      if (searchQuery.trim() && !ev.title.toLowerCase().includes(searchQuery.trim().toLowerCase())) return false;
       return true;
     })
     .sort((a, b) => {
@@ -120,57 +140,94 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     </button>
   );
 
+  // Shared class for all four dropdown controls so they stay visually consistent.
+  const selectClass =
+    "appearance-none pl-3 pr-7 py-1.5 rounded-lg text-xs font-medium " +
+    "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 " +
+    "border border-gray-200 dark:border-gray-700 shadow-sm " +
+    "cursor-pointer focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600";
+
   const filterBar = (
-    <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
-      {/* Status filter */}
-      <div className="flex p-0.5 gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {(["scheduled", "cancelled", "all"] as const).map((s) => (
+    <div className="px-4 pb-3 space-y-2">
+      {/* Search input — top row, full width */}
+      <div className="relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search events…"
+          className="w-full pl-3 pr-8 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 border border-gray-200 dark:border-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+        />
+        {searchQuery && (
           <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-              statusFilter === s
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400"
-            }`}
+            onClick={() => setSearchQuery("")}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-base leading-none"
+            aria-label="Clear search"
           >
-            {s === "scheduled" ? "Scheduled" : s === "cancelled" ? "Cancelled" : "All"}
+            ×
           </button>
-        ))}
+        )}
       </div>
 
-      {/* Date filter */}
-      <div className="flex p-0.5 gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {(["all", "upcoming", "past"] as const).map((d) => (
-          <button
-            key={d}
-            onClick={() => setDateFilter(d)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-              dateFilter === d
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400"
-            }`}
+      {/* Dropdown row — Status / When / Sort / Type */}
+      <div className="flex flex-wrap gap-2">
+        {/* Status */}
+        <div className="relative">
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+            className={selectClass}
           >
-            {d === "all" ? "All dates" : d === "upcoming" ? "Upcoming" : "Past"}
-          </button>
-        ))}
-      </div>
+            <option value="scheduled">Scheduled</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="all">All statuses</option>
+          </select>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
+        </div>
 
-      {/* Sort order */}
-      <div className="flex p-0.5 gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        {(["desc", "asc"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setSortOrder(s)}
-            className={`px-2.5 py-1 rounded-md text-[11px] font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-              sortOrder === s
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400"
-            }`}
+        {/* When */}
+        <div className="relative">
+          <select
+            value={dateFilter}
+            onChange={e => setDateFilter(e.target.value as DateFilter)}
+            className={selectClass}
           >
-            {s === "desc" ? "Newest" : "Oldest"}
-          </button>
-        ))}
+            <option value="all">All dates</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="past">Past</option>
+          </select>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
+        </div>
+
+        {/* Sort */}
+        <div className="relative">
+          <select
+            value={sortOrder}
+            onChange={e => setSortOrder(e.target.value as SortOrder)}
+            className={selectClass}
+          >
+            <option value="desc">Newest</option>
+            <option value="asc">Oldest</option>
+          </select>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
+        </div>
+
+        {/* Type — hidden until typed events are loaded */}
+        {eventTypeOptions.length > 0 && (
+          <div className="relative">
+            <select
+              value={eventTypeFilter ?? ""}
+              onChange={e => setEventTypeFilter(e.target.value || null)}
+              className={selectClass}
+            >
+              <option value="">All types</option>
+              {eventTypeOptions.map(t => (
+                <option key={t.key} value={t.key}>{t.label}</option>
+              ))}
+            </select>
+            <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -204,13 +261,27 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         {filterBar}
 
         {visibleEvents.length === 0 ? (
-          // Filtered-empty: events exist but none match the active filters.
-          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm px-8 text-center">
-            {dateFilter === "upcoming"
-              ? "No upcoming events in the loaded results. Tap Load more to check for later events."
-              : statusFilter === "cancelled"
-              ? "No cancelled events in the loaded results."
-              : "No events match these filters."}
+          // Filtered-empty: events exist but none match the active filters / search.
+          <div className="flex flex-col items-center justify-center h-40 gap-2 text-gray-400 dark:text-gray-500 text-sm px-8 text-center">
+            <span>
+              {searchQuery.trim()
+                ? `No events match "${searchQuery.trim()}".`
+                : eventTypeFilter
+                ? "No events of this type in the loaded results."
+                : dateFilter === "upcoming"
+                ? "No upcoming events in the loaded results. Tap Load more to check for later events."
+                : statusFilter === "cancelled"
+                ? "No cancelled events match the current filters."
+                : "No events match these filters."}
+            </span>
+            {(searchQuery.trim() || eventTypeFilter) && (
+              <button
+                onClick={() => { setSearchQuery(""); setEventTypeFilter(null); }}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
+              >
+                Clear search &amp; type filter
+              </button>
+            )}
           </div>
         ) : (
           visibleEvents.map(ev => {
