@@ -5463,3 +5463,47 @@ After creating an event from the `/events` admin/pro view:
 - [ ] Maintenance block creation (future only; SQL and UI unchanged)
 - [ ] Notification preferences and delivery (unchanged)
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21N-B1 — Mobile Calendar Date Picker Reliability
+
+**Status: Pending QA**
+
+### What changed
+
+The `/calendar` date label previously used a `w-0 h-0 pointer-events-none` hidden input
+opened programmatically via `showPicker()` / `.click()`. Mobile Safari/iOS restricts this
+pattern and silently ignores the call when the input is not the directly-tapped element.
+
+Replaced with an overlay approach: the visible date label and calendar icon sit inside a
+`relative` div; a `<input type="date">` with `absolute inset-0 opacity-0 cursor-pointer`
+is placed on top. The user's tap/click lands on the input directly — no JS intermediary.
+`has-[input:hover]:bg-gray-100` (Tailwind 3.4 `:has()`) preserves the desktop hover effect.
+
+| File | Change |
+|------|--------|
+| `CalendarShell.tsx` | Removed `datePickerRef` and hidden input; replaced `<button>` with overlay-input `<div>` |
+
+### QA checklist
+
+**Mobile (iOS Safari, Android Chrome):**
+- [ ] Tap the date label on `/calendar` → native date picker opens reliably
+- [ ] Select a date → calendar updates to that date; no timezone drift
+- [ ] Today's date shown correctly in local timezone after selection
+
+**Desktop (Chrome, Safari, Firefox):**
+- [ ] Click the date label → native date picker opens
+- [ ] Hover over the date label area → subtle background highlight appears (`:has()` hover)
+- [ ] Select a date → calendar updates correctly
+- [ ] `cursor-pointer` shown when hovering the date label area
+
+**No regressions:**
+- [ ] Prev (‹) and Next (›) day buttons work
+- [ ] Today button appears when not on today; disappears when on today
+- [ ] Desktop date rail (column strip) still shows and selects dates
+- [ ] Mobile date rail still hidden (only nav bar visible on mobile)
+- [ ] Bookings, events, and maintenance blocks still render on the grid
+- [ ] Admin/pro Create Event and Create Block buttons unchanged
+- [ ] Member court booking slot tap → booking sheet opens unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

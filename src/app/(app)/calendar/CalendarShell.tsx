@@ -227,8 +227,6 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [creatingBlock, setCreatingBlock]             = useState(false);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
-  // Ref for the hidden native date input; opened programmatically by the date label button.
-  const datePickerRef = useRef<HTMLInputElement>(null);
   // Admin/pro only: maps owner_user_id → display name for non-own member bookings.
   const [ownerNames, setOwnerNames]                   = useState<Map<string, string>>(new Map());
 
@@ -614,19 +612,6 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         {/* prev | date label button (programmatically opens date picker) | next | Today */}
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-100 dark:border-gray-800 shrink-0">
 
-          {/* Hidden date input — opened via ref by the date label button below */}
-          <input
-            ref={datePickerRef}
-            type="date"
-            value={selectedISO}
-            onChange={e => {
-              if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
-            }}
-            aria-label="Jump to date"
-            className="absolute w-0 h-0 opacity-0 pointer-events-none border-0 p-0"
-            tabIndex={-1}
-          />
-
           {/* Prev day */}
           <button
             onClick={() => shiftDate(-1)}
@@ -636,27 +621,31 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             ‹
           </button>
 
-          {/* Date label button — click opens the native date picker via ref */}
-          <button
-            onClick={() => {
-              const el = datePickerRef.current;
-              if (!el) return;
-              if (typeof (el as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
-                (el as HTMLInputElement & { showPicker: () => void }).showPicker();
-              } else {
-                el.click();
-              }
-            }}
-            className="flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100"
-          >
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate select-none">
+          {/* Date label + calendar icon. A transparent full-size date input is
+              overlaid so that tapping anywhere in this area opens the native
+              picker directly — no JS intermediary. This is reliably on mobile
+              Safari/iOS where showPicker() on a hidden element can fail.
+              has-[input:hover]:bg-* restores the hover effect on desktop via
+              the CSS :has() selector (Tailwind 3.4+). */}
+          <div className="relative flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg has-[input:hover]:bg-gray-100 dark:has-[input:hover]:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100">
+            <span className="pointer-events-none text-sm font-semibold text-gray-900 dark:text-gray-100 truncate select-none">
               {formattedNavDate}
             </span>
             {/* Calendar icon */}
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-gray-400 dark:text-gray-500">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none shrink-0 text-gray-400 dark:text-gray-500">
               <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
             </svg>
-          </button>
+            {/* Transparent overlay input — full-size over the visible label. */}
+            <input
+              type="date"
+              value={selectedISO}
+              onChange={e => {
+                if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
+              }}
+              aria-label="Jump to date"
+              className="absolute inset-0 opacity-0 cursor-pointer"
+            />
+          </div>
 
           {/* Next day */}
           <button
