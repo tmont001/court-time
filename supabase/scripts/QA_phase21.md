@@ -5468,22 +5468,33 @@ After creating an event from the `/events` admin/pro view:
 
 ## Checkpoint 21N-B1 — Mobile Calendar Date Picker Reliability
 
-**Status: Pending QA**
+**Status: Pending QA — updated by 21N-B2 (hybrid fix)**
 
-### What changed
+### What changed (21N-B1 + 21N-B2)
 
-The `/calendar` date label previously used a `w-0 h-0 pointer-events-none` hidden input
-opened programmatically via `showPicker()` / `.click()`. Mobile Safari/iOS restricts this
-pattern and silently ignores the call when the input is not the directly-tapped element.
+**21N-B1:** Replaced the old `w-0 h-0 pointer-events-none` hidden-input + `showPicker()`
+button with a transparent overlay input (`absolute inset-0 opacity-0`). Mobile Safari
+started working because the tap lands directly on the native input.
 
-Replaced with an overlay approach: the visible date label and calendar icon sit inside a
-`relative` div; a `<input type="date">` with `absolute inset-0 opacity-0 cursor-pointer`
-is placed on top. The user's tap/click lands on the input directly — no JS intermediary.
-`has-[input:hover]:bg-gray-100` (Tailwind 3.4 `:has()`) preserves the desktop hover effect.
+**21N-B2 (desktop regression fix):** On desktop (Safari especially), the opacity-0 overlay
+receives the click on the input's text-field area, which focuses the input but does not
+open the picker popover. Fixed with a hybrid pointer-type approach:
+
+- **Coarse pointer (`@media (pointer: coarse)`) — touch devices:** Keeps the overlay input
+  pattern from 21N-B1. The user's tap lands directly on the native `<input type="date">`.
+  No JS intermediary.
+- **Fine pointer (`@media (pointer: fine)`) — mouse/trackpad:** Visible `<button>` renders
+  the date label and icon at any viewport width (including desktop in narrow/responsive
+  mode). On click, calls `dateInputRef.current?.showPicker()` with a `try/catch` fallback
+  to `.click()`. `showPicker()` is the reliable desktop API.
+
+Behavior is pointer-type based, not viewport-width based, so desktop browser in narrow
+responsive mode uses the fine-pointer path (button + showPicker) correctly.
 
 | File | Change |
 |------|--------|
-| `CalendarShell.tsx` | Removed `datePickerRef` and hidden input; replaced `<button>` with overlay-input `<div>` |
+| `CalendarShell.tsx` (21N-B1) | Removed `datePickerRef` and hidden input; replaced `<button>` with overlay-input `<div>` |
+| `CalendarShell.tsx` (21N-B2) | Added `dateInputRef`; split date label into `[@media(pointer:fine)]:hidden` overlay and `hidden [@media(pointer:fine)]:flex` button+ref |
 
 ### QA checklist
 
@@ -5491,12 +5502,21 @@ is placed on top. The user's tap/click lands on the input directly — no JS int
 - [ ] Tap the date label on `/calendar` → native date picker opens reliably
 - [ ] Select a date → calendar updates to that date; no timezone drift
 - [ ] Today's date shown correctly in local timezone after selection
+- [ ] Hover (n/a on mobile) — no visual glitch from `has-[input:hover]` rule
 
-**Desktop (Chrome, Safari, Firefox):**
-- [ ] Click the date label → native date picker opens
-- [ ] Hover over the date label area → subtle background highlight appears (`:has()` hover)
-- [ ] Select a date → calendar updates correctly
-- [ ] `cursor-pointer` shown when hovering the date label area
+**Desktop — full width (Chrome, Safari, Firefox):**
+- [ ] Click the date label → native date picker opens (via `showPicker()`)
+- [ ] Hover over the date label → subtle background highlight appears
+- [ ] Select a date → calendar updates to that date; no timezone drift
+
+**Desktop — narrow/responsive viewport (DevTools mobile emulation):**
+- [ ] Click the date label → native date picker opens (still uses fine-pointer path)
+- [ ] Behavior identical to full-width desktop — button + showPicker(), not overlay
+- [ ] Hover highlight visible
+
+**Both environments — no timezone drift:**
+- [ ] Date selection sets `new Date(value + "T12:00:00Z")` — UTC noon ensures the calendar date is preserved in any timezone
+- [ ] Navigating forward/back from a picker-selected date stays on the correct date
 
 **No regressions:**
 - [ ] Prev (‹) and Next (›) day buttons work
@@ -5506,4 +5526,106 @@ is placed on top. The user's tap/click lands on the input directly — no JS int
 - [ ] Bookings, events, and maintenance blocks still render on the grid
 - [ ] Admin/pro Create Event and Create Block buttons unchanged
 - [ ] Member court booking slot tap → booking sheet opens unchanged
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21N-C1 — Events Manage Filters and Sorting
+
+**Status: Pending QA**
+
+### What changed
+
+Added client-side status, date, and sort filters to the Manage tab on `/events` for admin/pro users.
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | Added `StatusFilter`, `DateFilter`, `SortOrder` types; added three filter state variables; added `visibleEvents` derived list (filter then sort, no mutation); added compact filter bar (three pill groups) above the card list; added filtered-empty state; kept Load More offset on raw `events.length`; filter state NOT reset by the RSC sync `useEffect` |
+
+No migrations. No SQL changes. No RPC changes. No schema changes. No changes to member view, `/calendar`, scheduling rules, or date picker.
+
+### Filter defaults
+
+| Control | Default | Options |
+|---------|---------|---------|
+| Status | `scheduled` | `scheduled`, `cancelled`, `all` |
+| Date | `all` | `all`, `upcoming`, `past` |
+| Sort | `desc` (Newest) | `desc`, `asc` |
+
+### How Load More works with filters
+
+`fetchMoreAdminEvents(events.length)` always uses the raw loaded count as offset — not `visibleEvents.length`. This means pagination is correct regardless of the active filter. New events appended to `events` state automatically flow through the filter/sort computation on the next render.
+
+### QA checklist
+
+**Default filter state:**
+- [ ] On navigating to Manage tab, status filter shows "Scheduled" as active
+- [ ] On navigating to Manage tab, date filter shows "All dates" as active
+- [ ] On navigating to Manage tab, sort shows "Newest" as active
+- [ ] Default view shows only scheduled events (past + future) newest first
+- [ ] Cancelled events are NOT visible in the default view
+
+**Status filter:**
+- [ ] Tapping "Cancelled" shows only cancelled events
+- [ ] Tapping "All" shows both scheduled and cancelled events
+- [ ] Tapping "Scheduled" re-hides cancelled events
+
+**Date filter:**
+- [ ] Tapping "Upcoming" shows only events with starts_at >= now
+- [ ] Tapping "Past" shows only events with starts_at < now
+- [ ] Tapping "All dates" shows past and future events together
+
+**Sort order:**
+- [ ] Tapping "Oldest" sorts ascending (earliest at top)
+- [ ] Tapping "Newest" sorts descending (most recent at top)
+- [ ] Sort applies to the filtered result (not the raw events array)
+
+**Combined filters:**
+- [ ] Upcoming + Scheduled: only future scheduled events
+- [ ] Past + Cancelled: only past cancelled events
+- [ ] Past + All (status) + Oldest: all past events, oldest first
+- [ ] All (dates) + Cancelled + Newest: all cancelled events, newest first
+
+**Empty states:**
+- [ ] True-empty (no events loaded at all): shows "No events yet." — unchanged
+- [ ] Filtered-empty on "Upcoming" date filter: shows message mentioning Load more
+- [ ] Filtered-empty on "Cancelled" status filter: shows "No cancelled events in the loaded results."
+- [ ] Filtered-empty on other combos: shows "No events match these filters."
+- [ ] Filter bar still visible during filtered-empty state (controls remain accessible)
+
+**Load more:**
+- [ ] "Load more" button appears when server reports hasMore
+- [ ] Clicking "Load more" appends new events to the raw list
+- [ ] Newly appended events pass through active filters automatically
+- [ ] Load more offset is correct even with filters active (uses raw events.length)
+- [ ] "Load more" disappears when all events are loaded
+
+**Filter state persistence:**
+- [ ] Filter settings persist when switching Manage → Upcoming → back to Manage (both panels stay mounted via CSS hidden)
+- [ ] RSC refresh after creating an event does NOT reset filter state
+- [ ] Newly created event appears in Manage if it matches the active filters
+- [ ] If newly created event does not match active filters, it does not appear until filters are changed (expected)
+
+**Member `/events` unaffected:**
+- [ ] Members see only the Upcoming events list — no tabs, no filters, no create button
+- [ ] Member join / leave / waitlist actions work unchanged
+- [ ] Member view shows only future scheduled events
+
+**`/calendar` unaffected:**
+- [ ] Court booking unchanged
+- [ ] Admin/pro event creation from calendar unchanged
+- [ ] Mobile date picker overlay (21N-B1) unchanged
+
+**`/admin/events` direct route:**
+- [ ] `/admin/events` renders AdminEventsClient with `showCreateButton={true}`
+- [ ] Filter controls appear on `/admin/events` as well (shared component)
+- [ ] Create Event button on `/admin/events` still works
+- [ ] Load more still works on `/admin/events`
+
+**No regressions:**
+- [ ] Roster button opens EventRosterSheet for scheduled events
+- [ ] Roster changes (add/remove participant or guest) update occupancy counts in the card
+- [ ] Roster button absent on cancelled event cards
+- [ ] `cancel_event` behavior unchanged
+- [ ] Phase 21N-B scheduling rules unchanged (admin/pro booking window, past-event create, join_event past guard)
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓

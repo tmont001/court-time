@@ -218,6 +218,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   // The useLayoutEffect below (placed after filteredCourts) updates these via
   // a ResizeObserver once the grid container is mounted.
   const gridContainerRef                  = useRef<HTMLDivElement>(null);
+  const dateInputRef                      = useRef<HTMLInputElement>(null);
   const [colW, setColW]                   = useState(MIN_colW);
   const [rowH, setRowH]                   = useState(MIN_ROW_H);
   const [containerW, setContainerW]       = useState(0);
@@ -621,21 +622,16 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             ‹
           </button>
 
-          {/* Date label + calendar icon. A transparent full-size date input is
-              overlaid so that tapping anywhere in this area opens the native
-              picker directly — no JS intermediary. This is reliably on mobile
-              Safari/iOS where showPicker() on a hidden element can fail.
-              has-[input:hover]:bg-* restores the hover effect on desktop via
-              the CSS :has() selector (Tailwind 3.4+). */}
-          <div className="relative flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg has-[input:hover]:bg-gray-100 dark:has-[input:hover]:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100">
+          {/* Coarse-pointer (touch): overlay input — tap lands directly on the
+              native <input> so iOS Safari opens the picker without a JS
+              intermediary. Hidden on fine-pointer (mouse/trackpad) devices. */}
+          <div className="[@media(pointer:fine)]:hidden relative flex-1 min-w-0 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg has-[input:hover]:bg-gray-100 dark:has-[input:hover]:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100">
             <span className="pointer-events-none text-sm font-semibold text-gray-900 dark:text-gray-100 truncate select-none">
               {formattedNavDate}
             </span>
-            {/* Calendar icon */}
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="pointer-events-none shrink-0 text-gray-400 dark:text-gray-500">
               <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
             </svg>
-            {/* Transparent overlay input — full-size over the visible label. */}
             <input
               type="date"
               value={selectedISO}
@@ -644,6 +640,40 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               }}
               aria-label="Jump to date"
               className="absolute inset-0 opacity-0 cursor-pointer"
+            />
+          </div>
+
+          {/* Fine-pointer (mouse/trackpad): visible button calls showPicker().
+              Active at any viewport width when a fine pointer is present —
+              including desktop responsive/narrow mode. */}
+          <div className="relative hidden [@media(pointer:fine)]:flex flex-1 min-w-0">
+            <button
+              onClick={() => {
+                try { dateInputRef.current?.showPicker(); }
+                catch { dateInputRef.current?.click(); }
+              }}
+              aria-label="Jump to date"
+              className="flex flex-1 min-w-0 items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100"
+            >
+              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate select-none">
+                {formattedNavDate}
+              </span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-gray-400 dark:text-gray-500">
+                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </button>
+            {/* Not display:none — showPicker() requires a non-hidden input.
+                Positioned at horizontal center so the picker opens below the label. */}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={selectedISO}
+              onChange={e => {
+                if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
+              }}
+              aria-hidden="true"
+              tabIndex={-1}
+              className="absolute top-0 left-1/2 w-0 h-0 opacity-0 pointer-events-none overflow-hidden border-0 p-0"
             />
           </div>
 
