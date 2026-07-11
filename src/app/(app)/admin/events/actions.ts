@@ -1,8 +1,11 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+export type ArchiveView = "active" | "archived" | "all";
 
 export type AdminEventRow = {
   id:                 string;
@@ -11,6 +14,9 @@ export type AdminEventRow = {
   ends_at:            string;
   capacity:           number;
   status:             string;
+  created_by:         string;
+  archived_at:        string | null;
+  archived_by:        string | null;
   event_types:        { key: string; label: string; color: string } | null;
   event_participants: Array<{ profile_id: string; role: string; status: string }>;
   event_guests:       Array<{ id: string }>;
@@ -20,6 +26,7 @@ export type AdminEventRow = {
 
 export async function fetchMoreAdminEvents(
   offset: number,
+  archiveView: ArchiveView = "active",
 ): Promise<{ events: AdminEventRow[]; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -36,26 +43,50 @@ export async function fetchMoreAdminEvents(
     return { events: [], error: "Access denied." };
   }
 
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from("events")
     .select(`
-      id, title, starts_at, ends_at, capacity, status,
+      id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
       event_types(key, label, color),
       event_participants(profile_id, role, status),
       event_guests(id)
     `)
     .eq("club_id", profile.club_id)
-    .order("starts_at", { ascending: false })
-    .range(offset, offset + 24);
+    .order("starts_at", { ascending: false });
+
+  const filteredQuery =
+    archiveView === "archived" ? baseQuery.not("archived_at", "is", null) :
+    archiveView === "all"      ? baseQuery :
+    /* active (default) */       baseQuery.is("archived_at", null);
+  const { data, error } = await filteredQuery.range(offset, offset + 24);
 
   if (error) return { events: [], error: error.message };
-  return { events: (data ?? []) as AdminEventRow[] };
+  return { events: (data ?? []) as unknown as AdminEventRow[] };
 }
 
 // ---------------------------------------------------------------------------
-// Error code → user-facing message map.
-// These codes are raised as exceptions by the admin_* RPCs in 0051.
+// Error code → user-facing message maps.
+// Each RPC family has its own map so error wording stays context-appropriate.
 // ---------------------------------------------------------------------------
+
+const ARCHIVE_ERROR_MESSAGES: Record<string, string> = {
+  not_authenticated: "You must be signed in.",
+  account_inactive:  "Your account is inactive.",
+  insufficient_role: "You do not have permission to archive this event.",
+  event_not_found:   "Event not found.",
+  already_archived:  "This event is already archived.",
+  event_not_past:    "Future scheduled events must be cancelled before they can be archived.",
+};
+
+const UNARCHIVE_ERROR_MESSAGES: Record<string, string> = {
+  not_authenticated: "You must be signed in.",
+  account_inactive:  "Your account is inactive.",
+  insufficient_role: "You do not have permission to unarchive this event.",
+  event_not_found:   "Event not found.",
+  not_archived:      "This event is not archived.",
+};
+
+// These codes are raised as exceptions by the admin_* RPCs in 0051.
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:              "You must be signed in.",
   admin_required:                 "Only admins and pros can manage event rosters.",
@@ -243,5 +274,51 @@ export async function adminRemoveGuest(
   });
 
   if (error) return { error: rpcError(error) };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// archiveEventAction
+// Archives a past or cancelled event. Does not notify members, does not
+// modify linked records (participants, guests, reservations).
+// ---------------------------------------------------------------------------
+export async function archiveEventAction(
+  eventId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)("archive_event", { p_event_id: eventId });
+
+  if (error) {
+    const code = error.message?.trim() ?? "";
+    return { error: ARCHIVE_ERROR_MESSAGES[code] ?? "An unexpected error occurred. Please try again." };
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/events");
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// unarchiveEventAction
+// Removes the archive mark from an event, making it visible in default views.
+// Does not notify members, does not modify linked records.
+// ---------------------------------------------------------------------------
+export async function unarchiveEventAction(
+  eventId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)("unarchive_event", { p_event_id: eventId });
+
+  if (error) {
+    const code = error.message?.trim() ?? "";
+    return { error: UNARCHIVE_ERROR_MESSAGES[code] ?? "An unexpected error occurred. Please try again." };
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/events");
   return {};
 }

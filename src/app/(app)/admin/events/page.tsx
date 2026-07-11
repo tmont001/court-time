@@ -33,16 +33,17 @@ export default async function AdminEventsPage() {
   const { data: rawEvents } = await supabase
     .from("events")
     .select(`
-      id, title, starts_at, ends_at, capacity, status,
+      id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
       event_types(key, label, color),
       event_participants(profile_id, role, status),
       event_guests(id)
     `)
     .eq("club_id", profile.club_id)
+    .is("archived_at", null)
     .order("starts_at", { ascending: false })
     .range(0, 24);
 
-  const initialEvents = (rawEvents ?? []) as AdminEventRow[];
+  const initialEvents = (rawEvents ?? []) as unknown as AdminEventRow[];
 
   return (
     <>
@@ -68,6 +69,7 @@ export default async function AdminEventsPage() {
             hasMore={initialEvents.length === 25}
             clubTimezone={clubTimezone}
             userRole={profile.role}
+            userId={user.id}
             courts={courts}
             clubId={profile.club_id}
           />

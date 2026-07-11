@@ -5895,3 +5895,162 @@ Past scheduled events and cancelled events (including future-dated cancellations
 - [ ] All admin participant action RPCs unaffected
 - [ ] Existing events queries unaffected (columns default to null, no query changes yet)
 - [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+## Checkpoint 21O-B — Admin Archive / Unarchive UI
+
+**Status: Pending QA**
+
+### What changed
+
+Added admin/pro archive and unarchive controls to the Manage tab on `/events` and to `/admin/events`. Added "Show archived" toggle to include archived events in the list.
+
+| File | Change |
+|------|--------|
+| `src/app/(app)/admin/events/actions.ts` | Added `created_by`, `archived_at`, `archived_by` to `AdminEventRow`. Added `showArchived` param to `fetchMoreAdminEvents` (default false, adds `archived_at IS NULL` filter when false). Added `archiveEventAction` and `unarchiveEventAction` with separate error message maps. Added `revalidatePath` calls. |
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | Added `userId?` prop. Added `showArchived`, `confirmingArchiveId`, `confirmingUnarchiveId`, `archiveError` state. Added `handleToggleShowArchived`, `handleArchive`, `handleUnarchive` handlers. Updated `handleLoadMore` to pass `showArchived`. Added "Show archived" checkbox below dropdown row. Added `Archived` badge, archive/unarchive inline confirmations to event cards. Hidden roster button for archived events. |
+| `src/app/(app)/admin/events/page.tsx` | Added `created_by, archived_at, archived_by` to select. Added `.is("archived_at", null)` filter (default). Passes `userId={user.id}`. |
+| `src/app/(app)/events/page.tsx` | Added `created_by, archived_at, archived_by` to admin manage query select. Added `.is("archived_at", null)` to admin manage query and member upcoming query. Passes `userId={user.id}` to `AdminEventsClient`. |
+| `src/app/(app)/calendar/CalendarShell.tsx` | Added `.is("archived_at", null)` to client-side events fetch so archived past events don't appear when navigating to historical calendar dates. |
+
+No migrations. No SQL applied. No schema changes.
+
+### Archive eligibility (client-side)
+
+| Event state | Archive button | Unarchive button |
+|------------|---------------|-----------------|
+| Future scheduled, not archived | Hidden | Hidden |
+| Past scheduled, not archived | Shown (admin or pro-creator) | Hidden |
+| Cancelled, not archived | Shown (admin or pro-creator) | Hidden |
+| Any archived | Hidden | Shown (admin or pro-creator, when Show archived = on) |
+
+### Inline confirmation text
+
+**Archive:**
+> Archive this event?
+> Past event data and roster history will be preserved.
+> [Keep] [Archive]
+
+**Unarchive:**
+> Unarchive this event?
+> This event will return to the default Manage view.
+> [Keep archived] [Unarchive]
+
+### Show archived toggle behavior
+
+- Default off: list fetches only events where `archived_at IS NULL` (25-event pages)
+- Toggled on: list reloads from offset 0, fetching all events (archived + non-archived)
+- Load More always uses current `showArchived` value to keep pages consistent
+- Toggling resets the loaded list to the first 25 events (pagination restarts)
+
+### QA checklist
+
+**Archive button visibility:**
+- [ ] Future scheduled events show NO Archive button
+- [ ] Past scheduled events show Archive button (admin)
+- [ ] Cancelled events show Archive button (admin)
+- [ ] Admin sees Archive on any eligible event
+- [ ] Pro sees Archive only on eligible events they created
+- [ ] Pro does NOT see Archive on other pros' events
+- [ ] Members see NO Archive button anywhere
+
+**Archive inline confirmation:**
+- [ ] Clicking "Archive" on a card shows inline confirmation (no modal)
+- [ ] Confirmation text: "Archive this event?" + "Past event data and roster history will be preserved."
+- [ ] "Keep" button dismisses confirmation and shows the Archive button again
+- [ ] "Archive" button calls the RPC and updates the list
+- [ ] Archived event disappears from default Manage view (showArchived = off)
+- [ ] Error messages surface inline for: `event_not_past`, `already_archived`, `insufficient_role`
+- [ ] Archive button disabled / shows "Archiving…" during pending state
+
+**Unarchive inline confirmation (Show archived = on):**
+- [ ] Clicking "Unarchive" on an archived card shows inline confirmation
+- [ ] Confirmation text: "Unarchive this event?" + "This event will return to the default Manage view."
+- [ ] "Keep archived" button dismisses confirmation
+- [ ] "Unarchive" button calls the RPC and updates the list
+- [ ] Unarchived event acquires the appropriate status badge (Scheduled or Cancelled)
+- [ ] Error message surfaces inline for `not_archived`, `insufficient_role`
+- [ ] Unarchive button disabled / shows "Restoring…" during pending state
+
+**Archived badge and visual clarity:**
+- [ ] Archived events show BOTH a status badge (Scheduled or Cancelled) AND a separate gray "Archived" badge
+- [ ] Archived badge does NOT replace the status badge — both appear as separate pills
+- [ ] Archived cards have a subtle ring/border (`ring-1 ring-inset ring-gray-200 dark:ring-gray-600`)
+- [ ] Cancelled events are NOT transparent — no `opacity-50`; text is fully readable
+- [ ] Archive trigger button is styled as outlined amber (not faint gray text)
+- [ ] Unarchive trigger button is styled as outlined blue (not faint gray text)
+- [ ] Both buttons look actionable, not like disabled secondary labels
+
+**View dropdown (Active / Archived / All):**
+- [ ] Filter bar includes a "View" select with options: Active / Archived / All
+- [ ] Default: Active; list shows only non-archived events (`.is("archived_at", null)`)
+- [ ] Switching to Archived: list reloads from offset 0, shows only archived events
+- [ ] Switching to All: list reloads from offset 0, shows all events (no archived filter)
+- [ ] Switching back to Active: list reloads from offset 0, shows only non-archived events
+- [ ] View select is in the same row as Status / When / Sort / Type dropdowns
+- [ ] Other filters (Status / When / Sort / Type / Search) still work at any View value
+- [ ] Pagination state resets to offset 0 on View change
+
+**Load More behavior:**
+- [ ] View = Active: Load More fetches next page of non-archived events
+- [ ] View = Archived: Load More fetches next page of archived events
+- [ ] View = All: Load More fetches next page of all events
+- [ ] Offset is always `events.length` (raw), not `visibleEvents.length`
+- [ ] Load More button disabled while loading
+
+**Roster button:**
+- [ ] Roster button is NOT shown for archived events
+- [ ] Roster button still shown for non-archived scheduled events
+- [ ] Roster button still absent for cancelled events (existing behavior)
+
+**Member visibility:**
+- [ ] Members see NO Archive / Unarchive controls
+- [ ] Members see NO "Show archived" checkbox
+- [ ] Members see NO Manage tab
+- [ ] Member Upcoming excludes archived events (server filter)
+
+**`/admin/events` direct route:**
+- [ ] All of the above applies to `/admin/events` (same `AdminEventsClient` component)
+- [ ] `showCreateButton={true}` still works alongside archive controls
+
+**Calendar (`/calendar`):**
+- [ ] Calendar event blocks do NOT show archived events on any date (including historical dates)
+- [ ] Date picker, navigation, and booking behavior unchanged
+
+**No notifications:**
+- [ ] Archiving an event does NOT send notifications to participants
+- [ ] Unarchiving an event does NOT send notifications to participants
+
+**No data loss:**
+- [ ] Archived event's `event_participants` rows are unmodified
+- [ ] Archived event's `event_guests` rows are unmodified
+- [ ] Archived event's `reservations` rows are unmodified
+- [ ] Archived event's `notifications` still reference the event
+- [ ] Archived event row itself is preserved — no delete
+
+**Empty-state behavior (filter bar always visible):**
+- [ ] Filter bar (including View dropdown) is always visible regardless of events.length
+- [ ] View = Active, 0 server results: "No active events found. Switch to Archived to view archived events."
+- [ ] View = Archived, 0 server results: "No archived events found."
+- [ ] View = All, 0 server results: "No events found."
+- [ ] Client filters narrow results to 0 but events loaded: shows appropriate "No events match …" copy
+- [ ] Switching View from empty Active state reloads and may reveal events
+- [ ] Create Event button remains accessible when the events list is empty (if showCreateButton = true)
+- [ ] "Clear search & type filter" link does NOT appear when events.length = 0 (no events to reveal)
+
+**No regressions:**
+- [ ] All existing Status / When / Sort / Type / Search filters unaffected
+- [ ] Load More offset correct across all View values (Active / Archived / All)
+- [ ] Creating an event still works; new event appears in list after refresh
+- [ ] Roster mutations (add/remove participant, add/remove guest) unaffected
+- [ ] Cancel event behavior unaffected
+- [ ] Phase 21N-B scheduling rules unaffected
+- [ ] Calendar date picker (21N-B1/C) unaffected
+- [ ] pnpm tsc --noEmit ✓ / pnpm build ✓
+
+---
+
+### 21O-C follow-up note
+
+**Archived roster is currently hidden (not read-only).** Archived event cards do not expose the Roster button. The EventRosterSheet allows mutations, so hiding the button entirely was the safe choice for this phase. A future 21O-C pass could add a read-only roster view for archived events (e.g., a "View roster" link that opens a non-editable sheet showing historical attendance).

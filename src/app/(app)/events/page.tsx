@@ -81,18 +81,20 @@ export default async function EventsPage() {
       .eq("club_id", clubId)
       .eq("status", "scheduled")
       .gte("starts_at", now)
+      .is("archived_at", null)
       .order("starts_at", { ascending: true }),
-    // Admin/pro: all events (past + future) for the Manage tab
+    // Admin/pro: all events (past + future) for the Manage tab; excludes archived by default
     isAdminOrPro
       ? supabase
           .from("events")
           .select(`
-            id, title, starts_at, ends_at, capacity, status,
+            id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
             event_types(key, label, color),
             event_participants(profile_id, role, status),
             event_guests(id)
           `)
           .eq("club_id", clubId)
+          .is("archived_at", null)
           .order("starts_at", { ascending: false })
           .range(0, 24)
       : Promise.resolve({ data: null }),
@@ -109,7 +111,7 @@ export default async function EventsPage() {
 
   const clubTimezone = clubResult.data?.timezone ?? "America/New_York";
   const events       = (eventsResult.data ?? []) as unknown as UpcomingEventData[];
-  const adminEvents  = (adminEventsResult.data ?? []) as AdminEventRow[];
+  const adminEvents  = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
   const adminCourts  = adminCourtsResult.data ?? [];
 
   // ── Batch-fetch court names for reservation display in EventsUpcomingClient ──
@@ -162,6 +164,7 @@ export default async function EventsPage() {
                   hasMore={adminEvents.length === 25}
                   clubTimezone={clubTimezone}
                   userRole={profile!.role}
+                  userId={user.id}
                   courts={adminCourts as { id: string; name: string; display_order: number }[]}
                   clubId={clubId}
                   showCreateButton={false}

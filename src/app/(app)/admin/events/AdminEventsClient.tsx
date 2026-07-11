@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
-import { fetchMoreAdminEvents } from "./actions";
-import type { AdminEventRow } from "./actions";
+import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction } from "./actions";
+import type { AdminEventRow, ArchiveView } from "./actions";
 
 type Court        = { id: string; name: string; display_order: number };
 type StatusFilter = "scheduled" | "cancelled" | "all";
@@ -39,25 +39,31 @@ interface Props {
   hasMore:           boolean;
   clubTimezone:      string;
   userRole:          string;
+  userId?:           string;
   courts:            Court[];
   clubId:            string;
   // When false, the "+ Create Event" button is hidden (used when a parent already shows one).
   showCreateButton?: boolean;
 }
 
-export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, courts, clubId, showCreateButton = true }: Props) {
+export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true }: Props) {
   const router                            = useRouter();
   const [events, setEvents]               = useState<AdminEventRow[]>(initialEvents);
   const [hasMore, setHasMore]             = useState(initialHasMore);
   const [fetchError, setFetchError]       = useState<string | null>(null);
   const [isPending, startTransition]      = useTransition();
+  const [isArchivePending, startArchiveTransition] = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
 
-  const [statusFilter,    setStatusFilter]    = useState<StatusFilter>("scheduled");
-  const [dateFilter,      setDateFilter]      = useState<DateFilter>("all");
-  const [sortOrder,       setSortOrder]       = useState<SortOrder>("desc");
-  const [eventTypeFilter, setEventTypeFilter] = useState<string | null>(null);
-  const [searchQuery,     setSearchQuery]     = useState("");
+  const [statusFilter,          setStatusFilter]          = useState<StatusFilter>("scheduled");
+  const [dateFilter,            setDateFilter]            = useState<DateFilter>("all");
+  const [sortOrder,             setSortOrder]             = useState<SortOrder>("desc");
+  const [eventTypeFilter,       setEventTypeFilter]       = useState<string | null>(null);
+  const [searchQuery,           setSearchQuery]           = useState("");
+  const [archiveView,           setArchiveView]           = useState<ArchiveView>("active");
+  const [confirmingArchiveId,   setConfirmingArchiveId]   = useState<string | null>(null);
+  const [confirmingUnarchiveId, setConfirmingUnarchiveId] = useState<string | null>(null);
+  const [archiveError,          setArchiveError]          = useState<string | null>(null);
 
   // Sync list when the RSC parent refreshes (router.refresh() delivers new
   // initialEvents via prop reconciliation; useState alone won't pick it up).
@@ -87,13 +93,64 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     setFetchError(null);
     startTransition(async () => {
       // Offset uses raw loaded count — not visibleEvents.length — so pagination
-      // is always correct regardless of the active filter.
-      const result = await fetchMoreAdminEvents(events.length);
+      // is always correct regardless of the active client-side filter.
+      const result = await fetchMoreAdminEvents(events.length, archiveView);
       if (result.error) {
         setFetchError(result.error);
       } else {
         setEvents(prev => [...prev, ...result.events]);
         setHasMore(result.events.length === 25);
+      }
+    });
+  }
+
+  // Changing View reloads from offset 0 so pagination stays correct.
+  function handleArchiveViewChange(next: ArchiveView) {
+    setArchiveView(next);
+    setFetchError(null);
+    startTransition(async () => {
+      const result = await fetchMoreAdminEvents(0, next);
+      if (result.error) {
+        setFetchError(result.error);
+      } else {
+        setEvents(result.events);
+        setHasMore(result.events.length === 25);
+      }
+    });
+  }
+
+  // After archive/unarchive, reload from offset 0 preserving the current
+  // archiveView so the list reflects the change without resetting the filter.
+  function handleArchive(eventId: string) {
+    setArchiveError(null);
+    startArchiveTransition(async () => {
+      const result = await archiveEventAction(eventId);
+      if (result.error) {
+        setArchiveError(result.error);
+      } else {
+        setConfirmingArchiveId(null);
+        const reloaded = await fetchMoreAdminEvents(0, archiveView);
+        if (!reloaded.error) {
+          setEvents(reloaded.events);
+          setHasMore(reloaded.events.length === 25);
+        }
+      }
+    });
+  }
+
+  function handleUnarchive(eventId: string) {
+    setArchiveError(null);
+    startArchiveTransition(async () => {
+      const result = await unarchiveEventAction(eventId);
+      if (result.error) {
+        setArchiveError(result.error);
+      } else {
+        setConfirmingUnarchiveId(null);
+        const reloaded = await fetchMoreAdminEvents(0, archiveView);
+        if (!reloaded.error) {
+          setEvents(reloaded.events);
+          setHasMore(reloaded.events.length === 25);
+        }
       }
     });
   }
@@ -140,7 +197,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     </button>
   );
 
-  // Shared class for all four dropdown controls so they stay visually consistent.
+  // Shared class for all dropdown controls so they stay visually consistent.
   const selectClass =
     "appearance-none pl-3 pr-7 py-1.5 rounded-lg text-xs font-medium " +
     "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 " +
@@ -169,7 +226,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         )}
       </div>
 
-      {/* Dropdown row — Status / When / Sort / Type */}
+      {/* Dropdown row — Status / When / Sort / Type / View */}
       <div className="flex flex-wrap gap-2">
         {/* Status */}
         <div className="relative">
@@ -228,30 +285,23 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
           </div>
         )}
+
+        {/* View — Active / Archived / All; reloads list from offset 0 on change */}
+        <div className="relative">
+          <select
+            value={archiveView}
+            onChange={e => handleArchiveViewChange(e.target.value as ArchiveView)}
+            className={selectClass}
+          >
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+            <option value="all">All</option>
+          </select>
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-[10px]">▾</span>
+        </div>
       </div>
     </div>
   );
-
-  // True-empty: no events loaded from the server at all.
-  if (events.length === 0) {
-    return (
-      <>
-        {showCreateButton && <div className="px-4 pb-3 flex justify-end">{createEventButton}</div>}
-        <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
-          No events yet.
-        </div>
-        {creatingEvent && (
-          <CreateEventSheet
-            courts={courts}
-            clubId={clubId}
-            clubTimezone={clubTimezone}
-            onClose={() => setCreatingEvent(false)}
-            onCreated={() => { setCreatingEvent(false); router.refresh(); }}
-          />
-        )}
-      </>
-    );
-  }
 
   return (
     <>
@@ -261,10 +311,17 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         {filterBar}
 
         {visibleEvents.length === 0 ? (
-          // Filtered-empty: events exist but none match the active filters / search.
           <div className="flex flex-col items-center justify-center h-40 gap-2 text-gray-400 dark:text-gray-500 text-sm px-8 text-center">
             <span>
-              {searchQuery.trim()
+              {events.length === 0
+                // No events from server at all — message reflects the active View.
+                ? (archiveView === "archived"
+                    ? "No archived events found."
+                    : archiveView === "all"
+                    ? "No events found."
+                    : "No active events found. Switch to Archived to view archived events.")
+                // Events loaded but client filters hide them all.
+                : searchQuery.trim()
                 ? `No events match "${searchQuery.trim()}".`
                 : eventTypeFilter
                 ? "No events of this type in the loaded results."
@@ -274,7 +331,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                 ? "No cancelled events match the current filters."
                 : "No events match these filters."}
             </span>
-            {(searchQuery.trim() || eventTypeFilter) && (
+            {(searchQuery.trim() || eventTypeFilter) && events.length > 0 && (
               <button
                 onClick={() => { setSearchQuery(""); setEventTypeFilter(null); }}
                 className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
@@ -299,13 +356,29 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             const occupiedCount  = confirmedCount + offeredCount + guestCount;
             const rosterCount    = occupiedCount + waitlistCount;
             const isCancelled    = ev.status === "cancelled";
+            const isArchived     = ev.archived_at !== null;
+
+            // Archive eligibility: past scheduled events or any cancelled event.
+            // Future scheduled events are blocked by the RPC guard (event_not_past).
+            const canArchive = !isArchived && (
+              ev.status === "cancelled" ||
+              (ev.status === "scheduled" && new Date(ev.starts_at).getTime() < nowMs)
+            );
+
+            // Permission: admin can act on any event; pro only on their own.
+            const canActOnArchive = userRole === "admin" ||
+              (userRole === "pro" && !!userId && ev.created_by === userId);
+
+            // Show the combined Roster + Archive section when there is something to show:
+            // a roster button (non-cancelled, non-archived) OR an archive action.
+            const showBottomSection = (!isCancelled && !isArchived) || (canActOnArchive && canArchive);
 
             return (
               <div
                 key={ev.id}
-                className={`ct-card mx-4 mb-3 px-4 py-3 ${isCancelled ? "opacity-50" : ""}`}
+                className={`ct-card mx-4 mb-3 px-4 py-3${isArchived ? " ring-1 ring-inset ring-gray-200 dark:ring-gray-600" : ""}`}
               >
-                {/* Type pill + status badge */}
+                {/* Type pill + status badge + archived badge */}
                 <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                   {type && (
                     <span
@@ -315,6 +388,8 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                       {type.label}
                     </span>
                   )}
+
+                  {/* Status badge — always shown */}
                   {isCancelled ? (
                     <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-600">
                       Cancelled
@@ -322,6 +397,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                   ) : (
                     <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-green-100 text-green-700">
                       Scheduled
+                    </span>
+                  )}
+
+                  {/* Archived badge — shown alongside status badge when archived */}
+                  {isArchived && (
+                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 ring-1 ring-gray-300 dark:ring-gray-600">
+                      Archived
                     </span>
                   )}
                 </div>
@@ -342,16 +424,91 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                   {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
                 </p>
 
-                {/* Roster button — scheduled events only */}
-                {!isCancelled && (
+                {/* Roster + Archive section */}
+                {showBottomSection && (
+                  <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                    {/* Roster button — non-cancelled, non-archived events only */}
+                    {!isCancelled && !isArchived && (
+                      <EventRosterButton
+                        eventId={ev.id}
+                        count={rosterCount}
+                        userRole={userRole}
+                        clubTimezone={clubTimezone}
+                        onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
+                      />
+                    )}
+
+                    {/* Archive button / inline confirmation */}
+                    {canActOnArchive && canArchive && (
+                      confirmingArchiveId === ev.id ? (
+                        <div className="space-y-1">
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Archive this event?</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">Past event data and roster history will be preserved.</p>
+                          {archiveError && (
+                            <p className="text-xs text-red-500">{archiveError}</p>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => { setConfirmingArchiveId(null); setArchiveError(null); }}
+                              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                            >
+                              Keep
+                            </button>
+                            <button
+                              onClick={() => handleArchive(ev.id)}
+                              disabled={isArchivePending}
+                              className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                            >
+                              {isArchivePending ? "Archiving…" : "Archive"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setConfirmingArchiveId(ev.id); setConfirmingUnarchiveId(null); setArchiveError(null); }}
+                          className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                        >
+                          Archive
+                        </button>
+                      )
+                    )}
+                  </div>
+                )}
+
+                {/* Unarchive section — only for archived events */}
+                {isArchived && canActOnArchive && (
                   <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                    <EventRosterButton
-                      eventId={ev.id}
-                      count={rosterCount}
-                      userRole={userRole}
-                      clubTimezone={clubTimezone}
-                      onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
-                    />
+                    {confirmingUnarchiveId === ev.id ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Unarchive this event?</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">This event will return to the default Manage view.</p>
+                        {archiveError && (
+                          <p className="text-xs text-red-500">{archiveError}</p>
+                        )}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => { setConfirmingUnarchiveId(null); setArchiveError(null); }}
+                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            Keep archived
+                          </button>
+                          <button
+                            onClick={() => handleUnarchive(ev.id)}
+                            disabled={isArchivePending}
+                            className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            {isArchivePending ? "Restoring…" : "Unarchive"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setConfirmingUnarchiveId(ev.id); setConfirmingArchiveId(null); setArchiveError(null); }}
+                        className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                      >
+                        Unarchive
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

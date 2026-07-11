@@ -463,6 +463,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       .gte("starts_at", dayBounds.start)
       .lt("starts_at",  dayBounds.end)
       .eq("status", "scheduled")
+      .is("archived_at", null)
       .order("starts_at");
     if (!error) {
       const mapped = (data ?? []).map((row: unknown) => {
