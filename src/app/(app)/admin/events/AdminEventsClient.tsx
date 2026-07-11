@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
+import { cancelEvent } from "@/app/(app)/calendar/actions";
 import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction } from "./actions";
 import type { AdminEventRow, ArchiveView } from "./actions";
 
@@ -34,6 +35,13 @@ function formatDate(iso: string, tz: string): string {
   return `${datePart} ${timePart}`;
 }
 
+function mapCancelError(code: string): string {
+  if (code === "insufficient_role")   return "You do not have permission to cancel this event.";
+  if (code === "event_not_found")     return "This event could not be cancelled. It may already be cancelled.";
+  if (code === "event_cancelled")     return "This event could not be cancelled. It may already be cancelled.";
+  return "Unable to cancel event. Please try again.";
+}
+
 interface Props {
   initialEvents:     AdminEventRow[];
   hasMore:           boolean;
@@ -53,6 +61,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [fetchError, setFetchError]       = useState<string | null>(null);
   const [isPending, startTransition]      = useTransition();
   const [isArchivePending, startArchiveTransition] = useTransition();
+  const [isCancelPending,  startCancelTransition]  = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
 
   const [statusFilter,          setStatusFilter]          = useState<StatusFilter>("scheduled");
@@ -61,9 +70,14 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [eventTypeFilter,       setEventTypeFilter]       = useState<string | null>(null);
   const [searchQuery,           setSearchQuery]           = useState("");
   const [archiveView,           setArchiveView]           = useState<ArchiveView>("active");
+
+  // One confirmation slot shared across the three inline flows; opening one
+  // clears the others so only one confirmation is ever visible at a time.
   const [confirmingArchiveId,   setConfirmingArchiveId]   = useState<string | null>(null);
   const [confirmingUnarchiveId, setConfirmingUnarchiveId] = useState<string | null>(null);
+  const [confirmingCancelId,    setConfirmingCancelId]    = useState<string | null>(null);
   const [archiveError,          setArchiveError]          = useState<string | null>(null);
+  const [cancelError,           setCancelError]           = useState<string | null>(null);
 
   // Sync list when the RSC parent refreshes (router.refresh() delivers new
   // initialEvents via prop reconciliation; useState alone won't pick it up).
@@ -119,8 +133,16 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     });
   }
 
-  // After archive/unarchive, reload from offset 0 preserving the current
+  // After archive/unarchive/cancel, reload from offset 0 preserving the current
   // archiveView so the list reflects the change without resetting the filter.
+  async function reloadFromStart() {
+    const reloaded = await fetchMoreAdminEvents(0, archiveView);
+    if (!reloaded.error) {
+      setEvents(reloaded.events);
+      setHasMore(reloaded.events.length === 25);
+    }
+  }
+
   function handleArchive(eventId: string) {
     setArchiveError(null);
     startArchiveTransition(async () => {
@@ -129,11 +151,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         setArchiveError(result.error);
       } else {
         setConfirmingArchiveId(null);
-        const reloaded = await fetchMoreAdminEvents(0, archiveView);
-        if (!reloaded.error) {
-          setEvents(reloaded.events);
-          setHasMore(reloaded.events.length === 25);
-        }
+        await reloadFromStart();
       }
     });
   }
@@ -146,11 +164,20 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         setArchiveError(result.error);
       } else {
         setConfirmingUnarchiveId(null);
-        const reloaded = await fetchMoreAdminEvents(0, archiveView);
-        if (!reloaded.error) {
-          setEvents(reloaded.events);
-          setHasMore(reloaded.events.length === 25);
-        }
+        await reloadFromStart();
+      }
+    });
+  }
+
+  function handleCancel(eventId: string) {
+    setCancelError(null);
+    startCancelTransition(async () => {
+      const result = await cancelEvent(eventId);
+      if (result.error) {
+        setCancelError(mapCancelError(result.error.trim()));
+      } else {
+        setConfirmingCancelId(null);
+        await reloadFromStart();
       }
     });
   }
@@ -357,21 +384,24 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             const rosterCount    = occupiedCount + waitlistCount;
             const isCancelled    = ev.status === "cancelled";
             const isArchived     = ev.archived_at !== null;
-
-            // Archive eligibility: past scheduled events or any cancelled event.
-            // Future scheduled events are blocked by the RPC guard (event_not_past).
-            const canArchive = !isArchived && (
-              ev.status === "cancelled" ||
-              (ev.status === "scheduled" && new Date(ev.starts_at).getTime() < nowMs)
-            );
+            const isFuture       = new Date(ev.starts_at).getTime() >= nowMs;
 
             // Permission: admin can act on any event; pro only on their own.
-            const canActOnArchive = userRole === "admin" ||
+            const canActOnEvent = userRole === "admin" ||
               (userRole === "pro" && !!userId && ev.created_by === userId);
 
-            // Show the combined Roster + Archive section when there is something to show:
-            // a roster button (non-cancelled, non-archived) OR an archive action.
-            const showBottomSection = (!isCancelled && !isArchived) || (canActOnArchive && canArchive);
+            // Archive eligibility: past scheduled events or any cancelled event.
+            // Future scheduled events must be cancelled before archiving (RPC guard: event_not_past).
+            const canArchive = !isArchived && canActOnEvent && (
+              ev.status === "cancelled" ||
+              (ev.status === "scheduled" && !isFuture)
+            );
+
+            // Cancel eligibility: future scheduled non-archived events only.
+            const canCancel = !isArchived && ev.status === "scheduled" && isFuture && canActOnEvent;
+
+            // Show the action footer when any action or roster button is available.
+            const showActionFooter = !isCancelled || canArchive || canCancel || (isArchived && canActOnEvent);
 
             return (
               <div
@@ -424,67 +454,59 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                   {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
                 </p>
 
-                {/* Roster + Archive section */}
-                {showBottomSection && (
-                  <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 space-y-2">
-                    {/* Roster button — non-cancelled, non-archived events only */}
-                    {!isCancelled && !isArchived && (
-                      <EventRosterButton
-                        eventId={ev.id}
-                        count={rosterCount}
-                        userRole={userRole}
-                        clubTimezone={clubTimezone}
-                        onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
-                      />
-                    )}
-
-                    {/* Archive button / inline confirmation */}
-                    {canActOnArchive && canArchive && (
-                      confirmingArchiveId === ev.id ? (
-                        <div className="space-y-1">
-                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Archive this event?</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Past event data and roster history will be preserved.</p>
-                          {archiveError && (
-                            <p className="text-xs text-red-500">{archiveError}</p>
-                          )}
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => { setConfirmingArchiveId(null); setArchiveError(null); }}
-                              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
-                            >
-                              Keep
-                            </button>
-                            <button
-                              onClick={() => handleArchive(ev.id)}
-                              disabled={isArchivePending}
-                              className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
-                            >
-                              {isArchivePending ? "Archiving…" : "Archive"}
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setConfirmingArchiveId(ev.id); setConfirmingUnarchiveId(null); setArchiveError(null); }}
-                          className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
-                        >
-                          Archive
-                        </button>
-                      )
-                    )}
-                  </div>
-                )}
-
-                {/* Unarchive section — only for archived events */}
-                {isArchived && canActOnArchive && (
+                {/* ── Unified action footer ───────────────────────────────── */}
+                {showActionFooter && (
                   <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-                    {confirmingUnarchiveId === ev.id ? (
+                    {confirmingCancelId === ev.id ? (
+                      /* ── Cancel confirmation — full width ── */
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Cancel this event?</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Members will be notified and linked court reservations will be cancelled.</p>
+                        {cancelError && <p className="text-xs text-red-500">{cancelError}</p>}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => { setConfirmingCancelId(null); setCancelError(null); }}
+                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            Keep event
+                          </button>
+                          <button
+                            onClick={() => handleCancel(ev.id)}
+                            disabled={isCancelPending}
+                            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            {isCancelPending ? "Cancelling…" : "Cancel Event"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : confirmingArchiveId === ev.id ? (
+                      /* ── Archive confirmation — full width ── */
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Archive this event?</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Past event data and roster history will be preserved.</p>
+                        {archiveError && <p className="text-xs text-red-500">{archiveError}</p>}
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => { setConfirmingArchiveId(null); setArchiveError(null); }}
+                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            Keep
+                          </button>
+                          <button
+                            onClick={() => handleArchive(ev.id)}
+                            disabled={isArchivePending}
+                            className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            {isArchivePending ? "Archiving…" : "Archive"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : confirmingUnarchiveId === ev.id ? (
+                      /* ── Unarchive confirmation — full width ── */
                       <div className="space-y-1">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Unarchive this event?</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">This event will return to the default Manage view.</p>
-                        {archiveError && (
-                          <p className="text-xs text-red-500">{archiveError}</p>
-                        )}
+                        {archiveError && <p className="text-xs text-red-500">{archiveError}</p>}
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => { setConfirmingUnarchiveId(null); setArchiveError(null); }}
@@ -502,12 +524,65 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                         </div>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => { setConfirmingUnarchiveId(ev.id); setConfirmingArchiveId(null); setArchiveError(null); }}
-                        className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
-                      >
-                        Unarchive
-                      </button>
+                      /* ── Normal: Roster left | lifecycle actions right ── */
+                      <div className="flex items-center justify-between gap-x-4 gap-y-1.5 flex-wrap">
+                        {/* Left: Roster / View Roster */}
+                        {!isCancelled && (
+                          <EventRosterButton
+                            eventId={ev.id}
+                            count={rosterCount}
+                            userRole={userRole}
+                            clubTimezone={clubTimezone}
+                            readOnly={isArchived}
+                            onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
+                          />
+                        )}
+                        {/* Right: Cancel | Archive | Unarchive */}
+                        <div className="flex items-center gap-2 ml-auto">
+                          {canCancel && (
+                            <button
+                              onClick={() => {
+                                setConfirmingCancelId(ev.id);
+                                setConfirmingArchiveId(null);
+                                setConfirmingUnarchiveId(null);
+                                setCancelError(null);
+                                setArchiveError(null);
+                              }}
+                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                            >
+                              Cancel Event
+                            </button>
+                          )}
+                          {canArchive && (
+                            <button
+                              onClick={() => {
+                                setConfirmingArchiveId(ev.id);
+                                setConfirmingUnarchiveId(null);
+                                setConfirmingCancelId(null);
+                                setArchiveError(null);
+                                setCancelError(null);
+                              }}
+                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                            >
+                              Archive
+                            </button>
+                          )}
+                          {isArchived && canActOnEvent && (
+                            <button
+                              onClick={() => {
+                                setConfirmingUnarchiveId(ev.id);
+                                setConfirmingArchiveId(null);
+                                setConfirmingCancelId(null);
+                                setArchiveError(null);
+                                setCancelError(null);
+                              }}
+                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                            >
+                              Unarchive
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

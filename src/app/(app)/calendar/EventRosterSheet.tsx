@@ -41,6 +41,9 @@ interface Props {
   onClose:          () => void;
   clubTimezone?:    string;
   userRole?:        string;
+  // When true, all mutation controls are hidden and a read-only notice is shown.
+  // Used for archived events.
+  readOnly?:        boolean;
   // Increment to trigger a roster reload (e.g. after join/leave in parent).
   refreshTick?:     number;
   // Called after every successful roster fetch so parents can update occupancy counts.
@@ -60,7 +63,7 @@ function formatExpiryTime(isoString: string, tz?: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, refreshTick, onRosterChange }: Props) {
+export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, readOnly = false, refreshTick, onRosterChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const isAdmin  = userRole === "admin" || userRole === "pro";
 
@@ -326,8 +329,17 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
 
           {!loading && !error && (
             <>
+              {/* Read-only notice — shown for archived events */}
+              {readOnly && (
+                <div className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/60 px-3 py-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Archived event — roster is read-only.
+                  </p>
+                </div>
+              )}
+
               {/* ── Admin controls: Add Member / Add Guest ─────────────── */}
-              {isAdmin && (
+              {isAdmin && !readOnly && (
                 <div className="mb-5 space-y-3">
 
                   {/* Add Member */}
@@ -424,7 +436,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
               )}
 
               {rows.length === 0 ? (
-                <p className={`text-sm text-gray-400 text-center ${isAdmin ? "py-4" : "py-8"}`}>
+                <p className={`text-sm text-gray-400 text-center ${isAdmin && !readOnly ? "py-4" : "py-8"}`}>
                   No participants yet.
                 </p>
               ) : (
@@ -452,7 +464,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   <p className="text-xs text-gray-400 mt-0.5">Host</p>
                                 )}
                               </div>
-                              {isAdmin && row.role !== "host" && (
+                              {isAdmin && !readOnly && row.role !== "host" && (
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>
@@ -465,40 +477,54 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                               )}
                             </div>
 
-                            {/* Attendance controls */}
-                            <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                              <button
-                                disabled={isUpdating}
-                                onClick={() => handleMark(row.profile_id, "attended")}
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
-                                  row.attendance_status === "attended"
-                                    ? "bg-green-100 text-green-700"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                                }`}
-                              >
-                                Attended
-                              </button>
-                              <button
-                                disabled={isUpdating}
-                                onClick={() => handleMark(row.profile_id, "no_show")}
-                                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
-                                  row.attendance_status === "no_show"
-                                    ? "bg-red-100 text-red-600"
-                                    : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-                                }`}
-                              >
-                                No-show
-                              </button>
-                              {row.attendance_status && (
+                            {/* Attendance: interactive controls (editable) or status label (read-only) */}
+                            {readOnly ? (
+                              row.attendance_status && (
+                                <div className="mt-1.5">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-red-100 text-red-600"
+                                  }`}>
+                                    {row.attendance_status === "attended" ? "Attended" : "No-show"}
+                                  </span>
+                                </div>
+                              )
+                            ) : (
+                              <div className="flex gap-1.5 mt-1.5 flex-wrap">
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleMark(row.profile_id, null)}
-                                  className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
+                                  onClick={() => handleMark(row.profile_id, "attended")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
                                 >
-                                  Clear
+                                  Attended
                                 </button>
-                              )}
-                            </div>
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleMark(row.profile_id, "no_show")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "no_show"
+                                      ? "bg-red-100 text-red-600"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  No-show
+                                </button>
+                                {row.attendance_status && (
+                                  <button
+                                    disabled={isUpdating}
+                                    onClick={() => handleMark(row.profile_id, null)}
+                                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+                            )}
 
                             {rowError && (
                               <p className="text-xs text-red-500 mt-1">{rowError}</p>
@@ -543,7 +569,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   )
                                 )}
                               </div>
-                              {isAdmin && (
+                              {isAdmin && !readOnly && (
                                 <div className="ml-3 flex gap-2 items-center shrink-0">
                                   <button
                                     disabled={isUpdating}
@@ -601,7 +627,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                     #{row.waitlist_position}
                                   </span>
                                 )}
-                                {isAdmin && (
+                                {isAdmin && !readOnly && (
                                   <>
                                     <button
                                       disabled={isUpdating}
@@ -654,7 +680,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   {row.display_name}
                                 </p>
                               </div>
-                              {isAdmin && (
+                              {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>
@@ -695,7 +721,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   {row.display_name}
                                 </p>
                               </div>
-                              {isAdmin && (
+                              {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>

@@ -6051,6 +6051,113 @@ No migrations. No SQL applied. No schema changes.
 
 ---
 
-### 21O-C follow-up note
+### 21O-C: Archived Event Read-Only Roster UI
 
-**Archived roster is currently hidden (not read-only).** Archived event cards do not expose the Roster button. The EventRosterSheet allows mutations, so hiding the button entirely was the safe choice for this phase. A future 21O-C pass could add a read-only roster view for archived events (e.g., a "View roster" link that opens a non-editable sheet showing historical attendance).
+**Scope:** UI-only. No SQL changes, no RPC changes, no migrations.
+
+**Files changed:** `EventRosterSheet.tsx`, `EventRosterButton.tsx`, `AdminEventsClient.tsx`.
+
+**View Roster button for archived non-cancelled events**
+- [ ] Archived non-cancelled event card shows "View Roster (N)" button in bottom section
+- [ ] "View Roster" label is distinct from editable "Roster (N)" label on active events
+- [ ] Archived cancelled events show NO roster button (cancelled events never show roster)
+- [ ] Active non-cancelled events still show editable "Roster (N)" button
+- [ ] Cancelled non-archived events still show NO roster button
+
+**Read-only notice in roster sheet**
+- [ ] Tapping "View Roster" on an archived event opens EventRosterSheet
+- [ ] Notice banner appears at top of sheet body: "Archived event — roster is read-only."
+- [ ] Notice is visible before any participant sections
+- [ ] Notice does NOT appear for active (non-archived) events
+
+**Mutation controls hidden in read-only mode**
+- [ ] "+ Add Member" button is NOT shown
+- [ ] "+ Add Guest" button is NOT shown
+- [ ] "Remove" button is NOT shown for any confirmed member row
+- [ ] "Remove" button is NOT shown for any roster-linked guest row ("No Account Yet")
+- [ ] "Remove" button is NOT shown for any anonymous guest row
+- [ ] "Force Confirm" is NOT shown in the Offered section
+- [ ] "Expire" is NOT shown in the Offered section
+- [ ] "Force Confirm" is NOT shown in the Waitlist section
+- [ ] "Offer Spot" is NOT shown in the Waitlist section
+- [ ] Attendance toggle buttons (Attended / No-show / Clear) are NOT shown
+
+**Display-only data visible in read-only mode**
+- [ ] Section headers are shown (Signed-In Members, Offered, Waitlist, No Account Yet, Guests)
+- [ ] Member names are shown in each section
+- [ ] Guest names are shown
+- [ ] Waitlist position numbers (#1, #2…) are shown
+- [ ] Offer expiry timestamps are shown as informational text
+- [ ] Total attending count in sheet header is shown
+- [ ] Recorded attendance status shown as a static pill (green "Attended" / red "No-show") when set; hidden when null
+- [ ] Sheet closes normally (close button / back-drag on mobile)
+
+**Active roster still fully editable**
+- [ ] Active non-archived non-cancelled events open editable "Roster (N)"
+- [ ] "+ Add Member" visible and functional
+- [ ] "+ Add Guest" visible and functional
+- [ ] "Remove" visible on confirmed member rows
+- [ ] Attendance toggle buttons (Attended / No-show / Clear) visible and functional
+- [ ] Force Confirm, Offer Spot, Expire visible in offered/waitlist sections
+- [ ] No notice banner in active roster sheet
+
+**Cancel Event action (added alongside read-only roster)**
+
+Card lifecycle per event type:
+- [ ] Future scheduled active event shows: Roster (editable) + Cancel Event button — no Archive button
+- [ ] Past scheduled active event shows: Roster (editable) + Archive button — no Cancel Event button
+- [ ] Cancelled active event shows: Archive button — no Roster button, no Cancel Event button
+- [ ] Future scheduled archived event shows: View Roster (read-only) — no Cancel, no Archive (already archived)
+- [ ] Past scheduled archived event shows: View Roster (read-only) — no Cancel, no Archive (already archived)
+- [ ] Cancelled archived event shows: Unarchive only (separate section) — no Roster, no Cancel, no Archive
+
+Card action row layout:
+- [ ] Action footer uses a horizontal flex row: Roster/View Roster on the left, lifecycle actions (Cancel Event / Archive / Unarchive) on the right
+- [ ] On narrow widths the row wraps cleanly; no cramped sibling-text appearance
+- [ ] When a confirmation is open, it renders full-width (replaces the flex row for that card)
+- [ ] Only one confirmation visible at a time across all cards
+
+Cancel Event button:
+- [ ] Cancel Event button uses red outline style (border-red-200 text-red-600)
+- [ ] Admin sees Cancel Event on any future scheduled non-archived event
+- [ ] Pro sees Cancel Event only on future scheduled non-archived events they created
+- [ ] Pro does NOT see Cancel Event on other pros' events
+
+Cancel Event inline confirmation:
+- [ ] Tapping "Cancel Event" opens inline confirmation (no modal)
+- [ ] Confirmation title: "Cancel this event?"
+- [ ] Confirmation helper: "Members will be notified and linked court reservations will be cancelled."
+- [ ] "Keep event" button dismisses confirmation and shows Cancel Event button again
+- [ ] "Cancel Event" confirm button calls cancelEvent action
+- [ ] Successful cancel reloads list from offset 0 (event disappears from Scheduled filter, appears in Cancelled filter)
+- [ ] Cancel button shows "Cancelling…" during pending state and is disabled
+- [ ] Only one inline confirmation visible at a time (opening Cancel closes Archive/Unarchive confirmations, and vice versa)
+
+Cancel Event error handling:
+- [ ] `insufficient_role` → "You do not have permission to cancel this event."
+- [ ] `event_not_found` / `event_cancelled` → "This event could not be cancelled. It may already be cancelled."
+- [ ] Other errors → "Unable to cancel event. Please try again."
+- [ ] Error appears inline inside the confirmation block
+
+Cancel Event downstream behavior (via existing cancel_event RPC):
+- [ ] Event status becomes "cancelled" in the database
+- [ ] Linked court reservations are cancelled
+- [ ] Participants receive event_cancelled in-app notifications
+- [ ] SMS dispatched to opted-in participants (actor excluded)
+- [ ] Email dispatched to opted-in participants (actor excluded)
+
+**Archive/unarchive controls unaffected**
+- [ ] Archive inline confirmation still works on eligible non-archived events (past scheduled, cancelled)
+- [ ] Unarchive inline confirmation still works on archived events
+- [ ] View dropdown (Active / Archived / All) still works
+- [ ] Archive button NOT shown on future scheduled events (expected: must cancel first)
+
+**No SQL/migration changes**
+- [ ] No new migration files
+- [ ] No RPC changes
+- [ ] No database schema changes
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
+
+**Future follow-up (not in this phase)**
+Add `IF archived_at IS NOT NULL THEN RAISE EXCEPTION 'event_archived'; END IF;` to all 8 admin roster mutation RPCs (`admin_add_member`, `admin_remove_participant`, `admin_force_confirm`, `admin_offer_spot`, `admin_expire_offer`, `admin_add_guest`, `admin_remove_guest`, `admin_add_roster_member_to_event`) and to `mark_attendance`. This eliminates the server-side gap where a crafted authenticated request could still mutate a scheduled archived event's roster. Requires a future migration.
