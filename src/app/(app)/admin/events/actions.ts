@@ -93,6 +93,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   insufficient_role:              "Only admins and pros can manage event rosters.",
   event_not_found:                "Event not found.",
   event_cancelled:                "This event has been cancelled.",
+  event_archived:                 "This event is archived and its roster is read-only.",
   member_not_found:               "That member could not be found.",
   member_inactive:                "That member is inactive.",
   participant_not_found:          "That participant could not be found.",

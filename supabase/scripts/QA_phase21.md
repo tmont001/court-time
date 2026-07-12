@@ -6160,4 +6160,82 @@ Cancel Event downstream behavior (via existing cancel_event RPC):
 - [ ] `pnpm build` ✓
 
 **Future follow-up (not in this phase)**
-Add `IF archived_at IS NOT NULL THEN RAISE EXCEPTION 'event_archived'; END IF;` to all 8 admin roster mutation RPCs (`admin_add_member`, `admin_remove_participant`, `admin_force_confirm`, `admin_offer_spot`, `admin_expire_offer`, `admin_add_guest`, `admin_remove_guest`, `admin_add_roster_member_to_event`) and to `mark_attendance`. This eliminates the server-side gap where a crafted authenticated request could still mutate a scheduled archived event's roster. Requires a future migration.
+~~Add `IF archived_at IS NOT NULL THEN RAISE EXCEPTION 'event_archived'; END IF;` to all 8 admin roster mutation RPCs and `mark_attendance`.~~ → Implemented in Phase 21O-D (migration 0061).
+
+---
+
+## Phase 21O-D — Server-Side Archive Guards for Roster Mutations
+
+**Branch:** `phase-21o-d-archive-roster-rpc-guards`
+
+### Migration 0061 — SQL review checklist (before applying)
+
+> **Do not apply until migration 0060 (`archived_at` column) is live.**
+
+Migration file: `supabase/migrations/0061_archive_roster_guard.sql`
+
+- [ ] File exists at correct path and is numbered 0061
+- [ ] All 9 functions use `CREATE OR REPLACE` (idempotent, no DROP needed)
+- [ ] `event_archived` guard line (`if v_event.archived_at is not null then raise exception 'event_archived'; end if;`) appears in each function
+- [ ] Guard is placed **after** `event_not_found` and `event_cancelled` checks (where applicable), **before** any mutation
+- [ ] `mark_attendance` upgraded from `not exists` check to `select * into v_event` to enable row access for guard
+- [ ] `mark_attendance` has NO `event_cancelled` guard (intentional — preserved from original)
+- [ ] All other function bodies are byte-for-byte identical to their source migrations (0051/0057/0017) except for the inserted guard line
+- [ ] Audit log entries, notifications, and waitlist advance calls are all preserved
+
+**Functions guarded (9):**
+
+| Function | Source migration | Guard position |
+|---|---|---|
+| `admin_add_member` | 0051 | after `event_cancelled` |
+| `admin_remove_participant` | 0051 | after `event_cancelled` |
+| `admin_force_confirm` | 0051 | after `event_cancelled` |
+| `admin_offer_spot` | 0051 | after `event_cancelled` |
+| `admin_expire_offer` | 0051 | after `event_cancelled` |
+| `admin_add_guest` | 0051 | after `event_cancelled` |
+| `admin_remove_guest` | 0051 | after `event_cancelled` |
+| `admin_add_roster_member_to_event` | 0057 | after `event_cancelled` |
+| `mark_attendance` | 0017 | after `event_not_found` (no cancelled guard) |
+
+### App-layer changes
+
+- [ ] `event_archived: "This event is archived and its roster is read-only."` added to `ERROR_MESSAGES` in `src/app/(app)/admin/events/actions.ts`
+- [ ] `handleMark` in `EventRosterSheet.tsx` checks `rpcError.message === "event_archived"` and shows friendly message instead of generic fallback
+
+### Manual QA (after applying 0061 in staging)
+
+**Archived event — roster write attempts blocked at DB layer:**
+- [ ] Admin opens EventRosterSheet on a non-archived past event → all controls visible and functional
+- [ ] Manually archive that event (via archive_event RPC or Supabase SQL)
+- [ ] Admin opens EventRosterSheet on the now-archived event (readOnly UI) → Add Member/Guest controls hidden, attendance shows static pills
+- [ ] Manually call `admin_add_member` on the archived event via Supabase SQL Editor → expect `event_archived` exception
+- [ ] Manually call `admin_remove_participant` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_force_confirm` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_offer_spot` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_expire_offer` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_add_guest` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_remove_guest` on an archived event → expect `event_archived` exception
+- [ ] Manually call `admin_add_roster_member_to_event` on an archived event → expect `event_archived` exception
+- [ ] Manually call `mark_attendance` on an archived event → expect `event_archived` exception
+
+**Error message display:**
+- [ ] `event_archived` from roster RPCs → displays "This event is archived and its roster is read-only." via `ERROR_MESSAGES` in `actions.ts`
+- [ ] `event_archived` from `mark_attendance` → displays "This event is archived and its roster is read-only." inline in the roster row
+
+**Non-archived events unaffected:**
+- [ ] All roster mutation RPCs still work normally on active (non-archived) events
+- [ ] Cancelled non-archived events: `event_cancelled` guard fires before `event_archived` guard
+- [ ] `mark_attendance` still works on confirmed participants in non-archived events
+
+**No regression:**
+- [ ] Archive/unarchive buttons still work on eligible events
+- [ ] View dropdown (Active / Archived / All) still works
+- [ ] Cancel Event still works on eligible future scheduled events
+- [ ] Roster read-only UI (from 21O-C) still shows on archived events
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
+
+**SQL not applied:**
+- [ ] Migration 0061 created as file only — NOT applied to staging or production
+- [ ] No database schema changes in this phase
+- [ ] Apply 0060 first, then 0061, in the correct order

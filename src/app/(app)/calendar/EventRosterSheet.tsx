@@ -155,7 +155,10 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
     setRowUpdating(prev => { const next = new Set(prev); next.delete(profileId); return next; });
     if (rpcError) {
       setRows(prevRows);
-      setRowErrors(prev => new Map(prev).set(profileId, "Failed to update. Please try again."));
+      const msg = rpcError.message?.trim() === "event_archived"
+        ? "This event is archived and its roster is read-only."
+        : "Failed to update. Please try again.";
+      setRowErrors(prev => new Map(prev).set(profileId, msg));
     }
   }
 
