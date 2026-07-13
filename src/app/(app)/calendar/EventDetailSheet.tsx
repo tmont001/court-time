@@ -71,6 +71,7 @@ function mapJoinError(message: string): string {
   if (message === "already_joined")         return "You're already signed up.";
   if (message === "event_already_started")  return "This event has already started.";
   if (message === "event_not_available")    return "This event is no longer available.";
+  if (message === "event_not_joinable")     return "This event is admin-managed. Contact the office to be added to the roster.";
   return "Something went wrong. Please try again.";
 }
 

@@ -6239,3 +6239,93 @@ Migration file: `supabase/migrations/0061_archive_roster_guard.sql`
 - [ ] Migration 0061 created as file only — NOT applied to staging or production
 - [ ] No database schema changes in this phase
 - [ ] Apply 0060 first, then 0061, in the correct order
+
+---
+
+## Phase 21P-B — Member Joinable Schema and RPC Guards
+
+**Branch:** `phase-21p-b-member-joinable-schema-rpc`
+
+### Migration 0062 — SQL review checklist (before applying)
+
+> **Apply order: 0060 → 0061 → 0062**
+
+Migration file: `supabase/migrations/0062_member_joinable.sql`
+
+- [ ] File exists at correct path and is numbered 0062
+- [ ] Column: `alter table events add column if not exists member_joinable boolean not null default true;` present
+- [ ] No partial index added (intentional — deferred to 21P-C when query changes are made)
+- [ ] `create_event` updated: `p_member_joinable boolean default true` is the last parameter
+- [ ] `create_event` INSERT includes `member_joinable = coalesce(p_member_joinable, true)`
+- [ ] Existing `create_event` callers (no `p_member_joinable` arg) still work — column defaults to `true`
+- [ ] `join_event` updated: `event_not_joinable` guard present after `event_not_found` check
+- [ ] `join_event` guard: `if not v_event.member_joinable then raise exception 'event_not_joinable'; end if;`
+- [ ] All other `join_event` behavior preserved (account_inactive, event_already_started, stale offer expiry, waitlist logic, notifications)
+- [ ] `leave_event` NOT modified (members can always leave)
+- [ ] `accept_waitlist_offer` NOT modified (members can always accept an admin-placed offer)
+- [ ] `decline_waitlist_offer` NOT modified
+- [ ] Admin roster RPCs (0051/0057) NOT modified
+- [ ] `mark_attendance` NOT modified
+- [ ] `cancel_event` NOT modified
+- [ ] `archive_event` / `unarchive_event` NOT modified
+
+### App-layer changes
+
+- [ ] `AdminEventRow` type in `admin/events/actions.ts`: `member_joinable: boolean` field added
+- [ ] `fetchMoreAdminEvents` select string: `member_joinable` included in column list
+- [ ] `mapJoinError` in `calendar/EventDetailSheet.tsx`: `event_not_joinable` → "This event is admin-managed. Contact the office to be added to the roster."
+- [ ] No UI changes (badge, toggle, query filter) — those are in 21P-C
+
+### Manual QA (after applying 0062 in staging)
+
+**Column and backfill:**
+- [ ] `select count(*) from events where member_joinable is null` → 0
+- [ ] `select count(*) from events where member_joinable = false` → 0 (no existing events are non-joinable)
+- [ ] `select count(*) from events where member_joinable = true` → all existing events
+
+**create_event — joinable (default):**
+- [ ] Create event without `p_member_joinable` arg → `member_joinable = true`
+- [ ] Create event with `p_member_joinable = true` → `member_joinable = true`
+- [ ] All existing event creation flows from UI work unchanged (parameter defaults to true)
+
+**create_event — admin-managed:**
+- [ ] Call `create_event(..., p_member_joinable := false)` via SQL Editor → `member_joinable = false` in events table
+- [ ] Event still appears in calendar; status = 'scheduled'; court reservation created
+
+**join_event — joinable event:**
+- [ ] `join_event` on a `member_joinable = true` event → succeeds (confirmed or waitlisted)
+- [ ] All existing join/waitlist flows work unchanged
+
+**join_event — admin-managed event:**
+- [ ] `join_event` on a `member_joinable = false` event → raises `event_not_joinable`
+- [ ] Error message in EventDetailSheet: "This event is admin-managed. Contact the office to be added to the roster."
+- [ ] No event_participants row created
+
+**Other member actions unaffected:**
+- [ ] `leave_event` works on a `member_joinable = false` event (if member was admin-added)
+- [ ] `accept_waitlist_offer` works on a `member_joinable = false` event
+- [ ] `decline_waitlist_offer` works on a `member_joinable = false` event
+
+**Admin roster actions unaffected:**
+- [ ] `admin_add_member` works on a `member_joinable = false` event
+- [ ] `admin_remove_participant` works on a `member_joinable = false` event
+- [ ] `admin_force_confirm` works on a `member_joinable = false` event
+- [ ] `admin_offer_spot` works on a `member_joinable = false` event
+- [ ] `admin_add_guest` / `admin_remove_guest` work on a `member_joinable = false` event
+- [ ] `mark_attendance` works on a `member_joinable = false` event
+
+**Cancel/archive unaffected:**
+- [ ] `cancel_event` works on a `member_joinable = false` event
+- [ ] `archive_event` works on a `member_joinable = false` event (past/cancelled)
+- [ ] `unarchive_event` works on a `member_joinable = false` event
+
+**No UI changes confirmed:**
+- [ ] No toggle visible in CreateEventSheet yet (21P-C)
+- [ ] No badge visible on Admin Manage cards yet (21P-C)
+- [ ] No query filter on member Upcoming yet (21P-C)
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
+
+**SQL not applied:**
+- [ ] Migration 0062 created as file only — NOT applied to staging or production
+- [ ] Apply 0060 → 0061 → 0062 in order

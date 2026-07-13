@@ -15,6 +15,7 @@ export type AdminEventRow = {
   capacity:           number;
   status:             string;
   created_by:         string;
+  member_joinable:    boolean;
   archived_at:        string | null;
   archived_by:        string | null;
   event_types:        { key: string; label: string; color: string } | null;
@@ -46,7 +47,7 @@ export async function fetchMoreAdminEvents(
   const baseQuery = supabase
     .from("events")
     .select(`
-      id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
+      id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, archived_at, archived_by,
       event_types(key, label, color),
       event_participants(profile_id, role, status),
       event_guests(id)
