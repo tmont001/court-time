@@ -80,6 +80,8 @@ export default async function EventsPage() {
       `)
       .eq("club_id", clubId)
       .eq("status", "scheduled")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .eq("member_joinable" as any, true)
       .gte("starts_at", now)
       .is("archived_at", null)
       .order("starts_at", { ascending: true }),
@@ -88,7 +90,7 @@ export default async function EventsPage() {
       ? supabase
           .from("events")
           .select(`
-            id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
+            id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, archived_at, archived_by,
             event_types(key, label, color),
             event_participants(profile_id, role, status),
             event_guests(id)

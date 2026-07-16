@@ -51,6 +51,7 @@ interface RawEventRow {
   capacity: number;
   status: string;
   created_by: string;
+  member_joinable: boolean;
   event_types: {
     key: string;
     label: string;
@@ -70,6 +71,7 @@ interface EventWithDetails {
   capacity: number;
   status: string;
   created_by: string;
+  member_joinable: boolean;
   event_types: {
     key: string;
     label: string;
@@ -453,7 +455,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     const { data, error } = await supabase
       .from("events")
       .select(`
-        id, title, starts_at, ends_at, capacity, status, created_by,
+        id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
         event_types(key, label, color, shows_participant_names),
         event_participants(profile_id, role, status, offer_expires_at),
         event_guests(id),
@@ -476,6 +478,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           capacity:           r.capacity,
           status:             r.status,
           created_by:         r.created_by,
+          member_joinable:    r.member_joinable,
           event_types:        r.event_types,
           event_participants: r.event_participants,
           event_guests:       r.event_guests,

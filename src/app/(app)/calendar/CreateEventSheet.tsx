@@ -113,6 +113,7 @@ export default function CreateEventSheet({
   const [selectedCourtIds, setSelectedCourtIds]       = useState<string[]>([]);
   const [capacity, setCapacity]                       = useState(1);
   const [conflictingCourtIds, setConflictingCourtIds] = useState<Set<string>>(new Set());
+  const [memberJoinable, setMemberJoinable]             = useState(true);
   const [submitting, setSubmitting]                   = useState(false);
   const [error, setError]                             = useState<string | null>(null);
   const [typesError, setTypesError]                   = useState<string | null>(null);
@@ -236,12 +237,13 @@ export default function CreateEventSheet({
     setError(null);
 
     const { error: rpcError } = await supabase.rpc("create_event", {
-      p_event_type_id: selectedType.id,
-      p_title:         title.trim(),
-      p_starts_at:     startsAt.toISOString(),
-      p_ends_at:       endsAt.toISOString(),
-      p_court_ids:     selectedCourtIds,
-      p_capacity:      capacity,
+      p_event_type_id:  selectedType.id,
+      p_title:          title.trim(),
+      p_starts_at:      startsAt.toISOString(),
+      p_ends_at:        endsAt.toISOString(),
+      p_court_ids:      selectedCourtIds,
+      p_capacity:       capacity,
+      p_member_joinable: memberJoinable,
     });
 
     if (rpcError) {
@@ -546,6 +548,33 @@ export default function CreateEventSheet({
                     <option key={n} value={n}>{n}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Member joinable toggle */}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Members can join this event</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    {memberJoinable
+                      ? "Members can sign up from the calendar."
+                      : "Admin-managed — only staff can add members to the roster."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={memberJoinable}
+                  onClick={() => setMemberJoinable(v => !v)}
+                  className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ${
+                    memberJoinable ? "bg-accent" : "bg-gray-200 dark:bg-gray-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                      memberJoinable ? "translate-x-5" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Summary */}

@@ -23,6 +23,7 @@ interface EventWithDetails {
   capacity: number;
   status: string;
   created_by: string;
+  member_joinable: boolean;
   event_types: {
     key: string;
     label: string;
@@ -303,13 +304,20 @@ export default function EventDetailSheet({
         {/* Handle — hidden on desktop (ResponsiveSheet provides close button) */}
         <div className="ct-handlebar mx-auto mb-4 md:hidden" />
 
-        {/* Event type pill */}
-        <span
-          className="inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold text-white mb-3"
-          style={{ background: event.event_types.color }}
-        >
-          {event.event_types.label}
-        </span>
+        {/* Event type pill + admin-managed badge */}
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <span
+            className="inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+            style={{ background: event.event_types.color }}
+          >
+            {event.event_types.label}
+          </span>
+          {!event.member_joinable && (
+            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+              Admin-managed
+            </span>
+          )}
+        </div>
 
         {/* Title */}
         <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{event.title}</p>
@@ -420,6 +428,13 @@ export default function EventDetailSheet({
               </div>
             </div>
           )
+        ) : !event.member_joinable && !myPart && !isHost ? (
+          /* Admin-managed event — member not on roster, hide join/waitlist */
+          <div className="mt-5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 px-4 py-3 text-center">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Admin-managed event. Contact the office to be added to the roster.
+            </p>
+          </div>
         ) : (
           /* Normal state — Join / Leave / Waitlist / Host */
           <>

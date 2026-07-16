@@ -436,6 +436,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                       Archived
                     </span>
                   )}
+
+                  {/* Admin-managed badge — when members cannot self-join */}
+                  {!ev.member_joinable && (
+                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
+                      Admin-managed
+                    </span>
+                  )}
                 </div>
 
                 {/* Title */}

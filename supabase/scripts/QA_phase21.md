@@ -6329,3 +6329,65 @@ Migration file: `supabase/migrations/0062_member_joinable.sql`
 **SQL not applied:**
 - [ ] Migration 0062 created as file only — NOT applied to staging or production
 - [ ] Apply 0060 → 0061 → 0062 in order
+
+---
+
+## Checkpoint 21P-C — Admin-Managed Events UI
+
+**Status: Code complete — pending SQL apply (0062) + manual QA**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/calendar/CalendarShell.tsx` | Added `member_joinable` to `RawEventRow`, `EventWithDetails`, `fetchEvents` select, and mapped return object |
+| `src/app/(app)/calendar/EventDetailSheet.tsx` | Added `member_joinable` to `EventWithDetails`; "Admin-managed" badge next to event type pill; conditional read-only note replaces Join/Waitlist button when `!member_joinable && !myPart && !isHost` |
+| `src/app/(app)/calendar/CreateEventSheet.tsx` | Added `memberJoinable` state (default `true`); toggle in Step 4 with helper text; `p_member_joinable` passed to `create_event` RPC |
+| `src/app/(app)/events/page.tsx` | Added `.eq("member_joinable", true)` to member Upcoming query; added `member_joinable` to admin Manage select |
+| `src/app/(app)/admin/events/AdminEventsClient.tsx` | "Admin-managed" badge after "Archived" badge on event cards |
+
+No migrations. No RPC changes. No schema changes.
+
+### Manual QA checklist
+
+**Prerequisite: 0062 must be applied before any of these checks.**
+
+**CreateEventSheet — member joinable toggle:**
+- [ ] Open Create Event sheet as admin/pro → go to Step 4 → toggle "Members can join this event" visible, defaulted ON
+- [ ] Toggle ON: helper text "Members can sign up from the calendar." visible
+- [ ] Toggle OFF: helper text "Admin-managed — only staff can add members to the roster." visible; knob slides left
+- [ ] Create event with toggle ON → `member_joinable = true` in DB
+- [ ] Create event with toggle OFF → `member_joinable = false` in DB
+
+**AdminEventsClient — Admin-managed badge:**
+- [ ] Admin Manage tab: event with `member_joinable = false` shows "Admin-managed" badge on card
+- [ ] Admin Manage tab: event with `member_joinable = true` shows NO "Admin-managed" badge
+- [ ] Archived + admin-managed: both "Archived" and "Admin-managed" badges visible together
+
+**EventDetailSheet — badge:**
+- [ ] Calendar: click admin-managed event → "Admin-managed" badge visible next to event type pill
+- [ ] Calendar: click normal event → no "Admin-managed" badge
+
+**EventDetailSheet — conditional Join/Waitlist button:**
+- [ ] Member (not on roster) views admin-managed event → no Join/Waitlist button; read-only note displayed: "Admin-managed event. Contact the office to be added to the roster."
+- [ ] Member already confirmed on admin-managed event → "Leave Event" button still shows
+- [ ] Member waitlisted on admin-managed event → "Leave Waitlist" button still shows
+- [ ] Member has active offer on admin-managed event → Accept/Pass buttons still show
+- [ ] Admin/pro viewing admin-managed event → normal admin controls; no read-only note (canViewRoster = true path)
+
+**Member /events Upcoming tab filter:**
+- [ ] Member Upcoming tab: admin-managed event (`member_joinable = false`) NOT shown in list
+- [ ] Member Upcoming tab: normal event (`member_joinable = true`) still shown
+- [ ] Admin Upcoming tab: admin-managed events also filtered out (both share same `eventsResult` query — by design; admins see all events in Manage tab)
+- [ ] Admin Manage tab: admin-managed events visible (uses `adminEventsResult`, no `member_joinable` filter)
+
+**Calendar behavior unaffected:**
+- [ ] Admin-managed event still appears on calendar grid (CalendarShell query not filtered by `member_joinable`)
+- [ ] Court blocking still works for admin-managed events
+
+**Regression checks:**
+- [ ] Archived event roster: still read-only when archived (`readOnly={isArchived}` path in EventRosterSheet unaffected)
+- [ ] Cancel event: still works on admin-managed events
+- [ ] Archive/unarchive: still works on admin-managed events
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
