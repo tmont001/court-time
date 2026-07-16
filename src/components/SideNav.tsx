@@ -52,7 +52,7 @@ function ProfileIcon() {
 const tabs = [
   { label: "Calendar",    href: "/calendar",    Icon: CalendarIcon },
   { label: "Events",      href: "/events",       Icon: EventsIcon },
-  { label: "My Schedule", href: "/my-schedule",  Icon: ScheduleIcon },
+  { label: "Bookings",    href: "/my-schedule",  Icon: ScheduleIcon },
   { label: "Account",     href: "/profile",      Icon: ProfileIcon },
 ] as const;
 
