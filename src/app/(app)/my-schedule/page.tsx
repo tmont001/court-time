@@ -4,8 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import {
   leaveEvent as dispatchLeaveEvent,
+  joinEvent as dispatchJoinEvent,
+  acceptWaitlistOffer as dispatchAcceptWaitlistOffer,
+  declineWaitlistOffer as dispatchDeclineWaitlistOffer,
   notifyMemberReservationCancelled,
 } from "@/app/(app)/calendar/actions";
+import PastEventsSection from "./PastEventsSection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,11 +24,12 @@ interface ReservationRow {
 }
 
 interface EventItem {
-  id:         string;
-  title:      string;
-  starts_at:  string;
-  ends_at:    string;
-  status:     string;
+  id:          string;
+  title:       string;
+  starts_at:   string;
+  ends_at:     string;
+  status:      string;
+  archived_at: string | null;
   event_types: { label: string; color: string };
   reservations: Array<{ court_id: string; reason: string; status: string }>;
 }
@@ -34,12 +39,13 @@ interface RawSignupRow {
   role:              string;
   status:            string;
   attendance_status: string | null;
+  offer_expires_at:  string | null;
   events:            EventItem | null;
 }
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event"; ev: EventItem; myRole: string; myStatus: string; myAttendance: string | null };
+  | { kind: "event"; ev: EventItem; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -113,6 +119,30 @@ async function leaveEvent(formData: FormData) {
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
   await dispatchLeaveEvent(eventId);
+  revalidatePath("/my-schedule");
+}
+
+async function acceptWaitlistOfferAction(formData: FormData) {
+  "use server";
+  const eventId = formData.get("event_id") as string | null;
+  if (!eventId) return;
+  await dispatchAcceptWaitlistOffer(eventId);
+  revalidatePath("/my-schedule");
+}
+
+async function declineWaitlistOfferAction(formData: FormData) {
+  "use server";
+  const eventId = formData.get("event_id") as string | null;
+  if (!eventId) return;
+  await dispatchDeclineWaitlistOffer(eventId);
+  revalidatePath("/my-schedule");
+}
+
+async function rejoinEventAction(formData: FormData) {
+  "use server";
+  const eventId = formData.get("event_id") as string | null;
+  if (!eventId) return;
+  await dispatchJoinEvent(eventId);
   revalidatePath("/my-schedule");
 }
 
@@ -197,30 +227,34 @@ export default async function MySchedulePage() {
       role,
       status,
       attendance_status,
+      offer_expires_at,
       events(
         id,
         title,
         starts_at,
         ends_at,
         status,
+        archived_at,
         event_types(label, color),
         reservations(court_id, reason, status)
       )
     `)
     .eq("profile_id", user.id)
-    .in("status", ["confirmed", "waitlisted"]) as { data: RawSignupRow[] | null };
+    .in("status", ["confirmed", "waitlisted", "offered"]) as { data: RawSignupRow[] | null };
 
   const allSignupRows = signupRows ?? [];
 
   const validSignups = allSignupRows.filter(
     s => s.events !== null &&
          s.events.status === "scheduled" &&
+         s.events.archived_at == null &&
          s.events.starts_at >= now
   );
 
   const pastSignups = allSignupRows.filter(
     s => s.events !== null &&
          s.events.status === "scheduled" &&
+         s.events.archived_at == null &&
          s.events.starts_at < now
   );
 
@@ -257,25 +291,30 @@ export default async function MySchedulePage() {
         (graceMs > 0 && Date.now() - new Date(res.created_at).getTime() < graceMs),
     })),
     ...validSignups.map(s => ({
-      kind:         "event" as const,
-      ev:           s.events!,
-      myRole:       s.role,
-      myStatus:     s.status,
-      myAttendance: s.attendance_status,
+      kind:           "event" as const,
+      ev:             s.events!,
+      myRole:         s.role,
+      myStatus:       s.status,
+      myAttendance:   s.attendance_status,
+      offerExpiresAt: s.offer_expires_at,
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
 
-  // Past events — most recent first, read-only
+  // Past events — most recent first, passed to PastEventsSection (read-only, collapsible)
   const pastItems = pastSignups
     .map(s => ({
-      kind:         "event" as const,
-      ev:           s.events!,
+      id:           s.events!.id,
+      title:        s.events!.title,
+      starts_at:    s.events!.starts_at,
+      ends_at:      s.events!.ends_at,
+      event_types:  s.events!.event_types,
+      reservations: s.events!.reservations,
       myRole:       s.role,
       myStatus:     s.status,
       myAttendance: s.attendance_status,
     }))
-    .sort((a, b) => b.ev.starts_at.localeCompare(a.ev.starts_at));
+    .sort((a, b) => b.starts_at.localeCompare(a.starts_at));
 
   // ── 5. Group by local date ───────────────────────────────────────────────────
   const grouped = new Map<string, ScheduleItem[]>();
@@ -289,7 +328,7 @@ export default async function MySchedulePage() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
-      <Header screenTitle="My Schedule" />
+      <Header screenTitle="My Bookings" />
 
       <div
         className="overflow-y-auto"
@@ -361,7 +400,7 @@ export default async function MySchedulePage() {
                     }
 
                     // ── Upcoming event signup card ────────────────────────────
-                    const { ev, myRole, myStatus } = item;
+                    const { ev, myRole, myStatus, offerExpiresAt } = item;
                     const start = formatTime(ev.starts_at, clubTimezone);
                     const end   = formatTime(ev.ends_at,   clubTimezone);
                     const evCourtNames = ev.reservations
@@ -369,7 +408,11 @@ export default async function MySchedulePage() {
                       .map(r => courtName.get(r.court_id) ?? "Court")
                       .join(", ");
 
-                    const isWaitlisted = myStatus === "waitlisted";
+                    const isWaitlisted           = myStatus === "waitlisted";
+                    const isOffered              = myStatus === "offered";
+                    const offerExpiredServerSide = isOffered && offerExpiresAt
+                      ? new Date(offerExpiresAt) <= new Date()
+                      : false;
 
                     return (
                       <div
@@ -389,15 +432,63 @@ export default async function MySchedulePage() {
                                 Waitlisted
                               </span>
                             )}
+                            {isOffered && !offerExpiredServerSide && (
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                Spot offered
+                              </span>
+                            )}
+                            {isOffered && offerExpiredServerSide && (
+                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                Offer expired
+                              </span>
+                            )}
                           </div>
                           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {start} – {end}
                             {evCourtNames ? ` · ${evCourtNames}` : ""}
                           </p>
+                          {isOffered && !offerExpiredServerSide && offerExpiresAt && (
+                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                              Accept by {formatTime(offerExpiresAt, clubTimezone)}
+                            </p>
+                          )}
                         </div>
                         {myRole === "host" ? (
                           <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
+                        ) : isOffered ? (
+                          offerExpiredServerSide ? (
+                            <form action={rejoinEventAction}>
+                              <input type="hidden" name="event_id" value={ev.id} />
+                              <button
+                                type="submit"
+                                className="text-xs font-medium text-blue-600 ml-4 shrink-0 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                              >
+                                Rejoin
+                              </button>
+                            </form>
+                          ) : (
+                            <div className="flex flex-col items-end gap-1.5 ml-4 shrink-0">
+                              <form action={acceptWaitlistOfferAction}>
+                                <input type="hidden" name="event_id" value={ev.id} />
+                                <button
+                                  type="submit"
+                                  className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                >
+                                  Accept
+                                </button>
+                              </form>
+                              <form action={declineWaitlistOfferAction}>
+                                <input type="hidden" name="event_id" value={ev.id} />
+                                <button
+                                  type="submit"
+                                  className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                >
+                                  Pass
+                                </button>
+                              </form>
+                            </div>
+                          )
                         ) : (
                           <form action={leaveEvent}>
                             <input type="hidden" name="event_id" value={ev.id} />
@@ -416,63 +507,12 @@ export default async function MySchedulePage() {
               );
             })}
 
-            {/* ── Past events section — read-only ──────────────────────── */}
-            {pastItems.length > 0 && (
-              <div>
-                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Past Events
-                </p>
-                <p className="px-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
-                  Your event history. Past events are read-only.
-                </p>
-                {pastItems.map(({ ev, myRole, myStatus, myAttendance }) => {
-                  const date  = formatDateShort(ev.starts_at, clubTimezone);
-                  const start = formatTime(ev.starts_at, clubTimezone);
-                  const end   = formatTime(ev.ends_at,   clubTimezone);
-                  const evCourtNames = ev.reservations
-                    .filter(r => r.reason === "event" && r.status === "confirmed")
-                    .map(r => courtName.get(r.court_id) ?? "Court")
-                    .join(", ");
-
-                  return (
-                    <div
-                      key={ev.id}
-                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between opacity-75"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                          <span
-                            className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                            style={{ background: ev.event_types.color }}
-                          >
-                            {ev.event_types.label}
-                          </span>
-                          {myStatus === "waitlisted" && (
-                            <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
-                              Waitlisted
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {date} · {start} – {end}
-                          {evCourtNames ? ` · ${evCourtNames}` : ""}
-                        </p>
-                      </div>
-                      {myRole === "host" ? (
-                        <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
-                      ) : myAttendance === "attended" ? (
-                        <span className="text-xs font-medium text-green-600 ml-4 shrink-0">Attended</span>
-                      ) : myAttendance === "no_show" ? (
-                        <span className="text-xs font-medium text-red-500 ml-4 shrink-0">No-show</span>
-                      ) : (
-                        <span className="text-xs text-gray-400 dark:text-gray-500 ml-4 shrink-0">Past</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {/* ── Past events — collapsed by default (client component) ── */}
+            <PastEventsSection
+              items={pastItems}
+              courtNames={courts ?? []}
+              clubTimezone={clubTimezone}
+            />
 
           </div>
         )}

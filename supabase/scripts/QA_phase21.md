@@ -6391,3 +6391,87 @@ No migrations. No RPC changes. No schema changes.
 - [ ] Archive/unarchive: still works on admin-managed events
 - [ ] `pnpm tsc --noEmit` ✓
 - [ ] `pnpm build` ✓
+
+---
+
+## Checkpoint 21Q-B — Bookings Cleanup
+
+**Status: Code complete — pending manual QA**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `src/components/BottomNav.tsx` | Renamed tab label "My Schedule" → "Bookings"; removed `smallLabel: true` |
+| `src/app/(app)/my-schedule/page.tsx` | Renamed page title "My Schedule" → "My Bookings"; added `offered` to participant status filter; added `offer_expires_at` and `archived_at` to participant/events select; added `archived_at == null` guard on validSignups and pastSignups; added Accept/Pass/Rejoin server actions; updated upcoming event card to render offered state; changed pastItems shape to match PastEventsSection props; replaced inline past events section with PastEventsSection component |
+| `src/app/(app)/my-schedule/PastEventsSection.tsx` | New client component — collapsible past events list; collapsed by default; toggle shows "Past events (N)" count; renders attendance badges (Attended / No-show / Past) |
+
+Route unchanged: `/my-schedule`. No migrations. No RPC changes. No schema changes.
+
+### Offered status decision
+
+Included in this phase. Pattern is identical to `EventsUpcomingClient.tsx`. Additions: `offer_expires_at` in select, `"offered"` in status filter, Accept/Pass/Rejoin server actions, offered badge + deadline in upcoming event card. No new RPCs required.
+
+### Manual QA checklist
+
+**Bottom nav:**
+- [ ] Bottom nav label reads "Bookings" (not "My Schedule")
+- [ ] "Bookings" label renders at same font size as Calendar / Events / Account (no compression)
+- [ ] Tapping Bookings tab navigates to `/my-schedule`
+- [ ] Tab highlights correctly (active accent color + border) when at `/my-schedule`
+
+**Page title:**
+- [ ] Header reads "My Bookings"
+- [ ] Route is still `/my-schedule` (not `/my-bookings`)
+- [ ] Direct navigation to `/my-schedule` works
+
+**Upcoming court reservations:**
+- [ ] Personal court reservations (non-event) appear in upcoming section
+- [ ] Court name, time, duration shown correctly
+- [ ] Cancel button shows when outside cancellation window or within grace period
+- [ ] "Cannot cancel within Nh" message shown when inside window
+- [ ] Cancel reservation action works and refreshes page
+
+**Upcoming event signups — confirmed/waitlisted:**
+- [ ] Confirmed event signups appear with event type pill and title
+- [ ] Waitlisted signups appear with "Waitlisted" badge
+- [ ] Leave button works for confirmed signups
+- [ ] Leave Waitlist button works for waitlisted signups
+
+**Upcoming event signups — offered:**
+- [ ] Active offered signup: "Spot offered" badge shown; Accept + Pass buttons shown
+- [ ] Accept deadline shown: "Accept by [time]" when `offer_expires_at` is set
+- [ ] Accept button submits and confirms the spot
+- [ ] Pass button submits and declines the offer
+- [ ] Expired offered signup: "Offer expired" badge shown; Rejoin button shown
+- [ ] Rejoin button calls join_event and confirms or waitlists
+
+**Past events section:**
+- [ ] Past events section collapsed by default on page load (nothing shown below upcoming)
+- [ ] "Past events (N)" toggle row visible when there are past events
+- [ ] No toggle shown when user has zero past events
+- [ ] Tapping toggle expands past events list; tapping again collapses it
+- [ ] Past event cards are read-only (no leave/cancel buttons)
+- [ ] Past event cards show date, time, court info
+- [ ] Attended badge shown when `attendance_status = 'attended'`
+- [ ] No-show badge shown when `attendance_status = 'no_show'`
+- [ ] "Past" label shown when attendance not recorded
+- [ ] "Host" label shown when myRole = 'host'
+- [ ] "Waitlisted" badge shown when user was waitlisted at event time
+
+**Archived events excluded:**
+- [ ] Archived event where user is on roster does NOT appear in upcoming or past sections
+
+**Admin/pro personal bookings:**
+- [ ] Admin's own court reservations appear in My Bookings
+- [ ] Admin's confirmed event signups appear
+- [ ] Events admin created but did not join do NOT appear
+- [ ] Admin can cancel their own reservations
+
+**Regression:**
+- [ ] `/events` Upcoming tab unchanged
+- [ ] `/events` Manage tab unchanged
+- [ ] `/calendar` unchanged
+- [ ] No SQL/migration files changed
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
