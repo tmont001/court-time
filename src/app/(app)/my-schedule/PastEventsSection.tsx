@@ -48,6 +48,9 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
   return (
     <div>
       <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="past-events-list"
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-4 pt-5 pb-2 text-left"
       >
@@ -59,8 +62,9 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
         </span>
       </button>
 
-      {open && (
-        <>
+      <div id="past-events-list">
+        {open && (
+          <>
           <p className="px-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
             Your event history. Past events are read-only.
           </p>
@@ -110,8 +114,9 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
               </div>
             );
           })}
-        </>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

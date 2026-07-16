@@ -6403,6 +6403,7 @@ No migrations. No RPC changes. No schema changes.
 | File | Change |
 | --- | --- |
 | `src/components/BottomNav.tsx` | Renamed tab label "My Schedule" → "Bookings"; removed `smallLabel: true` |
+| `src/components/SideNav.tsx` | Renamed tab label "My Schedule" → "Bookings"; href and icon unchanged |
 | `src/app/(app)/my-schedule/page.tsx` | Renamed page title "My Schedule" → "My Bookings"; added `offered` to participant status filter; added `offer_expires_at` and `archived_at` to participant/events select; added `archived_at == null` guard on validSignups and pastSignups; added Accept/Pass/Rejoin server actions; updated upcoming event card to render offered state; changed pastItems shape to match PastEventsSection props; replaced inline past events section with PastEventsSection component |
 | `src/app/(app)/my-schedule/PastEventsSection.tsx` | New client component — collapsible past events list; collapsed by default; toggle shows "Past events (N)" count; renders attendance badges (Attended / No-show / Past) |
 
@@ -6414,11 +6415,17 @@ Included in this phase. Pattern is identical to `EventsUpcomingClient.tsx`. Addi
 
 ### Manual QA checklist
 
-**Bottom nav:**
+**Bottom nav (mobile):**
 - [ ] Bottom nav label reads "Bookings" (not "My Schedule")
 - [ ] "Bookings" label renders at same font size as Calendar / Events / Account (no compression)
 - [ ] Tapping Bookings tab navigates to `/my-schedule`
 - [ ] Tab highlights correctly (active accent color + border) when at `/my-schedule`
+
+**Side nav (desktop):**
+- [ ] Side nav label reads "Bookings" (not "My Schedule")
+- [ ] Clicking Bookings navigates to `/my-schedule`
+- [ ] Side nav item highlights correctly when at `/my-schedule`
+- [ ] Neither nav surface shows "My Schedule" anywhere
 
 **Page title:**
 - [ ] Header reads "My Bookings"

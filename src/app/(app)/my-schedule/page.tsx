@@ -160,12 +160,6 @@ function formatDateHeader(iso: string, tz: string): string {
   });
 }
 
-function formatDateShort(iso: string, tz: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    timeZone: tz, weekday: "short", month: "short", day: "numeric",
-  });
-}
-
 function dateKey(iso: string, tz: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
 }
