@@ -6482,3 +6482,75 @@ Included in this phase. Pattern is identical to `EventsUpcomingClient.tsx`. Addi
 - [ ] No SQL/migration files changed
 - [ ] `pnpm tsc --noEmit` ✓
 - [ ] `pnpm build` ✓
+
+---
+
+## Checkpoint 21Q-C1 — Event Consistency Fixes
+
+**Status: Code complete — pending manual QA**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/admin/events/page.tsx` | Added `member_joinable` to the initial events select so the Admin-managed badge renders correctly on first load |
+
+No schema changes. No migrations. No RPC changes. No RLS changes.
+
+### Root cause
+
+`AdminEventRow` declares `member_joinable: boolean`. `AdminEventsClient` checks `!ev.member_joinable` to show the Admin-managed badge. The initial SSR query for `/admin/events` was missing `member_joinable` from the select, so the field arrived as `undefined`. `!undefined === true`, causing the badge to appear on every event on first load. The `/events` Manage tab query and `fetchMoreAdminEvents` (pagination) already included `member_joinable` and were not affected.
+
+### member_joinable consistency across all three sources
+
+| Source | Included? |
+| --- | --- |
+| `admin/events/page.tsx` — initial SSR query | ✓ Fixed |
+| `events/page.tsx` — adminEventsResult | ✓ Already correct |
+| `fetchMoreAdminEvents` (pagination + view switch) | ✓ Already correct |
+
+### Archived roster read-only path (verified, no change needed)
+
+`AdminEventsClient` passes `readOnly={isArchived}` to `EventRosterButton`, which forwards it to `EventRosterSheet`. In `EventRosterSheet`, `readOnly` gates:
+- Add Member / Add Guest controls (`{isAdmin && !readOnly && ...}`)
+- Per-row Remove buttons (`{isAdmin && !readOnly && row.role !== "host" && ...}`)
+- Attendance toggles (interactive buttons replaced with status label when `readOnly`)
+- An "Archived event — roster is read-only" notice banner shown when `readOnly`
+
+No UI correction was needed.
+
+### Manual QA checklist
+
+**Admin-managed badge — /admin/events (initial load):**
+- [ ] Create or identify an event where `member_joinable = false`
+- [ ] Navigate to `/admin/events` (full page load, no prior navigation)
+- [ ] Confirm the event shows the "Admin-managed" badge
+- [ ] Confirm all other events do NOT show the "Admin-managed" badge on initial load
+- [ ] Switch View filter to "All" or "Archived" — confirm badge still correct on page reload
+- [ ] Click "Load more" — confirm new events also show badge only where appropriate
+
+**Admin-managed badge — /events Manage tab:**
+- [ ] Navigate to `/events` as admin/pro → Manage tab
+- [ ] Confirm same badge behavior as /admin/events (was already correct)
+- [ ] Confirm initial load and Load More results are consistent with each other
+
+**Archived roster — read-only:**
+- [ ] Switch View to "Archived" on `/admin/events`
+- [ ] Open roster for an archived event (button label reads "View Roster (N)")
+- [ ] Confirm "Archived event — roster is read-only." banner shown
+- [ ] Confirm no Add Member, Add Guest, Remove, or attendance toggle buttons visible
+- [ ] Confirm attendance status (Attended / No-show) is displayed as a label, not a button
+
+**Active roster — editable:**
+- [ ] Open roster for a non-archived scheduled event
+- [ ] Confirm Add Member and Add Guest buttons present
+- [ ] Confirm Remove buttons visible per row
+- [ ] Confirm attendance toggle buttons (Attended / No-show) are interactive
+
+**Regression:**
+- [ ] `/calendar` — calendar day view unchanged
+- [ ] `/events` Upcoming tab — member joinable filter unchanged (non-joinable events hidden from members)
+- [ ] `/my-schedule` — My Bookings unchanged
+- [ ] No SQL/migration files changed
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓

@@ -33,7 +33,7 @@ export default async function AdminEventsPage() {
   const { data: rawEvents } = await supabase
     .from("events")
     .select(`
-      id, title, starts_at, ends_at, capacity, status, created_by, archived_at, archived_by,
+      id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, archived_at, archived_by,
       event_types(key, label, color),
       event_participants(profile_id, role, status),
       event_guests(id)
