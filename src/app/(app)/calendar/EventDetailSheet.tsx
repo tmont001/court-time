@@ -73,19 +73,22 @@ function mapJoinError(message: string): string {
   if (message === "event_already_started")  return "This event has already started.";
   if (message === "event_not_available")    return "This event is no longer available.";
   if (message === "event_not_joinable")     return "This event is admin-managed. Contact the office to be added to the roster.";
+  if (message === "event_archived")         return "This event is archived and no longer available.";
   return "Something went wrong. Please try again.";
 }
 
 function mapLeaveError(message: string): string {
-  if (message === "not_joined")  return "You are not signed up for this event.";
+  if (message === "not_joined")        return "You are not signed up for this event.";
   if (message === "not_authenticated") return "Please sign in to continue.";
+  if (message === "event_archived")    return "This event is archived.";
   return "Something went wrong. Please try again.";
 }
 
 function mapOfferError(message: string): string {
-  if (message === "offer_not_found") return "This offer is no longer valid.";
-  if (message === "offer_expired")   return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
+  if (message === "offer_not_found")   return "This offer is no longer valid.";
+  if (message === "offer_expired")     return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
   if (message === "not_authenticated") return "Please sign in to continue.";
+  if (message === "event_archived")    return "This event is archived and no longer available.";
   return "Something went wrong. Please try again.";
 }
 
@@ -226,9 +229,9 @@ export default function EventDetailSheet({
     const result = await cancelEvent(event.id);
     if (result?.error) {
       setCancelError(
-        result.error === "event_not_found"
-          ? "This event has already been cancelled."
-          : "Something went wrong. Please try again."
+        result.error === "event_not_found"  ? "This event has already been cancelled." :
+        result.error === "event_archived"   ? "This event is archived and cannot be cancelled." :
+        "Something went wrong. Please try again."
       );
       setCancelLoading(false);
       return;

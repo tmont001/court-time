@@ -6672,3 +6672,86 @@ No query changes. No schema changes. No RPC changes.
 - [ ] Upcoming court reservations unaffected
 - [ ] Upcoming event signups (confirmed / waitlisted / offered) unaffected
 - [ ] Accept / Pass / Rejoin actions on offered upcoming signups unaffected
+
+---
+
+## Checkpoint — Lifecycle Hardening (Member RPC Archived Guards)
+
+**Status: Migration written — pending application in Supabase SQL Editor**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `supabase/migrations/0063_member_rpc_lifecycle_guards.sql` | Adds `event_archived` guard to `join_event`, `leave_event`, `accept_waitlist_offer`, `decline_waitlist_offer`, `cancel_event` |
+| `src/app/(app)/calendar/EventDetailSheet.tsx` | Adds `event_archived` to `mapJoinError`, `mapLeaveError`, `mapOfferError`, `handleCancelEvent` error maps |
+
+### Audit findings — complete protection matrix
+
+| RPC | auth | account_inactive | cross-club | cancelled | archived | started |
+| --- | --- | --- | --- | --- | --- | --- |
+| `join_event` | ✓ | ✓ | ✓ | ✓ implicit (`status='scheduled'`) | ✓ 0063 | ✓ `event_already_started` |
+| `leave_event` | ✓ | — | ✓ | ✓ acceptable (leave works; queue advance skipped) | ✓ 0063 | — |
+| `accept_waitlist_offer` | ✓ | — | ✓ | ✓ implicit (`status='scheduled'`) | ✓ 0063 | — |
+| `decline_waitlist_offer` | ✓ | — | ✓ | ✓ (advance only if `status='scheduled'`) | ✓ 0063 | — |
+| `cancel_event` | ✓ | — | ✓ | ✓ implicit (`status='scheduled'`) | ✓ 0063 | — |
+
+Admin RPCs (`admin_add_member`, `admin_remove_participant`, etc.) received `event_archived` guards in migration 0061.
+
+### Guard pattern
+
+```sql
+if v_event.archived_at is not null then raise exception 'event_archived'; end if;
+```
+
+For `leave_event`: added an upfront event query (`and club_id = v_profile.club_id`, no status filter) so the guard fires before the participant row is modified. For `decline_waitlist_offer`: the event fetch was moved before the participant UPDATE so the archived guard fires before any state change; no participant row is cancelled if the event is archived.
+
+### How to apply
+
+1. Open Supabase SQL Editor → project SQL Editor
+2. Paste the contents of `supabase/migrations/0063_member_rpc_lifecycle_guards.sql`
+3. Run. Verify 5 functions replaced with no errors.
+
+### SQL regression tests (run in SQL Editor after applying)
+
+```sql
+-- Setup: assumes an archived event and an active member exist.
+-- Replace UUIDs with real values from your database.
+
+-- 1. join_event on archived event → should raise 'event_archived'
+select join_event('<archived-event-uuid>');
+
+-- 2. join_event on active event → should succeed (confirmed or waitlisted)
+select join_event('<active-future-event-uuid>');
+
+-- 3. leave_event on archived event → should raise 'event_archived'
+select leave_event('<archived-event-uuid>');
+
+-- 4. accept_waitlist_offer on archived event → should raise 'event_archived'
+select accept_waitlist_offer('<archived-event-uuid>');
+
+-- 5. decline_waitlist_offer on archived event → should raise 'event_archived'
+select decline_waitlist_offer('<archived-event-uuid>');
+
+-- 6. cancel_event on archived event (as admin) → should raise 'event_archived'
+select cancel_event('<archived-event-uuid>');
+
+-- 7. cancel_event on active scheduled event (as admin) → should succeed
+select cancel_event('<active-scheduled-event-uuid>');
+```
+
+### Manual QA checklist
+
+**Existing member flows unchanged (regression):**
+- [ ] Member can join an upcoming event (confirmed or waitlisted)
+- [ ] Member can leave an upcoming event
+- [ ] Member can accept a waitlist offer on an active event
+- [ ] Member can decline a waitlist offer on an active event
+- [ ] Admin/host can cancel an active scheduled event
+
+**No archived-event surface in member UI:**
+- [ ] `/events` upcoming tab shows no archived events
+- [ ] `/my-schedule` upcoming section shows no archived events
+- [ ] Past Events section shows no archived events
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓
