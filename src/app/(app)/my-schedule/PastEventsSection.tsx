@@ -9,6 +9,7 @@ export interface PastEventItem {
   title:        string;
   starts_at:    string;
   ends_at:      string;
+  eventStatus:  string;
   event_types:  { label: string; color: string };
   reservations: Array<{ court_id: string; reason: string; status: string }>;
   myRole:       string;
@@ -68,7 +69,7 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
           <p className="px-4 pb-2 text-xs text-gray-400 dark:text-gray-500">
             Your event history. Past events are read-only.
           </p>
-          {items.map(({ id, title, starts_at, ends_at, event_types, reservations, myRole, myStatus, myAttendance }) => {
+          {items.map(({ id, title, starts_at, ends_at, eventStatus, event_types, reservations, myRole, myStatus, myAttendance }) => {
             const date  = formatDateShort(starts_at, clubTimezone);
             const start = formatTime(starts_at, clubTimezone);
             const end   = formatTime(ends_at,   clubTimezone);
@@ -90,6 +91,11 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
                     >
                       {event_types.label}
                     </span>
+                    {eventStatus === "cancelled" && (
+                      <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-red-100 text-red-600">
+                        Cancelled
+                      </span>
+                    )}
                     {myStatus === "waitlisted" && (
                       <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
                         Waitlisted
@@ -108,6 +114,8 @@ export default function PastEventsSection({ items, courtNames, clubTimezone }: P
                   <span className="text-xs font-medium text-green-600 ml-4 shrink-0">Attended</span>
                 ) : myAttendance === "no_show" ? (
                   <span className="text-xs font-medium text-red-500 ml-4 shrink-0">No-show</span>
+                ) : myStatus === "offered" ? (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 ml-4 shrink-0">Offer expired</span>
                 ) : (
                   <span className="text-xs text-gray-400 dark:text-gray-500 ml-4 shrink-0">Past</span>
                 )}

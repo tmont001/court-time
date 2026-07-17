@@ -247,9 +247,8 @@ export default async function MySchedulePage() {
 
   const pastSignups = allSignupRows.filter(
     s => s.events !== null &&
-         s.events.status === "scheduled" &&
          s.events.archived_at == null &&
-         s.events.starts_at < now
+         (s.events.status !== "scheduled" || s.events.starts_at < now)
   );
 
   // ── 3. Collect all court IDs and fetch names in one query ───────────────────
@@ -302,6 +301,7 @@ export default async function MySchedulePage() {
       title:        s.events!.title,
       starts_at:    s.events!.starts_at,
       ends_at:      s.events!.ends_at,
+      eventStatus:  s.events!.status,
       event_types:  s.events!.event_types,
       reservations: s.events!.reservations,
       myRole:       s.role,

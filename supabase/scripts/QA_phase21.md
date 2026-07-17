@@ -6609,3 +6609,66 @@ No schema changes. No migrations. No RPC changes. No RLS changes. `AdminEventsCl
 - [ ] `/my-schedule` (Bookings) unchanged
 - [ ] `pnpm tsc --noEmit` ✓
 - [ ] `pnpm build` ✓
+
+---
+
+## Checkpoint — Lifecycle Clarity (My Bookings Past Events)
+
+**Status: Code complete — pending manual QA**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/my-schedule/page.tsx` | `pastSignups` filter now includes cancelled non-archived events (was restricted to `status = 'scheduled'`); added `eventStatus` field to `pastItems` mapping |
+| `src/app/(app)/my-schedule/PastEventsSection.tsx` | Added `eventStatus` to `PastEventItem` type; added Cancelled badge; added "Offer expired" right-side label for `myStatus === 'offered'` |
+
+No query changes. No schema changes. No RPC changes.
+
+### Status display rules
+
+**Badge strip (left side of each card):**
+
+| Condition | Badge shown |
+| --- | --- |
+| `eventStatus === "cancelled"` | Red "Cancelled" pill |
+| `myStatus === "waitlisted"` | Amber "Waitlisted" pill |
+| Both | Both pills |
+| Neither | Event type pill only |
+
+**Right-side label (priority order):**
+
+| Condition | Label |
+| --- | --- |
+| `myRole === "host"` | Host |
+| `myAttendance === "attended"` | Attended (green) |
+| `myAttendance === "no_show"` | No-show (red) |
+| `myStatus === "offered"` | Offer expired (gray) |
+| Otherwise | Past (gray) |
+
+### Manual QA checklist
+
+**Cancelled events in Past Events:**
+- [ ] An event the user was confirmed on that was later cancelled appears in Past Events
+- [ ] That card shows a red "Cancelled" badge alongside the event type pill
+- [ ] Right-side label is "Attended", "No-show", or "Past" depending on attendance
+
+**Offer expired in Past Events:**
+- [ ] A user whose offered status expired on a past event sees "Offer expired" (not "Past")
+- [ ] "Offer expired" uses the same gray color as the "Past" label
+
+**Existing labels unchanged:**
+- [ ] Attended (green) still shown when `attendance_status = 'attended'`
+- [ ] No-show (red) still shown when `attendance_status = 'no_show'`
+- [ ] Host (gray) still shown when `myRole = 'host'`
+- [ ] Waitlisted (amber badge) still shown when `myStatus = 'waitlisted'`
+- [ ] Ordinary past events show "Past" when no attendance recorded
+
+**Archived events:**
+- [ ] Archived events do NOT appear in Past Events (filter unchanged)
+- [ ] A cancelled-then-archived event does NOT appear
+
+**Upcoming section unchanged:**
+- [ ] Upcoming court reservations unaffected
+- [ ] Upcoming event signups (confirmed / waitlisted / offered) unaffected
+- [ ] Accept / Pass / Rejoin actions on offered upcoming signups unaffected
