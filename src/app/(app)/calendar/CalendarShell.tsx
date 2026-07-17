@@ -9,6 +9,7 @@ import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import { createReservation, cancelMemberReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import { getZonedDayBoundsUTC } from "@/lib/timezone";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -115,27 +116,6 @@ interface Props {
   todayISO:                string; // YYYY-MM-DD in club timezone, computed server-side
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
-}
-
-// ─── Timezone helpers ─────────────────────────────────────────────────────────
-
-function tzOffsetMs(sampleDate: Date, tz: string): number {
-  const toFake = (d: Date, timezone: string) =>
-    new Date(d.toLocaleString("en-US", { timeZone: timezone })).getTime();
-  return toFake(sampleDate, "UTC") - toFake(sampleDate, tz);
-}
-
-function getDayBoundsUTC(date: Date, tz: string): { start: string; end: string } {
-  const dateStr = date.toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const utcMidnight = Date.UTC(y, m - 1, d);
-  // Sample at noon to avoid DST-at-midnight edge cases
-  const offset = tzOffsetMs(new Date(utcMidnight + 12 * 3600_000), tz);
-  const start = new Date(utcMidnight + offset);
-  return {
-    start: start.toISOString(),
-    end: new Date(start.getTime() + 24 * 3600_000).toISOString(),
-  };
 }
 
 // Returns minutes elapsed since viewStartHour for a given UTC date in tz.
@@ -272,7 +252,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
   // ── Derived values ────────────────────────────────────────────────────────
   const dayBounds = useMemo(
-    () => getDayBoundsUTC(selectedDate, clubTimezone),
+    () => getZonedDayBoundsUTC(selectedDate, clubTimezone),
     [selectedDate, clubTimezone]
   );
   const dayStartMs = useMemo(() => new Date(dayBounds.start).getTime(), [dayBounds]);
@@ -412,7 +392,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       .select("*")
       .eq("club_id", clubId)
       .gte("starts_at", dayBounds.start)
-      .lt("starts_at",  dayBounds.end)
+      .lt("starts_at",  dayBounds.nextDayStart)
       .in("status", ["pending", "confirmed"])
       .order("starts_at");
     if (error) {
@@ -463,7 +443,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       `)
       .eq("club_id", clubId)
       .gte("starts_at", dayBounds.start)
-      .lt("starts_at",  dayBounds.end)
+      .lt("starts_at",  dayBounds.nextDayStart)
       .eq("status", "scheduled")
       .is("archived_at", null)
       .order("starts_at");

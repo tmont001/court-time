@@ -72,16 +72,18 @@ where ist.table_name is null;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 3. REQUIRED COLUMNS
--- Expected: 4 rows — one per column listed.
+-- Expected: 6 rows — one per column listed.
 -- Any missing row means a migration was not applied.
 -- ═══════════════════════════════════════════════════════════════════════════════
 select table_name, column_name, data_type
 from information_schema.columns
 where (table_schema, table_name, column_name) in (
-  ('public', 'event_participants', 'offer_expires_at'),       -- migration 0048
+  ('public', 'event_participants', 'offer_expires_at'),            -- migration 0048
   ('public', 'club_settings',      'waitlist_offer_window_hours'), -- migration 0048
-  ('public', 'profiles',           'sms_opt_in'),             -- migration 0018
-  ('public', 'profiles',           'phone')                   -- migration 0001
+  ('public', 'profiles',           'sms_opt_in'),                  -- migration 0018
+  ('public', 'profiles',           'phone'),                       -- migration 0001
+  ('public', 'events',             'archived_at'),                 -- migration 0060
+  ('public', 'events',             'member_joinable')              -- migration 0062
 )
 order by table_name, column_name;
 
@@ -173,7 +175,7 @@ where pubname    = 'supabase_realtime'
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- 7. REQUIRED FUNCTIONS / RPCs
--- Expected: 15 rows (one per function name).
+-- Expected: 20 rows (one per function name).
 -- NOTE: update_club_settings may return 2 rows if the obsolete 3-argument
 -- overload was not dropped when migration 0049 was applied manually. See
 -- Section 8b below to detect and fix that condition.
@@ -187,11 +189,17 @@ where routine_schema = 'public'
     'bootstrap_new_club',
     -- Core booking
     'create_reservation',
-    -- Events / waitlist
+    -- Events / waitlist (member-facing)
+    'create_event',
     'join_event',
     'leave_event',
     'accept_waitlist_offer',
     'decline_waitlist_offer',
+    -- Event lifecycle (admin)
+    'cancel_event',
+    'archive_event',
+    'unarchive_event',
+    'mark_attendance',
     -- Roster
     'get_event_roster',
     -- Settings
@@ -217,10 +225,15 @@ select expected.fn_name as missing_function
 from (values
   ('bootstrap_new_club'),
   ('create_reservation'),
+  ('create_event'),
   ('join_event'),
   ('leave_event'),
   ('accept_waitlist_offer'),
   ('decline_waitlist_offer'),
+  ('cancel_event'),
+  ('archive_event'),
+  ('unarchive_event'),
+  ('mark_attendance'),
   ('get_event_roster'),
   ('update_club_settings'),
   ('admin_add_member'),

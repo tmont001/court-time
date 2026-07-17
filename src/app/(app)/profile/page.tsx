@@ -59,6 +59,13 @@ export default async function ProfilePage() {
                 Admin
               </p>
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+                <Link
+                  href="/admin/overview"
+                  className="ct-row-interactive"
+                >
+                  Overview
+                  <span className="text-gray-400 dark:text-gray-500">›</span>
+                </Link>
                 {profile?.role === "admin" && (
                   <>
                     <Link

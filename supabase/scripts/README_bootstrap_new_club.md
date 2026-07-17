@@ -39,9 +39,22 @@ Set the following in your Vercel project → Settings → Environment Variables:
 | --- | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key (not service role) |
+| `RESEND_API_KEY` | No | Optional — email delivery via Resend; see email note below |
 | `TWILIO_ACCOUNT_SID` | No | Optional — in-app notifications work without it |
 | `TWILIO_AUTH_TOKEN` | No | Optional — see SMS note below |
 | `TWILIO_FROM_NUMBER` | No | Optional — e.g. `+1xxxxxxxxxx` |
+
+**Email note:** The app sends transactional email notifications (event join
+confirmations, waitlist offers, etc.) via [Resend](https://resend.com). If
+`RESEND_API_KEY` is unset, email delivery is skipped silently — in-app
+notifications still work. To enable email:
+
+1. Create a free Resend account at https://resend.com and get an API key.
+2. Verify your sending domain in the Resend dashboard (or use Resend's shared
+   sending domain for low-volume pilots: `onboarding@resend.dev`).
+3. Add `RESEND_API_KEY=re_...` to your Vercel environment variables.
+4. Integration status shows "Email — Configured" in Admin → Overview once the
+   key is present.
 
 **SMS note:** In-app notifications (the bell) are pilot-critical and require no
 Twilio configuration. SMS is optional for the pilot. If Twilio vars are unset,

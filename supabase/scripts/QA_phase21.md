@@ -6755,3 +6755,146 @@ select cancel_event('<active-scheduled-event-uuid>');
 - [ ] Past Events section shows no archived events
 - [ ] `pnpm tsc --noEmit` ✓
 - [ ] `pnpm build` ✓
+
+---
+
+## Pilot Readiness — Production Smoke-Test Checklist
+
+**Purpose:** Full end-to-end pilot flow. Run this on production (or a staging
+environment that mirrors production) before handing the app to the first client.
+Each item must pass with ✓ before pilot launch.
+
+### Environment pre-checks
+
+- [ ] `verify_production_setup.sql` returns 0 MISSING rows in all checks
+- [ ] All 21 required RPCs return EXISTS in check 7
+- [ ] Columns `archived_at` and `member_joinable` exist on `events` (check 3)
+- [ ] `club-logos` storage bucket exists and is public (check 9)
+- [ ] `notifications` table is in `supabase_realtime` publication (check 6)
+- [ ] Vercel build deployed with no TypeScript errors
+- [ ] `.env` has `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+---
+
+### A. Authentication
+
+- [ ] Admin can sign in at `/sign-in` with correct credentials
+- [ ] Member can sign in at `/sign-in` with correct credentials
+- [ ] Unauthenticated `/calendar` redirects to `/sign-in`
+- [ ] Unauthenticated `/admin/members` redirects to `/sign-in`
+- [ ] Member cannot access `/admin/members` (redirected to `/calendar`)
+- [ ] Password reset email (`/forgot-password`) arrives and allows reset
+
+---
+
+### B. Admin: Club setup verification
+
+- [ ] Admin → Account → **Overview** link is visible
+- [ ] Overview page loads with today's reservations, events, offers, system status
+- [ ] SMS status shows "Configured" or "Not configured" (never crashes)
+- [ ] Email status shows "Configured" or "Not configured" (never crashes)
+- [ ] Delivery failures (48 h) section shows count (0 is green)
+- [ ] Admin → Settings: booking window, cancellation window, offer window are correct
+- [ ] Admin → Courts: all courts listed with correct names
+- [ ] Admin → Members: pilot members listed with correct roles
+
+---
+
+### C. Court booking
+
+- [ ] Member can view available slots in calendar view
+- [ ] Member can book an available court slot → reservation appears in My Schedule
+- [ ] Booking outside booking window is blocked with a clear error
+- [ ] Member can cancel a reservation from My Schedule
+- [ ] Cancelled reservation slot becomes available again in calendar
+- [ ] Admin can view court reservations in Overview → Today's court reservations
+
+---
+
+### D. Events
+
+- [ ] Admin can create an event (via Events → Manage → create flow)
+- [ ] Event appears in the upcoming Events tab for members
+- [ ] Member can join an event → status = confirmed
+- [ ] Member can join a full event → status = waitlisted
+- [ ] Member can leave a confirmed event
+- [ ] Member can leave the waitlist
+
+---
+
+### E. Waitlist offer flow
+
+- [ ] A confirmed member leaving a full event triggers a waitlist offer
+- [ ] The waitlisted member receives an in-app notification (bell count increments)
+- [ ] Member can accept the offer → status = confirmed
+- [ ] Member can decline the offer → next waitlisted member is offered
+- [ ] Expired offer (after offer window) is skipped; next member is offered
+- [ ] My Schedule shows "Offered" state with Accept / Decline actions
+
+---
+
+### F. Roster management (admin)
+
+- [ ] Admin can view roster in Events → Manage → Roster sheet
+- [ ] Admin can add a member to an event directly
+- [ ] Admin can remove a participant
+- [ ] Admin can promote a waitlisted member
+- [ ] Admin can add a guest (name + optional email)
+- [ ] Admin can remove a guest
+- [ ] Participant count and waitlist count update correctly after each action
+
+---
+
+### G. Event lifecycle (admin)
+
+- [ ] Admin can cancel a scheduled event → all members notified
+- [ ] Admin can archive a past or cancelled event
+- [ ] Archived event disappears from all member-facing views
+- [ ] Archived event appears in admin Events → archive tab
+- [ ] join_event on archived event returns clear error in UI ("This event is archived…")
+- [ ] Admin can unarchive an event (it returns to normal state)
+
+---
+
+### H. In-app notifications
+
+- [ ] Notification bell shows correct unread count
+- [ ] Bell count updates in real time when a new notification arrives (no refresh needed)
+- [ ] Clicking bell opens notification list
+- [ ] Notification marked read on view; count decrements
+- [ ] Event cancellation → affected members each see a notification
+
+---
+
+### I. SMS and email delivery (if configured)
+
+**SMS (Twilio):**
+- [ ] Admin → Settings → SMS test sends a message to the admin's phone
+- [ ] Waitlist offer notification delivers via SMS (check `notification_deliveries`)
+- [ ] `notification_deliveries` rows show `status = 'sent'` (not `failed`)
+
+**Email (Resend):**
+- [ ] Waitlist offer email arrives with correct event title and accept/decline link
+- [ ] Event cancellation email arrives for affected members
+- [ ] Delivery rows show `status = 'sent'`
+
+---
+
+### J. Mobile experience
+
+- [ ] App loads correctly on iOS Safari (no horizontal scroll)
+- [ ] Bottom nav tabs are tappable and navigate correctly
+- [ ] Calendar scrolls smoothly; court slots are tappable at finger size
+- [ ] Event detail sheet opens and closes correctly
+- [ ] Booking sheet opens; slot selection and confirmation work on mobile
+- [ ] My Schedule loads and Cancel / Leave actions work on mobile
+
+---
+
+### K. Final sign-off
+
+- [ ] All checks above pass
+- [ ] `pnpm tsc --noEmit` — 0 errors
+- [ ] `pnpm build` — clean build, no errors
+- [ ] `verify_production_setup.sql` re-run — 0 MISSING in all checks
+- [ ] At least one full member journey (sign-in → book court → join event → receive notification) completed end-to-end
