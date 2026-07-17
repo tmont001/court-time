@@ -21,11 +21,12 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  initialTab?:  Tab;
 }
 
-export default function EventsAdminShell({ upcoming, manage, courts, clubId, clubTimezone }: Props) {
+export default function EventsAdminShell({ upcoming, manage, courts, clubId, clubTimezone, initialTab = "upcoming" }: Props) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("upcoming");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   // After a successful create: switch to Manage (so the new event is visible)
   // then refresh RSC data so AdminEventsClient receives updated initialEvents.

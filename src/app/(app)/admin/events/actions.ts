@@ -298,7 +298,6 @@ export async function archiveEventAction(
   }
 
   revalidatePath("/events");
-  revalidatePath("/admin/events");
   return {};
 }
 
@@ -321,6 +320,5 @@ export async function unarchiveEventAction(
   }
 
   revalidatePath("/events");
-  revalidatePath("/admin/events");
   return {};
 }

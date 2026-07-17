@@ -6554,3 +6554,58 @@ No UI correction was needed.
 - [ ] No SQL/migration files changed
 - [ ] `pnpm tsc --noEmit` ✓
 - [ ] `pnpm build` ✓
+
+---
+
+## Checkpoint — Admin Events Consolidation
+
+**Status: Code complete — pending manual QA**
+
+### What changed
+
+| File | Change |
+| --- | --- |
+| `src/app/(app)/events/EventsAdminShell.tsx` | Added `initialTab?: "upcoming" \| "manage"` prop; `useState` now initialized from it |
+| `src/app/(app)/events/page.tsx` | Reads `searchParams.tab`; passes `initialTab` to `EventsAdminShell` |
+| `src/app/(app)/admin/events/page.tsx` | Replaced with a single `redirect("/events?tab=manage")` |
+| `src/app/(app)/admin/events/actions.ts` | Removed two `revalidatePath("/admin/events")` calls (now a redirect, nothing to revalidate) |
+
+No schema changes. No migrations. No RPC changes. No RLS changes. `AdminEventsClient`, `EventRosterButton`, and all actions are unchanged.
+
+### How tab routing works
+
+`/events?tab=manage` passes through `searchParams` in the server component; the value `"manage"` is forwarded as `initialTab` to `EventsAdminShell`, which uses it as the `useState` initial value. Any other value (or no param) defaults to `"upcoming"`. Tab state is purely client-side after first render.
+
+### Manual QA checklist
+
+**Redirect from /admin/events:**
+- [ ] Navigate to `/admin/events` — confirm immediate redirect to `/events?tab=manage`
+- [ ] Confirm Manage tab is active on arrival (not Upcoming)
+- [ ] Confirm all event management features work normally after redirect
+
+**Deep link to Manage tab:**
+- [ ] Navigate to `/events?tab=manage` directly — Manage tab opens
+- [ ] Navigate to `/events` (no param) — Upcoming tab opens
+- [ ] Navigate to `/events?tab=upcoming` — Upcoming tab opens
+- [ ] Navigate to `/events?tab=anything` — Upcoming tab opens (unknown values default to upcoming)
+
+**Member behavior unchanged:**
+- [ ] Sign in as a member; navigate to `/events` — no Manage tab visible, upcoming events shown
+- [ ] Member navigating to `/events?tab=manage` sees upcoming events only (no manage tab rendered)
+- [ ] Member navigating to `/admin/events` is redirected to `/events?tab=manage` and sees upcoming only
+
+**Event management features (on /events Manage tab):**
+- [ ] Active / Archived / All view switching works
+- [ ] Status, date, type, search filters work
+- [ ] Load More works and badge consistency is correct
+- [ ] Admin-managed badge shows only on non-joinable events
+- [ ] + Create Event button opens the create sheet
+- [ ] Roster button opens EventRosterSheet
+- [ ] Archived event roster is read-only
+- [ ] Cancel, Archive, Unarchive actions work
+
+**Regression:**
+- [ ] `/calendar` unchanged
+- [ ] `/my-schedule` (Bookings) unchanged
+- [ ] `pnpm tsc --noEmit` ✓
+- [ ] `pnpm build` ✓

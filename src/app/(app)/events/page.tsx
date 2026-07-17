@@ -49,7 +49,14 @@ async function declineWaitlistOfferAction(formData: FormData) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function EventsPage() {
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
+  const initialTab = tab === "manage" ? "manage" : "upcoming";
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/sign-in");
@@ -175,6 +182,7 @@ export default async function EventsPage() {
               courts={adminCourts as { id: string; name: string; display_order: number }[]}
               clubId={clubId}
               clubTimezone={clubTimezone}
+              initialTab={initialTab as "upcoming" | "manage"}
             />
           ) : (
             /* Members: upcoming events list with search and type filter */
