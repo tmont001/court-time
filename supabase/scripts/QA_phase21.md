@@ -6767,7 +6767,7 @@ Each item must pass with ✓ before pilot launch.
 ### Environment pre-checks
 
 - [ ] `verify_production_setup.sql` returns 0 MISSING rows in all checks
-- [ ] All 21 required RPCs return EXISTS in check 7
+- [ ] All 20 required RPCs return EXISTS in check 7
 - [ ] Columns `archived_at` and `member_joinable` exist on `events` (check 3)
 - [ ] `club-logos` storage bucket exists and is public (check 9)
 - [ ] `notifications` table is in `supabase_realtime` publication (check 6)

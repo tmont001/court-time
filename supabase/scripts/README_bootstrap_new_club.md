@@ -471,9 +471,542 @@ and no Supabase dashboard edits are required.
 | ------------------------ | ----------------------- | ------------------------------ |
 | Theme                    | `classic-gray`          | Yes — Admin Settings           |
 | Logo                     | none                    | Yes — Admin Settings           |
-| Operating hours          | 08:00–20:00, all 7 days | Pending operating hours editor |
+| Operating hours          | 08:00–20:00, all 7 days | Yes — Admin Settings           |
 | Booking window           | 14 days                 | Yes — Admin Settings           |
 | Cancellation window      | 24 hours                | Yes — Admin Settings           |
 | Cancellation grace       | 5 minutes               | Yes — Admin Settings           |
 | Court names              | Court 1, Court 2, …     | Yes — Admin Courts             |
 | Event type labels/colors | Standard defaults       | Pending event type editor      |
+
+---
+
+## Post-bootstrap club configuration
+
+After the first admin accepts the invite and signs in, complete the following
+before inviting members. All steps run inside the app at the admin's own browser.
+
+### Step A — Set branding and timezone
+
+1. Navigate to **Account → Settings** (`/admin/settings`).
+2. Under **Club Branding**:
+   - Upload a logo (JPEG, PNG, or WebP, max 2 MB). Displayed in the header.
+   - Choose a **theme** — `classic-gray`, `court-green`, `clay-red`, `navy-court`,
+     or `slate-modern`. Preview updates live.
+3. The timezone was set during bootstrap. If it needs changing, do it now in the
+   SQL Editor (directly update `clubs.timezone`). No in-app timezone editor exists
+   yet; see **Known pilot limitations** at the end of this document.
+
+### Step B — Adjust courts
+
+1. Navigate to **Account → Courts** (`/admin/courts`).
+2. Rename courts to match the club's actual court names.
+3. Reorder courts using the display order if needed.
+4. Mark any court inactive that should not be bookable. Inactive courts do not
+   appear in the calendar or booking flow.
+5. Add additional courts if the count changed after bootstrap.
+
+### Step C — Set operating hours and closures
+
+1. Navigate to **Account → Settings → Operating Hours**.
+2. Adjust opens and closes times for each day of the week.
+3. Mark any full-day closure (e.g., Sunday closed) using the Is Closed toggle.
+4. Add one-off date overrides for holidays or special closures in the Date
+   Overrides section.
+
+### Step D — Set booking, cancellation, and waitlist rules
+
+1. Navigate to **Account → Settings → Booking Rules**.
+2. Set **Booking window** (days in advance members can book; default: 14).
+3. Set **Cancellation window** (hours before which a member must cancel;
+   default: 24). Members within this window see "Cannot cancel within Nh".
+4. Set **Cancellation grace** (minutes after booking during which cancellation
+   is always allowed; default: 5).
+5. Set **Waitlist offer window** (hours a member has to accept a waitlist offer
+   before it is passed to the next member; default: 2).
+
+### Step E — Verify event types
+
+The bootstrap script creates five default event types:
+`clinic`, `drill`, `league`, `match`, `social`.
+
+Labels and colors for these types cannot be edited in the app yet — see
+**Known pilot limitations**. The types are available immediately in the
+event creation sheet.
+
+### Step F — Invite pilot members and pros
+
+1. Navigate to **Account → Members** (`/admin/members`).
+2. Click **Invite**.
+3. Choose a role:
+   - **Member** — can book courts and join public events; cannot manage events.
+   - **Pro** — can create and manage events and view rosters; cannot access
+     Members, Courts, Settings, or Audit Log.
+   - **Admin** — full access.
+4. Copy the generated invite link. It expires in **14 days**.
+5. Send the link and temporary credentials (if you created the Auth user manually)
+   to the invitee. They will be prompted to set a name on first login.
+
+> Repeat for each pilot member. There is no bulk invite in the current pilot.
+
+### Step G — Configure optional SMS (Twilio)
+
+If SMS notifications are wanted for this pilot:
+
+1. Obtain a Twilio account SID, auth token, and `+1xxxxxxxxxx` phone number.
+2. Add to Vercel → Settings → Environment Variables:
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_FROM_NUMBER`
+3. Redeploy on Vercel (required for the env-var changes to take effect).
+4. Verify: **Account → Overview** → System status → SMS should show **Configured**.
+5. Test: **Account → Settings → Send test SMS** to your own number.
+6. Members must opt in at the account level. Direct members to **Account →
+   Notification Preferences** and enable SMS.
+
+If SMS is not needed for this pilot, skip this step. In-app notifications work
+without Twilio.
+
+### Step H — Configure optional email (Resend)
+
+If email notifications are wanted:
+
+1. Create a Resend account at https://resend.com and obtain an API key.
+2. Verify your sending domain in the Resend dashboard. For low-volume pilots
+   you can use Resend's shared domain (`onboarding@resend.dev`) without
+   domain verification.
+3. Add `RESEND_API_KEY=re_...` to Vercel → Settings → Environment Variables.
+4. Redeploy on Vercel.
+5. Verify: **Account → Overview** → System status → Email should show **Configured**.
+
+If email is not needed, skip this step. In-app notifications are always active.
+
+### Step I — Create initial events
+
+1. Navigate to **Events → Manage tab** (`/events?tab=manage`).
+2. Click **+ Create Event**.
+3. Choose event type, title, date, start time, duration, court (optional),
+   capacity, and whether members can self-join (**Member joinable** toggle).
+4. Click **Create**. The event appears immediately in the Upcoming tab for members.
+
+> For admin-managed events (e.g., league matches), disable **Member joinable**
+> so members cannot self-join. Add participants from the Roster sheet.
+
+---
+
+## Production verification
+
+Run both scripts below before handing the app to the first client.
+
+### 1. Schema and infrastructure check
+
+Open `supabase/scripts/verify_production_setup.sql` in the Supabase SQL Editor
+and run it against the production project.
+
+**Expected results:**
+
+| Check | Expected |
+| ----- | -------- |
+| 1 — Required tables | 16 rows, all EXISTS |
+| 2 — Missing tables | 0 rows |
+| 3 — Required columns | 6 rows |
+| 4 — RLS enabled | 16 rows, all true |
+| 5 — RLS policy counts | 16 rows, all OK |
+| 6 — Realtime publication | 1 row for `notifications` |
+| 7 — Required RPCs | 20 rows, all EXISTS |
+| 8 — Missing RPCs | 0 rows |
+| 8b — Obsolete overloads | 0 rows |
+| 9 — Storage bucket | 1 row for `club-logos` |
+| 10 — Migration tracking | informational only |
+
+Any MISSING or FAIL result is a blocking issue. See that file for fix
+instructions.
+
+### 2. Lifecycle static regression check
+
+Open `supabase/scripts/test_lifecycle_regression.sql` in the SQL Editor and
+run it against the production project.
+
+**Expected results:**
+- Section A: 16 rows, all `OK — RLS enabled`
+- Section B: 2 rows, both `OK — exists` (`current_user_club_id`,
+  `current_user_role`)
+- Section C: 17 rows, all `OK — SECURITY DEFINER`
+- Section D: 5 rows, all `OK — event_archived guard present`;
+  decline guard order check returns OK
+- Sections E–G: all OK; 0 MISSING rows
+
+Section H is a manual test guide requiring real event UUIDs. Run it separately
+with a test session after confirming the static checks pass.
+
+### 3. Production smoke test
+
+Complete the checklist in **`supabase/scripts/QA_phase21.md`** under
+**"Pilot Readiness — Production Smoke-Test Checklist"** (near the end of
+the file). All items must be checked before handing the app to clients.
+
+---
+
+## Pausing or rolling back the pilot
+
+There is no automated rollback mechanism. If a serious problem is found after
+pilot launch, use the following options in order of severity.
+
+### Option 1 — Pause member access (no data loss)
+
+Update the affected member's `profiles.status` to `'inactive'` directly in
+the Supabase SQL Editor:
+
+```sql
+update profiles
+set status = 'inactive'
+where email = 'member@example.com';
+-- Or by UUID: where id = '<profile-uuid>';
+```
+
+Inactive members cannot book courts or join events but can still sign in.
+This is reversible: set `status = 'active'` to restore access.
+
+### Option 2 — Disable all member access
+
+Mark all non-admin members inactive in one statement:
+
+```sql
+update profiles
+set status = 'inactive'
+where club_id = '<club-uuid>'
+  and role = 'member';
+-- Restore with: update profiles set status = 'active' where club_id = '<club-uuid>' and role = 'member';
+```
+
+### Option 3 — Roll back a specific migration
+
+If a migration introduced a defect that must be reverted:
+
+1. Do not run the migration again.
+2. Write a corrective SQL statement and test it in the SQL Editor.
+3. Apply the corrective SQL as a new timestamped migration file.
+4. Do **not** use `DROP TABLE` or delete production data without a backup.
+
+### Option 4 — Revert a Vercel deployment
+
+In the Vercel dashboard → Deployments, promote the last known-good deployment
+to production. This reverts the frontend immediately; database schema is
+unchanged.
+
+---
+
+## Admin quick-reference
+
+This section is a brief reference for the first admin after onboarding is
+complete. It is not a full user guide.
+
+### Navigation
+
+| Destination | How to get there |
+| ----------- | ---------------- |
+| Calendar | Bottom nav / side nav → **Calendar** |
+| Events (upcoming) | Bottom nav / side nav → **Events** → Upcoming tab |
+| Events (manage) | Bottom nav / side nav → **Events** → Manage tab |
+| My bookings | Bottom nav / side nav → **Bookings** |
+| Members | Account → Members |
+| Courts | Account → Courts |
+| Settings | Account → Settings |
+| Overview | Account → Overview |
+| Audit Log | Account → Audit Log |
+| Notifications | Account → Notification Preferences |
+
+### Common admin tasks
+
+**Create an event:**
+Events → Manage tab → **+ Create Event** → fill in type, title, date, time,
+court, capacity → Create.
+
+**View and manage roster:**
+Events → Manage tab → event card → **Roster** → add/remove participants,
+add guests, promote waitlisted members, adjust offers.
+
+**Cancel an event:**
+Events → Manage tab → event card → **Cancel Event** → confirm. All
+confirmed and waitlisted members receive an in-app notification (and SMS/email
+if configured). Linked court reservations are also cancelled.
+
+**Archive a past event:**
+Events → Manage tab → switch View to **All** or filter to past events →
+event card → **Archive**. Archived events disappear from member-facing views
+but roster history is preserved. Use **Unarchive** to restore.
+
+**Invite a new member:**
+Account → Members → **Invite** → choose role → copy link → send to member.
+
+**Change a member's role or status:**
+Account → Members → find member → use the Role or Status selector.
+
+**Update booking rules:**
+Account → Settings → Booking Rules → adjust values → Save.
+
+**Update operating hours:**
+Account → Settings → Operating Hours → adjust day-by-day → Save.
+
+**Add a date override (holiday closure):**
+Account → Settings → Date Overrides → **Add override** → set date and mark
+as closed or set alternate hours.
+
+**Check delivery failures:**
+Account → Overview → System status → Delivery failures (48 h). A non-zero
+count means some notification delivery attempts failed; investigate in
+Supabase → Table Editor → `notification_deliveries`.
+
+**Send an announcement:**
+Not available in the app UI. Use a direct Supabase RPC call or a future
+admin messaging feature (deferred).
+
+---
+
+## Support checklist
+
+Use this section when a pilot member or operator reports a problem. Each item
+references the real route, table, or SQL to check.
+
+---
+
+### User cannot sign in
+
+1. Confirm the email address matches `auth.users` in Supabase → Authentication.
+2. If the Auth account doesn't exist, create it in Authentication → Users →
+   Add user.
+3. If the password is wrong, use **Forgot password** at `/forgot-password`
+   (email must exist in Auth).
+4. If the user can sign in but lands on `/pending-invite`, their `profiles.club_id`
+   is null — they have not accepted an invite yet. Send them the invite URL.
+
+---
+
+### Invitation link fails
+
+1. Check invite status:
+   ```sql
+   select code, role, expires_at, accepted_at, revoked_at
+   from club_invites
+   where club_id = '<club-uuid>'
+   order by created_at desc;
+   ```
+2. If `expires_at` is in the past, create a new invite from Account → Members
+   → Invite, or insert one directly (see **Troubleshooting → Invite expired**
+   above).
+3. If `accepted_at` is not null, the invite was already used. Create a fresh one.
+4. If `revoked_at` is not null, the invite was cancelled. Create a fresh one.
+5. Confirm the user's Auth account exists before resending (see **User cannot
+   sign in** above).
+
+---
+
+### User has no club (lands on /pending-invite)
+
+The user's `profiles.club_id` is null, meaning they have not accepted a valid
+invite.
+
+```sql
+select id, role, club_id from profiles where id = '<user-uuid>';
+```
+
+If `club_id` is null, send the user a valid invite link. Do not set
+`club_id` directly — always go through the invite acceptance flow to ensure
+the profile is fully populated.
+
+---
+
+### No courts appear in the calendar
+
+1. Confirm courts exist and are active:
+   ```sql
+   select name, is_active from courts where club_id = '<club-uuid>' order by display_order;
+   ```
+2. If no rows: the bootstrap script may not have run, or courts were deleted.
+   Create courts via Account → Courts.
+3. If courts exist but `is_active = false`: activate them in Account → Courts.
+4. Confirm operating hours exist (7 rows per club):
+   ```sql
+   select day_of_week, opens_at, closes_at, is_closed from operating_hours
+   where club_id = '<club-uuid>' order by day_of_week;
+   ```
+5. If today's day is marked `is_closed = true`, no slots appear — expected
+   behavior.
+
+---
+
+### Booking is unavailable
+
+Possible causes:
+- **Outside booking window:** The slot is more than `booking_window_days` in
+  the future. Check Account → Settings → Booking Rules.
+- **Outside operating hours:** The slot is before `opens_at` or after
+  `closes_at`. Check Account → Settings → Operating Hours.
+- **Date override is closed:** A one-off closure covers the date. Check
+  Account → Settings → Date Overrides.
+- **Court is inactive:** See **No courts appear** above.
+- **Member is inactive:** Inactive members cannot book. Check the member's
+  status in Account → Members.
+
+---
+
+### Event is missing from the Upcoming list
+
+1. Confirm the event exists and is scheduled and not archived:
+   ```sql
+   select id, title, status, archived_at, member_joinable, starts_at
+   from events
+   where club_id = '<club-uuid>'
+   order by starts_at desc;
+   ```
+2. If `archived_at IS NOT NULL`: the event is archived. Unarchive it from
+   Events → Manage → View: Archived.
+3. If `status = 'cancelled'`: the event was cancelled. You can create a
+   replacement event.
+4. If `member_joinable = false`: the event is admin-managed and intentionally
+   hidden from the Upcoming list. Use the Manage tab to add members directly.
+5. If `starts_at` is in the past: the event has already started and will not
+   appear in Upcoming.
+
+---
+
+### Member cannot join an event
+
+1. **Event is full:** Check capacity vs confirmed count in Events → Manage →
+   Roster. If full, the member will be added to the waitlist automatically.
+2. **Event is admin-managed (`member_joinable = false`):** Add the member
+   from Events → Manage → Roster → Add member.
+3. **Member is inactive:** Check Account → Members → member status.
+4. **Booking rules block it:** Some join RPCs respect the `cancellation_window`
+   (members cannot join after the event has started). Check the event
+   `starts_at`.
+
+---
+
+### Waitlist offer appears stale
+
+Offers expire after `waitlist_offer_window_hours` (default: 2 hours). After
+expiry, the system should auto-advance to the next waitlisted member.
+
+1. Check the offer in `event_participants`:
+   ```sql
+   select profile_id, status, offer_expires_at
+   from event_participants
+   where event_id = '<event-uuid>' and status = 'offered';
+   ```
+2. If `offer_expires_at` is in the past and the member still shows `offered`,
+   run `admin_expire_offer` from Events → Manage → Roster → Expire offer, or
+   call the RPC directly:
+   ```sql
+   select admin_expire_offer('<event-uuid>', '<profile-uuid>');
+   ```
+3. If the offer has not advanced to the next waitlisted member, check whether
+   `advance_waitlist_offer` was invoked. The auto-advance is triggered inside
+   `admin_expire_offer` and `decline_waitlist_offer` — it is not a background
+   scheduler.
+
+---
+
+### Notification did not arrive (in-app)
+
+1. Confirm the notification exists:
+   ```sql
+   select id, kind, read_at, created_at from notifications
+   where profile_id = '<user-uuid>'
+   order by created_at desc limit 10;
+   ```
+2. If notifications exist: the bell should show the count. Ask the user to
+   refresh the page. Real-time updates require the `notifications` table to be
+   in the `supabase_realtime` publication (check 6 in `verify_production_setup.sql`).
+3. If the `supabase_realtime` publication is missing, run:
+   ```sql
+   alter publication supabase_realtime add table notifications;
+   ```
+4. If notifications do not exist at all, check that the triggering RPC (e.g.,
+   `cancel_event`, `accept_waitlist_offer`) actually succeeded. Check
+   `notification_deliveries` for delivery attempts.
+
+---
+
+### SMS or email notification did not arrive
+
+1. Check delivery status:
+   ```sql
+   select channel, status, error_message, created_at
+   from notification_deliveries
+   where profile_id = '<user-uuid>'
+   order by created_at desc limit 10;
+   ```
+2. If `status = 'failed'` and `error_message` is not null: the channel
+   returned an error. Common causes:
+   - **SMS:** Twilio account balance exhausted, invalid `FROM` number, unverified
+     recipient number (trial accounts only).
+   - **Email:** Resend domain not verified, API key expired or revoked,
+     recipient address rejected.
+3. If no rows at all: the notification may not have been triggered, or delivery
+   was skipped because the member's notification preferences disabled that kind.
+   Check `notification_preferences` for the member.
+4. Confirm channel is configured: **Account → Overview → System status**.
+   If SMS shows "Not configured", Twilio env vars are missing from Vercel.
+
+---
+
+### SMS or email is not configured
+
+1. Check that the required env vars are set in Vercel → Settings →
+   Environment Variables.
+   - SMS: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`
+   - Email: `RESEND_API_KEY`
+2. After adding env vars, **redeploy** on Vercel (env vars do not take effect
+   until the next deployment).
+3. After redeploy, **Account → Overview → System status** should show
+   **Configured** for each channel.
+4. Send a test SMS from **Account → Settings → Send test SMS** to confirm
+   delivery end-to-end.
+
+---
+
+### Vercel deployed the wrong commit
+
+1. In the Vercel dashboard → Deployments, identify the deployment for the
+   intended commit (check git SHA).
+2. Use the **Promote to Production** button on the correct deployment.
+3. Verify the production URL shows the expected version.
+
+---
+
+### Supabase migration or function is missing
+
+1. Run `supabase/scripts/verify_production_setup.sql` — the **Missing RPCs**
+   check (section 8) and **Missing tables** check (section 2) will identify gaps.
+2. To apply a missing migration manually:
+   - Open the migration SQL file in `supabase/migrations/`.
+   - Paste its contents into the Supabase SQL Editor.
+   - Run and verify no errors.
+3. To confirm a specific function exists:
+   ```sql
+   select routine_name from information_schema.routines
+   where routine_schema = 'public' and routine_name = '<function-name>';
+   ```
+4. If a function exists but behaves incorrectly, reapply the migration
+   (`CREATE OR REPLACE FUNCTION` is safe to re-run for most migrations in
+   this codebase).
+
+---
+
+## Known pilot limitations
+
+The following features are not yet available in the pilot build. They are
+intentionally deferred and do not affect core booking or event functionality.
+
+| Feature | Status | Notes |
+| ------- | ------ | ----- |
+| Event type label/color editor | Deferred | 5 default types created by bootstrap |
+| Timezone change in-app | Deferred | Change via SQL: `update clubs set timezone = 'America/Chicago' where id = '<uuid>'` |
+| Bulk member import | Deferred | Invite members one at a time via Account → Members |
+| Admin broadcast / announcement | Deferred | No in-app messaging; use external channel |
+| Per-member SMS opt-in UI | Deferred | Members set notification preferences; SMS opt-in hidden until Twilio is confirmed |
+| Waitlist auto-promotion toggle | Deferred | Current mode: offer-and-confirm (member must accept); auto-promote variant deferred |
+| Self-service club signup | Deferred | Clubs are bootstrapped manually by the operator |
+| Email address change | Deferred | Create a new Auth user with the new email; invite via Members |
+| Public event embed | Deferred | No public-facing embed or landing page |
+| Payments / billing | Deferred | Not in scope for pilot |

@@ -47,8 +47,8 @@ export default async function HelpPage() {
       title: "Notifications",
       items: [
         "Booking confirmations and event updates are delivered via in-app notifications and email.",
-        "Manage which email alerts you receive in Profile → Notification Preferences.",
-        "Text (SMS) notifications are not currently available.",
+        "Manage which alerts you receive in Account → Notification Preferences.",
+        "SMS text notifications depend on your club's configuration. Contact the club admin to confirm what channels are active.",
       ],
     },
     {
