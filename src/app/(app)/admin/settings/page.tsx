@@ -3,6 +3,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
+import ClubTimezoneSection from "./ClubTimezoneSection";
+import EventTypesSection from "./EventTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
 import DateOverridesEditor from "./DateOverridesEditor";
@@ -22,17 +24,32 @@ export default async function AdminSettingsPage() {
 
   if (profile?.role !== "admin") redirect("/calendar");
 
-  const { data: settings } = await supabase
-    .from("club_settings")
-    .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours")
-    .eq("club_id", profile?.club_id ?? "")
-    .single();
+  const clubId = profile?.club_id ?? "";
 
-  const { data: club } = await supabase
-    .from("clubs")
-    .select("name, logo_url, theme_key, timezone")
-    .eq("id", profile?.club_id ?? "")
-    .single();
+  const [settingsResult, clubResult, eventTypesResult] = await Promise.all([
+    supabase
+      .from("club_settings")
+      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours")
+      .eq("club_id", clubId)
+      .single(),
+    supabase
+      .from("clubs")
+      .select("name, logo_url, theme_key, timezone")
+      .eq("id", clubId)
+      .single(),
+    supabase
+      .from("event_types")
+      .select("id, key, label, color, is_active")
+      .eq("club_id", clubId)
+      .order("is_active", { ascending: false })
+      .order("label"),
+  ]);
+
+  const settings   = settingsResult.data;
+  const club       = clubResult.data;
+  const eventTypes = (eventTypesResult.data ?? []) as {
+    id: string; key: string; label: string; color: string; is_active: boolean;
+  }[];
 
   const twilioConfigured =
     !!process.env.TWILIO_ACCOUNT_SID &&
@@ -63,6 +80,32 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
+        {/* ── Club Timezone ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Club Timezone
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            All dates and times in the app are displayed in this timezone.
+          </p>
+          <ClubTimezoneSection currentTimezone={club?.timezone ?? "America/New_York"} />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Event Types ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Event Types
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Edit labels and colors. Deactivated types stay on historical events but are hidden when creating new ones.
+          </p>
+          <EventTypesSection clubId={clubId} initialTypes={eventTypes} />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
         {/* ── Booking Rules ── */}
         <section className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -89,7 +132,7 @@ export default async function AdminSettingsPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Changes take effect immediately for new bookings. Existing reservations are not affected.
           </p>
-          <OperatingHoursEditor clubId={profile?.club_id ?? ""} />
+          <OperatingHoursEditor clubId={clubId} />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
@@ -103,7 +146,7 @@ export default async function AdminSettingsPage() {
             Override hours for a specific date. Existing reservations are not cancelled or modified.
           </p>
           <DateOverridesEditor
-            clubId={profile?.club_id ?? ""}
+            clubId={clubId}
             clubTimezone={club?.timezone ?? "America/New_York"}
           />
         </section>

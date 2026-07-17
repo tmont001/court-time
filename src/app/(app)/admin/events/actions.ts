@@ -322,3 +322,41 @@ export async function unarchiveEventAction(
   revalidatePath("/events");
   return {};
 }
+
+const MEMBER_JOINABLE_ERROR_MESSAGES: Record<string, string> = {
+  not_authenticated: "You must be signed in.",
+  insufficient_role: "You do not have permission to change this event.",
+  event_not_found:   "Event not found.",
+  event_cancelled:   "Cancelled events cannot be changed.",
+  event_archived:    "Archived events cannot be changed.",
+  event_started:     "This event has already started and can no longer be changed.",
+  invalid_value:     "Invalid value.",
+};
+
+// ---------------------------------------------------------------------------
+// setEventMemberJoinableAction
+// Toggles whether members can self-join an event. Eligible on future scheduled
+// non-archived events. Pros may only change their own events.
+// ---------------------------------------------------------------------------
+export async function setEventMemberJoinableAction(
+  eventId:        string,
+  memberJoinable: boolean,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("set_event_member_joinable", {
+    p_event_id:        eventId,
+    p_member_joinable: memberJoinable,
+  });
+
+  if (error) {
+    const code = error.message?.trim() ?? "";
+    return { error: MEMBER_JOINABLE_ERROR_MESSAGES[code] ?? "An unexpected error occurred. Please try again." };
+  }
+
+  // Revalidate the canonical member-facing surfaces where member_joinable
+  // affects event visibility or the ability to self-join.
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  return {};
+}

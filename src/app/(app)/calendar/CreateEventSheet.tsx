@@ -72,6 +72,7 @@ function mapCreateError(code: string | undefined, message: string): string {
   if (message === "outside_booking_window")          return "That date is outside the booking window.";
   if (message === "club_closed_this_day")            return "The club is closed on that day.";
   if (message === "outside_operating_hours")         return "That time is outside operating hours.";
+  if (message === "inactive_event_type")             return "That event type is no longer active. Refresh and choose another.";
   return "Something went wrong. Please try again.";
 }
 
@@ -127,7 +128,8 @@ export default function CreateEventSheet({
       .from("event_types")
       .select("id, key, label, color, default_capacity, default_duration_minutes, default_court_count, shows_participant_names")
       .eq("club_id", clubId)
-      .order("key")
+      .eq("is_active", true)
+      .order("label")
       .then(({ data, error: fetchErr }) => {
         if (fetchErr) {
           setTypesError("Failed to load event types. Please close and try again.");

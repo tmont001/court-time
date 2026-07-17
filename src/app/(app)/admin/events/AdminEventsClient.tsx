@@ -6,7 +6,7 @@ import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
 import { cancelEvent } from "@/app/(app)/calendar/actions";
-import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction } from "./actions";
+import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction, setEventMemberJoinableAction } from "./actions";
 import type { AdminEventRow, ArchiveView } from "./actions";
 
 type Court        = { id: string; name: string; display_order: number };
@@ -60,8 +60,9 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [hasMore, setHasMore]             = useState(initialHasMore);
   const [fetchError, setFetchError]       = useState<string | null>(null);
   const [isPending, startTransition]      = useTransition();
-  const [isArchivePending, startArchiveTransition] = useTransition();
-  const [isCancelPending,  startCancelTransition]  = useTransition();
+  const [isArchivePending, startArchiveTransition]   = useTransition();
+  const [isCancelPending,  startCancelTransition]    = useTransition();
+  const [isJoinablePending, startJoinableTransition] = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
 
   const [statusFilter,          setStatusFilter]          = useState<StatusFilter>("scheduled");
@@ -73,11 +74,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
 
   // One confirmation slot shared across the three inline flows; opening one
   // clears the others so only one confirmation is ever visible at a time.
-  const [confirmingArchiveId,   setConfirmingArchiveId]   = useState<string | null>(null);
-  const [confirmingUnarchiveId, setConfirmingUnarchiveId] = useState<string | null>(null);
-  const [confirmingCancelId,    setConfirmingCancelId]    = useState<string | null>(null);
-  const [archiveError,          setArchiveError]          = useState<string | null>(null);
-  const [cancelError,           setCancelError]           = useState<string | null>(null);
+  const [confirmingArchiveId,       setConfirmingArchiveId]       = useState<string | null>(null);
+  const [confirmingUnarchiveId,     setConfirmingUnarchiveId]     = useState<string | null>(null);
+  const [confirmingCancelId,        setConfirmingCancelId]        = useState<string | null>(null);
+  const [confirmingMakeAdminManaged, setConfirmingMakeAdminManaged] = useState<string | null>(null);
+  const [archiveError,              setArchiveError]              = useState<string | null>(null);
+  const [cancelError,               setCancelError]               = useState<string | null>(null);
+  const [joinableError,             setJoinableError]             = useState<{ id: string; message: string } | null>(null);
 
   // Sync list when the RSC parent refreshes (router.refresh() delivers new
   // initialEvents via prop reconciliation; useState alone won't pick it up).
@@ -178,6 +181,27 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
       } else {
         setConfirmingCancelId(null);
         await reloadFromStart();
+      }
+    });
+  }
+
+  function handleToggleMemberJoinable(
+    eventId:      string,
+    currentValue: boolean,
+    onSuccess?:   () => void,
+  ) {
+    setJoinableError(null);
+    const nextValue = !currentValue;
+    // Optimistic update — immediately reflects the new state.
+    setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, member_joinable: nextValue } : ev));
+    startJoinableTransition(async () => {
+      const result = await setEventMemberJoinableAction(eventId, nextValue);
+      if (result.error) {
+        // Revert on failure.
+        setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, member_joinable: currentValue } : ev));
+        setJoinableError({ id: eventId, message: result.error });
+      } else {
+        onSuccess?.();
       }
     });
   }
@@ -400,8 +424,16 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             // Cancel eligibility: future scheduled non-archived events only.
             const canCancel = !isArchived && ev.status === "scheduled" && isFuture && canActOnEvent;
 
+            // Toggle eligibility: future scheduled non-archived events only.
+            const canToggleMemberJoinable = !isArchived && !isCancelled && isFuture && canActOnEvent;
+
+            // Count participants with a stake in the event (for Admin-managed warning).
+            const activeParticipantCount = ev.event_participants.filter(
+              p => p.status === "confirmed" || p.status === "offered" || p.status === "waitlisted"
+            ).length;
+
             // Show the action footer when any action or roster button is available.
-            const showActionFooter = !isCancelled || canArchive || canCancel || (isArchived && canActOnEvent);
+            const showActionFooter = !isCancelled || canArchive || canCancel || canToggleMemberJoinable || (isArchived && canActOnEvent);
 
             return (
               <div
@@ -530,65 +562,137 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                           </button>
                         </div>
                       </div>
+                    ) : confirmingMakeAdminManaged === ev.id ? (
+                      /* ── Make Admin-managed confirmation ── */
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          Make this event admin-managed?
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {activeParticipantCount}{" "}
+                          {activeParticipantCount === 1 ? "participant is" : "participants are"}{" "}
+                          on this event. They will remain on the roster, but new members
+                          won&rsquo;t be able to self-join from the calendar.
+                        </p>
+                        {joinableError?.id === ev.id && (
+                          <p className="text-xs text-red-500">{joinableError.message}</p>
+                        )}
+                        <div className="flex items-center gap-3 pt-0.5">
+                          <button
+                            onClick={() => {
+                              setConfirmingMakeAdminManaged(null);
+                              setJoinableError(null);
+                            }}
+                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            Keep open
+                          </button>
+                          <button
+                            onClick={() => handleToggleMemberJoinable(
+                              ev.id,
+                              ev.member_joinable,
+                              () => setConfirmingMakeAdminManaged(null),
+                            )}
+                            disabled={isJoinablePending}
+                            className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            {isJoinablePending ? "Saving…" : "Make admin-managed"}
+                          </button>
+                        </div>
+                      </div>
                     ) : (
                       /* ── Normal: Roster left | lifecycle actions right ── */
-                      <div className="flex items-center justify-between gap-x-4 gap-y-1.5 flex-wrap">
-                        {/* Left: Roster / View Roster */}
-                        {!isCancelled && (
-                          <EventRosterButton
-                            eventId={ev.id}
-                            count={rosterCount}
-                            userRole={userRole}
-                            clubTimezone={clubTimezone}
-                            readOnly={isArchived}
-                            onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
-                          />
-                        )}
-                        {/* Right: Cancel | Archive | Unarchive */}
-                        <div className="flex items-center gap-2 ml-auto">
-                          {canCancel && (
-                            <button
-                              onClick={() => {
-                                setConfirmingCancelId(ev.id);
-                                setConfirmingArchiveId(null);
-                                setConfirmingUnarchiveId(null);
-                                setCancelError(null);
-                                setArchiveError(null);
-                              }}
-                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
-                            >
-                              Cancel Event
-                            </button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-x-4 gap-y-1.5 flex-wrap">
+                          {/* Left: Roster / View Roster */}
+                          {!isCancelled && (
+                            <EventRosterButton
+                              eventId={ev.id}
+                              count={rosterCount}
+                              userRole={userRole}
+                              clubTimezone={clubTimezone}
+                              readOnly={isArchived}
+                              onRosterChange={(rows, guests) => handleRosterChange(ev.id, rows, guests)}
+                            />
                           )}
-                          {canArchive && (
-                            <button
-                              onClick={() => {
-                                setConfirmingArchiveId(ev.id);
-                                setConfirmingUnarchiveId(null);
-                                setConfirmingCancelId(null);
-                                setArchiveError(null);
-                                setCancelError(null);
-                              }}
-                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
-                            >
-                              Archive
-                            </button>
-                          )}
-                          {isArchived && canActOnEvent && (
-                            <button
-                              onClick={() => {
-                                setConfirmingUnarchiveId(ev.id);
-                                setConfirmingArchiveId(null);
-                                setConfirmingCancelId(null);
-                                setArchiveError(null);
-                                setCancelError(null);
-                              }}
-                              className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
-                            >
-                              Unarchive
-                            </button>
-                          )}
+                          {/* Right: Toggle member-joinable | Cancel | Archive | Unarchive */}
+                          <div className="flex items-center gap-2 ml-auto">
+                            {canToggleMemberJoinable && (
+                              <button
+                                onClick={() => {
+                                  if (ev.member_joinable && activeParticipantCount > 0) {
+                                    // Open → Admin-managed with active participants: confirm first.
+                                    setConfirmingMakeAdminManaged(ev.id);
+                                    setConfirmingCancelId(null);
+                                    setConfirmingArchiveId(null);
+                                    setConfirmingUnarchiveId(null);
+                                    setCancelError(null);
+                                    setArchiveError(null);
+                                    setJoinableError(null);
+                                  } else {
+                                    // Admin-managed → Open, or Open → Admin-managed with no participants: proceed directly.
+                                    handleToggleMemberJoinable(ev.id, ev.member_joinable);
+                                  }
+                                }}
+                                disabled={isJoinablePending}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                              >
+                                {ev.member_joinable ? "Make admin-managed" : "Open to members"}
+                              </button>
+                            )}
+                            {canCancel && (
+                              <button
+                                onClick={() => {
+                                  setConfirmingCancelId(ev.id);
+                                  setConfirmingArchiveId(null);
+                                  setConfirmingUnarchiveId(null);
+                                  setConfirmingMakeAdminManaged(null);
+                                  setCancelError(null);
+                                  setArchiveError(null);
+                                  setJoinableError(null);
+                                }}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                              >
+                                Cancel Event
+                              </button>
+                            )}
+                            {canArchive && (
+                              <button
+                                onClick={() => {
+                                  setConfirmingArchiveId(ev.id);
+                                  setConfirmingUnarchiveId(null);
+                                  setConfirmingCancelId(null);
+                                  setConfirmingMakeAdminManaged(null);
+                                  setArchiveError(null);
+                                  setCancelError(null);
+                                  setJoinableError(null);
+                                }}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                              >
+                                Archive
+                              </button>
+                            )}
+                            {isArchived && canActOnEvent && (
+                              <button
+                                onClick={() => {
+                                  setConfirmingUnarchiveId(ev.id);
+                                  setConfirmingArchiveId(null);
+                                  setConfirmingCancelId(null);
+                                  setConfirmingMakeAdminManaged(null);
+                                  setArchiveError(null);
+                                  setCancelError(null);
+                                  setJoinableError(null);
+                                }}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                              >
+                                Unarchive
+                              </button>
+                            )}
+                          </div>
                         </div>
+                        {joinableError?.id === ev.id && (
+                          <p className="text-xs text-red-500">{joinableError.message}</p>
+                        )}
                       </div>
                     )}
                   </div>

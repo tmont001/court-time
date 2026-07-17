@@ -278,39 +278,42 @@ export type Database = {
         Row: {
           id: string;
           club_id: string;
-          key: "lesson" | "clinic" | "social" | "league" | "tournament";
+          key: string;
           label: string;
           color: string;
           default_capacity: number;
           default_duration_minutes: number;
           default_court_count: number;
           shows_participant_names: boolean;
+          is_active: boolean;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           club_id: string;
-          key: "lesson" | "clinic" | "social" | "league" | "tournament";
+          key: string;
           label: string;
           color: string;
           default_capacity: number;
           default_duration_minutes: number;
           default_court_count: number;
           shows_participant_names?: boolean;
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           club_id?: string;
-          key?: "lesson" | "clinic" | "social" | "league" | "tournament";
+          key?: string;
           label?: string;
           color?: string;
           default_capacity?: number;
           default_duration_minutes?: number;
           default_court_count?: number;
           shows_participant_names?: boolean;
+          is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -1161,6 +1164,30 @@ export type Database = {
       };
       update_club_theme: {
         Args: { p_theme_key: string };
+        Returns: undefined;
+      };
+      update_club_timezone: {
+        Args: { p_timezone: string };
+        Returns: undefined;
+      };
+      create_event_type: {
+        Args: { p_label: string; p_color: string };
+        Returns: undefined;
+      };
+      update_event_type: {
+        Args: { p_id: string; p_label: string; p_color: string };
+        Returns: undefined;
+      };
+      set_event_type_active: {
+        Args: { p_id: string; p_is_active: boolean };
+        Returns: undefined;
+      };
+      set_event_member_joinable: {
+        Args: { p_event_id: string; p_member_joinable: boolean };
+        Returns: undefined;
+      };
+      delete_event_type: {
+        Args: { p_id: string };
         Returns: undefined;
       };
       add_court: {
