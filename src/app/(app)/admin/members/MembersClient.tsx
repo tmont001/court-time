@@ -8,6 +8,7 @@ import ImportMembersSheet from "./ImportMembersSheet";
 import type { EditRosterMember } from "./AddMemberSheet";
 import {
   revokeInviteAction,
+  resendInviteAction,
   setMemberRoleAction,
   setMemberStatusAction,
   setMemberNotesAction,
@@ -144,6 +145,10 @@ export default function MembersClient({
   const [editMember, setEditMember]             = useState<EditRosterMember | undefined>();
   const [revokeError, setRevokeError]         = useState<string | null>(null);
   const [revokingCode, setRevokingCode]       = useState<string | null>(null);
+  const [revokeConfirmCode, setRevokeConfirmCode] = useState<string | null>(null);
+  const [resendingCode, setResendingCode]       = useState<string | null>(null);
+  const [resendError, setResendError]           = useState<string | null>(null);
+  const [generateNewLinkCode, setGenerateNewLinkCode] = useState<string | null>(null);
   const [copiedCode, setCopiedCode]           = useState<string | null>(null);
   const [copyError,  setCopyError]            = useState<string | null>(null);
   const [, startTransition]                   = useTransition();
@@ -234,8 +239,24 @@ export default function MembersClient({
     startTransition(async () => {
       const result = await revokeInviteAction(code);
       setRevokingCode(null);
+      setRevokeConfirmCode(null);
       if (result.error) {
         setRevokeError(result.error);
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
+  function handleResend(inv: PendingInvite) {
+    setResendError(null);
+    setGenerateNewLinkCode(null);
+    setResendingCode(inv.code);
+    startTransition(async () => {
+      const result = await resendInviteAction(inv.code, inv.role, inv.email);
+      setResendingCode(null);
+      if (result.error) {
+        setResendError(result.error);
       } else {
         router.refresh();
       }
@@ -461,9 +482,9 @@ export default function MembersClient({
           </div>
         )}
 
-        {revokeError && (
+        {(revokeError || resendError) && (
           <div className="mb-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700">
-            <p className="text-xs text-red-700 dark:text-red-400">{revokeError}</p>
+            <p className="text-xs text-red-700 dark:text-red-400">{revokeError || resendError}</p>
           </div>
         )}
 
@@ -473,50 +494,121 @@ export default function MembersClient({
           </p>
         ) : (
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
-            {pendingInvites.map((inv) => (
-              <div
-                key={inv.id}
-                className="flex items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-gray-800"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                      {ROLE_LABELS[inv.role] ?? inv.role}
-                    </span>
-                    <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
-                      {inv.email ?? (
-                        <span className="text-gray-400 dark:text-gray-500 italic">
-                          Any email
+            {pendingInvites.map((inv) => {
+              const isExpired       = new Date(inv.expires_at) <= new Date();
+              const isConfirming       = revokeConfirmCode === inv.code;
+              const isRevoking         = revokingCode === inv.code;
+              const isResending        = resendingCode === inv.code;
+              const isConfirmingResend = generateNewLinkCode === inv.code;
+              return (
+                <div
+                  key={inv.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-gray-800"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                        {ROLE_LABELS[inv.role] ?? inv.role}
+                      </span>
+                      {isExpired && (
+                        <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                          Expired
                         </span>
                       )}
-                    </p>
+                      <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
+                        {inv.email ?? (
+                          <span className="text-gray-400 dark:text-gray-500 italic">
+                            Any email
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    {!isExpired && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                        Expires {formatExpiry(inv.expires_at)}
+                      </p>
+                    )}
                   </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                    Expires {formatExpiry(inv.expires_at)}
-                  </p>
+
+                  <div className="shrink-0 flex items-center gap-3">
+                    {isConfirming ? (
+                      /* Inline revoke confirmation */
+                      <>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
+                          Revoke?
+                        </span>
+                        <button
+                          onClick={() => setRevokeConfirmCode(null)}
+                          className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => handleRevoke(inv.code)}
+                          disabled={isRevoking}
+                          className="text-xs font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-40"
+                        >
+                          {isRevoking ? "Revoking…" : "Yes, revoke"}
+                        </button>
+                      </>
+                    ) : isExpired ? (
+                      /* Expired: offer generate new link with inline confirmation */
+                      isConfirmingResend ? (
+                        <div className="flex flex-col items-end gap-1.5 min-w-0">
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-right max-w-[220px] leading-snug">
+                            The expired link stays unusable. A new 7-day link will be generated — copy and share it manually.
+                          </p>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => setGenerateNewLinkCode(null)}
+                              className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleResend(inv)}
+                              disabled={isResending}
+                              className="text-xs font-medium text-accent hover:underline disabled:opacity-40"
+                            >
+                              {isResending ? "Generating…" : "Generate link"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setGenerateNewLinkCode(inv.code)}
+                          disabled={isResending}
+                          className="text-xs font-medium text-accent hover:underline disabled:opacity-40"
+                        >
+                          Generate new link
+                        </button>
+                      )
+                    ) : (
+                      /* Active: copy link + revoke (with confirmation) */
+                      <>
+                        <button
+                          onClick={() => handleCopy(inv.code)}
+                          className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                        >
+                          {copiedCode === inv.code
+                            ? "Copied!"
+                            : copyError === inv.code
+                            ? "Copy failed"
+                            : "Copy Link"}
+                        </button>
+                        <span className="text-gray-200 dark:text-gray-700 select-none">|</span>
+                        <button
+                          onClick={() => setRevokeConfirmCode(inv.code)}
+                          className="text-xs font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                        >
+                          Revoke
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className="shrink-0 flex items-center gap-3">
-                  <button
-                    onClick={() => handleCopy(inv.code)}
-                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                  >
-                    {copiedCode === inv.code
-                      ? "Copied!"
-                      : copyError === inv.code
-                      ? "Copy failed — select manually."
-                      : "Copy Link"}
-                  </button>
-                  <span className="text-gray-200 dark:text-gray-700 select-none">|</span>
-                  <button
-                    onClick={() => handleRevoke(inv.code)}
-                    disabled={revokingCode === inv.code}
-                    className="text-xs font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-40"
-                  >
-                    {revokingCode === inv.code ? "Revoking…" : "Revoke"}
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -636,6 +728,11 @@ export default function MembersClient({
         <ImportMembersSheet
           onClose={() => setImportSheetOpen(false)}
           rosterMembers={rosterMembers}
+          memberEmails={members.map(m => m.email).filter((e): e is string => !!e)}
+          pendingInviteEmails={pendingInvites
+            .filter(inv => !inv.revoked_at && !inv.accepted_at && new Date(inv.expires_at) > new Date())
+            .map(inv => inv.email)
+            .filter((e): e is string => !!e)}
         />
       )}
     </>

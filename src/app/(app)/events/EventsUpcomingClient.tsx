@@ -58,8 +58,8 @@ export default function EventsUpcomingClient({
   acceptWaitlistOfferAction,
   declineWaitlistOfferAction,
 }: Props) {
-  const [searchQuery,     setSearchQuery]     = useState("");
-  const [eventTypeFilter, setEventTypeFilter] = useState<string | null>(null);
+  const [searchQuery,      setSearchQuery]      = useState("");
+  const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
 
   const courtName = new Map(courtNames.map(c => [c.id, c.name]));
 

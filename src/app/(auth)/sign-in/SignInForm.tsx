@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { acceptPendingInviteAction } from "../join/[code]/actions";
+
+// Extract invite code from a /join/<code> path.
+const INVITE_PATH_RE = /^\/join\/([0-9a-f]{32})$/i;
 
 export default function SignInForm({ redirectTo }: { redirectTo?: string | null }) {
   const router = useRouter();
@@ -35,18 +39,34 @@ export default function SignInForm({ redirectTo }: { redirectTo?: string | null 
       return;
     }
 
-    // Redirect to /welcome only when required profile fields are genuinely missing.
-    // Must filter by user.id — the RLS policy returns all club members, so .single()
-    // without a filter fails once more than one member exists.
+    // After authentication, try to accept a pending invite.
+    // Extract an explicit code from the redirect param if it is an invite path;
+    // acceptPendingInviteAction will fall back to the ct_invite_pending cookie
+    // if no explicit code is provided or the redirect param is something else.
+    const inviteMatch = redirectTo?.match(INVITE_PATH_RE);
+    const result = await acceptPendingInviteAction(inviteMatch?.[1]);
+
+    // If acceptPendingInviteAction called redirect(), the component unmounts and
+    // none of the code below executes. We only reach here when:
+    //   { noInvite: true }  — no invite to accept; fall through to normal navigation
+    //   { error: string }   — acceptance failed; show error
+
+    if (result && "error" in result) {
+      setError(result.error);
+      setLoading(false);
+      return;
+    }
+
+    // No invite was accepted — navigate based on profile completeness.
     const { data: profile } = await supabase
       .from("profiles")
       .select("first_name, last_name")
       .eq("id", user.id)
       .single();
 
-    if (redirectTo) {
-      router.push(redirectTo);
-    } else if (!profile?.first_name || !profile?.last_name) {
+    const firstName = profile?.first_name?.trim() ?? "";
+    const lastName  = profile?.last_name?.trim()  ?? "";
+    if (!firstName || !lastName) {
       router.push("/welcome");
     } else {
       router.push("/calendar");

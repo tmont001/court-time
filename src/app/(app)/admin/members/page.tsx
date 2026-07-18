@@ -25,12 +25,11 @@ export default async function AdminMembersPage() {
     supabase.rpc("get_roster_members"),
   ]);
 
-  const now = new Date();
+  // Include expired invites so admins can see them and resend. Active invites
+  // are those with expires_at in the future; expired ones have expires_at <= now.
+  // Revoked and accepted invites are always excluded.
   const pendingInvites = (invitesResult.data ?? []).filter(
-    (inv) =>
-      !inv.accepted_at &&
-      !inv.revoked_at &&
-      new Date(inv.expires_at) > now
+    (inv) => !inv.accepted_at && !inv.revoked_at
   );
 
   return (

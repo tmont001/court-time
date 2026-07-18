@@ -123,6 +123,26 @@ function EmptyState({ label }: { label: string }) {
   return <p className="text-sm text-gray-400 dark:text-gray-500 px-1">{label}</p>;
 }
 
+function SetupRow({
+  label, done, href, optional = false,
+}: {
+  label: string; done: boolean; href: string; optional?: boolean;
+}) {
+  return (
+    <Link href={href} className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 motion-safe:transition-colors motion-safe:duration-100">
+      <span className="text-sm text-gray-700 dark:text-gray-200">
+        {label}
+        {optional && (
+          <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">(optional)</span>
+        )}
+      </span>
+      {done
+        ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Done</span>
+        : <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Set up →</span>}
+    </Link>
+  );
+}
+
 function UnavailableState() {
   return (
     <p className="text-sm text-orange-500 dark:text-orange-400 px-1">
@@ -151,11 +171,12 @@ export default async function AdminOverviewPage() {
 
   const { data: club } = await supabase
     .from("clubs")
-    .select("timezone")
+    .select("name, timezone")
     .eq("id", clubId)
     .single();
 
-  const tz = club?.timezone ?? "America/New_York";
+  const tz       = club?.timezone ?? "America/New_York";
+  const clubName = (club?.name ?? "").trim();
 
   // ── Date boundaries (DST-safe) ────────────────────────────────────────────
   // getZonedDayBoundsUTC computes both midnight instants independently using
@@ -170,6 +191,13 @@ export default async function AdminOverviewPage() {
     todayEventsResult,
     activeEventsResult,
     cancellationsResult,
+    setupCourtsResult,
+    setupEventTypesResult,
+    setupMembersResult,
+    setupOperatingHoursResult,
+    setupStaffResult,
+    setupRosterResult,
+    setupInvitesResult,
   ] = await Promise.all([
     // Today's confirmed member-booking reservations.
     // profiles!owner_user_id disambiguates the three FK relationships on
@@ -213,12 +241,86 @@ export default async function AdminOverviewPage() {
       .eq("club_id", clubId)
       .eq("status", "cancelled")
       .gte("cancelled_at", new Date(Date.now() - 7 * 86_400_000).toISOString()),
+
+    // Setup checklist: active courts (admin only).
+    isAdmin
+      ? supabase
+          .from("courts")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .eq("is_active", true)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: active event types (admin only).
+    isAdmin
+      ? supabase
+          .from("event_types")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .eq("is_active", true)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: active members excluding current user (admin only).
+    isAdmin
+      ? supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .eq("status", "active")
+          .neq("id", user.id)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: operating hours with at least one open day (admin only).
+    isAdmin
+      ? supabase
+          .from("operating_hours")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .eq("is_closed", false)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: additional admin/pro users besides current user (admin only).
+    isAdmin
+      ? supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .eq("status", "active")
+          .in("role", ["admin", "pro"])
+          .neq("id", user.id)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: roster members (admin only — admin SELECT policy).
+    isAdmin
+      ? supabase
+          .from("roster_members")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
+
+    // Setup checklist: active pending invites (admin only).
+    isAdmin
+      ? supabase
+          .from("club_invites")
+          .select("id", { count: "exact", head: true })
+          .eq("club_id", clubId)
+          .is("accepted_at", null)
+          .is("revoked_at", null)
+          .gt("expires_at", now)
+      : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" }),
   ]);
 
-  const todayReservations = (reservationsResult.data  ?? []) as unknown as Reservation[];
-  const todayEvents       = (todayEventsResult.data   ?? []) as unknown as TodayEvent[];
-  const activeEvents      = (activeEventsResult.data  ?? []) as unknown as ActiveEvent[];
-  const cancellationCount = cancellationsResult.count ?? 0;
+  const todayReservations    = (reservationsResult.data  ?? []) as unknown as Reservation[];
+  const todayEvents          = (todayEventsResult.data   ?? []) as unknown as TodayEvent[];
+  const activeEvents         = (activeEventsResult.data  ?? []) as unknown as ActiveEvent[];
+  const cancellationCount    = cancellationsResult.count ?? 0;
+  const activeCourtsCount    = setupCourtsResult.count   ?? 0;
+  const activeTypesCount     = setupEventTypesResult.count ?? 0;
+  const activeMembersCount   = setupMembersResult.count  ?? 0;
+  const operatingHoursCount  = setupOperatingHoursResult.count ?? 0;
+  const additionalStaffCount = setupStaffResult.count    ?? 0;
+  const rosterMemberCount    = setupRosterResult.count   ?? 0;
+  const activeInviteCount    = setupInvitesResult.count  ?? 0;
 
   // Build a lookup map for event metadata (used to attach titles to offers).
   const activeEventsById = new Map(activeEvents.map(e => [e.id, e]));
@@ -330,6 +432,28 @@ export default async function AdminOverviewPage() {
                 unavailable.&rdquo; This is usually temporary — try refreshing the page.
               </p>
             </div>
+          )}
+
+          {/* ── Setup checklist (admin only) ──────────────────────────────── */}
+          {isAdmin && (
+            <section>
+              <SectionHeading>Setup checklist</SectionHeading>
+              <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
+                <SetupRow label="Club name"           done={clubName.length > 0}        href="/admin/settings" />
+                <SetupRow label="Timezone"            done={!!club?.timezone}            href="/admin/settings" />
+                <SetupRow label="Active court"        done={activeCourtsCount > 0}      href="/admin/courts" />
+                <SetupRow label="Operating hours"     done={operatingHoursCount > 0}    href="/admin/settings" />
+                <SetupRow label="Active event type"   done={activeTypesCount > 0}       href="/admin/settings" />
+                <SetupRow label="Additional admin or pro" done={additionalStaffCount > 0} href="/admin/members" />
+                <SetupRow
+                  label="Members"
+                  done={activeMembersCount > 0 || rosterMemberCount > 0 || activeInviteCount > 0}
+                  href="/admin/members"
+                />
+                <SetupRow label="Email delivery"      done={emailConfigured}            href="/admin/settings" optional />
+                <SetupRow label="SMS delivery"        done={smsConfigured}              href="/admin/settings" optional />
+              </div>
+            </section>
           )}
 
           {/* ── System status (admin only) ──────────────────────────────────────

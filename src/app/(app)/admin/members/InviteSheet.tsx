@@ -40,10 +40,17 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
   const isAdmin    = role === "admin";
   const btnLabel   = isAdmin ? "Generate Admin Invite" : "Generate Link";
 
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   async function handleGenerate() {
     setError(null);
+    const trimmedEmail = email.trim();
+    if (trimmedEmail && !EMAIL_RE.test(trimmedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
     setLoading(true);
-    const result = await createInviteAction(role, email.trim() || null, expiryDays);
+    const result = await createInviteAction(role, trimmedEmail || null, expiryDays);
     setLoading(false);
     if (result.error) {
       setError(result.error);

@@ -1421,6 +1421,18 @@ export type Database = {
           created_at:       string;
         };
       };
+      // Migration 0067
+      add_roster_member_and_invite: {
+        Args: {
+          p_first_name: string;
+          p_last_name:  string;
+          p_email:      string;
+          p_role?:      string;
+          p_phone?:     string | null;
+          p_notes?:     string | null;
+        };
+        Returns: { roster_member_id: string; code: string };
+      };
     };
     Enums: { [_ in never]: never };
     CompositeTypes: { [_ in never]: never };

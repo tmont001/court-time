@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { acceptPendingInviteAction } from "../join/[code]/actions";
 
 interface Props {
   redirectTo: string;     // validated /join/<code> path
@@ -39,19 +40,34 @@ export default function SignUpForm({ redirectTo, emailRestricted }: Props) {
     const emailRedirectTo =
       `${window.location.origin}/auth/confirm?next=${encodeURIComponent(redirectTo)}`;
 
-    const { error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await supabase.auth.signUp({
       email,
       password,
       options: { emailRedirectTo },
     });
 
-    setLoading(false);
-
     if (authError) {
+      setLoading(false);
       setError(authError.message);
       return;
     }
 
+    // When Supabase returns a session immediately (email confirmation disabled),
+    // the user is now authenticated. Auto-accept the invite server-side so the
+    // member never has to click "Accept Invitation" manually. The server action
+    // calls redirect() on success, navigating to /calendar or /welcome.
+    if (data.session) {
+      const code = redirectTo.slice("/join/".length);
+      const result = await acceptPendingInviteAction(code);
+      if (result && "error" in result) {
+        setError(result.error);
+        setLoading(false);
+      }
+      // On success redirect() in acceptPendingInviteAction navigates away.
+      return;
+    }
+
+    setLoading(false);
     setSubmitted(true);
   }
 

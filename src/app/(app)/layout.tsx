@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import BottomNav from "@/components/BottomNav";
 import SideNav from "@/components/SideNav";
+import MemberWelcomeCard from "@/components/MemberWelcomeCard";
+
+const INVITE_CODE_RE = /^[0-9a-f]{32}$/;
 
 export const dynamic = "force-dynamic";
 
@@ -13,11 +17,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let themeKey = "classic-gray";
   const { data: profile } = await supabase
     .from("profiles")
-    .select("club_id")
+    .select("club_id, role")
     .eq("id", user.id)
     .single();
 
-  if (!profile?.club_id) redirect("/pending-invite");
+  if (!profile?.club_id) {
+    // If the user visited /join/<code> recently, the middleware set a cookie.
+    // Redirect them to that invite page so they can accept without re-entering code.
+    const cookieStore = await cookies();
+    const pendingCode = cookieStore.get("ct_invite_pending")?.value ?? "";
+    if (INVITE_CODE_RE.test(pendingCode)) {
+      redirect(`/join/${pendingCode}`);
+    }
+    redirect("/pending-invite");
+  }
 
   if (profile?.club_id) {
     const { data: club } = await supabase
@@ -35,6 +48,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       {/* Content area: offset right of sidebar on desktop */}
       <div className="flex flex-col min-h-screen md:pl-56">
         <main className="flex-1 app-main-content">
+          {profile?.role === "member" && profile.club_id && (
+            <MemberWelcomeCard userId={user.id} clubId={profile.club_id} />
+          )}
           {children}
         </main>
       </div>

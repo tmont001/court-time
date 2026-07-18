@@ -22,6 +22,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   email_already_a_member:        "This email already belongs to a member.",
   roster_member_not_found:       "Roster member not found.",
   roster_member_already_claimed: "This member has already created an account.",
+  email_required:                "Email is required for invite generation.",
+  invalid_email_format:          "Please enter a valid email address.",
+  invite_already_pending:        "An active invite already exists for this email.",
 };
 
 function mapError(message: string): string {
@@ -129,6 +132,43 @@ export async function setMemberNotesAction(
 
 // ── Roster member actions ────────────────────────────────────────────────
 
+// ── Add roster member + invite atomically ────────────────────────────────────
+
+export type AddAndInviteInput = {
+  firstName: string;
+  lastName:  string;
+  email:     string;
+  role:      "member" | "pro";
+  phone:     string | null;
+  notes:     string | null;
+};
+
+export async function addRosterMemberAndInviteAction(
+  input: AddAndInviteInput
+): Promise<{ rosterMemberId?: string; code?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data, error } = await supabase.rpc("add_roster_member_and_invite", {
+    p_first_name: input.firstName,
+    p_last_name:  input.lastName,
+    p_email:      input.email,
+    p_role:       input.role,
+    p_phone:      input.phone ?? null,
+    p_notes:      input.notes ?? null,
+  });
+
+  if (error) return { error: mapError(error.message) };
+
+  const result = data as { roster_member_id: string; code: string } | null;
+  revalidatePath("/admin/members");
+  return {
+    rosterMemberId: result?.roster_member_id,
+    code:           result?.code,
+  };
+}
+
 export async function addRosterMemberAction(
   firstName: string,
   lastName: string,
@@ -218,6 +258,160 @@ export type ImportResult = {
   failed:   number;
   errors:   ImportRowError[];
 };
+
+export async function resendInviteAction(
+  oldCode: string,
+  role: string,
+  email: string | null,
+): Promise<{ code?: string; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  // Revoke the old invite so it disappears from the list. Errors are ignored:
+  // the invite may already be expired (which is fine — revoke still works) or
+  // already revoked (shouldn't happen in normal flow but harmless).
+  await supabase.rpc("revoke_club_invite", { p_code: oldCode });
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+
+  const { data, error } = await supabase.rpc("create_club_invite", {
+    p_role:       role,
+    p_email:      email || null,
+    p_expires_at: expiresAt.toISOString(),
+  });
+
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return { code: data ?? undefined };
+}
+
+// ── Bulk invite import ─────────────────────────────────────────────────────
+
+export type InviteRowInput = {
+  firstName: string;
+  lastName:  string;
+  email:     string;
+  role:      "member" | "pro";
+};
+
+export type InviteRowResult = {
+  email:      string;
+  name:       string;
+  role:       "member" | "pro";
+  code?:      string;
+  error?:     string;
+  skippedAs?: "existing-member" | "existing-roster" | "existing-invite";
+};
+
+export type InviteImportResult = {
+  generated: number;
+  failed:    number;
+  results:   InviteRowResult[];
+};
+
+export async function importInvitesAction(
+  rows: InviteRowInput[]
+): Promise<{ result?: InviteImportResult; error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  // Derive club_id from the authenticated profile — never trust the browser.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("club_id, role")
+    .eq("id", user.id)
+    .single();
+  if (profile?.role !== "admin") return { error: ERROR_MESSAGES.insufficient_role };
+  const clubId = profile?.club_id;
+  if (!clubId) return { error: ERROR_MESSAGES.no_club };
+
+  if (rows.length === 0) return { result: { generated: 0, failed: 0, results: [] } };
+
+  const emails = rows.map(r => r.email.toLowerCase());
+  const nowIso = new Date().toISOString();
+
+  // Authoritative server-side duplicate checks — do not trust browser classification.
+  // get_members() is SECURITY DEFINER and joins auth.users for email (profiles has none).
+  // roster_members and club_invites are queried with explicit club_id filter.
+  const [membersRpc, rosterResult, invitesResult] = await Promise.all([
+    supabase.rpc("get_members"),
+    supabase
+      .from("roster_members")
+      .select("email")
+      .eq("club_id", clubId)
+      .in("email", emails),
+    supabase
+      .from("club_invites")
+      .select("email")
+      .eq("club_id", clubId)
+      .is("accepted_at", null)
+      .is("revoked_at", null)
+      .gt("expires_at", nowIso)
+      .in("email", emails),
+  ]);
+
+  const existingMemberEmails = new Set<string>(
+    (membersRpc.data ?? [])
+      .map(m => (m.email ?? "").toLowerCase())
+      .filter(Boolean)
+  );
+  const existingRosterEmails = new Set<string>(
+    (rosterResult.data ?? [])
+      .map(r => ((r.email as string | null) ?? "").toLowerCase())
+      .filter(Boolean)
+  );
+  const existingInviteEmails = new Set<string>(
+    (invitesResult.data ?? [])
+      .map(r => ((r.email as string | null) ?? "").toLowerCase())
+      .filter(Boolean)
+  );
+
+  const results: InviteRowResult[] = [];
+  let generated = 0;
+  let failed    = 0;
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 7);
+  const expiresAtIso = expiresAt.toISOString();
+
+  for (const row of rows) {
+    const name       = [row.firstName, row.lastName].filter(Boolean).join(" ");
+    const emailLower = row.email.toLowerCase();
+
+    if (existingMemberEmails.has(emailLower)) {
+      results.push({ email: row.email, name, role: row.role, skippedAs: "existing-member" });
+      continue;
+    }
+    if (existingRosterEmails.has(emailLower)) {
+      results.push({ email: row.email, name, role: row.role, skippedAs: "existing-roster" });
+      continue;
+    }
+    if (existingInviteEmails.has(emailLower)) {
+      results.push({ email: row.email, name, role: row.role, skippedAs: "existing-invite" });
+      continue;
+    }
+
+    const { data, error } = await supabase.rpc("create_club_invite", {
+      p_role:       row.role,
+      p_email:      row.email,
+      p_expires_at: expiresAtIso,
+    });
+    if (error) {
+      results.push({ email: row.email, name, role: row.role, error: mapError(error.message) });
+      failed++;
+    } else {
+      results.push({ email: row.email, name, role: row.role, code: data ?? undefined });
+      generated++;
+    }
+  }
+
+  revalidatePath("/admin/members");
+  return { result: { generated, failed, results } };
+}
 
 export async function importRosterMembersAction(
   rows: ImportRowInput[]

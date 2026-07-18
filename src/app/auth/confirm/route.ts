@@ -6,6 +6,8 @@ import type { Database } from "@/lib/db/types";
 // Permitted redirect destinations: only internal invite-acceptance paths.
 // Invite codes are 32-character lowercase hex strings (gen_random_uuid() with hyphens stripped).
 const SAFE_NEXT_RE = /^\/join\/[0-9a-f]{32}$/;
+const CODE_RE = /^[0-9a-f]{32}$/;
+const COOKIE_NAME = "ct_invite_pending";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
@@ -19,16 +21,24 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Validate next. Only /join/<32-hex> is a permitted destination.
-  // Absolute URLs, protocol-relative URLs, and arbitrary internal paths are rejected.
-  if (!SAFE_NEXT_RE.test(next)) {
+  // Resolve invite code: prefer the validated 'next' query param, fall back to
+  // the ct_invite_pending cookie set by middleware when /join/<code> was opened.
+  // This handles email clients that strip query parameters from confirmation links.
+  let inviteCode: string | null = null;
+  if (SAFE_NEXT_RE.test(next)) {
+    inviteCode = next.slice("/join/".length);
+  } else {
+    const cookieCode = request.cookies.get(COOKIE_NAME)?.value ?? "";
+    if (CODE_RE.test(cookieCode)) {
+      inviteCode = cookieCode;
+    }
+  }
+
+  if (!inviteCode) {
     return NextResponse.redirect(
       new URL("/sign-in?error=invalid_redirect", origin)
     );
   }
-
-  // Extract the invite code from the validated path.
-  const inviteCode = next.slice("/join/".length);
 
   // Accumulate session cookies here so they can be applied to whatever final
   // response we return, regardless of the redirect destination.
@@ -51,10 +61,20 @@ export async function GET(request: NextRequest) {
     }
   ) as unknown as SupabaseClient<Database>;
 
-  function withSession(response: NextResponse): NextResponse {
+  // Apply accumulated session cookies and always clear the invite cookie.
+  // The invite is either accepted (success) or terminal (failure) at this point —
+  // in either case the cookie has served its purpose.
+  function withSessionAndClear(response: NextResponse): NextResponse {
     cookieStore.forEach(({ name, value, options }) =>
       response.cookies.set(name, value, options)
     );
+    response.cookies.set(COOKIE_NAME, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 0,
+      path: "/",
+    });
     return response;
   }
 
@@ -68,20 +88,35 @@ export async function GET(request: NextRequest) {
   }
 
   // Auto-accept the invitation using the session established above.
-  // The same supabase client instance has the new session in its auth context
-  // after exchangeCodeForSession, so accept_club_invite runs as the confirmed user.
   const { error: acceptError } = await supabase.rpc("accept_club_invite", {
     p_code: inviteCode,
   });
 
   if (acceptError) {
     // Acceptance failed (email_mismatch, invite_expired, invite_used, etc.).
-    // Redirect back to the invite page with the session cookie set so the user
-    // sees the error via the existing AcceptButton error display.
-    return withSession(NextResponse.redirect(new URL(next, origin)));
+    // Redirect to the join page with session set so the AcceptButton can show
+    // the specific error. Clear the cookie — the invite is in a terminal state.
+    const errorDest = SAFE_NEXT_RE.test(next) ? next : `/join/${inviteCode}`;
+    return withSessionAndClear(NextResponse.redirect(new URL(errorDest, origin)));
   }
 
-  // Invite accepted. Send the user to /welcome to complete their profile.
-  // /welcome redirects to /calendar once first_name and last_name are saved.
-  return withSession(NextResponse.redirect(new URL("/welcome", origin)));
+  // Invite accepted. Determine destination from authoritative profile values
+  // (accept_club_invite may have copied names from the roster entry).
+  // Treat null and blank strings the same — both require /welcome.
+  let dest = "/welcome";
+  const { data: { user: confirmedUser } } = await supabase.auth.getUser();
+  if (confirmedUser) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name")
+      .eq("id", confirmedUser.id)
+      .single();
+    const firstName = profile?.first_name?.trim() ?? "";
+    const lastName  = profile?.last_name?.trim()  ?? "";
+    if (firstName && lastName) {
+      dest = "/calendar";
+    }
+  }
+
+  return withSessionAndClear(NextResponse.redirect(new URL(dest, origin)));
 }
