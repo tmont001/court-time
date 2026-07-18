@@ -1,4 +1,15 @@
-# QA Record — Phase 21
+# QA Record — Phase 21 (Phase 21L recovery snapshot)
+
+> **Note:** This file is a historical snapshot of `QA_phase21.md` as it existed on
+> the Phase 21L branch at the time of the cherry-pick (commit 2870de8). It includes
+> the Phase 21L-A and 21L-A addendum QA records (Checkpoints 21L-A and addendum) at
+> the end of this file.
+>
+> The **canonical ongoing QA file** is `supabase/scripts/QA_phase21.md`, which
+> contains all Phase 21 through Phase 22 records and a Phase 21L Recovery section
+> (added during the recovery audit) that references this file.
+>
+> Do not update this snapshot; update `QA_phase21.md` instead.
 
 ## Private Pilot Launch Preparation
 
@@ -5037,7 +5048,7 @@ No database changes. No migrations. No Stripe. No payment logic.
 - [ ] Pilot CTA section visible with "Talk to us about your club" linking to /contact
 
 **Pricing page (`/pricing`):**
-- [ ] Founding Club card shows $99/month and $999/year options
+- [ ] Founding Club card shows $149/month or $1,490/year options
 - [ ] All included features listed
 - [ ] Future Starter/Club tiers mentioned
 - [ ] "Contact us to get started" links to /contact

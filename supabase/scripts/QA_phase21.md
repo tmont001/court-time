@@ -6898,3 +6898,105 @@ Each item must pass with ✓ before pilot launch.
 - [ ] `pnpm build` — clean build, no errors
 - [ ] `verify_production_setup.sql` re-run — 0 MISSING in all checks
 - [ ] At least one full member journey (sign-in → book court → join event → receive notification) completed end-to-end
+
+---
+
+## Phase 21L Recovery — Pilot Sales Readiness: Public Marketing Pages
+
+**Recovery note:** Phase 21L work was originally developed on a separate branch and
+cherry-picked onto `phase-21l-recovered` after Phase 22B. The committed content is
+in `supabase/scripts/QA_phase21L_recovered.md` (the full QA record) and the
+`src/app/(marketing)/` route group. This section records the recovery audit findings.
+
+**Recovery status: Audited — uncommitted corrections below**
+
+### What was recovered (commit 810d7f2)
+
+Public-facing marketing/sales layer added as the `(marketing)` route group. No
+changes to authenticated `(app)` routes.
+
+| Route | File | Auth |
+|---|---|---|
+| `/` | `(marketing)/page.tsx` | Redirects logged-in users to `/calendar` |
+| `/pricing` | `(marketing)/pricing/page.tsx` | Public |
+| `/contact` | `(marketing)/contact/page.tsx` | Public |
+| `/terms` | `(marketing)/terms/page.tsx` | Public |
+| `/privacy` | `(marketing)/privacy/page.tsx` | Public |
+
+`src/app/page.tsx` deleted; its authenticated-user redirect logic lives in
+`(marketing)/page.tsx`. App routes are unaffected.
+
+### Audit findings
+
+**Product claim accuracy:** All claims verified accurate for current app state. No
+false claims about automated email delivery, self-service signup, payment processing,
+or free trials. Pricing FAQ explicitly states "Not during the founding period" for
+billing start. All CTAs route to `/contact` (no self-serve flow).
+
+**Compatibility with Phase 22B onboarding:** Marketing pages are public-only and
+have no interaction with the invite/join/auth flows. The `(marketing)` layout does
+not use any app chrome (SideNav, BottomNav). The root `/` route redirect behavior
+(`if (user) redirect('/calendar')`) is preserved. No conflicts found.
+
+**Navigation integrity:** All internal links verified: `/contact`, `/pricing`,
+`/sign-in`, `/terms`, `/privacy`. No broken routes. Sign in → `/sign-in` hits
+middleware correctly for authenticated redirect.
+
+**Dark mode:** All marketing pages use Tailwind `dark:` variants consistent with
+the app's existing dark mode pattern.
+
+**Corrections made during audit:**
+- `QA_phase21L_recovered.md` line 5040: stale `$99/month and $999/year` pricing
+  checkbox corrected to `$149/month or $1,490/year` to match current pricing page.
+
+### Files in this recovery
+
+| File | Status |
+|---|---|
+| `src/app/(marketing)/layout.tsx` | New — marketing shell |
+| `src/app/(marketing)/page.tsx` | New — landing page (`/`) |
+| `src/app/(marketing)/pricing/page.tsx` | New |
+| `src/app/(marketing)/contact/page.tsx` | New |
+| `src/app/(marketing)/terms/page.tsx` | New |
+| `src/app/(marketing)/privacy/page.tsx` | New |
+| `src/app/(marketing)/template.tsx` | New — page entrance animation |
+| `src/app/(marketing)/components/MarketingNav.tsx` | New |
+| `src/app/(marketing)/components/MarketingFooter.tsx` | New |
+| `src/app/(marketing)/components/MarketingReveal.tsx` | New — scroll-reveal |
+| `src/app/globals.css` | Appended — `mkt-page-enter` + `mkt-reveal` CSS |
+| `src/app/layout.tsx` | Updated metadata description |
+| `src/app/page.tsx` | Deleted (replaced by marketing page.tsx) |
+| `supabase/scripts/QA_phase21L_recovered.md` | Added — full Phase 21L QA record |
+
+No database changes. No migrations. No Stripe. No payment logic.
+
+### QA checklist (Phase 21L recovery)
+
+**Routing:**
+- [ ] Logged-out user visits `/` → sees landing page (not sign-in redirect)
+- [ ] Logged-in user visits `/` → redirected to `/calendar`
+- [ ] `/pricing`, `/contact`, `/terms`, `/privacy` load without auth
+
+**Marketing layout:**
+- [ ] Nav: Court Time wordmark, Pricing, Contact, Sign in links present
+- [ ] Footer: Terms, Privacy, Contact, Sign in links present
+- [ ] No SideNav or BottomNav on any marketing page
+- [ ] Dark mode renders correctly on all marketing pages
+
+**Landing page claims:**
+- [ ] Hero: "Less chaos. More tennis."
+- [ ] "Request early access" → `/contact`
+- [ ] "Sign in →" → `/sign-in`
+- [ ] Feature cards describe implemented features (court booking, events, roster, mobile)
+- [ ] No unimplemented features claimed
+
+**Pricing:**
+- [ ] Founding Club: $149/month or $1,490/year
+- [ ] "No credit card required · Setup is free during the founding period"
+- [ ] Billing FAQ: "Not during the founding period"
+- [ ] Standard plans labeled "after founding period"
+
+**Authenticated app regression:**
+- [ ] `/calendar`, `/admin/members`, `/events`, `/my-schedule` unaffected
+- [ ] App layout (SideNav + BottomNav) does not appear on marketing pages
+- [ ] `pnpm tsc --noEmit` ✓ / `pnpm build` ✓
