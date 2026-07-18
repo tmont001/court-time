@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
@@ -12,18 +13,13 @@ import TestSmsSection from "./TestSmsSection";
 import AnnouncementsSection from "./AnnouncementsSection";
 
 export default async function AdminSettingsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id, role")
-    .eq("id", user.id)
-    .single();
-
+  const profile  = await getAuthProfile();
   if (profile?.role !== "admin") redirect("/calendar");
 
+  const supabase = await createClient();
   const clubId = profile?.club_id ?? "";
 
   const [settingsResult, clubResult, eventTypesResult] = await Promise.all([

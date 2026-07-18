@@ -1,23 +1,20 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import MembersClient from "./MembersClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminMembersPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
+  const profile  = await getAuthProfile();
   if (profile?.role !== "admin") redirect("/calendar");
+
+  const supabase = await createClient();
 
   const [membersResult, invitesResult, rosterResult] = await Promise.all([
     supabase.rpc("get_members"),

@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import BottomNav from "@/components/BottomNav";
 import SideNav from "@/components/SideNav";
 import MemberWelcomeCard from "@/components/MemberWelcomeCard";
@@ -10,16 +11,11 @@ const INVITE_CODE_RE = /^[0-9a-f]{32}$/;
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
   let themeKey = "classic-gray";
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id, role")
-    .eq("id", user.id)
-    .single();
+  const profile = await getAuthProfile();
 
   if (!profile?.club_id) {
     // If the user visited /join/<code> recently, the middleware set a cookie.
@@ -33,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   if (profile?.club_id) {
+    const supabase = await createClient();
     const { data: club } = await supabase
       .from("clubs")
       .select("theme_key")

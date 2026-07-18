@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import {
   joinEvent as dispatchJoinEvent,
@@ -57,15 +58,11 @@ export default async function EventsPage({
   const { tab } = await searchParams;
   const initialTab = tab === "manage" ? "manage" : "upcoming";
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id, role")
-    .eq("id", user.id)
-    .single();
+  const profile      = await getAuthProfile();
+  const supabase     = await createClient();
 
   const clubId         = profile?.club_id ?? "";
   const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";

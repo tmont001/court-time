@@ -1,22 +1,19 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import AuditLogTable from "./AuditLogTable";
 import type { AuditLogRow } from "./actions";
 
 export default async function AdminAuditLogPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
+  const profile  = await getAuthProfile();
   if (profile?.role !== "admin") redirect("/calendar");
+
+  const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("get_audit_log", {
     p_limit:  50,

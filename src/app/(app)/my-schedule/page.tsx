@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import {
   leaveEvent as dispatchLeaveEvent,
@@ -171,16 +172,11 @@ function itemStartsAt(item: ScheduleItem): string {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function MySchedulePage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  // Fetch club timezone
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id, role")
-    .eq("id", user.id)
-    .single();
+  const profile  = await getAuthProfile();
+  const supabase = await createClient();
 
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role ?? "member";
@@ -189,52 +185,64 @@ export default async function MySchedulePage() {
   let cancellationWindowHours  = 24; // matches DB default
   let cancellationGraceMinutes = 5;  // matches DB default
 
-  if (clubId) {
-    const [{ data: club }, { data: settings }] = await Promise.all([
-      supabase.from("clubs").select("timezone").eq("id", clubId).single(),
-      supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single(),
-    ]);
-    if (club?.timezone) clubTimezone = club.timezone;
-    if (settings?.cancellation_window_hours  != null) cancellationWindowHours  = settings.cancellation_window_hours;
-    if (settings?.cancellation_grace_minutes != null) cancellationGraceMinutes = settings.cancellation_grace_minutes;
-  }
-
   const now = new Date().toISOString();
 
-  // ── 1. Member court reservations (exclude event-linked ones) ────────────────
-  const { data: rows } = await supabase
-    .from("reservations")
-    .select("id, court_id, starts_at, ends_at, status, format, created_at")
-    .eq("owner_user_id", user.id)
-    .in("status", ["pending", "confirmed"])
-    .neq("reason", "event")
-    .gte("starts_at", now)
-    .order("starts_at") as { data: ReservationRow[] | null };
-
-  const reservations = rows ?? [];
-
-  // ── 2. Event signups (confirmed, future, scheduled events only) ─────────────
-  const { data: signupRows } = await supabase
-    .from("event_participants")
-    .select(`
-      event_id,
-      role,
-      status,
-      attendance_status,
-      offer_expires_at,
-      events(
-        id,
-        title,
-        starts_at,
-        ends_at,
+  // Reservations and event_participants only need user.id (available now).
+  // Club and settings need club_id (from profile, also available now).
+  // Run all four in parallel to save one sequential round-trip vs. the previous
+  // two-batch pattern (clubs+settings → then reservations+participants).
+  const [
+    clubResult,
+    settingsResult,
+    reservationsResult,
+    signupResult,
+  ] = await Promise.all([
+    clubId
+      ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+      : Promise.resolve({ data: null }),
+    clubId
+      ? supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("reservations")
+      .select("id, court_id, starts_at, ends_at, status, format, created_at")
+      .eq("owner_user_id", user.id)
+      .in("status", ["pending", "confirmed"])
+      .neq("reason", "event")
+      .gte("starts_at", now)
+      .order("starts_at"),
+    supabase
+      .from("event_participants")
+      .select(`
+        event_id,
+        role,
         status,
-        archived_at,
-        event_types(label, color),
-        reservations(court_id, reason, status)
-      )
-    `)
-    .eq("profile_id", user.id)
-    .in("status", ["confirmed", "waitlisted", "offered"]) as { data: RawSignupRow[] | null };
+        attendance_status,
+        offer_expires_at,
+        events(
+          id,
+          title,
+          starts_at,
+          ends_at,
+          status,
+          archived_at,
+          event_types(label, color),
+          reservations(court_id, reason, status)
+        )
+      `)
+      .eq("profile_id", user.id)
+      .in("status", ["confirmed", "waitlisted", "offered"]),
+  ]);
+
+  if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
+  if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
+  if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
+
+  // ── 1. Member court reservations ────────────────────────────────────────────
+  const reservations = (reservationsResult.data ?? []) as ReservationRow[];
+
+  // ── 2. Event signups ─────────────────────────────────────────────────────────
+  const { data: signupRows } = signupResult as { data: RawSignupRow[] | null };
 
   const allSignupRows = signupRows ?? [];
 

@@ -1,18 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 
 export default async function HelpPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id")
-    .eq("id", user.id)
-    .single();
+  const profile  = await getAuthProfile();
+  const supabase = await createClient();
 
   const { data: settings } = profile?.club_id
     ? await supabase

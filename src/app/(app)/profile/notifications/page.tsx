@@ -1,15 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import NotificationPreferencesForm from "./NotificationPreferencesForm";
 
 export default async function NotificationPreferencesPage() {
-  const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
+  const supabase = await createClient();
   const { data: preferences } = await supabase
     .from("notification_preferences")
     .select("kind, enabled")

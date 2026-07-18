@@ -1,19 +1,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import CalendarShell from "./CalendarShell";
 
 export default async function CalendarPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
+  const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id, role")
-    .eq("id", user.id)
-    .single();
+  const profile  = await getAuthProfile();
+  const supabase = await createClient();
 
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role    ?? "member";
