@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import BottomSheet from "@/components/BottomSheet";
 import type { Json } from "@/lib/db/types";
@@ -36,8 +37,20 @@ function relativeTime(iso: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+// Returns the target_path from notification metadata if it is a safe relative path.
+// Rejects protocol URLs ("http://…"), protocol-relative URLs ("//…"), and
+// anything that does not start with exactly one "/".
+function getSafeTargetPath(n: NotificationRow): string | null {
+  const meta = n.metadata as Record<string, unknown> | null;
+  const path = meta?.target_path;
+  if (typeof path !== "string") return null;
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes(":")) return null;
+  return path;
+}
+
 export default function NotificationSheet({ onClose, onRead }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const router   = useRouter();
 
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading]             = useState(true);
@@ -82,6 +95,19 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
     onRead();
   }
 
+  const handleNotificationClick = useCallback((n: NotificationRow) => {
+    if (!n.is_read) {
+      // Fire-and-forget: UI already updated synchronously above.
+      handleMarkRead(n.id);
+    }
+    const targetPath = getSafeTargetPath(n);
+    if (targetPath) {
+      onClose();
+      router.push(targetPath);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, onClose]);
+
   async function handleMarkAllRead() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     await supabase
@@ -106,12 +132,14 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
         ? ((n.metadata as Record<string, string> | null)?.title ?? null)
         : null;
 
+      const targetPath = getSafeTargetPath(n);
+      const isActionable = !n.is_read || !!targetPath;
       return (
         <div
           key={n.id}
-          onClick={!n.is_read ? () => handleMarkRead(n.id) : undefined}
+          onClick={isActionable ? () => handleNotificationClick(n) : undefined}
           className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 rounded-lg -mx-2 px-2 ${
-            !n.is_read
+            isActionable
               ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"
               : ""
           }`}

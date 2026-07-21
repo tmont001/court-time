@@ -12,6 +12,10 @@
  *   Returns the UTC ISO strings for local midnight at the start and end of the
  *   calendar day that `date` falls in, for the given IANA timezone.
  *   Correctly handles spring-forward (23-hour day) and fall-back (25-hour day).
+ *
+ * localDateTimeToUTC(dateStr, hour, minute, timeZone)
+ *   Returns the UTC Date for a local wall-clock time on a given calendar date.
+ *   DST-safe: uses the same two-pass localMidnightToUTC algorithm.
  */
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -101,6 +105,39 @@ function nextCalendarDay(dateStr: string): string {
 }
 
 // ── Exported API ─────────────────────────────────────────────────────────────
+
+/**
+ * Convert a local wall-clock date+time into its UTC Date. DST-safe.
+ *
+ * Uses a two-pass correction on the specific target time (not just midnight),
+ * so times after a DST transition on spring-forward or fall-back days are
+ * correctly resolved. Spring-forward gap times (e.g., 2:30 AM on a US
+ * spring-forward date) are silently advanced to the post-transition equivalent
+ * (3:30 AM EDT in the two-pass result).
+ */
+export function localDateTimeToUTC(
+  dateStr:  string,
+  hour:     number,
+  minute:   number,
+  timeZone: string,
+): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const fmt = makeFmt(timeZone);
+  // Fake-UTC encoding of the target local time (no timezone assumed)
+  const targetMs = Date.UTC(y, m - 1, d, hour, minute, 0);
+  // Initial estimate: midnight + wall-clock offset (may be off by 1h across DST boundary)
+  let utcMs = localMidnightToUTC(dateStr, timeZone) + (hour * 60 + minute) * 60_000;
+  // Two correction passes, same technique as localMidnightToUTC.
+  for (let pass = 0; pass < 2; pass++) {
+    const p      = getLocalParts(utcMs, fmt);
+    const localMs = Date.UTC(p.y, p.m - 1, p.d, p.h, p.min, p.s);
+    const delta   = targetMs - localMs;
+    if (delta === 0) break;
+    utcMs += delta;
+  }
+  return new Date(utcMs);
+}
+
 
 export interface DayBoundsUTC {
   /** ISO string for local midnight at the start of the day (inclusive lower bound). */

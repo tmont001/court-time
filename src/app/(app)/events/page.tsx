@@ -12,7 +12,9 @@ import {
 import EventsUpcomingClient, { type UpcomingEventData } from "./EventsUpcomingClient";
 import EventsAdminShell from "./EventsAdminShell";
 import AdminEventsClient from "@/app/(app)/admin/events/AdminEventsClient";
+import LessonsTab from "./LessonsTab";
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
+import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -56,7 +58,7 @@ export default async function EventsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const initialTab = tab === "manage" ? "manage" : "upcoming";
+  const initialTab = tab === "manage" ? "manage" : tab === "lessons" ? "lessons" : "upcoming";
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -68,8 +70,8 @@ export default async function EventsPage({
   const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";
   const now            = new Date().toISOString();
 
-  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events)
-  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult] = await Promise.all([
+  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events, lesson requests)
+  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult, proLessonsResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
@@ -113,12 +115,17 @@ export default async function EventsPage({
           .eq("is_active", true)
           .order("display_order")
       : Promise.resolve({ data: null }),
+    // Pro/admin: lesson requests assigned to this pro (or all, if admin)
+    isAdminOrPro
+      ? supabase.rpc("get_pro_lesson_requests")
+      : Promise.resolve({ data: null }),
   ]);
 
-  const clubTimezone = clubResult.data?.timezone ?? "America/New_York";
-  const events       = (eventsResult.data ?? []) as unknown as UpcomingEventData[];
-  const adminEvents  = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
-  const adminCourts  = adminCourtsResult.data ?? [];
+  const clubTimezone  = clubResult.data?.timezone ?? "America/New_York";
+  const events        = (eventsResult.data ?? []) as unknown as UpcomingEventData[];
+  const adminEvents   = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
+  const adminCourts   = adminCourtsResult.data ?? [];
+  const proLessons    = (proLessonsResult.data ?? []) as ProLessonRequestRow[];
 
   // ── Batch-fetch court names for reservation display in EventsUpcomingClient ──
   const allCourtIds = [...new Set(
@@ -176,10 +183,19 @@ export default async function EventsPage({
                   showCreateButton={false}
                 />
               }
+              lessons={
+                <LessonsTab
+                  initialRequests={proLessons}
+                  courts={(adminCourts ?? []) as { id: string; name: string }[]}
+                  userId={user.id}
+                  userRole={profile!.role}
+                  clubTimezone={clubTimezone}
+                />
+              }
               courts={adminCourts as { id: string; name: string; display_order: number }[]}
               clubId={clubId}
               clubTimezone={clubTimezone}
-              initialTab={initialTab as "upcoming" | "manage"}
+              initialTab={initialTab as "upcoming" | "manage" | "lessons"}
             />
           ) : (
             /* Members: upcoming events list with search and type filter */

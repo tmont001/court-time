@@ -100,3 +100,43 @@ export function announcementTemplate(
   const { html, text } = layout(clubName, body, "Open Court Time", `${APP_URL}/calendar`);
   return { subject: `${announcementTitle} — ${clubName}`, html, text };
 }
+
+export function lessonRequestReceivedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View requests", `${APP_URL}/events?tab=lessons`);
+  return { subject: `New lesson request — ${clubName}`, html, text };
+}
+
+export function lessonRequestProposedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "Review proposal", `${APP_URL}/lessons`);
+  return { subject: `Lesson time proposed — ${clubName}`, html, text };
+}
+
+export function lessonRequestConfirmedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
+  return { subject: `Lesson confirmed — ${clubName}`, html, text };
+}
+
+export function lessonRequestDeclinedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
+  return { subject: `Lesson request declined — ${clubName}`, html, text };
+}
+
+export function lessonCancelledTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
+  return { subject: `Lesson cancelled — ${clubName}`, html, text };
+}

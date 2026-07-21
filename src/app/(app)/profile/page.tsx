@@ -42,6 +42,23 @@ export default async function ProfilePage() {
           phone={profile?.phone ?? null}
         />
 
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Lessons
+          </p>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <Link
+              href="/lessons"
+              className="ct-row-interactive"
+            >
+              My Lesson Requests
+              <span className="text-gray-400 dark:text-gray-500">›</span>
+            </Link>
+          </div>
+        </div>
+
         {(profile?.role === "admin" || profile?.role === "pro") && (
           <>
             <hr className="border-gray-100 dark:border-gray-800" />

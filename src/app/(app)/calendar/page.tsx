@@ -4,7 +4,11 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import CalendarShell from "./CalendarShell";
 
-export default async function CalendarPage() {
+export default async function CalendarPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
@@ -54,6 +58,11 @@ export default async function CalendarPage() {
   // stable YYYY-MM-DD string for both SSR and client hydration.
   const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
+  // Optional ?date=YYYY-MM-DD query parameter — jump the calendar to a specific date.
+  const sp            = searchParams ? await searchParams : {};
+  const dateParam     = typeof sp.date === "string" ? sp.date : null;
+  const initialDateISO = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
+
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
   }
@@ -72,6 +81,7 @@ export default async function CalendarPage() {
           clubTimezone={clubTimezone}
           userRole={userRole}
           todayISO={todayISO}
+          initialDateISO={initialDateISO}
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}
         />

@@ -13,7 +13,12 @@ type ConfigurableKind =
   | "event_cancelled"
   | "waitlist_offer"
   | "waitlist_promoted"
-  | "announcement";
+  | "announcement"
+  | "lesson_request_received"
+  | "lesson_request_proposed"
+  | "lesson_request_confirmed"
+  | "lesson_request_declined"
+  | "lesson_cancelled";
 
 interface PreferenceRow {
   kind:    string;
@@ -66,6 +71,31 @@ const CONFIGURABLE_KINDS: { kind: ConfigurableKind; label: string; description: 
     kind:        "announcement",
     label:       "Club announcements",
     description: "Broadcast messages sent by your club admin.",
+  },
+  {
+    kind:        "lesson_request_received",
+    label:       "Lesson request received",
+    description: "When a member submits a lesson request to you (pros only).",
+  },
+  {
+    kind:        "lesson_request_proposed",
+    label:       "Lesson time proposed",
+    description: "When a pro proposes a time for your lesson request.",
+  },
+  {
+    kind:        "lesson_request_confirmed",
+    label:       "Lesson confirmed",
+    description: "When a lesson is confirmed for both parties.",
+  },
+  {
+    kind:        "lesson_request_declined",
+    label:       "Lesson request declined",
+    description: "When a pro declines your lesson request.",
+  },
+  {
+    kind:        "lesson_cancelled",
+    label:       "Lesson cancelled",
+    description: "When a confirmed lesson is cancelled.",
   },
 ];
 

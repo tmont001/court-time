@@ -114,6 +114,7 @@ interface Props {
   clubTimezone:            string;
   userRole:                string;
   todayISO:                string; // YYYY-MM-DD in club timezone, computed server-side
+  initialDateISO?:         string | null; // optional ?date= override from URL
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
 }
@@ -173,12 +174,17 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, operatingHours, operatingHoursOverrides }: Props) {
+export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   // ── State ──────────────────────────────────────────────────────────────────
   // Initialize from the server-supplied date string (UTC noon = same calendar date in any timezone).
-  const [selectedDate, setSelectedDate]         = useState<Date>(() => new Date(todayISO + "T12:00:00Z"));
+  const [selectedDate, setSelectedDate]         = useState<Date>(() => {
+    const seed = (initialDateISO && /^\d{4}-\d{2}-\d{2}$/.test(initialDateISO))
+      ? initialDateISO
+      : todayISO;
+    return new Date(seed + "T12:00:00Z");
+  });
   const [reservations, setReservations]         = useState<Reservation[]>([]);
   const [loadingRes, setLoadingRes]             = useState(false);
   const [refreshTick, setRefreshTick]           = useState(0);
@@ -745,6 +751,18 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           ))}
         </div>
 
+        {/* ── Calendar legend ───────────────────────────────────────────── */}
+        <div className="flex items-center gap-4 px-4 py-1.5 border-b border-gray-100 dark:border-gray-800 shrink-0 overflow-x-auto hide-scrollbar">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="inline-block w-3 h-3 rounded-sm border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30" />
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">Your booking</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="inline-block w-3 h-3 rounded-sm border border-violet-300 bg-violet-50 dark:bg-violet-950/40 dark:border-violet-700" />
+            <span className="text-[10px] text-gray-500 dark:text-gray-400">Private lesson</span>
+          </div>
+        </div>
+
         {/* ── Closed-day banner ────────────────────────────────────────── */}
         {isClosed && (
           <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 shrink-0">
@@ -877,10 +895,29 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         const top       = (startMins / 30) * rowH;
                         const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, 4);
                         const isOwn     = res.owner_user_id === userId;
-                        const isBlocked = res.reason !== "member_booking";
+                        const isLesson  = res.reason === "pro_lesson";
+                        const isBlocked = !isLesson && res.reason !== "member_booking";
                         const isAdmin   = userRole === "admin";
+                        const blockPos  = { top: top + 1, height, left: 2, right: 2 };
 
-                        // Members can tap their own court reservations to manage/cancel them.
+                        // Lesson blocks are managed via /lessons or /events, not the calendar.
+                        // Render with the same event-card structure: items-start pt-1 px-1.5 font-semibold.
+                        // Privacy: the pro who owns the reservation (isOwn) or an admin may see the
+                        // note ("Pro lesson with [member name]"). All other viewers see "Private Lesson".
+                        if (isLesson) {
+                          const note = (res.notes ?? "").trim();
+                          const lessonLabel = (isOwn || isAdmin) ? (note || "Private Lesson") : "Private Lesson";
+                          return (
+                            <div
+                              key={res.id}
+                              className="absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 pointer-events-none bg-violet-50 border border-violet-300 text-violet-800 dark:bg-violet-950/40 dark:border-violet-700 dark:text-violet-200"
+                              style={blockPos}
+                            >
+                              {lessonLabel}
+                            </div>
+                          );
+                        }
+
                         const isClickable = isAdmin || (isOwn && !isBlocked);
                         const blockCls = `absolute rounded text-[10px] font-medium px-1 overflow-hidden flex items-center ${
                           isClickable ? "cursor-pointer" : "pointer-events-none"
@@ -892,10 +929,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                             : "bg-gray-400 text-white"
                         }`;
                         const blockStyle = {
-                          top: top + 1,
-                          height,
-                          left: 2,
-                          right: 2,
+                          ...blockPos,
                           ...(isBlocked ? {
                             background: "repeating-linear-gradient(-45deg,#e5e7eb 0px,#e5e7eb 4px,#f9fafb 4px,#f9fafb 8px)",
                           } : {}),

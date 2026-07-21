@@ -77,12 +77,18 @@ export default function SideNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm motion-safe:transition-all motion-safe:duration-150 ${
+              className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
                 isActive
-                  ? "bg-gray-100 dark:bg-gray-800 text-accent font-semibold"
-                  : "font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-accent active:bg-gray-200 dark:active:bg-gray-700 active:text-accent"
+                  ? "bg-accent/10 dark:bg-accent/15 text-accent font-semibold"
+                  : "font-medium text-gray-500 dark:text-gray-400 hover:bg-accent/5 dark:hover:bg-accent/10 hover:text-accent active:bg-accent/10 dark:active:bg-accent/15 active:text-accent"
               }`}
             >
+              {isActive && (
+                <span
+                  className="absolute left-0 inset-y-1.5 w-0.5 rounded-full bg-accent"
+                  aria-hidden="true"
+                />
+              )}
               <tab.Icon />
               {tab.label}
             </Link>

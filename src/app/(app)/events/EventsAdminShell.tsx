@@ -12,19 +12,20 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import EventsCreateButton from "./EventsCreateButton";
 
-type Tab = "upcoming" | "manage";
+type Tab = "upcoming" | "manage" | "lessons";
 type Court = { id: string; name: string; display_order: number };
 
 interface Props {
   upcoming:     React.ReactNode;
   manage:       React.ReactNode;
+  lessons?:     React.ReactNode;
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
   initialTab?:  Tab;
 }
 
-export default function EventsAdminShell({ upcoming, manage, courts, clubId, clubTimezone, initialTab = "upcoming" }: Props) {
+export default function EventsAdminShell({ upcoming, manage, lessons, courts, clubId, clubTimezone, initialTab = "upcoming" }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
 
@@ -60,15 +61,30 @@ export default function EventsAdminShell({ upcoming, manage, courts, clubId, clu
           >
             Manage
           </button>
+          {lessons != null && (
+            <button
+              onClick={() => setTab("lessons")}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
+                tab === "lessons"
+                  ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              }`}
+            >
+              Lessons
+            </button>
+          )}
         </div>
 
         {/* Owned internally — not passed as a ReactNode prop */}
         <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} onCreated={handleCreated} />
       </div>
 
-      {/* Tab panels — both rendered; CSS hides the inactive one */}
+      {/* Tab panels — all rendered; CSS hides the inactive ones */}
       <div className={tab === "upcoming" ? undefined : "hidden"}>{upcoming}</div>
       <div className={tab === "manage"   ? undefined : "hidden"}>{manage}</div>
+      {lessons != null && (
+        <div className={tab === "lessons" ? undefined : "hidden"}>{lessons}</div>
+      )}
     </>
   );
 }

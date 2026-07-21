@@ -1,0 +1,421 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { sendEmail } from "@/lib/email";
+import {
+  lessonRequestReceivedTemplate,
+  lessonRequestProposedTemplate,
+  lessonRequestConfirmedTemplate,
+  lessonRequestDeclinedTemplate,
+  lessonCancelledTemplate,
+} from "@/lib/email-templates";
+
+// ─── Type shared across pages ─────────────────────────────────────────────────
+
+export interface LessonRequestRow {
+  id:                    string;
+  pro_id:                string;
+  pro_first_name:        string | null;
+  pro_last_name:         string | null;
+  preferred_court_id:    string | null;
+  preferred_court_name:  string | null;
+  duration_minutes:      number;
+  member_note:           string | null;
+  preferred_windows:     Record<string, unknown> | null;
+  proposed_starts_at:    string | null;
+  proposed_ends_at:      string | null;
+  proposed_court_id:     string | null;
+  proposed_court_name:   string | null;
+  status:                string;
+  decline_reason:        string | null;
+  cancellation_reason:   string | null;
+  linked_reservation_id: string | null;
+  created_at:            string;
+  updated_at:            string;
+  confirmed_at:          string | null;
+}
+
+export interface ProLessonRequestRow extends LessonRequestRow {
+  member_id:         string;
+  member_first_name: string | null;
+  member_last_name:  string | null;
+  last_actor_role:   string | null;
+}
+
+// ─── Internal notification dispatch ───────────────────────────────────────────
+
+type LessonKind =
+  | "lesson_request_received"
+  | "lesson_request_proposed"
+  | "lesson_request_confirmed"
+  | "lesson_request_declined"
+  | "lesson_cancelled";
+
+type TemplateBuilder = (clubName: string) => { subject: string; html: string; text: string };
+
+function buildTemplate(kind: LessonKind, body: string): TemplateBuilder {
+  return (clubName) => {
+    switch (kind) {
+      case "lesson_request_received":  return lessonRequestReceivedTemplate(clubName, body);
+      case "lesson_request_proposed":  return lessonRequestProposedTemplate(clubName, body);
+      case "lesson_request_confirmed": return lessonRequestConfirmedTemplate(clubName, body);
+      case "lesson_request_declined":  return lessonRequestDeclinedTemplate(clubName, body);
+      case "lesson_cancelled":         return lessonCancelledTemplate(clubName, body);
+    }
+  };
+}
+
+async function dispatchLessonEmail(
+  recipientUserId: string,
+  kind:            LessonKind,
+  requestId:       string,
+): Promise<void> {
+  // Skip silently if Resend is not configured (dev/test environments).
+  if (!process.env.RESEND_API_KEY) return;
+
+  const supabase = await createClient();
+
+  // Step 1: Get notification context via security-definer RPC.
+  // Direct SELECT on notifications is blocked by user_id = auth.uid() RLS.
+  const { data: notifData } = await supabase.rpc("get_lesson_notification_id", {
+    p_request_id: requestId,
+    p_user_id:    recipientUserId,
+    p_kind:       kind,
+  });
+  const notif = notifData as { id: string; body: string } | null;
+  if (!notif?.id) return;
+
+  // Step 2: Duplicate-delivery guard (security-definer, bypasses admin RLS).
+  const { data: alreadySent } = await supabase.rpc("email_already_delivered", {
+    p_notification_id: notif.id,
+  });
+  if (alreadySent) return;
+
+  // Step 3: User preference guard (security-definer, works cross-user).
+  const { data: prefEnabled } = await supabase.rpc("user_pref_enabled", {
+    p_user_id: recipientUserId,
+    p_kind:    kind,
+  });
+  if (prefEnabled === false) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notif.id,
+      p_channel:         "email",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  // Step 4: Get recipient email via lesson-party-aware security-definer RPC.
+  // get_user_email_for_notification cannot be used here because it requires
+  // the caller to be the recipient or have role admin/pro. A member calling
+  // dispatchLessonEmail to send to the pro would fail that guard. The new
+  // get_lesson_recipient_email RPC authorizes by lesson-party membership.
+  const { data: recipientEmail } = await supabase.rpc("get_lesson_recipient_email", {
+    p_request_id: requestId,
+    p_user_id:    recipientUserId,
+  });
+  if (!recipientEmail) return;
+
+  // Step 5: Fetch club name for the email template.
+  let clubName = "Court Time";
+  const { data: recvProfile } = await supabase
+    .from("profiles")
+    .select("club_id")
+    .eq("id", recipientUserId)
+    .single();
+  if (recvProfile?.club_id) {
+    const { data: club } = await supabase
+      .from("clubs")
+      .select("name")
+      .eq("id", recvProfile.club_id)
+      .single();
+    if (club?.name) clubName = club.name;
+  }
+
+  // Step 6: Build template, send, and record delivery.
+  const { subject, html, text } = buildTemplate(kind, notif.body)(clubName);
+  const { messageId, error: emailError } = await sendEmail(
+    recipientEmail as string,
+    subject,
+    html,
+    text,
+  );
+
+  if (messageId) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notif.id,
+      p_channel:             "email",
+      p_status:              "sent",
+      p_provider:            "resend",
+      p_provider_message_id: messageId,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notif.id,
+      p_channel:         "email",
+      p_status:          "failed",
+      p_provider:        "resend",
+      p_error:           emailError ?? "Unknown error",
+    });
+  }
+}
+
+// ─── submitLessonRequest ──────────────────────────────────────────────────────
+
+export async function submitLessonRequest(params: {
+  p_pro_id:             string;
+  p_duration_minutes:   number;
+  p_preferred_court_id?: string | null;
+  p_member_note?:        string | null;
+  p_preferred_windows?:  Record<string, unknown> | null;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("submit_lesson_request", {
+    p_pro_id:              params.p_pro_id,
+    p_duration_minutes:    params.p_duration_minutes,
+    p_preferred_court_id:  params.p_preferred_court_id ?? null,
+    p_member_note:         params.p_member_note        ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    p_preferred_windows:   (params.p_preferred_windows ?? null) as any,
+    p_lesson_type_id:      null,  // explicitly target the 6-arg signature from migration 0070
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const requestId = (data as { id?: string } | null)?.id;
+
+  if (requestId) {
+    try {
+      await dispatchLessonEmail(params.p_pro_id, "lesson_request_received", requestId);
+    } catch {
+      // non-blocking
+    }
+  }
+
+  revalidatePath("/lessons");
+  revalidatePath("/events");
+  return {};
+}
+
+// ─── withdrawLessonRequest ────────────────────────────────────────────────────
+
+export async function withdrawLessonRequest(
+  requestId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("withdraw_lesson_request", {
+    p_request_id: requestId,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  revalidatePath("/lessons");
+  return {};
+}
+
+// ─── acceptLessonProposal ─────────────────────────────────────────────────────
+
+export async function acceptLessonProposal(
+  requestId: string,
+  proId:     string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  const { error } = await supabase.rpc("accept_lesson_proposal", {
+    p_request_id: requestId,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  if (user) {
+    try {
+      await dispatchLessonEmail(user.id, "lesson_request_confirmed", requestId);
+    } catch { /* non-blocking */ }
+    try {
+      await dispatchLessonEmail(proId, "lesson_request_confirmed", requestId);
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath("/lessons");
+  revalidatePath("/my-schedule");
+  revalidatePath("/calendar");
+  return {};
+}
+
+// ─── declineLessonProposal ────────────────────────────────────────────────────
+
+export async function declineLessonProposal(
+  requestId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("decline_lesson_proposal", {
+    p_request_id: requestId,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  revalidatePath("/lessons");
+  return {};
+}
+
+// ─── proposeLessonTime ────────────────────────────────────────────────────────
+
+export async function proposeLessonTime(params: {
+  p_request_id: string;
+  p_starts_at:  string;
+  p_ends_at:    string;
+  p_court_id?:  string | null;
+  member_id:    string;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("propose_lesson_time", {
+    p_request_id: params.p_request_id,
+    p_starts_at:  params.p_starts_at,
+    p_ends_at:    params.p_ends_at,
+    p_court_id:   params.p_court_id ?? null,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  try {
+    await dispatchLessonEmail(params.member_id, "lesson_request_proposed", params.p_request_id);
+  } catch { /* non-blocking */ }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
+// ─── declineLessonRequest ─────────────────────────────────────────────────────
+
+export async function declineLessonRequest(
+  requestId: string,
+  memberId:  string,
+  reason?:   string | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("decline_lesson_request", {
+    p_request_id: requestId,
+    p_reason:     reason ?? null,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  try {
+    await dispatchLessonEmail(memberId, "lesson_request_declined", requestId);
+  } catch { /* non-blocking */ }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
+// ─── cancelLesson ─────────────────────────────────────────────────────────────
+
+export async function cancelLesson(params: {
+  requestId:  string;
+  memberId:   string;
+  proId:      string;
+  actorId:    string;
+  reason?:    string | null;
+}): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("cancel_lesson", {
+    p_request_id: params.requestId,
+    p_reason:     params.reason ?? null,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  // Notify both parties who are NOT the actor
+  if (params.actorId !== params.memberId) {
+    try {
+      await dispatchLessonEmail(params.memberId, "lesson_cancelled", params.requestId);
+    } catch { /* non-blocking */ }
+  }
+  if (params.actorId !== params.proId) {
+    try {
+      await dispatchLessonEmail(params.proId, "lesson_cancelled", params.requestId);
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath("/lessons");
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
+// ─── Error mapper ─────────────────────────────────────────────────────────────
+
+function mapLessonError(msg: string): string {
+  const map: Record<string, string> = {
+    not_authenticated:              "Please sign in to continue.",
+    no_club:                        "You must belong to a club to use this feature.",
+    account_inactive:               "Your account is inactive.",
+    pro_not_found:                  "The selected pro is not available.",
+    cannot_request_yourself:        "You cannot request a lesson from yourself.",
+    invalid_duration:               "Please choose a valid duration (multiples of 15 min, minimum 30 min).",
+    court_not_found:                "The selected court is not available.",
+    request_not_found:              "This request could not be found.",
+    not_your_request:               "You can only manage your own requests.",
+    invalid_status_for_withdraw:    "This request cannot be withdrawn.",
+    insufficient_role:              "You don't have permission to take this action.",
+    not_assigned_pro:               "You can only manage requests assigned to you.",
+    invalid_status_for_propose:     "This request cannot be updated at this time.",
+    cannot_propose_past_time:       "Please choose a future date and time.",
+    duration_mismatch:              "The proposed duration doesn't match the requested duration.",
+    invalid_status_for_confirm:     "This request cannot be confirmed in its current state.",
+    cannot_confirm_past_time:       "Please choose a future date and time.",
+    invalid_duration_confirm:       "Please provide valid start and end times.",
+    court_conflict:                  "That court is already occupied at the selected time.",
+    operating_hours_not_configured: "Operating hours are not set up for this club.",
+    club_closed_this_day:           "That time falls outside the club's operating hours.",
+    outside_operating_hours:        "That time falls outside the club's operating hours.",
+    pro_has_conflict:               "You already have another booking, event, or lesson at that time.",
+    pro_has_event_conflict:         "You already have another booking, event, or lesson at that time.",
+    proposed_time_missing:          "No time has been proposed yet.",
+    proposed_time_in_past:          "The proposed time has already passed.",
+    proposed_court_missing:         "No court was proposed. Ask the pro to update their proposal.",
+    invalid_status_for_accept:      "This proposal is no longer available to accept.",
+    invalid_status_for_decline_proposal: "There is no active proposal to decline.",
+    invalid_status_for_decline:     "This request cannot be declined in its current state.",
+    invalid_status_for_cancel:      "Only confirmed lessons can be cancelled.",
+    not_authorised_to_cancel:       "You don't have permission to cancel this lesson.",
+    lesson_already_started:         "This lesson has already started and cannot be cancelled.",
+    within_cancellation_window:     "This lesson is within the club's cancellation window and cannot be cancelled.",
+    member_has_conflict:            "The member already has another booking, event, or lesson at that time.",
+    member_has_event_conflict:      "The member already has another booking, event, or lesson at that time.",
+    member_has_lesson_conflict:     "The member already has another booking, event, or lesson at that time.",
+    pro_on_blackout:                "You are unavailable on that date.",
+    lesson_type_not_found:          "The selected lesson type is not available.",
+    duration_not_allowed_for_type:  "That duration is not available for the selected lesson type.",
+    note_too_long:                  "Your note is too long (max 500 characters).",
+    reason_too_long:                "The reason is too long (max 300 characters).",
+    invalid_outcome:                "Invalid lesson outcome value.",
+    invalid_status_for_outcome:     "Outcome can only be recorded for confirmed lessons.",
+    lesson_not_yet_started:         "The lesson has not started yet.",
+    name_required:                  "Lesson type name is required.",
+    name_too_long:                  "Lesson type name is too long (max 100 characters).",
+    allowed_durations_empty:        "Allowed durations list cannot be empty.",
+    allowed_durations_invalid:      "All durations must be positive multiples of 15 minutes.",
+    rate_amount_invalid:            "Rate must be a positive number.",
+    max_participants_invalid:       "Maximum participants must be at least 1.",
+    blackout_date_in_past:          "Blackout date cannot be in the past.",
+    invalid_day_of_week:            "Day of week must be between 0 (Sunday) and 6 (Saturday).",
+    invalid_time_range:             "End time must be after start time.",
+    window_not_found:               "Availability window not found.",
+    blackout_not_found:             "Blackout date not found.",
+  };
+  return map[msg] ?? "Something went wrong. Please try again.";
+}

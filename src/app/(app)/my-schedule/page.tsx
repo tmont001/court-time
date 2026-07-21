@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
@@ -11,6 +12,7 @@ import {
   notifyMemberReservationCancelled,
 } from "@/app/(app)/calendar/actions";
 import PastEventsSection from "./PastEventsSection";
+import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -196,6 +198,7 @@ export default async function MySchedulePage() {
     settingsResult,
     reservationsResult,
     signupResult,
+    lessonsResult,
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
@@ -209,6 +212,7 @@ export default async function MySchedulePage() {
       .eq("owner_user_id", user.id)
       .in("status", ["pending", "confirmed"])
       .neq("reason", "event")
+      .neq("reason", "pro_lesson")
       .gte("starts_at", now)
       .order("starts_at"),
     supabase
@@ -232,11 +236,15 @@ export default async function MySchedulePage() {
       `)
       .eq("profile_id", user.id)
       .in("status", ["confirmed", "waitlisted", "offered"]),
+    supabase.rpc("get_my_lesson_requests"),
   ]);
 
   if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
+
+  const activeLessons = ((lessonsResult.data ?? []) as LessonRequestRow[])
+    .filter(r => ["pending", "proposed", "confirmed"].includes(r.status));
 
   // ── 1. Member court reservations ────────────────────────────────────────────
   const reservations = (reservationsResult.data ?? []) as ReservationRow[];
@@ -337,7 +345,38 @@ export default async function MySchedulePage() {
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-2xl md:mx-auto">
-        {allItems.length === 0 && pastItems.length === 0 ? (
+
+          {/* Request a Lesson CTA — members only; primary discovery point */}
+          {userRole === "member" && (
+            <div className="px-4 pt-4 pb-1">
+              <Link
+                href="/lessons?request=1"
+                className="flex items-center gap-4 px-4 py-4 rounded-xl bg-accent text-white dark:text-gray-900 shadow-sm hover:brightness-110 active:scale-[0.99] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+              >
+                <span className="shrink-0 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M3 21v-2a4 4 0 0 1 4-4h4" />
+                    <path d="M16 11v6m-3-3h6" />
+                  </svg>
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold leading-tight">Request a Lesson</p>
+                  <p className="text-xs opacity-80 mt-0.5 leading-snug">
+                    Choose a club pro and share your preferred times.
+                  </p>
+                </div>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  className="shrink-0 opacity-75" aria-hidden="true">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </Link>
+            </div>
+          )}
+
+        {allItems.length === 0 && pastItems.length === 0 && activeLessons.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
             No upcoming reservations or events.
           </div>
@@ -508,6 +547,50 @@ export default async function MySchedulePage() {
                 </div>
               );
             })}
+
+            {/* ── Lesson requests ────────────────────────────────────── */}
+            {activeLessons.length > 0 && (
+              <div>
+                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Lesson requests
+                </p>
+                {activeLessons.map(r => {
+                  const proName = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
+                  const statusMap: Record<string, string> = {
+                    pending:   "Awaiting response",
+                    proposed:  "Time proposed — review",
+                    confirmed: "Confirmed",
+                  };
+                  return (
+                    <Link
+                      key={r.id}
+                      href="/lessons"
+                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          Lesson with {proName}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          {r.duration_minutes} min
+                          {r.status === "confirmed" && r.proposed_starts_at
+                            ? ` · ${new Date(r.proposed_starts_at).toLocaleString("en-US", {
+                                timeZone: clubTimezone, month: "short", day: "numeric",
+                                hour: "numeric", minute: "2-digit", hour12: true,
+                              })}`
+                            : ""}
+                          {r.status === "confirmed" && r.proposed_court_name
+                            ? ` · ${r.proposed_court_name}`
+                            : ""}
+                          {" · "}{statusMap[r.status] ?? r.status}
+                        </p>
+                      </div>
+                      <span className="text-gray-400 dark:text-gray-500 text-sm">›</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
 
             {/* ── Past events — collapsed by default (client component) ── */}
             <PastEventsSection

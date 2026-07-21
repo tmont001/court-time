@@ -638,6 +638,10 @@ export default async function AdminOverviewPage() {
                 Events
                 <span className="text-gray-400 dark:text-gray-500">›</span>
               </Link>
+              <Link href="/admin/lessons" className="ct-row-interactive">
+                Lesson Requests
+                <span className="text-gray-400 dark:text-gray-500">›</span>
+              </Link>
               {isAdmin && (
                 <>
                   <Link href="/admin/members" className="ct-row-interactive">

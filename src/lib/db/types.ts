@@ -336,7 +336,7 @@ export type Database = {
           starts_at: string;
           ends_at: string;
           status: "pending" | "confirmed" | "cancelled";
-          reason: "member_booking" | "maintenance" | "admin_block" | "event";
+          reason: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
           player_count: number | null;
           format: "singles" | "doubles" | null;
           guest_names: string[] | null;
@@ -358,7 +358,7 @@ export type Database = {
           starts_at: string;
           ends_at: string;
           status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block" | "event";
+          reason?: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
           player_count?: number | null;
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
@@ -380,7 +380,7 @@ export type Database = {
           starts_at?: string;
           ends_at?: string;
           status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block" | "event";
+          reason?: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
           player_count?: number | null;
           format?: "singles" | "doubles" | null;
           guest_names?: string[] | null;
@@ -641,7 +641,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: waitlist_offer
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -651,7 +651,7 @@ export type Database = {
           id?:         string;
           club_id:     string;
           user_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: aligned with Row
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
           body:        string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -661,7 +661,7 @@ export type Database = {
           id?:         string;
           club_id?:    string;
           user_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement";  // Phase 18A: aligned with Row
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
           body?:       string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -826,6 +826,113 @@ export type Database = {
             columns: ["club_id"];
             isOneToOne: false;
             referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      lesson_requests: {
+        Row: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string;
+          pro_id:                string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       "member" | "pro" | "admin" | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+        Insert: {
+          id?:                    string;
+          club_id:                string;
+          member_id:              string;
+          pro_id:                 string;
+          preferred_court_id?:    string | null;
+          duration_minutes:       number;
+          member_note?:           string | null;
+          preferred_windows?:     Json | null;
+          proposed_starts_at?:    string | null;
+          proposed_ends_at?:      string | null;
+          proposed_court_id?:     string | null;
+          status?:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
+          decline_reason?:        string | null;
+          cancellation_reason?:   string | null;
+          last_actor_id?:         string | null;
+          last_actor_role?:       "member" | "pro" | "admin" | null;
+          linked_reservation_id?: string | null;
+          created_at?:            string;
+          updated_at?:            string;
+          confirmed_at?:          string | null;
+          declined_at?:           string | null;
+          cancelled_at?:          string | null;
+          cancelled_by?:          string | null;
+        };
+        Update: {
+          id?:                    string;
+          club_id?:               string;
+          member_id?:             string;
+          pro_id?:                string;
+          preferred_court_id?:    string | null;
+          duration_minutes?:      number;
+          member_note?:           string | null;
+          preferred_windows?:     Json | null;
+          proposed_starts_at?:    string | null;
+          proposed_ends_at?:      string | null;
+          proposed_court_id?:     string | null;
+          status?:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
+          decline_reason?:        string | null;
+          cancellation_reason?:   string | null;
+          last_actor_id?:         string | null;
+          last_actor_role?:       "member" | "pro" | "admin" | null;
+          linked_reservation_id?: string | null;
+          created_at?:            string;
+          updated_at?:            string;
+          confirmed_at?:          string | null;
+          declined_at?:           string | null;
+          cancelled_at?:          string | null;
+          cancelled_by?:          string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "lesson_requests_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lesson_requests_member_id_fkey";
+            columns: ["member_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lesson_requests_pro_id_fkey";
+            columns: ["pro_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lesson_requests_linked_reservation_id_fkey";
+            columns: ["linked_reservation_id"];
+            isOneToOne: false;
+            referencedRelation: "reservations";
             referencedColumns: ["id"];
           }
         ];
@@ -1432,6 +1539,255 @@ export type Database = {
           p_notes?:     string | null;
         };
         Returns: { roster_member_id: string; code: string };
+      };
+      // Phase 23: lesson request RPCs
+      get_club_pros: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                 string;
+          first_name:         string | null;
+          last_name:          string | null;
+          role:               string;
+          is_lesson_provider: boolean;
+        }[];
+      };
+      get_lesson_notification_id: {
+        Args: { p_request_id: string; p_user_id: string; p_kind: string };
+        Returns: Json | null;  // { id: string; body: string } | null
+      };
+      get_lesson_recipient_email: {
+        Args: { p_request_id: string; p_user_id: string };
+        Returns: string | null;
+      };
+      submit_lesson_request: {
+        Args: {
+          p_pro_id:              string;
+          p_duration_minutes:    number;
+          p_preferred_court_id?: string | null;
+          p_member_note?:        string | null;
+          p_preferred_windows?:  Json | null;
+          p_lesson_type_id?:     string | null;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string;
+          pro_id:                string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+      };
+      withdraw_lesson_request: {
+        Args: { p_request_id: string };
+        Returns: {
+          id: string; status: string; updated_at: string;
+        };
+      };
+      propose_lesson_time: {
+        Args: {
+          p_request_id:  string;
+          p_starts_at:   string;
+          p_ends_at:     string;
+          p_court_id?:   string | null;
+        };
+        Returns: {
+          id: string; status: string; proposed_starts_at: string | null; proposed_ends_at: string | null; proposed_court_id: string | null; updated_at: string;
+        };
+      };
+      accept_lesson_proposal: {
+        Args: { p_request_id: string };
+        Returns: Json;  // { request_id, reservation_id }
+      };
+      decline_lesson_proposal: {
+        Args: { p_request_id: string };
+        Returns: {
+          id: string; status: string; updated_at: string;
+        };
+      };
+      decline_lesson_request: {
+        Args: {
+          p_request_id: string;
+          p_reason?:    string | null;
+        };
+        Returns: {
+          id: string; status: string; decline_reason: string | null; declined_at: string | null; updated_at: string;
+        };
+      };
+      cancel_lesson: {
+        Args: {
+          p_request_id: string;
+          p_reason?:    string | null;
+        };
+        Returns: {
+          id: string; status: string; cancellation_reason: string | null; cancelled_at: string | null; updated_at: string;
+        };
+      };
+      get_my_lesson_requests: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                    string;
+          pro_id:                string;
+          pro_first_name:        string | null;
+          pro_last_name:         string | null;
+          preferred_court_id:    string | null;
+          preferred_court_name:  string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          proposed_court_name:   string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          lesson_type_id:        string | null;
+          lesson_type_name:      string | null;
+          lesson_outcome:        string | null;
+        }[];
+      };
+      get_pro_lesson_requests: {
+        Args: {
+          p_pro_filter?: string | null;
+          p_status?:     string | null;
+        };
+        Returns: {
+          id:                    string;
+          member_id:             string;
+          member_first_name:     string | null;
+          member_last_name:      string | null;
+          pro_id:                string;
+          pro_first_name:        string | null;
+          pro_last_name:         string | null;
+          preferred_court_id:    string | null;
+          preferred_court_name:  string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          proposed_court_name:   string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          lesson_type_id:        string | null;
+          lesson_type_name:      string | null;
+          lesson_outcome:        string | null;
+        }[];
+      };
+      // Phase 23 competitive foundation RPCs (migration 0070)
+      get_lesson_types: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                string;
+          name:              string;
+          description:       string | null;
+          allowed_durations: number[] | null;
+          max_participants:  number;
+          rate_amount:       number | null;
+          rate_currency:     string;
+          rate_notes:        string | null;
+          is_active:         boolean;
+        }[];
+      };
+      upsert_lesson_type: {
+        Args: {
+          p_id?:                string | null;
+          p_name?:              string | null;
+          p_description?:       string | null;
+          p_allowed_durations?: number[] | null;
+          p_max_participants?:  number;
+          p_rate_amount?:       number | null;
+          p_rate_currency?:     string | null;
+          p_rate_notes?:        string | null;
+        };
+        Returns: string;
+      };
+      archive_lesson_type: {
+        Args: { p_type_id: string };
+        Returns: undefined;
+      };
+      mark_lesson_outcome: {
+        Args: { p_request_id: string; p_outcome: string };
+        Returns: undefined;
+      };
+      get_pro_availability_windows: {
+        Args: { p_pro_id?: string | null };
+        Returns: {
+          id:          string;
+          pro_id:      string;
+          day_of_week: number;
+          start_time:  string;
+          end_time:    string;
+          is_active:   boolean;
+        }[];
+      };
+      upsert_pro_availability_window: {
+        Args: {
+          p_day_of_week:  number;
+          p_start_time:   string;
+          p_end_time:     string;
+          p_pro_id?:      string | null;
+          p_window_id?:   string | null;
+        };
+        Returns: string;
+      };
+      delete_pro_availability_window: {
+        Args: { p_window_id: string };
+        Returns: undefined;
+      };
+      get_pro_blackouts: {
+        Args: {
+          p_pro_id?:    string | null;
+          p_from_date?: string | null;
+          p_to_date?:   string | null;
+        };
+        Returns: {
+          id:            string;
+          pro_id:        string;
+          blackout_date: string;
+          reason:        string | null;
+          created_at:    string;
+        }[];
+      };
+      upsert_pro_blackout: {
+        Args: {
+          p_blackout_date: string;
+          p_reason?:       string | null;
+          p_pro_id?:       string | null;
+        };
+        Returns: string;
+      };
+      delete_pro_blackout: {
+        Args: { p_blackout_id: string };
+        Returns: undefined;
       };
     };
     Enums: { [_ in never]: never };
