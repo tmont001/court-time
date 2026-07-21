@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import { updateClubTheme } from "./actions";
 
 const THEMES = [
-  { key: "classic-gray",  label: "Gray",   lightAccent: "#374151" },
-  { key: "forest-green",  label: "Green",  lightAccent: "#15803d" },
-  { key: "clay-court",    label: "Clay",   lightAccent: "#c2410c" },
-  { key: "ocean-blue",    label: "Blue",   lightAccent: "#1d4ed8" },
-  { key: "royal-purple",  label: "Purple", lightAccent: "#7e22ce" },
+  { key: "graphite",   label: "Graphite",    lightAccent: "#374151" },
+  { key: "cobalt",     label: "Cobalt",      lightAccent: "#1d4ed8" },
+  { key: "teal",       label: "Teal",        lightAccent: "#0d9488" },
+  { key: "sage",       label: "Sage",        lightAccent: "#4d7c5a" },
+  { key: "plum",       label: "Plum",        lightAccent: "#6b21a8" },
+  { key: "rose",       label: "Rose",        lightAccent: "#e11d48" },
+  { key: "terracotta", label: "Terracotta",  lightAccent: "#c2410c" },
+  { key: "gold",       label: "Gold",        lightAccent: "#b45309" },
 ] as const;
 
 type ThemeKey = typeof THEMES[number]["key"];

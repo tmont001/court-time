@@ -79,8 +79,8 @@ export default function SideNav() {
               href={tab.href}
               className={`relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset ${
                 isActive
-                  ? "bg-accent/10 dark:bg-accent/15 text-accent font-semibold"
-                  : "font-medium text-gray-500 dark:text-gray-400 hover:bg-accent/5 dark:hover:bg-accent/10 hover:text-accent active:bg-accent/10 dark:active:bg-accent/15 active:text-accent"
+                  ? "bg-accent/20 dark:bg-accent/25 text-accent font-semibold"
+                  : "font-medium text-gray-500 dark:text-gray-400 hover:bg-accent/10 dark:hover:bg-accent/15 hover:text-accent active:bg-accent/20 dark:active:bg-accent/25 active:text-accent"
               }`}
             >
               {isActive && (

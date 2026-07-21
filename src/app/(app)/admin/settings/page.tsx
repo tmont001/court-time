@@ -70,7 +70,7 @@ export default async function AdminSettingsPage() {
           <ClubBrandingSection
             clubName={club?.name ?? ""}
             logoUrl={club?.logo_url ?? null}
-            themeKey={club?.theme_key ?? "classic-gray"}
+            themeKey={club?.theme_key ?? "graphite"}
           />
         </section>
 

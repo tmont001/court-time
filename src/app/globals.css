@@ -9,20 +9,32 @@
    the OS media query. Prior to Phase 21H, @media (prefers-color-scheme: dark)
    was used here, which caused --surface to disagree with Tailwind's dark:
    classes when the user's OS preference and manual toggle differed. */
-:root                { --accent: #374151; --surface: #f4f5f6; color-scheme: light; } /* classic-gray light */
-.dark                { --accent: #d1d5db; --surface: #11161f; color-scheme: dark;  } /* classic-gray dark  */
+:root                { --accent: #374151; --surface: #f4f5f6; color-scheme: light; } /* graphite / base defaults */
+.dark                { --accent: #d1d5db; --surface: #11161f; color-scheme: dark;  }
 
-.theme-forest-green       { --accent: #15803d; --surface: #f0faf3; }
-.dark .theme-forest-green { --accent: #4ade80; --surface: #0e1a13; }
+.theme-graphite           { --accent: #374151; --surface: #f4f5f6; }
+.dark .theme-graphite     { --accent: #d1d5db; --surface: #11161f; }
 
-.theme-clay-court         { --accent: #c2410c; --surface: #fdf6f0; }
-.dark .theme-clay-court   { --accent: #fb923c; --surface: #1c130b; }
+.theme-cobalt             { --accent: #1d4ed8; --surface: #eff5fd; }
+.dark .theme-cobalt       { --accent: #60a5fa; --surface: #0c1726; }
 
-.theme-ocean-blue         { --accent: #1d4ed8; --surface: #eff5fd; }
-.dark .theme-ocean-blue   { --accent: #60a5fa; --surface: #0c1726; }
+.theme-teal               { --accent: #0d9488; --surface: #f0fdfa; }
+.dark .theme-teal         { --accent: #2dd4bf; --surface: #061917; }
 
-.theme-royal-purple       { --accent: #7e22ce; --surface: #f8f3fc; }
-.dark .theme-royal-purple { --accent: #c084fc; --surface: #160d1f; }
+.theme-sage               { --accent: #4d7c5a; --surface: #f0faf3; }
+.dark .theme-sage         { --accent: #4ade80; --surface: #0e1a13; }
+
+.theme-plum               { --accent: #6b21a8; --surface: #f8f3fc; }
+.dark .theme-plum         { --accent: #c084fc; --surface: #160d1f; }
+
+.theme-rose               { --accent: #e11d48; --surface: #fff1f2; }
+.dark .theme-rose         { --accent: #fb7185; --surface: #1c050a; }
+
+.theme-terracotta         { --accent: #c2410c; --surface: #fdf6f0; }
+.dark .theme-terracotta   { --accent: #fb923c; --surface: #1c130b; }
+
+.theme-gold               { --accent: #b45309; --surface: #fffbeb; }
+.dark .theme-gold         { --accent: #fbbf24; --surface: #1c1203; }
 
 /* Hide scrollbar while keeping scroll behaviour */
 .hide-scrollbar {
@@ -84,17 +96,21 @@
 
 /* AppLayout main content: on mobile pads for the fixed bottom nav;
    on desktop (sidebar mode) the sidebar is horizontal so no bottom pad.
-   The subtle theme surface shows through in any gutters around centered
-   content (e.g. either side of the capped-width /calendar on wide screens). */
+   Neutral background separates the canvas from accent-tinted surfaces
+   (welcome card, sidebar) so themed elements pop against a consistent base. */
 .app-main-content {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
-  background-color: var(--surface);
+  background-color: #f9fafb;
+}
+.dark .app-main-content {
+  background-color: rgb(17 24 39);
 }
 @media (min-width: 768px) {
   .app-main-content {
     padding-bottom: 0;
   }
 }
+
 
 /* ── Reusable component patterns ────────────────────────────────────────── */
 /* Applied consistently across primary buttons, inputs, cards, and interactive

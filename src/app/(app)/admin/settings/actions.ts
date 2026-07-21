@@ -175,7 +175,7 @@ export async function updateBookingRules(
 }
 
 const VALID_THEMES = new Set([
-  "classic-gray", "forest-green", "clay-court", "ocean-blue", "royal-purple",
+  "graphite", "cobalt", "teal", "sage", "plum", "rose", "terracotta", "gold",
 ]);
 
 export async function updateClubTheme(themeKey: string): Promise<{ error?: string }> {

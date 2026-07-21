@@ -35,7 +35,7 @@ export default function MemberWelcomeCard({ userId, clubId }: Props) {
   if (dismissed) return null;
 
   return (
-    <div className="mx-4 mt-4 rounded-xl border border-accent/30 bg-accent/5 dark:bg-accent/10 px-4 py-3">
+    <div className="m-4 rounded-xl border border-accent/30 bg-white dark:bg-gray-800 shadow-sm px-4 py-4">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3 mb-2.5">
         <div className="flex items-center gap-2.5 min-w-0">

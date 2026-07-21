@@ -14,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
-  let themeKey = "classic-gray";
+  let themeKey = "graphite";
   const profile = await getAuthProfile();
 
   if (!profile?.club_id) {
