@@ -77,7 +77,7 @@ export default function NotificationBell() {
           </svg>
 
           {badge !== null && (
-            <span className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none px-0.5 select-none">
+            <span aria-hidden="true" className="absolute -top-1 -right-1.5 flex items-center justify-center min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none px-0.5 select-none">
               {badge}
             </span>
           )}

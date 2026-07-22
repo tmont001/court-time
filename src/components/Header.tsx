@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import NotificationBell from "@/components/NotificationBell";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -50,8 +51,7 @@ export default async function Header({ screenTitle }: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between px-4 h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 motion-safe:transition-colors motion-safe:duration-150">
       {logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <Image
           src={logoUrl}
           width={32}
           height={32}

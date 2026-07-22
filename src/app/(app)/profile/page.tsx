@@ -125,7 +125,7 @@ export default async function ProfilePage() {
             >
               <div>
                 <p>Notification Preferences</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                   Choose which alerts you receive.
                 </p>
               </div>
@@ -148,7 +148,7 @@ export default async function ProfilePage() {
             >
               <div>
                 <p>Change password</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                   Update the password you use to sign in.
                 </p>
               </div>

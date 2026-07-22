@@ -41,9 +41,9 @@ export default function AccountMenu({ userInitials, userName, userEmail }: Props
         onClick={() => setOpen((v) => !v)}
         aria-label="Account menu"
         aria-expanded={open}
-        className="ct-icon-button w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100"
+        className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-xs font-semibold text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 motion-safe:transition-colors motion-safe:duration-100"
       >
-        {userInitials}
+        <span aria-hidden="true">{userInitials}</span>
       </button>
 
       {open && (

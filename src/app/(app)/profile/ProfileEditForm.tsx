@@ -33,36 +33,42 @@ export default function ProfileEditForm({ firstName, lastName, phone }: Props) {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label htmlFor="profile-first-name" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
           First name
         </label>
         <input
+          id="profile-first-name"
           type="text"
           name="first_name"
+          autoComplete="given-name"
           defaultValue={firstName ?? ""}
           className="ct-input"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label htmlFor="profile-last-name" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
           Last name
         </label>
         <input
+          id="profile-last-name"
           type="text"
           name="last_name"
+          autoComplete="family-name"
           defaultValue={lastName ?? ""}
           className="ct-input"
         />
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+        <label htmlFor="profile-phone" className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
           Phone
         </label>
         <input
+          id="profile-phone"
           type="tel"
           name="phone"
+          autoComplete="tel"
           value={currentPhone}
           onChange={(e) => setCurrentPhone(e.target.value)}
           className="ct-input"
