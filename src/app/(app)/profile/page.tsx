@@ -50,7 +50,7 @@ export default async function ProfilePage() {
           </p>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <Link
-              href="/lessons"
+              href="/my-schedule?tab=lessons"
               className="ct-row-interactive"
             >
               My Lesson Requests
@@ -58,58 +58,6 @@ export default async function ProfilePage() {
             </Link>
           </div>
         </div>
-
-        {(profile?.role === "admin" || profile?.role === "pro") && (
-          <>
-            <hr className="border-gray-100 dark:border-gray-800" />
-            <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Admin
-              </p>
-              <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
-                <Link
-                  href="/admin/overview"
-                  className="ct-row-interactive"
-                >
-                  Overview
-                  <span className="text-gray-400 dark:text-gray-500">›</span>
-                </Link>
-                {profile?.role === "admin" && (
-                  <>
-                    <Link
-                      href="/admin/members"
-                      className="ct-row-interactive"
-                    >
-                      Members
-                      <span className="text-gray-400 dark:text-gray-500">›</span>
-                    </Link>
-                    <Link
-                      href="/admin/courts"
-                      className="ct-row-interactive"
-                    >
-                      Courts
-                      <span className="text-gray-400 dark:text-gray-500">›</span>
-                    </Link>
-                    <Link
-                      href="/admin/settings"
-                      className="ct-row-interactive"
-                    >
-                      Settings
-                      <span className="text-gray-400 dark:text-gray-500">›</span>
-                    </Link>
-                    <Link
-                      href="/admin/audit-log"
-                      className="ct-row-interactive"
-                    >
-                      Audit Log
-                      <span className="text-gray-400 dark:text-gray-500">›</span>
-                    </Link>
-                  </>
-                )}
-              </div>
-            </div>
-          </>
-        )}
 
         <hr className="border-gray-100 dark:border-gray-800" />
 

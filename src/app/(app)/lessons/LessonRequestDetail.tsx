@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import {
   withdrawLessonRequest,
   acceptLessonProposal,
@@ -68,10 +68,11 @@ export default function LessonRequestDetail({ request, userId: _userId, clubTime
   }
 
   return (
-    <BottomSheet onClose={onClose} className="px-4 pb-8">
-      <div className="flex items-center justify-between mb-4">
+    <ResponsiveSheet onClose={onClose} variant="modal">
+      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
+      <div className="relative flex items-center justify-center mb-4">
         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Lesson Request</h2>
-        <button onClick={onClose} className="text-sm text-gray-400" aria-label="Close">✕</button>
+        <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
       </div>
 
       {/* Status + summary */}
@@ -271,6 +272,7 @@ export default function LessonRequestDetail({ request, userId: _userId, clubTime
           </div>
         )}
       </div>
-    </BottomSheet>
+      </div>
+    </ResponsiveSheet>
   );
 }

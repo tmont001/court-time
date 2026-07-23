@@ -140,3 +140,19 @@ export function lessonCancelledTemplate(
   const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
   return { subject: `Lesson cancelled — ${clubName}`, html, text };
 }
+
+export function lessonProviderReassignedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
+  return { subject: `Lesson request updated — ${clubName}`, html, text };
+}
+
+export function lessonAdminRequestedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
+  return { subject: `Lesson request submitted for you — ${clubName}`, html, text };
+}

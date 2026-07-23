@@ -12,6 +12,7 @@ import {
   notifyMemberReservationCancelled,
 } from "@/app/(app)/calendar/actions";
 import PastEventsSection from "./PastEventsSection";
+import LessonsClient from "@/app/(app)/lessons/LessonsClient";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -61,8 +62,6 @@ async function cancelReservation(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
 
-  // Server-side guard: enforce cancellation window for non-admin users.
-  // Admin is exempt; member and pro are subject to the window.
   const { data: actorProfile } = await supabase
     .from("profiles")
     .select("role, club_id")
@@ -89,7 +88,6 @@ async function cancelReservation(formData: FormData) {
       const insideWindow = new Date(targetRes.starts_at).getTime() - Date.now() < windowMs;
       const withinGrace  = graceMs > 0 && Date.now() - new Date(targetRes.created_at).getTime() < graceMs;
 
-      // Block cancellation only when inside the window AND outside the grace period.
       if (insideWindow && !withinGrace) return;
     }
   }
@@ -105,9 +103,6 @@ async function cancelReservation(formData: FormData) {
     .eq("id", id)
     .eq("owner_user_id", user.id);
 
-  // Notify and dispatch SMS — non-blocking; never surfaces errors to the user.
-  // The RPC verifies status = 'cancelled' before inserting, so a failed update
-  // above simply results in no notification (reservation_not_found raised).
   try {
     await notifyMemberReservationCancelled(user.id, id);
   } catch {
@@ -173,7 +168,15 @@ function itemStartsAt(item: ScheduleItem): string {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function MySchedulePage() {
+export default async function MySchedulePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const sp       = searchParams ? await searchParams : {};
+  const tab      = typeof sp.tab === "string" ? sp.tab : "upcoming";
+  const autoOpen = sp.request === "1";
+
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
@@ -184,21 +187,19 @@ export default async function MySchedulePage() {
   const userRole = profile?.role ?? "member";
 
   let clubTimezone             = "America/New_York";
-  let cancellationWindowHours  = 24; // matches DB default
-  let cancellationGraceMinutes = 5;  // matches DB default
+  let cancellationWindowHours  = 24;
+  let cancellationGraceMinutes = 5;
 
   const now = new Date().toISOString();
 
-  // Reservations and event_participants only need user.id (available now).
-  // Club and settings need club_id (from profile, also available now).
-  // Run all four in parallel to save one sequential round-trip vs. the previous
-  // two-batch pattern (clubs+settings → then reservations+participants).
   const [
     clubResult,
     settingsResult,
     reservationsResult,
     signupResult,
     lessonsResult,
+    prosResult,
+    lessonCourtsResult,
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
@@ -237,21 +238,30 @@ export default async function MySchedulePage() {
       .eq("profile_id", user.id)
       .in("status", ["confirmed", "waitlisted", "offered"]),
     supabase.rpc("get_my_lesson_requests"),
+    supabase.rpc("get_club_pros"),
+    clubId
+      ? supabase.from("courts").select("id, name").eq("club_id", clubId).eq("is_active", true).order("display_order")
+      : Promise.resolve({ data: [] }),
   ]);
 
   if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
 
-  const activeLessons = ((lessonsResult.data ?? []) as LessonRequestRow[])
-    .filter(r => ["pending", "proposed", "confirmed"].includes(r.status));
+  const allLessons = (lessonsResult.data ?? []) as LessonRequestRow[];
+  const confirmedUpcomingLessons = allLessons
+    .filter(r => r.status === "confirmed" && r.proposed_starts_at && r.proposed_starts_at >= now)
+    .sort((a, b) => (a.proposed_starts_at ?? "").localeCompare(b.proposed_starts_at ?? ""));
+
+  const prosError    = !!prosResult.error;
+  const pros         = prosError ? [] : (prosResult.data ?? []) as { id: string; first_name: string | null; last_name: string | null; role: string }[];
+  const lessonCourts = (lessonCourtsResult.data ?? []) as { id: string; name: string }[];
 
   // ── 1. Member court reservations ────────────────────────────────────────────
   const reservations = (reservationsResult.data ?? []) as ReservationRow[];
 
   // ── 2. Event signups ─────────────────────────────────────────────────────────
   const { data: signupRows } = signupResult as { data: RawSignupRow[] | null };
-
   const allSignupRows = signupRows ?? [];
 
   const validSignups = allSignupRows.filter(
@@ -310,7 +320,6 @@ export default async function MySchedulePage() {
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
 
-  // Past events — most recent first, passed to PastEventsSection (read-only, collapsible)
   const pastItems = pastSignups
     .map(s => ({
       id:           s.events!.id,
@@ -335,10 +344,17 @@ export default async function MySchedulePage() {
   }
   const sortedDateKeys = [...grouped.keys()].sort();
 
+  const tabCls = (t: string) =>
+    `px-3 py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
+      tab === t
+        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
+        : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+    }`;
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
-      <Header screenTitle="My Bookings" />
+      <Header screenTitle="Bookings" />
 
       <div
         className="overflow-y-auto"
@@ -346,261 +362,248 @@ export default async function MySchedulePage() {
       >
         <div className="md:max-w-2xl md:mx-auto">
 
-          {/* Request a Lesson CTA — members only; primary discovery point */}
-          {userRole === "member" && (
-            <div className="px-4 pt-4 pb-1">
-              <Link
-                href="/lessons?request=1"
-                className="flex items-center gap-4 px-4 py-4 rounded-xl bg-accent text-white dark:text-gray-900 shadow-sm hover:brightness-110 active:scale-[0.99] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
-              >
-                <span className="shrink-0 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M3 21v-2a4 4 0 0 1 4-4h4" />
-                    <path d="M16 11v6m-3-3h6" />
-                  </svg>
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold leading-tight">Request a Lesson</p>
-                  <p className="text-xs opacity-80 mt-0.5 leading-snug">
-                    Choose a club pro and share your preferred times.
-                  </p>
-                </div>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                  strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  className="shrink-0 opacity-75" aria-hidden="true">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-          )}
-
-        {allItems.length === 0 && pastItems.length === 0 && activeLessons.length === 0 ? (
-          <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
-            No upcoming reservations or events.
+          {/* Tab bar */}
+          <div className="flex gap-1 px-4 pt-4 pb-3">
+            <Link href="/my-schedule"             className={tabCls("upcoming")}>Upcoming</Link>
+            <Link href="/my-schedule?tab=lessons" className={tabCls("lessons")}>Lesson Requests</Link>
+            <Link href="/my-schedule?tab=past"    className={tabCls("past")}>Past</Link>
           </div>
-        ) : (
-          <div className="pb-6">
 
-            {/* ── Upcoming section ──────────────────────────────────────── */}
-            {sortedDateKeys.map(key => {
-              const dayItems = grouped.get(key)!;
-              const header   = formatDateHeader(itemStartsAt(dayItems[0]), clubTimezone);
-              return (
-                <div key={key}>
-                  <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {header}
-                  </p>
+          {/* ── Upcoming tab ─────────────────────────────────────────────── */}
+          {tab === "upcoming" && (
+            <>
+              {allItems.length === 0 && confirmedUpcomingLessons.length === 0 ? (
+                <div className="flex items-center justify-center h-48 text-gray-400 dark:text-gray-500 text-sm">
+                  No upcoming reservations or events.
+                </div>
+              ) : (
+                <div className="pb-6">
 
-                  {dayItems.map(item => {
-                    if (item.kind === "reservation") {
-                      const { res } = item;
-                      const name        = courtName.get(res.court_id) ?? "Court";
-                      const start       = formatTime(res.starts_at, clubTimezone);
-                      const end         = formatTime(res.ends_at,   clubTimezone);
-                      const durationMin = Math.round(
-                        (new Date(res.ends_at).getTime() - new Date(res.starts_at).getTime()) / 60_000
-                      );
-                      const formatLabel = res.format
-                        ? res.format.charAt(0).toUpperCase() + res.format.slice(1)
-                        : null;
-
-                      return (
-                        <div
-                          key={res.id}
-                          className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                              {start} – {end} · {durationMin} min
-                              {formatLabel ? ` · ${formatLabel}` : ""}
-                            </p>
-                          </div>
-                          {item.isCancellable ? (
-                            <form action={cancelReservation}>
-                              <input type="hidden" name="id" value={res.id} />
-                              <button
-                                type="submit"
-                                className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                              >
-                                Cancel
-                              </button>
-                            </form>
-                          ) : (
-                            <span className="text-xs text-gray-400 ml-4 shrink-0 text-right">
-                              Cannot cancel within {cancellationWindowHours}h
-                              {cancellationGraceMinutes > 0 && (
-                                <><br />unless booked in last {cancellationGraceMinutes}m</>
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    }
-
-                    // ── Upcoming event signup card ────────────────────────────
-                    const { ev, myRole, myStatus, offerExpiresAt } = item;
-                    const start = formatTime(ev.starts_at, clubTimezone);
-                    const end   = formatTime(ev.ends_at,   clubTimezone);
-                    const evCourtNames = ev.reservations
-                      .filter(r => r.reason === "event" && r.status === "confirmed")
-                      .map(r => courtName.get(r.court_id) ?? "Court")
-                      .join(", ");
-
-                    const isWaitlisted           = myStatus === "waitlisted";
-                    const isOffered              = myStatus === "offered";
-                    const offerExpiredServerSide = isOffered && offerExpiresAt
-                      ? new Date(offerExpiresAt) <= new Date()
-                      : false;
-
+                  {sortedDateKeys.map(key => {
+                    const dayItems = grouped.get(key)!;
+                    const header   = formatDateHeader(itemStartsAt(dayItems[0]), clubTimezone);
                     return (
-                      <div
-                        key={ev.id}
-                        className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                            <span
-                              className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
-                              style={{ background: ev.event_types.color }}
-                            >
-                              {ev.event_types.label}
-                            </span>
-                            {isWaitlisted && (
-                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
-                                Waitlisted
-                              </span>
-                            )}
-                            {isOffered && !offerExpiredServerSide && (
-                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
-                                Spot offered
-                              </span>
-                            )}
-                            {isOffered && offerExpiredServerSide && (
-                              <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
-                                Offer expired
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {start} – {end}
-                            {evCourtNames ? ` · ${evCourtNames}` : ""}
-                          </p>
-                          {isOffered && !offerExpiredServerSide && offerExpiresAt && (
-                            <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
-                              Accept by {formatTime(offerExpiresAt, clubTimezone)}
-                            </p>
-                          )}
-                        </div>
-                        {myRole === "host" ? (
-                          <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
-                        ) : isOffered ? (
-                          offerExpiredServerSide ? (
-                            <form action={rejoinEventAction}>
-                              <input type="hidden" name="event_id" value={ev.id} />
-                              <button
-                                type="submit"
-                                className="text-xs font-medium text-blue-600 ml-4 shrink-0 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                      <div key={key}>
+                        <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                          {header}
+                        </p>
+
+                        {dayItems.map(item => {
+                          if (item.kind === "reservation") {
+                            const { res } = item;
+                            const name        = courtName.get(res.court_id) ?? "Court";
+                            const start       = formatTime(res.starts_at, clubTimezone);
+                            const end         = formatTime(res.ends_at,   clubTimezone);
+                            const durationMin = Math.round(
+                              (new Date(res.ends_at).getTime() - new Date(res.starts_at).getTime()) / 60_000
+                            );
+                            const formatLabel = res.format
+                              ? res.format.charAt(0).toUpperCase() + res.format.slice(1)
+                              : null;
+
+                            return (
+                              <div
+                                key={res.id}
+                                className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between"
                               >
-                                Rejoin
-                              </button>
-                            </form>
-                          ) : (
-                            <div className="flex flex-col items-end gap-1.5 ml-4 shrink-0">
-                              <form action={acceptWaitlistOfferAction}>
-                                <input type="hidden" name="event_id" value={ev.id} />
-                                <button
-                                  type="submit"
-                                  className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                >
-                                  Accept
-                                </button>
-                              </form>
-                              <form action={declineWaitlistOfferAction}>
-                                <input type="hidden" name="event_id" value={ev.id} />
-                                <button
-                                  type="submit"
-                                  className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                >
-                                  Pass
-                                </button>
-                              </form>
-                            </div>
-                          )
-                        ) : (
-                          <form action={leaveEvent}>
-                            <input type="hidden" name="event_id" value={ev.id} />
-                            <button
-                              type="submit"
-                              className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{name}</p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    {start} – {end} · {durationMin} min
+                                    {formatLabel ? ` · ${formatLabel}` : ""}
+                                  </p>
+                                </div>
+                                {item.isCancellable ? (
+                                  <form action={cancelReservation}>
+                                    <input type="hidden" name="id" value={res.id} />
+                                    <button
+                                      type="submit"
+                                      className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <span className="text-xs text-gray-400 ml-4 shrink-0 text-right">
+                                    Cannot cancel within {cancellationWindowHours}h
+                                    {cancellationGraceMinutes > 0 && (
+                                      <><br />unless booked in last {cancellationGraceMinutes}m</>
+                                    )}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          // ── Upcoming event signup card ──────────────────────
+                          const { ev, myRole, myStatus, offerExpiresAt } = item;
+                          const start = formatTime(ev.starts_at, clubTimezone);
+                          const end   = formatTime(ev.ends_at,   clubTimezone);
+                          const evCourtNames = ev.reservations
+                            .filter(r => r.reason === "event" && r.status === "confirmed")
+                            .map(r => courtName.get(r.court_id) ?? "Court")
+                            .join(", ");
+
+                          const isWaitlisted           = myStatus === "waitlisted";
+                          const isOffered              = myStatus === "offered";
+                          const offerExpiredServerSide = isOffered && offerExpiresAt
+                            ? new Date(offerExpiresAt) <= new Date()
+                            : false;
+
+                          return (
+                            <div
+                              key={ev.id}
+                              className="ct-card mx-4 mb-3 px-4 py-3 flex items-start justify-between"
                             >
-                              {isWaitlisted ? "Leave Waitlist" : "Leave"}
-                            </button>
-                          </form>
-                        )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                                  <span
+                                    className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold text-white"
+                                    style={{ background: ev.event_types.color }}
+                                  >
+                                    {ev.event_types.label}
+                                  </span>
+                                  {isWaitlisted && (
+                                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                      Waitlisted
+                                    </span>
+                                  )}
+                                  {isOffered && !offerExpiredServerSide && (
+                                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+                                      Spot offered
+                                    </span>
+                                  )}
+                                  {isOffered && offerExpiredServerSide && (
+                                    <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                                      Offer expired
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{ev.title}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                  {start} – {end}
+                                  {evCourtNames ? ` · ${evCourtNames}` : ""}
+                                </p>
+                                {isOffered && !offerExpiredServerSide && offerExpiresAt && (
+                                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                                    Accept by {formatTime(offerExpiresAt, clubTimezone)}
+                                  </p>
+                                )}
+                              </div>
+                              {myRole === "host" ? (
+                                <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
+                              ) : isOffered ? (
+                                offerExpiredServerSide ? (
+                                  <form action={rejoinEventAction}>
+                                    <input type="hidden" name="event_id" value={ev.id} />
+                                    <button
+                                      type="submit"
+                                      className="text-xs font-medium text-blue-600 ml-4 shrink-0 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                    >
+                                      Rejoin
+                                    </button>
+                                  </form>
+                                ) : (
+                                  <div className="flex flex-col items-end gap-1.5 ml-4 shrink-0">
+                                    <form action={acceptWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button
+                                        type="submit"
+                                        className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                      >
+                                        Accept
+                                      </button>
+                                    </form>
+                                    <form action={declineWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button
+                                        type="submit"
+                                        className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                      >
+                                        Pass
+                                      </button>
+                                    </form>
+                                  </div>
+                                )
+                              ) : (
+                                <form action={leaveEvent}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button
+                                    type="submit"
+                                    className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
+                                  >
+                                    {isWaitlisted ? "Leave Waitlist" : "Leave"}
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
+
+                  {/* Confirmed upcoming lessons */}
+                  {confirmedUpcomingLessons.length > 0 && (
+                    <div>
+                      <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        Upcoming Lessons
+                      </p>
+                      {confirmedUpcomingLessons.map(r => {
+                        const proName = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
+                        return (
+                          <Link
+                            key={r.id}
+                            href="/my-schedule?tab=lessons"
+                            className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Lesson with {proName}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                {r.duration_minutes} min
+                                {r.proposed_starts_at ? ` · ${new Date(r.proposed_starts_at).toLocaleString("en-US", {
+                                  timeZone: clubTimezone, month: "short", day: "numeric",
+                                  hour: "numeric", minute: "2-digit", hour12: true,
+                                })}` : ""}
+                                {r.proposed_court_name ? ` · ${r.proposed_court_name}` : ""}
+                              </p>
+                            </div>
+                            <span className="text-gray-400 dark:text-gray-500 text-sm">›</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+
                 </div>
-              );
-            })}
+              )}
+            </>
+          )}
 
-            {/* ── Lesson requests ────────────────────────────────────── */}
-            {activeLessons.length > 0 && (
-              <div>
-                <p className="px-4 pt-5 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Lesson requests
-                </p>
-                {activeLessons.map(r => {
-                  const proName = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
-                  const statusMap: Record<string, string> = {
-                    pending:   "Awaiting response",
-                    proposed:  "Time proposed — review",
-                    confirmed: "Confirmed",
-                  };
-                  return (
-                    <Link
-                      key={r.id}
-                      href="/lessons"
-                      className="ct-card mx-4 mb-3 px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          Lesson with {proName}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {r.duration_minutes} min
-                          {r.status === "confirmed" && r.proposed_starts_at
-                            ? ` · ${new Date(r.proposed_starts_at).toLocaleString("en-US", {
-                                timeZone: clubTimezone, month: "short", day: "numeric",
-                                hour: "numeric", minute: "2-digit", hour12: true,
-                              })}`
-                            : ""}
-                          {r.status === "confirmed" && r.proposed_court_name
-                            ? ` · ${r.proposed_court_name}`
-                            : ""}
-                          {" · "}{statusMap[r.status] ?? r.status}
-                        </p>
-                      </div>
-                      <span className="text-gray-400 dark:text-gray-500 text-sm">›</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
+          {/* ── Lesson Requests tab ──────────────────────────────────────── */}
+          {tab === "lessons" && (
+            <LessonsClient
+              initialRequests={allLessons}
+              pros={pros}
+              courts={lessonCourts}
+              userId={user.id}
+              clubTimezone={clubTimezone}
+              prosError={prosError}
+              autoOpen={autoOpen && !prosError && pros.length > 0}
+            />
+          )}
 
-            {/* ── Past events — collapsed by default (client component) ── */}
+          {/* ── Past tab ─────────────────────────────────────────────────── */}
+          {tab === "past" && (
             <PastEventsSection
               items={pastItems}
               courtNames={courts ?? []}
               clubTimezone={clubTimezone}
             />
+          )}
 
-          </div>
-        )}
         </div>
       </div>
     </>

@@ -9,6 +9,8 @@ import {
   lessonRequestConfirmedTemplate,
   lessonRequestDeclinedTemplate,
   lessonCancelledTemplate,
+  lessonProviderReassignedTemplate,
+  lessonAdminRequestedTemplate,
 } from "@/lib/email-templates";
 
 // ─── Type shared across pages ─────────────────────────────────────────────────
@@ -50,18 +52,22 @@ type LessonKind =
   | "lesson_request_proposed"
   | "lesson_request_confirmed"
   | "lesson_request_declined"
-  | "lesson_cancelled";
+  | "lesson_cancelled"
+  | "lesson_provider_reassigned"
+  | "lesson_admin_requested";
 
 type TemplateBuilder = (clubName: string) => { subject: string; html: string; text: string };
 
 function buildTemplate(kind: LessonKind, body: string): TemplateBuilder {
   return (clubName) => {
     switch (kind) {
-      case "lesson_request_received":  return lessonRequestReceivedTemplate(clubName, body);
-      case "lesson_request_proposed":  return lessonRequestProposedTemplate(clubName, body);
-      case "lesson_request_confirmed": return lessonRequestConfirmedTemplate(clubName, body);
-      case "lesson_request_declined":  return lessonRequestDeclinedTemplate(clubName, body);
-      case "lesson_cancelled":         return lessonCancelledTemplate(clubName, body);
+      case "lesson_request_received":    return lessonRequestReceivedTemplate(clubName, body);
+      case "lesson_request_proposed":    return lessonRequestProposedTemplate(clubName, body);
+      case "lesson_request_confirmed":   return lessonRequestConfirmedTemplate(clubName, body);
+      case "lesson_request_declined":    return lessonRequestDeclinedTemplate(clubName, body);
+      case "lesson_cancelled":           return lessonCancelledTemplate(clubName, body);
+      case "lesson_provider_reassigned": return lessonProviderReassignedTemplate(clubName, body);
+      case "lesson_admin_requested":     return lessonAdminRequestedTemplate(clubName, body);
     }
   };
 }
@@ -356,6 +362,111 @@ export async function cancelLesson(params: {
   return {};
 }
 
+// ─── getClubProsAction ────────────────────────────────────────────────────────
+
+export interface ClubPro {
+  id:                 string;
+  first_name:         string | null;
+  last_name:          string | null;
+  role:               string;
+  is_lesson_provider: boolean;
+}
+
+export async function getClubProsAction(): Promise<{ pros?: ClubPro[]; error?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_club_pros");
+  if (error) return { error: "Failed to load pros." };
+  return { pros: (data ?? []) as ClubPro[] };
+}
+
+// ─── reassignLessonProviderAction ─────────────────────────────────────────────
+
+export async function reassignLessonProviderAction(
+  requestId: string,
+  newProId:  string,
+  memberId:  string,
+  oldProId:  string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("reassign_lesson_provider", {
+    p_request_id: requestId,
+    p_new_pro_id: newProId,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const resultId = (data as { id?: string } | null)?.id ?? requestId;
+
+  // Notify new provider
+  try {
+    await dispatchLessonEmail(newProId, "lesson_request_received", resultId);
+  } catch { /* non-blocking */ }
+
+  // Notify old provider — always (both pending and proposed had visibility)
+  try {
+    await dispatchLessonEmail(oldProId, "lesson_provider_reassigned", resultId);
+  } catch { /* non-blocking */ }
+
+  // Notify member
+  try {
+    await dispatchLessonEmail(memberId, "lesson_provider_reassigned", resultId);
+  } catch { /* non-blocking */ }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
+// ─── adminCreateLessonRequestAction ───────────────────────────────────────────
+
+export interface AdminCreateLessonParams {
+  memberId:         string;
+  proId:            string;
+  durationMinutes:  number;
+  lessonTypeId?:    string | null;
+  preferredCourtId?: string | null;
+  memberNote?:      string | null;
+  preferredWindows?: Record<string, unknown> | null;
+}
+
+export async function adminCreateLessonRequestAction(
+  params: AdminCreateLessonParams,
+): Promise<{ requestId?: string; error?: string }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("admin_create_lesson_request", {
+    p_member_id:          params.memberId,
+    p_pro_id:             params.proId,
+    p_duration_minutes:   params.durationMinutes,
+    p_lesson_type_id:     params.lessonTypeId    ?? null,
+    p_preferred_court_id: params.preferredCourtId ?? null,
+    p_member_note:        params.memberNote       ?? null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    p_preferred_windows:  (params.preferredWindows ?? null) as any,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const requestId = (data as { id?: string } | null)?.id;
+
+  if (requestId) {
+    // Notify pro
+    try {
+      await dispatchLessonEmail(params.proId, "lesson_request_received", requestId);
+    } catch { /* non-blocking */ }
+    // Notify member
+    try {
+      await dispatchLessonEmail(params.memberId, "lesson_admin_requested", requestId);
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  revalidatePath(`/admin/members/${params.memberId}`);
+  return { requestId };
+}
+
 // ─── Error mapper ─────────────────────────────────────────────────────────────
 
 function mapLessonError(msg: string): string {
@@ -416,6 +527,11 @@ function mapLessonError(msg: string): string {
     invalid_time_range:             "End time must be after start time.",
     window_not_found:               "Availability window not found.",
     blackout_not_found:             "Blackout date not found.",
+    // Phase 24B
+    invalid_status_for_reassign:    "Only pending or proposed requests can be reassigned.",
+    same_pro:                       "The request is already assigned to this pro.",
+    cannot_assign_to_self:          "Cannot assign the lesson to the member themselves.",
+    member_not_found:               "Member not found.",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

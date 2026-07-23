@@ -71,7 +71,7 @@ export default function LessonsClient({
   // not reopen the sheet after the user has submitted or dismissed it.
   useEffect(() => {
     if (autoOpen) {
-      router.replace("/lessons", { scroll: false });
+      router.replace("/my-schedule?tab=lessons", { scroll: false });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -142,7 +142,7 @@ export default function LessonsClient({
       {prosError && (
         <div className="ct-card mx-0 mb-3 px-4 py-3 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20">
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
-            Unable to load lesson providers
+            Unable to load Pros
           </p>
           <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
             Please refresh the page to try again.
@@ -169,7 +169,7 @@ export default function LessonsClient({
             </button>
           ) : (
             <p className="text-xs text-gray-400 dark:text-gray-500 max-w-xs">
-              Lesson requests are not available yet because your club has not configured an active lesson provider.
+              Lesson requests are not available yet because your club has no active Pro available.
             </p>
           )}
         </div>

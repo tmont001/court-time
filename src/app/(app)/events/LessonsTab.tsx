@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import LessonProSheet from "./LessonProSheet";
-import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
+import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
 
 interface Court {
   id:   string;
@@ -16,6 +16,8 @@ interface Props {
   userId:          string;
   userRole:        string;
   clubTimezone:    string;
+  pros?:           ClubPro[];
+  onCreateRequest?: () => void;
 }
 
 type StatusFilter = "active" | "all";
@@ -46,10 +48,11 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
-export default function LessonsTab({ initialRequests, courts, userId, userRole, clubTimezone }: Props) {
-  const router                  = useRouter();
-  const [filter, setFilter]     = useState<StatusFilter>("active");
-  const [selected, setSelected] = useState<ProLessonRequestRow | null>(null);
+export default function LessonsTab({ initialRequests, courts, userId, userRole, clubTimezone, pros, onCreateRequest }: Props) {
+  const router                    = useRouter();
+  const [filter, setFilter]       = useState<StatusFilter>("active");
+  const [selected, setSelected]   = useState<ProLessonRequestRow | null>(null);
+  const [proposeMode, setProposeMode] = useState(false);
   const [proFilter, setProFilter] = useState<string>("");
 
   // Use props directly — router.refresh() causes RSC to pass fresh props
@@ -69,8 +72,24 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
 
   const visible = filtered;
 
+  const canPropose = (r: ProLessonRequestRow) =>
+    r.status === "pending" &&
+    (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
+
   return (
     <div className="px-4 pb-8 pt-2">
+      {/* Admin: create request button */}
+      {userRole === "admin" && onCreateRequest && (
+        <div className="mb-3">
+          <button
+            onClick={onCreateRequest}
+            className="w-full py-2.5 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+          >
+            + Create Lesson Request
+          </button>
+        </div>
+      )}
+
       {/* Filter row */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="flex p-1 gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg">
@@ -124,10 +143,13 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
         const isActive   = ACTIVE_STATUSES.includes(r.status);
 
         return (
-          <button
+          <div
             key={r.id}
-            onClick={() => setSelected(r)}
-            className="ct-card mx-0 mb-3 px-4 py-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 motion-safe:transition-colors motion-safe:duration-100"
+            role="button"
+            tabIndex={0}
+            onClick={() => { setSelected(r); setProposeMode(false); }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setSelected(r); setProposeMode(false); } }}
+            className="ct-card mx-0 mb-3 px-4 py-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 motion-safe:transition-colors motion-safe:duration-100 cursor-pointer"
           >
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{memberName}</span>
@@ -160,7 +182,21 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
                 })}
               </p>
             )}
-          </button>
+
+            {canPropose(r) && (
+              <div
+                className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50"
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => { setSelected(r); setProposeMode(true); }}
+                  className="w-full md:w-auto text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-100"
+                >
+                  Propose a Time
+                </button>
+              </div>
+            )}
+          </div>
         );
       })}
 
@@ -171,7 +207,10 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
           courts={courts}
           userId={userId}
           clubTimezone={clubTimezone}
-          onClose={() => { setSelected(null); router.refresh(); }}
+          userRole={userRole}
+          pros={pros}
+          initialMode={proposeMode ? "propose" : undefined}
+          onClose={() => { setSelected(null); setProposeMode(false); router.refresh(); }}
         />
       )}
     </div>

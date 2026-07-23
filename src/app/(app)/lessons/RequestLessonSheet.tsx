@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { submitLessonRequest } from "./actions";
 
 interface Pro {
@@ -70,25 +70,24 @@ export default function RequestLessonSheet({ pros, courts, onClose, onDone }: Pr
   }
 
   return (
-    <BottomSheet onClose={onClose} className="px-4 pb-8">
+    <ResponsiveSheet onClose={onClose} variant="modal">
+      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        {step !== "pro" ? (
+      <div className="relative flex items-center justify-center mb-4">
+        {step !== "pro" && (
           <button
             onClick={handleBack}
-            className="text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:outline-none"
           >
             ← Back
           </button>
-        ) : (
-          <div />
         )}
         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
           Request a Lesson
         </h2>
         <button
           onClick={onClose}
-          className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+          className="absolute right-0 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 md:hidden"
           aria-label="Close"
         >
           ✕
@@ -259,6 +258,7 @@ export default function RequestLessonSheet({ pros, courts, onClose, onDone }: Pr
           </button>
         </div>
       )}
-    </BottomSheet>
+      </div>
+    </ResponsiveSheet>
   );
 }

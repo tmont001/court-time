@@ -641,7 +641,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -751,7 +751,7 @@ export type Database = {
           id?:         string;
           user_id:     string;
           club_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "event_joined" | "event_cancelled" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           enabled?:    boolean;
           updated_at?: string;
         };
@@ -990,6 +990,65 @@ export type Database = {
           }
         ];
       };
+      // Phase 24A
+      member_notes: {
+        Row: {
+          id:                   string;
+          club_id:              string;
+          member_id:            string;
+          author_id:            string;
+          author_name_snapshot: string;
+          content:              string;
+          created_at:           string;
+          updated_at:           string;
+          archived_at:          string | null;
+        };
+        Insert: {
+          id?:                   string;
+          club_id:               string;
+          member_id:             string;
+          author_id:             string;
+          author_name_snapshot:  string;
+          content:               string;
+          created_at?:           string;
+          updated_at?:           string;
+          archived_at?:          string | null;
+        };
+        Update: {
+          id?:                   string;
+          club_id?:              string;
+          member_id?:            string;
+          author_id?:            string;
+          author_name_snapshot?: string;
+          content?:              string;
+          created_at?:           string;
+          updated_at?:           string;
+          archived_at?:          string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "member_notes_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "member_notes_member_id_fkey";
+            columns: ["member_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "member_notes_author_id_fkey";
+            columns: ["author_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -1171,15 +1230,14 @@ export type Database = {
       get_members: {
         Args: Record<string, never>;
         Returns: {
-          id: string;
+          id:         string;
           first_name: string | null;
-          last_name: string | null;
-          phone: string | null;
-          role: string;
-          status: string;
+          last_name:  string | null;
+          phone:      string | null;
+          role:       string;
+          status:     string;
           created_at: string;
-          email: string | null;
-          admin_notes: string | null;
+          email:      string | null;
         }[];
       };
       update_club_settings: {
@@ -1540,7 +1598,6 @@ export type Database = {
         };
         Returns: { roster_member_id: string; code: string };
       };
-      // Phase 23: lesson request RPCs
       get_club_pros: {
         Args: Record<string, never>;
         Returns: {
@@ -1550,6 +1607,166 @@ export type Database = {
           role:               string;
           is_lesson_provider: boolean;
         }[];
+      };
+      // Phase 24A: member CRM RPCs
+      add_member_note: {
+        Args: { p_member_id: string; p_content: string };
+        Returns: {
+          id:                   string;
+          club_id:              string;
+          member_id:            string;
+          author_id:            string;
+          author_name_snapshot: string;
+          content:              string;
+          created_at:           string;
+          updated_at:           string;
+          archived_at:          string | null;
+        };
+      };
+      update_member_note: {
+        Args: { p_note_id: string; p_content: string };
+        Returns: undefined;
+      };
+      archive_member_note: {
+        Args: { p_note_id: string };
+        Returns: undefined;
+      };
+      get_member_notes: {
+        Args: { p_member_id: string };
+        Returns: {
+          id:                   string;
+          member_id:            string;
+          author_id:            string;
+          author_name_snapshot: string;
+          content:              string;
+          created_at:           string;
+          updated_at:           string;
+          archived_at:          string | null;
+        }[];
+      };
+      get_admin_member_detail: {
+        Args: { p_member_id: string };
+        Returns: {
+          id:                          string;
+          first_name:                  string | null;
+          last_name:                   string | null;
+          phone:                       string | null;
+          role:                        string;
+          status:                      string;
+          created_at:                  string;
+          email:                       string | null;
+          attended_event_count:        number;
+          event_no_show_count:         number;
+          completed_lesson_count:      number;
+          member_lesson_no_show_count: number;
+        }[];
+      };
+      get_member_upcoming_activity: {
+        Args: { p_member_id: string };
+        Returns: {
+          activity_id:         string;
+          activity_type:       string;
+          sort_ts:             string;
+          status:              string;
+          title:               string | null;
+          starts_at:           string | null;
+          ends_at:             string | null;
+          court_name:          string | null;
+          pro_first_name:      string | null;
+          pro_last_name:       string | null;
+          duration_minutes:    number | null;
+          proposed_starts_at:  string | null;
+          proposed_ends_at:    string | null;
+          proposed_court_name: string | null;
+        }[];
+      };
+      get_member_activity_history: {
+        Args: {
+          p_member_id:   string;
+          p_cursor_ts?:  string | null;
+          p_cursor_type?: string | null;
+          p_cursor_id?:  string | null;
+          p_limit?:      number;
+        };
+        Returns: {
+          activity_id:       string;
+          activity_type:     string;
+          sort_ts:           string;
+          status:            string;
+          starts_at:         string | null;
+          ends_at:           string | null;
+          title:             string | null;
+          attendance_status: string | null;
+          pro_first_name:    string | null;
+          pro_last_name:     string | null;
+          duration_minutes:  number | null;
+          lesson_outcome:    string | null;
+        }[];
+      };
+      // Phase 24B: admin lesson ops
+      reassign_lesson_provider: {
+        Args: { p_request_id: string; p_new_pro_id: string };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string;
+          pro_id:                string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+      };
+      admin_create_lesson_request: {
+        Args: {
+          p_member_id:          string;
+          p_pro_id:             string;
+          p_duration_minutes:   number;
+          p_lesson_type_id?:    string | null;
+          p_preferred_court_id?: string | null;
+          p_member_note?:       string | null;
+          p_preferred_windows?: Json | null;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string;
+          pro_id:                string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
       };
       get_lesson_notification_id: {
         Args: { p_request_id: string; p_user_id: string; p_kind: string };

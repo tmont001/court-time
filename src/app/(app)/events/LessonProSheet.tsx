@@ -2,13 +2,15 @@
 
 import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import {
   proposeLessonTime,
   declineLessonRequest,
   cancelLesson,
+  reassignLessonProviderAction,
   type ProLessonRequestRow,
+  type ClubPro,
 } from "@/app/(app)/lessons/actions";
 
 interface Court {
@@ -21,10 +23,13 @@ interface Props {
   courts:       Court[];
   userId:       string;
   clubTimezone: string;
+  userRole?:    string;
+  pros?:        ClubPro[];
+  initialMode?: "propose";
   onClose:      () => void;
 }
 
-type ActionMode = "propose" | "decline" | "cancel" | null;
+type ActionMode = "propose" | "decline" | "cancel" | "reassign" | null;
 
 const TIME_SLOTS = (() => {
   const slots: { hour: number; minute: number; label: string }[] = [];
@@ -231,15 +236,16 @@ function ReasonForm({
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function LessonProSheet({ request, courts, userId, clubTimezone, onClose }: Props) {
+export default function LessonProSheet({ request, courts, userId, clubTimezone, userRole, pros, initialMode, onClose }: Props) {
   const router                    = useRouter();
-  const [mode, setMode]           = useState<ActionMode>(null);
+  const [mode, setMode]           = useState<ActionMode>(initialMode ?? null);
   const [dateStr, setDateStr]     = useState<string>(() =>
     new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })
   );
   const [slotIdx, setSlotIdx]     = useState(8); // default 9:00 AM (index 8 = 5:00+4*2)
   const [courtId, setCourtId]     = useState<string>(courts[0]?.id ?? "");
   const [reason, setReason]       = useState("");
+  const [newProId, setNewProId]   = useState<string>("");
   const [error, setError]         = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -274,10 +280,11 @@ export default function LessonProSheet({ request, courts, userId, clubTimezone, 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <BottomSheet onClose={onClose} className="px-4 pb-8">
-      <div className="flex items-center justify-between mb-4">
+    <ResponsiveSheet onClose={onClose} variant="modal">
+      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
+      <div className="relative flex items-center justify-center mb-4">
         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Lesson Request</h2>
-        <button onClick={onClose} className="text-sm text-gray-400" aria-label="Close">✕</button>
+        <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
       </div>
 
       {/* Request summary */}
@@ -434,10 +441,67 @@ export default function LessonProSheet({ request, courts, userId, clubTimezone, 
         />
       )}
 
+      {mode === "reassign" && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Assign this request to a different pro. If proposed, the proposal will be cleared.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              New Pro
+            </label>
+            <select
+              value={newProId}
+              onChange={e => setNewProId(e.target.value)}
+              className="w-full ct-input text-sm"
+            >
+              <option value="">Select a pro…</option>
+              {(pros ?? [])
+                .filter(p => p.id !== request.pro_id)
+                .map(p => (
+                  <option key={p.id} value={p.id}>
+                    {[p.first_name, p.last_name].filter(Boolean).join(" ") || "Pro"}
+                  </option>
+                ))}
+            </select>
+          </div>
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          <button
+            onClick={() => doAction(() => reassignLessonProviderAction(
+              request.id,
+              newProId,
+              request.member_id,
+              request.pro_id,
+            ))}
+            disabled={isPending || !newProId}
+            className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
+          >
+            {isPending ? "Saving…" : "Reassign Pro"}
+</button>
+          <button
+            onClick={() => { setMode(null); setNewProId(""); setError(""); }}
+            className="w-full py-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-150"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* ── Default action buttons ─────────────────────────────────────────── */}
 
       {mode === null && (
         <div className="space-y-2">
+          {/* Admin: reassign provider on pending/proposed */}
+          {userRole === "admin" && (pros?.length ?? 0) > 0 &&
+            (request.status === "pending" || request.status === "proposed") && (
+            <button
+              onClick={() => { setNewProId(""); setError(""); setMode("reassign"); }}
+              className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700/40 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+            >
+              Reassign Pro
+            </button>
+          )}
+
           {/* Pending: propose a time or decline */}
           {request.status === "pending" && (
             <>
@@ -477,6 +541,7 @@ export default function LessonProSheet({ request, courts, userId, clubTimezone, 
           )}
         </div>
       )}
-    </BottomSheet>
+      </div>
+    </ResponsiveSheet>
   );
 }
