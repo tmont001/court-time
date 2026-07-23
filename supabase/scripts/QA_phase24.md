@@ -393,6 +393,96 @@ Migrations 0075–0078. Apply migrations before testing.
 
 ---
 
+## Phase 24E — Member Directory Search & Filtering
+
+### 24E-1: Name search
+
+- [ ] Sign in as admin, open /admin/members
+- [ ] Type a first name in the search field → only matching members shown immediately
+- [ ] Type a last name → same
+- [ ] Type "Jane S" (partial combined name) → matches "Jane Smith" but not "Jane Doe"
+- [ ] Search is case-insensitive ("SMITH" matches "Smith")
+- [ ] Leading/trailing spaces are ignored
+- [ ] Clear (✕) button appears when text is present; clicking it resets results
+
+### 24E-2: Email search
+
+- [ ] Type part of an email address → matching members shown; non-matching hidden
+- [ ] Works for profile-backed members (email from profiles table)
+
+### 24E-3: Phone search
+
+- [ ] Type a partial phone number → matches members with that sequence in their phone field
+- [ ] Members with no phone are not shown when phone query has no other matches
+
+### 24E-4: Roster-only member search
+
+- [ ] A roster-only member (No account) appears in search results when name/email/phone match
+- [ ] Roster member is hidden when search query does not match any of their fields
+
+### 24E-5: Role filter
+
+- [ ] Select "Member" → only profile-backed members with role=member and roster members
+      with role=member shown
+- [ ] Select "Pro" → only pros shown
+- [ ] Select "Admin" → only admins shown
+- [ ] Select "All roles" → all members shown
+
+### 24E-6: Status filter — Active
+
+- [ ] Select "Active" → only profile members with status=active shown
+- [ ] Roster-only members are hidden under Active filter
+
+### 24E-7: Status filter — Inactive
+
+- [ ] Select "Inactive" → only profile members with status=inactive (or suspended) shown
+- [ ] Roster-only members are hidden under Inactive filter
+
+### 24E-8: Status filter — No account
+
+- [ ] Select "No account" → only roster-only members shown; all profile members hidden
+
+### 24E-9: Combined search + filters
+
+- [ ] Enter a name and select a role → both conditions applied simultaneously
+- [ ] Enter a name, select a role, and select a status → all three applied
+- [ ] Match count row shows "X of Y members" when any filter is active
+
+### 24E-10: Sorting filtered results
+
+- [ ] With an active search, click a sort chip (Last Name, Role, Status) → results re-sort
+      while preserving the search filter
+- [ ] Sort direction toggle (↑ / ↓) works on filtered results
+
+### 24E-11: Clear filters
+
+- [ ] "Clear filters" in the match count row clears search + role + status simultaneously
+- [ ] "Clear filters" in the no-results empty state does the same
+- [ ] After clearing, full member list is shown
+
+### 24E-12: No-results empty state
+
+- [ ] With a query that matches nothing, "No members match your search or filters." is shown
+- [ ] A "Clear filters" link is visible in the empty state
+- [ ] The existing "No members yet." empty state still appears when the club has no members
+
+### 24E-13: Mobile layout
+
+- [ ] Search field is full-width on mobile
+- [ ] Role and status selects appear side-by-side below the search field (no overflow)
+- [ ] Sort chips scroll horizontally as before
+- [ ] Match count row and Clear filters link are readable and tappable on small screens
+
+### 24E-14: Existing member actions regression
+
+- [ ] Role change dropdown still works on profile members
+- [ ] Activate / Deactivate button still works (confirmation dialog shown)
+- [ ] View link navigates to /admin/members/{id}
+- [ ] Roster member Edit / Remove / Send Invite buttons still work
+- [ ] Pending Invites section is unaffected by search/filter state
+
+---
+
 ## Regression
 
 - [ ] Member can submit lesson requests via Bookings → Lesson Requests tab (submit_lesson_request RPC)

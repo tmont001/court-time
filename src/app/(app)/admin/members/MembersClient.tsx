@@ -156,6 +156,11 @@ export default function MembersClient({
   const [sortField, setSortField] = useState<SortField>("first_name");
   const [sortDir,   setSortDir]   = useState<SortDir>("asc");
 
+  // Search and filters
+  const [search,       setSearch]       = useState("");
+  const [roleFilter,   setRoleFilter]   = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
   // Role change
   const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
   const [roleErrors, setRoleErrors]         = useState<Record<string, string>>({});
@@ -174,41 +179,77 @@ export default function MembersClient({
 
   const totalCount = members.length + rosterMembers.length;
 
-  // Unified sorted list
-  const sortedItems = useMemo(() => {
-    const items: ListItem[] = [
+  const hasFilters = search.trim() !== "" || roleFilter !== "" || statusFilter !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setRoleFilter("");
+    setStatusFilter("");
+  }
+
+  // Unified list: filter then sort
+  const filteredSortedItems = useMemo(() => {
+    // 1. Build unified list
+    let items: ListItem[] = [
       ...members.map((m): ListItem => ({ kind: "profile", data: m })),
       ...rosterMembers.map((r): ListItem => ({ kind: "roster", data: r })),
     ];
+
+    // 2. Apply search
+    const q = search.trim().toLowerCase();
+    if (q) {
+      items = items.filter(item => {
+        const first = (item.data.first_name ?? "").toLowerCase();
+        const last  = (item.data.last_name  ?? "").toLowerCase();
+        const full  = `${first} ${last}`.trim();
+        const email = (item.data.email ?? "").toLowerCase();
+        const phone = (item.data.phone ?? "").toLowerCase();
+        return (
+          first.includes(q) || last.includes(q) || full.includes(q) ||
+          email.includes(q) || phone.includes(q)
+        );
+      });
+    }
+
+    // 3. Apply role filter
+    if (roleFilter) {
+      items = items.filter(item => item.data.role === roleFilter);
+    }
+
+    // 4. Apply status filter
+    if (statusFilter) {
+      items = items.filter(item => {
+        if (statusFilter === "no_account") return item.kind === "roster";
+        if (item.kind === "roster")        return false;
+        if (statusFilter === "active")     return item.data.status === "active";
+        if (statusFilter === "inactive")   return item.data.status !== "active";
+        return true;
+      });
+    }
+
+    // 5. Sort
     items.sort((a, b) => {
       let result = 0;
-      const aFirst = a.data.first_name;
-      const bFirst = b.data.first_name;
-      const aLast  = a.data.last_name;
-      const bLast  = b.data.last_name;
-      const aRole  = a.data.role;
-      const bRole  = b.data.role;
+      const aFirst  = a.data.first_name;
+      const bFirst  = b.data.first_name;
+      const aLast   = a.data.last_name;
+      const bLast   = b.data.last_name;
+      const aRole   = a.data.role;
+      const bRole   = b.data.role;
       const aStatus = a.kind === "profile" ? a.data.status : "no_account";
       const bStatus = b.kind === "profile" ? b.data.status : "no_account";
 
       switch (sortField) {
-        case "first_name":
-          result = cmp(aFirst, bFirst);
-          break;
-        case "last_name":
-          result = cmp(aLast, bLast);
-          break;
-        case "role":
-          result = (ROLE_ORDER[aRole] ?? 99) - (ROLE_ORDER[bRole] ?? 99);
-          break;
-        case "status":
-          result = (STATUS_ORDER[aStatus] ?? 99) - (STATUS_ORDER[bStatus] ?? 99);
-          break;
+        case "first_name": result = cmp(aFirst, bFirst); break;
+        case "last_name":  result = cmp(aLast,  bLast);  break;
+        case "role":       result = (ROLE_ORDER[aRole]     ?? 99) - (ROLE_ORDER[bRole]     ?? 99); break;
+        case "status":     result = (STATUS_ORDER[aStatus] ?? 99) - (STATUS_ORDER[bStatus] ?? 99); break;
       }
       return sortDir === "asc" ? result : -result;
     });
+
     return items;
-  }, [members, rosterMembers, sortField, sortDir]);
+  }, [members, rosterMembers, search, roleFilter, statusFilter, sortField, sortDir]);
 
   function handleSortChip(field: SortField) {
     if (field === sortField) {
@@ -401,9 +442,58 @@ export default function MembersClient({
 
       </div>
 
+      {/* Search + filter controls */}
+      {!membersError && totalCount > 0 && (
+        <div className="mx-4 mb-3 space-y-2">
+          <div className="relative">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search members by name, email, or phone"
+              aria-label="Search members"
+              className="ct-input w-full pr-8 text-sm"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={roleFilter}
+              onChange={e => setRoleFilter(e.target.value)}
+              aria-label="Filter by role"
+              className="ct-input text-sm flex-1 min-w-0"
+            >
+              <option value="">All roles</option>
+              <option value="member">Member</option>
+              <option value="pro">Pro</option>
+              <option value="admin">Admin</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              aria-label="Filter by status"
+              className="ct-input text-sm flex-1 min-w-0"
+            >
+              <option value="">All statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="no_account">No account</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Sort controls */}
       {!membersError && totalCount > 1 && (
-        <div className="mx-4 mb-3 flex gap-1.5 overflow-x-auto hide-scrollbar">
+        <div className="mx-4 mb-2 flex gap-1.5 overflow-x-auto hide-scrollbar">
           {SORT_OPTIONS.map(({ field, label }) => {
             const isActive = sortField === field;
             const arrow = isActive ? (sortDir === "asc" ? " ↑" : " ↓") : "";
@@ -424,6 +514,21 @@ export default function MembersClient({
         </div>
       )}
 
+      {/* Match count + clear */}
+      {!membersError && hasFilters && totalCount > 0 && (
+        <div className="mx-4 mb-3 flex items-center justify-between">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {filteredSortedItems.length} of {totalCount} member{totalCount !== 1 ? "s" : ""}
+          </p>
+          <button
+            onClick={clearFilters}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
       {/* Member list */}
       {membersError ? (
         <div className="mx-4 mt-2 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
@@ -437,9 +542,21 @@ export default function MembersClient({
             Tap <strong>Add Member</strong> to add someone to the roster.
           </p>
         </div>
+      ) : filteredSortedItems.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 mx-4">
+          <p className="text-gray-400 dark:text-gray-500 text-sm text-center">
+            No members match your search or filters.
+          </p>
+          <button
+            onClick={clearFilters}
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Clear filters
+          </button>
+        </div>
       ) : (
         <div className="pb-2">
-          {sortedItems.map((item) =>
+          {filteredSortedItems.map((item) =>
             item.kind === "profile" ? (
               <ProfileCard
                 key={`p-${item.data.id}`}
