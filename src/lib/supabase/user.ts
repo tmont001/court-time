@@ -22,13 +22,14 @@ export const getAuthUser = cache(async () => {
 //   id, club_id, role  — AppLayout, AdminLayout, every admin page
 //   status             — invite guard in AppLayout
 //   first_name, last_name, phone — ProfilePage, ProfileEditForm
+//   is_lesson_provider — ProfilePage Lesson Pro indicator (Phase 25B+)
 export const getAuthProfile = cache(async () => {
   const user = await getAuthUser();
   if (!user) return null;
   const supabase = await createClient();
   const { data: profile } = await supabase
     .from("profiles")
-    .select("id, club_id, role, status, first_name, last_name, phone")
+    .select("id, club_id, role, status, first_name, last_name, phone, is_lesson_provider")
     .eq("id", user.id)
     .single();
   return profile;

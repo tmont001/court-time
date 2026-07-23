@@ -97,6 +97,7 @@ export type Database = {
           phone: string | null;
           role: "member" | "pro" | "admin";
           status: "active" | "inactive" | "suspended";
+          is_lesson_provider: boolean;
           sms_opt_in: boolean;
           sms_opted_in_at: string | null;
           sms_opted_in_ip: string | null;
@@ -112,6 +113,7 @@ export type Database = {
           phone?: string | null;
           role?: "member" | "pro" | "admin";
           status?: "active" | "inactive" | "suspended";
+          is_lesson_provider?: boolean;
           sms_opt_in?: boolean;
           sms_opted_in_at?: string | null;
           sms_opted_in_ip?: string | null;
@@ -127,6 +129,7 @@ export type Database = {
           phone?: string | null;
           role?: "member" | "pro" | "admin";
           status?: "active" | "inactive" | "suspended";
+          is_lesson_provider?: boolean;
           sms_opt_in?: boolean;
           sms_opted_in_at?: string | null;
           sms_opted_in_ip?: string | null;
