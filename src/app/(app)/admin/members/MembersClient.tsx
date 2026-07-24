@@ -66,14 +66,15 @@ function formatExpiry(iso: string): string {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type Member = {
-  id:         string;
-  first_name: string | null;
-  last_name:  string | null;
-  phone:      string | null;
-  role:       string;
-  status:     string;
-  created_at: string;
-  email:      string | null;
+  id:                 string;
+  first_name:         string | null;
+  last_name:          string | null;
+  phone:              string | null;
+  role:               string;
+  status:             string;
+  created_at:         string;
+  email:              string | null;
+  is_lesson_provider: boolean;
 };
 
 export type RosterMember = {
@@ -936,6 +937,11 @@ function ProfileCard({
             <p className="text-xs text-gray-400 dark:text-gray-500">
               Last admin — cannot change.
             </p>
+          )}
+          {m.is_lesson_provider && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent w-fit">
+              Lesson Pro
+            </span>
           )}
         </div>
 

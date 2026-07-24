@@ -9,6 +9,7 @@ import {
   loadMoreMemberHistoryAction,
   markAttendanceFromDetailAction,
   recordLessonOutcomeFromDetailAction,
+  setLessonProviderStatusAction,
   type AddedNote,
   type HistoryItem,
 } from "./actions";
@@ -25,6 +26,7 @@ export interface MemberDetail {
   status:                      string;
   created_at:                  string;
   email:                       string | null;
+  is_lesson_provider:          boolean;
   attended_event_count:        number;
   event_no_show_count:         number;
   completed_lesson_count:      number;
@@ -186,6 +188,12 @@ export default function MemberDetailClient({
   const [noteOpLoading, setNoteOpLoading] = useState<string | null>(null);
   const [noteOpError, setNoteOpError]     = useState<Record<string, string>>({});
 
+  // Lesson Pro designation state (admin-role targets only)
+  const [lessonProviderStatus, setLessonProviderStatus] =
+    useState<boolean>(member.is_lesson_provider);
+  const [lessonProviderLoading, setLessonProviderLoading] = useState(false);
+  const [lessonProviderError,  setLessonProviderError]  = useState("");
+
   const [, startTransition] = useTransition();
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
@@ -299,6 +307,22 @@ export default function MemberDetailClient({
     });
   }
 
+  // ── Lesson Pro designation ───────────────────────────────────────────────────
+
+  function handleLessonProviderToggle(enabled: boolean) {
+    setLessonProviderLoading(true);
+    setLessonProviderError("");
+    startTransition(async () => {
+      const res = await setLessonProviderStatusAction(member.id, enabled);
+      setLessonProviderLoading(false);
+      if (res.error) {
+        setLessonProviderError(res.error);
+        return;
+      }
+      setLessonProviderStatus(enabled);
+    });
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -316,6 +340,61 @@ export default function MemberDetailClient({
               {" · Joined "}
               {fmtDate(member.created_at, clubTimezone)}
             </p>
+
+            {/* Lesson Pro designation — contextual per role */}
+            {member.role === "member" && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Lesson Pro: Not eligible (Member role)
+              </p>
+            )}
+            {member.role === "pro" && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Lesson Pro: Enabled automatically (Pro role)
+              </p>
+            )}
+            {member.role === "admin" && (
+              <div className="mt-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {lessonProviderStatus ? (
+                    <>
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent">
+                        Lesson Pro
+                      </span>
+                      <button
+                        disabled={lessonProviderLoading}
+                        onClick={() => handleLessonProviderToggle(false)}
+                        className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50 motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+                        aria-label="Remove Lesson Pro designation"
+                      >
+                        {lessonProviderLoading ? "Saving…" : "Remove"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      disabled={lessonProviderLoading}
+                      onClick={() => handleLessonProviderToggle(true)}
+                      className="inline-flex items-center px-2.5 py-1 rounded-lg border border-accent text-accent text-xs font-medium hover:bg-accent/10 disabled:opacity-50 motion-safe:transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      aria-label="Enable Lesson Pro designation"
+                    >
+                      {lessonProviderLoading ? "Saving…" : "Enable Lesson Pro"}
+                    </button>
+                  )}
+                </div>
+                {lessonProviderError && (
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-1" role="alert">
+                    {lessonProviderError}
+                  </p>
+                )}
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  Enables this admin to receive and manage lesson assignments.
+                </p>
+                {member.status !== "active" && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                    This member&apos;s status is {member.status.charAt(0).toUpperCase() + member.status.slice(1)} — they won&apos;t appear in provider selectors until their membership is Active.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           {statusBadge(member.status)}
         </div>

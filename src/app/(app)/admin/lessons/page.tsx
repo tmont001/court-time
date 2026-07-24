@@ -35,7 +35,7 @@ export default async function AdminLessonsPage() {
   const [prosResult, membersResult, lessonTypesResult] =
     profile.role === "admin" && clubId
       ? await Promise.all([
-          supabase.rpc("get_club_pros"),
+          supabase.rpc("get_admin_club_pros"),
           supabase.rpc("get_members"),
           supabase.rpc("get_lesson_types"),
         ])

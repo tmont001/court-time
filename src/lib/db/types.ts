@@ -1233,15 +1233,20 @@ export type Database = {
       get_members: {
         Args: Record<string, never>;
         Returns: {
-          id:         string;
-          first_name: string | null;
-          last_name:  string | null;
-          phone:      string | null;
-          role:       string;
-          status:     string;
-          created_at: string;
-          email:      string | null;
+          id:                 string;
+          first_name:         string | null;
+          last_name:          string | null;
+          phone:              string | null;
+          role:               string;
+          status:             string;
+          created_at:         string;
+          email:              string | null;
+          is_lesson_provider: boolean;
         }[];
+      };
+      set_lesson_provider_status: {
+        Args: { p_target_user_id: string; p_enabled: boolean };
+        Returns: undefined;
       };
       update_club_settings: {
         Args: {
@@ -1611,6 +1616,17 @@ export type Database = {
           is_lesson_provider: boolean;
         }[];
       };
+      // Phase 25C: admin-only provider list — includes calling admin when eligible
+      get_admin_club_pros: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                 string;
+          first_name:         string | null;
+          last_name:          string | null;
+          role:               string;
+          is_lesson_provider: boolean;
+        }[];
+      };
       // Phase 24A: member CRM RPCs
       add_member_note: {
         Args: { p_member_id: string; p_content: string };
@@ -1658,6 +1674,7 @@ export type Database = {
           status:                      string;
           created_at:                  string;
           email:                       string | null;
+          is_lesson_provider:          boolean;
           attended_event_count:        number;
           event_no_show_count:         number;
           completed_lesson_count:      number;

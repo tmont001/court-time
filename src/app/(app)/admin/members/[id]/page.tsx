@@ -34,7 +34,7 @@ export default async function MemberDetailPage({ params }: Props) {
       clubId
         ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
         : Promise.resolve({ data: null }),
-      supabase.rpc("get_club_pros"),
+      supabase.rpc("get_admin_club_pros"),
       clubId
         ? supabase
             .from("courts")

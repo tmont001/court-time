@@ -175,3 +175,35 @@ function mapOutcomeError(msg: string): string {
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }
+
+// ─── setLessonProviderStatusAction ───────────────────────────────────────────
+
+export async function setLessonProviderStatusAction(
+  targetUserId: string,
+  enabled:      boolean,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_lesson_provider_status", {
+    p_target_user_id: targetUserId,
+    p_enabled:        enabled,
+  });
+
+  if (error) return { error: mapLessonProviderError(error.message) };
+
+  revalidatePath("/admin/members");
+  revalidatePath(`/admin/members/${targetUserId}`);
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
+function mapLessonProviderError(msg: string): string {
+  const map: Record<string, string> = {
+    not_authenticated:     "Please sign in to continue.",
+    insufficient_role:     "Admin access required.",
+    inactive_actor:        "Your account must be Active to make this change.",
+    no_club:               "Your account is not assigned to a club.",
+    user_not_found:        "Member not found in your club.",
+    target_not_admin_role: "Lesson Pro designation can only be set for Admin-role members.",
+  };
+  return map[msg] ?? "Something went wrong. Please try again.";
+}
