@@ -168,9 +168,10 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 interface Props {
   userRole?: string;
+  clubName?: string;
 }
 
-export default function SideNav({ userRole = "member" }: Props) {
+export default function SideNav({ userRole = "member", clubName }: Props) {
   const pathname = usePathname();
 
   return (
@@ -179,8 +180,16 @@ export default function SideNav({ userRole = "member" }: Props) {
       aria-label="Main navigation"
     >
       {/* Brand header — same height as the page Header (h-14 = 3.5rem) */}
-      <div className="h-14 flex items-center px-4 border-b border-gray-200 dark:border-gray-700 shrink-0">
-        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Court Time</span>
+      <div className="h-14 flex flex-col items-start justify-center px-4 border-b border-gray-200 dark:border-gray-700 shrink-0 overflow-hidden">
+        <span className="text-sm font-semibold leading-none text-gray-900 dark:text-gray-100">Court Time</span>
+        {clubName && (
+          <span
+            className="mt-0.5 text-xs leading-none text-gray-500 dark:text-gray-400 truncate w-full"
+            title={clubName}
+          >
+            {clubName}
+          </span>
+        )}
       </div>
 
       <div className="flex-1 py-2 flex flex-col gap-0.5 px-2 overflow-y-auto">

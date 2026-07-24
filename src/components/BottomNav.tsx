@@ -71,9 +71,10 @@ function MoreIcon() {
 
 interface Props {
   userRole?: string;
+  clubName?: string;
 }
 
-export default function BottomNav({ userRole = "member" }: Props) {
+export default function BottomNav({ userRole = "member", clubName }: Props) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -150,9 +151,16 @@ export default function BottomNav({ userRole = "member" }: Props) {
 
       {moreOpen && (
         <BottomSheet onClose={() => setMoreOpen(false)} className="px-4 pb-8">
-          <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">
-            More
-          </p>
+          <div className="mb-3">
+            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+              More
+            </p>
+            {clubName && (
+              <p className="mt-0.5 text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                {clubName}
+              </p>
+            )}
+          </div>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
             {moreLinks.map(link => {
               const isActive = isLinkActive(link.href, link.exact);

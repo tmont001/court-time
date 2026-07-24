@@ -28,20 +28,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/pending-invite");
   }
 
+  let clubName: string | undefined;
   if (profile?.club_id) {
     const supabase = await createClient();
     const { data: club } = await supabase
       .from("clubs")
-      .select("theme_key")
+      .select("theme_key, name")
       .eq("id", profile.club_id)
       .single();
     if (club?.theme_key) themeKey = club.theme_key;
+    if (club?.name) clubName = club.name;
   }
 
   return (
     <div className={`theme-${themeKey} min-h-screen`}>
       {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
-      <SideNav userRole={profile?.role} />
+      <SideNav userRole={profile?.role} clubName={clubName} />
       {/* Content area: offset right of sidebar on desktop */}
       <div className="flex flex-col min-h-screen md:pl-60">
         <main className="flex-1 app-main-content">
@@ -52,7 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       {/* Bottom nav: visible on mobile, hidden on desktop where SideNav takes over */}
-      <BottomNav userRole={profile?.role} />
+      <BottomNav userRole={profile?.role} clubName={clubName} />
     </div>
   );
 }
