@@ -200,6 +200,7 @@ export default function SideNav({ userRole = "member", clubName }: Props) {
             <NavLink href="/calendar"       label="Calendar"     Icon={CalendarIcon}  pathname={pathname} />
             <NavLink href="/events"         label="Events"       Icon={EventsIcon}    pathname={pathname} />
             <NavLink href="/admin/lessons"  label="Lessons"      Icon={LessonsIcon}   pathname={pathname} />
+            <NavLink href="/my-schedule"    label="Bookings"     Icon={ScheduleIcon}  pathname={pathname} />
 
             <GroupLabel>Club</GroupLabel>
             <NavLink href="/admin/members"    label="Members"      Icon={MembersIcon}    pathname={pathname} />
