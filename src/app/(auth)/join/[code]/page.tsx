@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Json } from "@/lib/db/types";
 import Link from "next/link";
 import AcceptButton from "./AcceptButton";
 
@@ -25,25 +24,22 @@ interface InviteInvalid {
 
 type InviteResult = InviteValid | InviteInvalid;
 
-const ERROR_CONTENT: Record<
-  string,
-  { heading: string; body: string }
-> = {
+const ERROR_CONTENT: Record<string, { heading: string; body: string }> = {
   not_found: {
-    heading: "Invite not found",
-    body: "This invite link is not valid.",
+    heading: "Invitation not found",
+    body: "This invitation link is not valid. Contact your club administrator for a new invitation.",
   },
   expired: {
-    heading: "Invite expired",
-    body: "This invite has expired. Ask your admin for a new link.",
+    heading: "Invitation expired",
+    body: "This invitation has expired. Ask your club administrator to send a new invitation link.",
   },
   used: {
-    heading: "Invite already used",
-    body: "This invite has already been used.",
+    heading: "Invitation already accepted",
+    body: "This invitation link has already been accepted.",
   },
   revoked: {
-    heading: "Invite revoked",
-    body: "This invite has been revoked. Ask your admin for a new link.",
+    heading: "Invitation withdrawn",
+    body: "This invitation has been withdrawn by the club. Contact your administrator for a new invitation link.",
   },
 };
 
@@ -85,39 +81,80 @@ export default async function JoinPage({
     }
   }
 
-  // --- Invalid / error states ---
+  // ── Invalid / error states ─────────────────────────────────────────────────
+
   if (!invite || !invite.valid) {
     const reason = !invite ? "not_found" : invite.reason;
     const { heading, body } = ERROR_CONTENT[reason] ?? ERROR_CONTENT.not_found;
+
     return (
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3">
           {heading}
         </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400">{body}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">{body}</p>
+
+        {reason === "used" && !user && (
+          <Link
+            href="/sign-in"
+            className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
+          >
+            Sign in to your account
+          </Link>
+        )}
+        {reason === "used" && user && profileClubId && (
+          <Link
+            href="/calendar"
+            className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
+          >
+            Go to your account
+          </Link>
+        )}
+        {reason === "used" && user && !profileClubId && (
+          <Link
+            href="/pending-invite"
+            className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
+          >
+            View your account
+          </Link>
+        )}
       </div>
     );
   }
 
   const roleLabel = ROLE_LABELS[invite.role] ?? invite.role;
 
-  // --- Signed in and already belongs to a club ---
+  // ── Signed in and already belongs to a club ────────────────────────────────
+
   if (user && profileClubId) {
     return (
       <div>
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3">
-          Already a member
+          Already connected
         </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          You&apos;re already a member
-          {profileClubName ? ` of ${profileClubName}` : ""}. Each account
-          belongs to one club.
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Your account is already connected to{" "}
+          {profileClubName ? (
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {profileClubName}
+            </span>
+          ) : (
+            "a club"
+          )}
+          . Each account belongs to one club.
         </p>
+        <Link
+          href="/calendar"
+          className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
+        >
+          Go to your account
+        </Link>
       </div>
     );
   }
 
-  // --- Signed out: show invite details and offer sign in or create account ---
+  // ── Signed out: show invite details and offer sign in or create account ────
+
   if (!user) {
     const signUpHref = `/sign-up?redirect=/join/${code}${invite.email_restricted ? "&emailRestricted=1" : ""}`;
     return (
@@ -161,7 +198,8 @@ export default async function JoinPage({
     );
   }
 
-  // --- Signed in with no club yet: show accept button ---
+  // ── Signed in with no club yet: show accept button ─────────────────────────
+
   return (
     <div>
       <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-1">
@@ -178,7 +216,7 @@ export default async function JoinPage({
         </span>
         .
       </p>
-      <AcceptButton code={code} />
+      <AcceptButton code={code} userEmail={user.email ?? ""} />
     </div>
   );
 }
