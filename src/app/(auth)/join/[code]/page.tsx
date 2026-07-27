@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthProfile } from "@/lib/supabase/user";
 import Link from "next/link";
 import AcceptButton from "./AcceptButton";
 
@@ -61,24 +62,17 @@ export default async function JoinPage({
     data: { user },
   } = await supabase.auth.getUser();
 
-  // For signed-in users, check whether they already belong to a club.
+  // For signed-in users, check their current active club (if any). Phase
+  // 26D1: this is informational only — having an active club no longer
+  // blocks accepting an invitation to a different one. Sourced from
+  // getAuthProfile() (get_current_account_context(), Phase 26C1) rather
+  // than a raw profiles/clubs query, consistent with the rest of the app.
   let profileClubId: string | null = null;
   let profileClubName: string | null = null;
   if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("club_id")
-      .eq("id", user.id)
-      .single();
+    const profile = await getAuthProfile();
     profileClubId = profile?.club_id ?? null;
-    if (profileClubId) {
-      const { data: club } = await supabase
-        .from("clubs")
-        .select("name")
-        .eq("id", profileClubId)
-        .single();
-      profileClubName = club?.name ?? null;
-    }
+    profileClubName = profile?.clubName ?? null;
   }
 
   // ── Invalid / error states ─────────────────────────────────────────────────
@@ -123,35 +117,6 @@ export default async function JoinPage({
   }
 
   const roleLabel = ROLE_LABELS[invite.role] ?? invite.role;
-
-  // ── Signed in and already belongs to a club ────────────────────────────────
-
-  if (user && profileClubId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-3">
-          Already connected
-        </h1>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-          Your account is already connected to{" "}
-          {profileClubName ? (
-            <span className="font-medium text-gray-900 dark:text-gray-100">
-              {profileClubName}
-            </span>
-          ) : (
-            "a club"
-          )}
-          . Each account belongs to one club.
-        </p>
-        <Link
-          href="/calendar"
-          className="block w-full text-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-md px-3 py-2 text-sm font-medium"
-        >
-          Go to your account
-        </Link>
-      </div>
-    );
-  }
 
   // ── Signed out: show invite details and offer sign in or create account ────
 
@@ -198,7 +163,14 @@ export default async function JoinPage({
     );
   }
 
-  // ── Signed in with no club yet: show accept button ─────────────────────────
+  // ── Signed in: show accept button ───────────────────────────────────────────
+  // Phase 26D1: an already-clubbed user (Member/Pro/Admin somewhere else) may
+  // accept an invitation to a different club — accept_club_invite (0084)
+  // creates an additional membership and makes the destination club active;
+  // the existing club's membership is untouched. Same-club, and inactive/
+  // suspended/removed destination-membership states, are rejected by the RPC
+  // itself with a stable error surfaced by AcceptButton — no pre-check is
+  // needed here beyond the informational note below. No switcher UI is added.
 
   return (
     <div>
@@ -216,6 +188,21 @@ export default async function JoinPage({
         </span>
         .
       </p>
+
+      {profileClubName && (
+        <p className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 rounded-md px-3 py-2">
+          You&apos;re currently active in{" "}
+          <span className="font-medium text-gray-900 dark:text-gray-100">
+            {profileClubName}
+          </span>
+          . Accepting will make{" "}
+          <span className="font-medium text-gray-900 dark:text-gray-100">
+            {invite.club_name}
+          </span>{" "}
+          your active club.
+        </p>
+      )}
+
       <AcceptButton code={code} userEmail={user.email ?? ""} />
     </div>
   );

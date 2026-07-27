@@ -13,7 +13,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   invite_used:       "This invite has already been used.",
   invite_expired:    "This invite has expired. Ask your admin for a new link.",
   email_mismatch:    "This invite was sent to a different email address.",
-  already_in_club:   "Your account is already assigned to a club.",
+  // Phase 26D1: replaces the old single-club "already_in_club" gate, which
+  // no longer exists — accept_club_invite (0084) now allows an already-
+  // clubbed user to accept an invite to a different club. These two errors
+  // cover the destination club's own existing-membership states.
+  already_member:            "You're already a member of this club.",
+  membership_state_conflict: "Your account already has a membership at this club that can't be restored this way. Contact your club administrator.",
   not_authenticated: "You must be signed in to accept this invitation.",
 };
 
@@ -25,7 +30,8 @@ const DEFINITIVE_ERRORS = new Set([
   "invite_used",
   "invite_expired",
   "email_mismatch",
-  "already_in_club",
+  "already_member",
+  "membership_state_conflict",
 ]);
 
 async function clearInviteCookie(): Promise<void> {
