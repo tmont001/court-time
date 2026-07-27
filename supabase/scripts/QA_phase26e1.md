@@ -123,3 +123,30 @@ For each switch performed above:
       shows no warning/banner (none exists yet; this is Phase 26E2's job).
       This is a confirm-the-absence check, not a defect if no warning
       appears
+
+## 12. Mobile header club icon — anchored popover entry point
+
+Unlike More → "Switch club" (a full-width `BottomSheet`, unchanged), the
+top-left header icon opens a small **anchored popover card** directly below
+the button — not a pull-up sheet. Both surfaces render the same
+`ClubMembershipList` and go through the same `switchActiveClubAction`.
+
+- [ ] As the two-club disposable account, on mobile, tap the club icon in
+      the top-left of the header (any page) — confirm a floating card opens
+      anchored directly below the button, not a bottom sheet
+- [ ] Confirm both clubs and the current-club marker are fully visible in
+      the popover, matching what More → "Switch club" shows
+- [ ] Confirm the popover stays within the left/right viewport edges at
+      common mobile widths, and is not covered by or overlapping the fixed
+      bottom navigation or the floating "+ Event" control (e.g. on Calendar)
+- [ ] Select the other club — confirm the switch succeeds and redirects to
+      `/calendar`, same as every other entry point
+- [ ] Tap outside the popover — confirm it closes
+- [ ] Open it and press Escape — confirm it closes
+- [ ] Re-confirm More → "Switch club" still opens its existing full-width
+      `BottomSheet` unchanged and still works
+- [ ] Sign in as a one-club Member/Pro/Admin — confirm the header club icon
+      is not interactive (no chevron, tapping it does nothing) — identical
+      to pre-26E1 appearance and behavior
+- [ ] Confirm desktop is unaffected (SideNav's own dropdown switcher,
+      unchanged)
