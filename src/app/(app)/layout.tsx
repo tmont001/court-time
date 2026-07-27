@@ -4,6 +4,7 @@ import { getAuthUser, getAuthProfile, getMyClubMemberships } from "@/lib/supabas
 import BottomNav from "@/components/BottomNav";
 import SideNav from "@/components/SideNav";
 import MemberWelcomeCard from "@/components/MemberWelcomeCard";
+import StaleActiveClubGuard from "@/components/StaleActiveClubGuard";
 
 const INVITE_CODE_RE = /^[0-9a-f]{32}$/;
 
@@ -44,6 +45,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // switcher — see SideNav/BottomNav.
   const memberships = await getMyClubMemberships();
 
+  // Phase 26E2: guaranteed non-null past the redirect guard above.
+  const activeClubId = profile.club_id;
+
   return (
     <div className={`theme-${themeKey} min-h-screen`}>
       {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
@@ -59,6 +63,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       {/* Bottom nav: visible on mobile, hidden on desktop where SideNav takes over */}
       <BottomNav userRole={profile?.role ?? undefined} clubName={clubName} memberships={memberships} />
+      {/* Phase 26E2: mounted once for the whole authenticated app shell
+          (covers every (app)/* route, including nested /admin/* pages).
+          Detects this tab's active-club context going stale — another tab
+          switched, or the membership itself was deactivated/suspended/
+          removed — and blocks interaction until reloaded. */}
+      <StaleActiveClubGuard activeClubId={activeClubId} />
     </div>
   );
 }

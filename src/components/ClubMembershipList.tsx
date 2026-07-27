@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 import { switchActiveClubAction } from "./switchClubAction";
+import { publishActiveClubChanged } from "@/lib/activeClubChannel";
 
 // Shared switching UI — rendered inside a desktop dropdown panel (SideNav),
-// a mobile bottom sheet (BottomNav), and the /profile Clubs section. The
-// container chrome differs per surface (dropdown vs. sheet vs. plain card),
-// but the list, selection, loading, and error behavior live here exactly
-// once. No membership-management controls (no leave/remove/reactivate) —
-// selecting a row only ever calls switchActiveClubAction.
+// a mobile header popover, a mobile bottom sheet (BottomNav), and the
+// /profile Clubs section. The container chrome differs per surface, but the
+// list, selection, loading, and error behavior live here exactly once. No
+// membership-management controls (no leave/remove/reactivate) — selecting a
+// row only ever calls switchActiveClubAction.
 
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
@@ -22,6 +24,7 @@ interface Props {
 }
 
 export default function ClubMembershipList({ memberships }: Props) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,12 +35,20 @@ export default function ClubMembershipList({ memberships }: Props) {
     setSwitchingId(clubId);
     startTransition(async () => {
       const result = await switchActiveClubAction(clubId);
-      if (result?.error) {
+      if ("error" in result) {
         setError(result.error);
         setSwitchingId(null);
+        return; // a failed switch never publishes a cross-tab change
       }
-      // On success switchActiveClubAction calls redirect(), which navigates
-      // away — there is no successful case that returns to this component.
+
+      // Confirmed success — notify other tabs, then land this tab on
+      // /calendar with a freshly server-rendered context (the same
+      // destination redirect() used to send this tab to before Phase
+      // 26E2). Publishing happens before navigation so the signal isn't
+      // lost if navigation is instant.
+      publishActiveClubChanged();
+      router.push("/calendar");
+      router.refresh();
     });
   }
 
