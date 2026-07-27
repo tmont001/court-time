@@ -13,6 +13,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   cannot_change_own_role:        "You cannot change your own role.",
   cannot_change_own_status:      "You cannot change your own status.",
   last_admin:                    "This is the last active admin. Promote another member first.",
+  cannot_remove_self:            "You cannot remove your own membership.",
   invite_already_accepted:       "This invite has already been accepted.",
   invite_already_revoked:        "This invite has already been revoked.",
   invalid_invite:                "Invite not found.",
@@ -84,6 +85,9 @@ export async function setMemberStatusAction(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
+  // Phase 26D2: newStatus now also accepts "suspended" — set_member_status
+  // (0086) validates the vocabulary server-side; this action is an
+  // unchanged pass-through.
   const { error } = await supabase.rpc("set_member_status", {
     p_target_user_id: targetUserId,
     p_new_status:     newStatus,
@@ -91,6 +95,45 @@ export async function setMemberStatusAction(
   if (error) return { error: mapError(error.message) };
 
   revalidatePath("/admin/members");
+  return {};
+}
+
+// Phase 26D2: explicit removal (removed_at/removed_by), scoped to the
+// caller's active club only — never touches the target's memberships in
+// any other club.
+export async function removeMemberAction(
+  targetUserId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("remove_club_member", {
+    p_target_user_id: targetUserId,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  revalidatePath(`/admin/members/${targetUserId}`);
+  return {};
+}
+
+// Phase 26D2: explicit restoration — clears removed_at/removed_by only,
+// preserving whatever role/status the membership had when removed.
+export async function restoreMemberAction(
+  targetUserId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("restore_club_member", {
+    p_target_user_id: targetUserId,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  revalidatePath(`/admin/members/${targetUserId}`);
   return {};
 }
 

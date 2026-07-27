@@ -1285,7 +1285,16 @@ export type Database = {
           created_at:         string;
           email:              string | null;
           is_lesson_provider: boolean;
+          removed_at:         string | null;
         }[];
+      };
+      remove_club_member: {
+        Args: { p_target_user_id: string };
+        Returns: undefined;
+      };
+      restore_club_member: {
+        Args: { p_target_user_id: string };
+        Returns: undefined;
       };
       set_lesson_provider_status: {
         Args: { p_target_user_id: string; p_enabled: boolean };
@@ -1718,6 +1727,7 @@ export type Database = {
           created_at:                  string;
           email:                       string | null;
           is_lesson_provider:          boolean;
+          removed_at:                  string | null;
           attended_event_count:        number;
           event_no_show_count:         number;
           completed_lesson_count:      number;

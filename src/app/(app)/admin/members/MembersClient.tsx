@@ -12,6 +12,8 @@ import {
   resendInviteAction,
   setMemberRoleAction,
   setMemberStatusAction,
+  removeMemberAction,
+  restoreMemberAction,
   deleteRosterMemberAction,
 } from "./actions";
 
@@ -40,7 +42,7 @@ const SORT_OPTIONS: { field: SortField; label: string }[] = [
 ];
 
 const ROLE_ORDER:   Record<string, number> = { admin: 0, pro: 1, member: 2 };
-const STATUS_ORDER: Record<string, number> = { active: 0, inactive: 1, no_account: 2 };
+const STATUS_ORDER: Record<string, number> = { active: 0, suspended: 1, inactive: 2, no_account: 3 };
 
 function cmp(a: string | null, b: string | null): number {
   if (a === null && b === null) return 0;
@@ -75,6 +77,43 @@ type Member = {
   created_at:         string;
   email:              string | null;
   is_lesson_provider: boolean;
+  removed_at:         string | null;
+};
+
+// Phase 26D2: the four member-membership actions this club's Admin can take
+// on a target's membership in this club specifically. "remove" is
+// destructive (confirmed here); "restore" (a removed membership only) is
+// handled separately, without a confirmation step — it is not destructive.
+type MemberAction = "deactivate" | "reactivate" | "suspend" | "remove";
+
+const CONFIRM_COPY: Record<
+  MemberAction,
+  { verb: string; verbing: string; body: string; danger: boolean }
+> = {
+  deactivate: {
+    verb: "Deactivate",
+    verbing: "Deactivating",
+    body: "This member will lose access to booking courts and joining events in this club. Their existing reservations and history will remain intact. This does not affect any other club they belong to.",
+    danger: true,
+  },
+  reactivate: {
+    verb: "Reactivate",
+    verbing: "Reactivating",
+    body: "This member will regain full access to booking courts and joining events in this club. This does not affect any other club they belong to.",
+    danger: false,
+  },
+  suspend: {
+    verb: "Suspend",
+    verbing: "Suspending",
+    body: "This member will immediately lose access to this club until reactivated. Their existing reservations and history will remain intact. This does not affect any other club they belong to.",
+    danger: true,
+  },
+  remove: {
+    verb: "Remove",
+    verbing: "Removing",
+    body: "This removes their membership in this club only. Their account and any other club memberships are not affected, and an admin can restore this membership later.",
+    danger: true,
+  },
 };
 
 export type RosterMember = {
@@ -108,7 +147,7 @@ type ListItem =
 type ConfirmDialog = {
   memberId:   string;
   memberName: string;
-  action:     "deactivate" | "reactivate";
+  action:     MemberAction;
   error?:     string;
 };
 
@@ -166,19 +205,32 @@ export default function MembersClient({
   const [changingRoleId, setChangingRoleId] = useState<string | null>(null);
   const [roleErrors, setRoleErrors]         = useState<Record<string, string>>({});
 
-  // Status change
+  // Status change (deactivate/reactivate/suspend/remove — all via the same
+  // confirmation dialog, distinguished by ConfirmDialog.action)
   const [confirmDialog, setConfirmDialog]       = useState<ConfirmDialog | null>(null);
   const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
+
+  // Restore (removed members only) — not destructive, no confirmation dialog
+  const [restoringId, setRestoringId]           = useState<string | null>(null);
+  const [restoreErrors, setRestoreErrors]       = useState<Record<string, string>>({});
 
   // Delete roster member
   const [deleteDialog, setDeleteDialog]     = useState<DeleteDialog | null>(null);
   const [deletingId, setDeletingId]         = useState<string | null>(null);
 
+  // Phase 26D2: removed memberships are shown in their own section, never
+  // mixed into the main roster list/search/sort/filters below.
+  const visibleMembers = useMemo(() => members.filter((m) => !m.removed_at), [members]);
+  const removedMembers = useMemo(() => members.filter((m) => !!m.removed_at), [members]);
+
+  // Excludes removed rows explicitly — a removed membership never counts
+  // toward "how many active admins does this club have", even if its role/
+  // status happen to still read admin/active from before it was removed.
   const activeAdminCount = members.filter(
-    (m) => m.role === "admin" && m.status === "active"
+    (m) => m.role === "admin" && m.status === "active" && !m.removed_at
   ).length;
 
-  const totalCount = members.length + rosterMembers.length;
+  const totalCount = visibleMembers.length + rosterMembers.length;
 
   const hasFilters = search.trim() !== "" || roleFilter !== "" || statusFilter !== "";
 
@@ -188,11 +240,13 @@ export default function MembersClient({
     setStatusFilter("");
   }
 
-  // Unified list: filter then sort
+  // Unified list: filter then sort. Removed memberships never enter this
+  // list (visibleMembers already excludes them) — they have their own
+  // section below, outside the search/filter/sort system entirely.
   const filteredSortedItems = useMemo(() => {
     // 1. Build unified list
     let items: ListItem[] = [
-      ...members.map((m): ListItem => ({ kind: "profile", data: m })),
+      ...visibleMembers.map((m): ListItem => ({ kind: "profile", data: m })),
       ...rosterMembers.map((r): ListItem => ({ kind: "roster", data: r })),
     ];
 
@@ -223,7 +277,8 @@ export default function MembersClient({
         if (statusFilter === "no_account") return item.kind === "roster";
         if (item.kind === "roster")        return false;
         if (statusFilter === "active")     return item.data.status === "active";
-        if (statusFilter === "inactive")   return item.data.status !== "active";
+        if (statusFilter === "suspended")  return item.data.status === "suspended";
+        if (statusFilter === "inactive")   return item.data.status === "inactive";
         return true;
       });
     }
@@ -250,7 +305,7 @@ export default function MembersClient({
     });
 
     return items;
-  }, [members, rosterMembers, search, roleFilter, statusFilter, sortField, sortDir]);
+  }, [visibleMembers, rosterMembers, search, roleFilter, statusFilter, sortField, sortDir]);
 
   function handleSortChip(field: SortField) {
     if (field === sortField) {
@@ -318,25 +373,54 @@ export default function MembersClient({
     });
   }
 
-  function openConfirmDialog(member: Member) {
+  function openConfirmDialog(member: Member, action: MemberAction) {
     const memberName =
       [member.first_name, member.last_name].filter(Boolean).join(" ") || "this member";
-    const action: "deactivate" | "reactivate" =
-      member.status === "active" ? "deactivate" : "reactivate";
     setConfirmDialog({ memberId: member.id, memberName, action });
   }
 
   function handleConfirmStatus() {
     if (!confirmDialog) return;
-    const newStatus = confirmDialog.action === "deactivate" ? "inactive" : "active";
     setStatusChangingId(confirmDialog.memberId);
     startTransition(async () => {
-      const result = await setMemberStatusAction(confirmDialog.memberId, newStatus);
+      // "remove" is a distinct RPC (removed_at/removed_by); the other three
+      // are all set_member_status transitions.
+      const result =
+        confirmDialog.action === "remove"
+          ? await removeMemberAction(confirmDialog.memberId)
+          : await setMemberStatusAction(
+              confirmDialog.memberId,
+              confirmDialog.action === "deactivate"
+                ? "inactive"
+                : confirmDialog.action === "suspend"
+                  ? "suspended"
+                  : "active" // reactivate
+            );
       setStatusChangingId(null);
       if (result.error) {
         setConfirmDialog((prev) => (prev ? { ...prev, error: result.error } : null));
       } else {
         setConfirmDialog(null);
+        router.refresh();
+      }
+    });
+  }
+
+  // Restore (removed members only) — non-destructive, no confirmation.
+  function handleRestore(member: Member) {
+    if (restoringId) return;
+    setRestoreErrors((prev) => {
+      const next = { ...prev };
+      delete next[member.id];
+      return next;
+    });
+    setRestoringId(member.id);
+    startTransition(async () => {
+      const result = await restoreMemberAction(member.id);
+      setRestoringId(null);
+      if (result.error) {
+        setRestoreErrors((prev) => ({ ...prev, [member.id]: result.error! }));
+      } else {
         router.refresh();
       }
     });
@@ -485,6 +569,7 @@ export default function MembersClient({
             >
               <option value="">All statuses</option>
               <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
               <option value="inactive">Inactive</option>
               <option value="no_account">No account</option>
             </select>
@@ -567,7 +652,7 @@ export default function MembersClient({
                 changingRoleId={changingRoleId}
                 roleErrors={roleErrors}
                 onRoleChange={handleRoleChange}
-                onStatusToggle={openConfirmDialog}
+                onStatusAction={openConfirmDialog}
               />
             ) : (
               <RosterCard
@@ -579,6 +664,50 @@ export default function MembersClient({
               />
             )
           )}
+        </div>
+      )}
+
+      {/* Removed Members section — Phase 26D2. Kept entirely separate from
+          the main roster: not searchable/sortable/filterable, not counted
+          in totalCount. Only ever shows memberships removed from THIS club;
+          restoring never touches any other club the person belongs to. */}
+      {removedMembers.length > 0 && (
+        <div className="mx-4 mt-4 mb-6">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+            Removed from this club
+          </p>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
+            {removedMembers.map((m) => {
+              const fullName =
+                [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
+              const isRestoring = restoringId === m.id;
+              const restoreError = restoreErrors[m.id];
+              return (
+                <div key={m.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+                      {fullName}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                      Removed {m.removed_at ? formatJoinDate(m.removed_at) : ""}
+                    </p>
+                    {restoreError && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                        {restoreError}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    disabled={isRestoring}
+                    onClick={() => handleRestore(m)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50"
+                  >
+                    {isRestoring ? "Restoring…" : "Restore"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -730,7 +859,9 @@ export default function MembersClient({
         )}
       </div>
 
-      {/* Deactivate / Reactivate confirmation dialog */}
+      {/* Deactivate / Reactivate / Suspend / Remove confirmation dialog —
+          one shared dialog for all four club-scoped status actions,
+          distinguished by CONFIRM_COPY. */}
       {confirmDialog && (
         <>
           <div
@@ -740,13 +871,10 @@ export default function MembersClient({
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm px-6 py-6">
               <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                {confirmDialog.action === "deactivate" ? "Deactivate" : "Reactivate"}{" "}
-                {confirmDialog.memberName}?
+                {CONFIRM_COPY[confirmDialog.action].verb} {confirmDialog.memberName}?
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
-                {confirmDialog.action === "deactivate"
-                  ? "This member will lose access to booking courts and joining events. Their existing reservations and history will remain intact."
-                  : "This member will regain full access to booking courts and joining events."}
+                {CONFIRM_COPY[confirmDialog.action].body}
               </p>
               {confirmDialog.error && (
                 <p className="mt-3 text-sm text-red-600 dark:text-red-400">
@@ -765,18 +893,14 @@ export default function MembersClient({
                   disabled={!!statusChangingId}
                   onClick={handleConfirmStatus}
                   className={`flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50 ${
-                    confirmDialog.action === "deactivate"
+                    CONFIRM_COPY[confirmDialog.action].danger
                       ? "bg-red-600 dark:bg-red-500 text-white"
                       : "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
                   }`}
                 >
                   {statusChangingId
-                    ? confirmDialog.action === "deactivate"
-                      ? "Deactivating…"
-                      : "Reactivating…"
-                    : confirmDialog.action === "deactivate"
-                      ? "Deactivate"
-                      : "Reactivate"}
+                    ? CONFIRM_COPY[confirmDialog.action].verbing + "…"
+                    : CONFIRM_COPY[confirmDialog.action].verb}
                 </button>
               </div>
             </div>
@@ -865,7 +989,7 @@ function ProfileCard({
   changingRoleId,
   roleErrors,
   onRoleChange,
-  onStatusToggle,
+  onStatusAction,
 }: {
   member:           Member;
   currentUserId:    string;
@@ -873,11 +997,12 @@ function ProfileCard({
   changingRoleId:   string | null;
   roleErrors:       Record<string, string>;
   onRoleChange:     (id: string, role: string) => void;
-  onStatusToggle:   (m: Member) => void;
+  onStatusAction:   (m: Member, action: MemberAction) => void;
 }) {
   const fullName =
     [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
   const isActive    = m.status === "active";
+  const isSuspended = m.status === "suspended";
   const isSelf      = m.id === currentUserId;
   const isLastAdmin = m.role === "admin" && activeAdminCount <= 1;
   const controlsDisabled = isSelf || isLastAdmin;
@@ -900,6 +1025,10 @@ function ProfileCard({
           {isActive ? (
             <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
               Active
+            </span>
+          ) : isSuspended ? (
+            <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+              Suspended
             </span>
           ) : (
             <span className="shrink-0 inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
@@ -945,23 +1074,44 @@ function ProfileCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 shrink-0 max-w-[9rem]">
           <Link
             href={`/admin/members/${m.id}`}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150"
+            className="px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150"
           >
             View
           </Link>
+          {/* Deactivate/Reactivate — the primary, most common status action */}
           <button
             disabled={controlsDisabled}
-            onClick={() => onStatusToggle(m)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            onClick={() => onStatusAction(m, isActive ? "deactivate" : "reactivate")}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               isActive
                 ? "border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                 : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
             }`}
           >
             {isActive ? "Deactivate" : "Reactivate"}
+          </button>
+          {/* Suspend — only offered from active, to avoid a confusing
+              inactive->suspended->inactive shuffle */}
+          {isActive && (
+            <button
+              disabled={controlsDisabled}
+              onClick={() => onStatusAction(m, "suspend")}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Suspend
+            </button>
+          )}
+          {/* Remove — always available (except the last admin), always
+              destructive-styled and confirmed */}
+          <button
+            disabled={controlsDisabled}
+            onClick={() => onStatusAction(m, "remove")}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-medium border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Remove
           </button>
         </div>
       </div>
