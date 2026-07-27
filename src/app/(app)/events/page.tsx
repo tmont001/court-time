@@ -176,7 +176,7 @@ export default async function EventsPage({
                   initialEvents={adminEvents}
                   hasMore={adminEvents.length === 25}
                   clubTimezone={clubTimezone}
-                  userRole={profile!.role}
+                  userRole={profile!.role!}
                   userId={user.id}
                   courts={adminCourts as { id: string; name: string; display_order: number }[]}
                   clubId={clubId}
@@ -188,7 +188,7 @@ export default async function EventsPage({
                   initialRequests={proLessons}
                   courts={(adminCourts ?? []) as { id: string; name: string }[]}
                   userId={user.id}
-                  userRole={profile!.role}
+                  userRole={profile!.role!}
                   clubTimezone={clubTimezone}
                 />
               }

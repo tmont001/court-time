@@ -1063,6 +1063,37 @@ export type Database = {
         Args: Record<string, never>;
         Returns: string;
       };
+      current_user_is_lesson_provider: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
+      set_active_club: {
+        Args: { p_club_id: string };
+        Returns: {
+          club_id: string;
+          role: string;
+          status: string;
+          is_lesson_provider: boolean;
+        }[];
+      };
+      get_current_account_context: {
+        Args: Record<string, never>;
+        Returns: {
+          id: string;
+          first_name: string | null;
+          last_name: string | null;
+          phone: string | null;
+          created_at: string;
+          updated_at: string;
+          active_club_id: string | null;
+          role: string | null;
+          status: string | null;
+          is_lesson_provider: boolean | null;
+          club_name: string | null;
+          club_slug: string | null;
+          theme_key: string | null;
+        }[];
+      };
       create_reservation: {
         Args: {
           p_court_id: string;

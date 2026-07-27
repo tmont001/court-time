@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
-import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import SignOutButton from "./SignOutButton";
 import ProfileEditForm from "./ProfileEditForm";
@@ -22,19 +21,28 @@ export default async function ProfilePage() {
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
+  // Phase 26C1: club name/role/status/Lesson Pro all come from
+  // get_current_account_context() (via getAuthProfile) — the caller's
+  // ACTIVE membership — never from legacy profiles fields directly.
+  // Personal-information editing (first_name/last_name/phone) is unaffected
+  // — those remain global profile fields.
+  //
+  // This page lives inside (app)/layout.tsx, which already redirects any
+  // user with no valid active membership (no-club, or a sole membership
+  // that is inactive/suspended/removed) to /pending-invite (or /join/<code>)
+  // before this component ever renders — see (app)/layout.tsx. In Phase
+  // 26C1, that means hasActiveMembership below is always true whenever this
+  // page actually runs; the no-active-membership branch (clubName/role/
+  // status all null, "—" display) is dead code today, kept only so this
+  // page renders correctly once Phase 26E changes what the parent layout
+  // allows through. Dedicated inactive-account messaging/routing is Phase
+  // 26E's job, not this checkpoint's. Own-profile SELECT/UPDATE access for
+  // such a user is already correctly protected at the database layer by
+  // migration 0082's profiles_select_same_club/profiles_update_own_row
+  // corrections, independent of what this page currently renders.
   const profile = await getAuthProfile();
-
-  const supabase = await createClient();
-  let clubName: string | null = null;
-  if (profile?.club_id) {
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("name")
-      .eq("id", profile.club_id)
-      .single();
-    clubName = club?.name ?? null;
-  }
-
+  const clubName = profile?.clubName ?? null;
+  const hasActiveMembership = Boolean(profile?.activeClubId);
   const status = profile?.status ?? "active";
   const statusConfig = STATUS_CONFIG[status] ?? STATUS_CONFIG.active;
 
@@ -86,19 +94,23 @@ export default async function ProfilePage() {
                 {clubName ?? "—"}
               </span>
             </div>
-            <div className="px-4 py-3 flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Role</span>
-              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                {ROLE_LABELS[profile?.role ?? "member"]}
-              </span>
-            </div>
-            <div className="px-4 py-3 flex items-center justify-between gap-3">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Status</span>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusConfig.className}`}>
-                {statusConfig.label}
-              </span>
-            </div>
-            {profile?.is_lesson_provider && (
+            {hasActiveMembership && (
+              <div className="px-4 py-3 flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Role</span>
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {ROLE_LABELS[profile?.role ?? "member"]}
+                </span>
+              </div>
+            )}
+            {hasActiveMembership && (
+              <div className="px-4 py-3 flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Status</span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusConfig.className}`}>
+                  {statusConfig.label}
+                </span>
+              </div>
+            )}
+            {hasActiveMembership && profile?.is_lesson_provider && (
               <div className="px-4 py-3 flex items-center justify-between gap-3">
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">Designation</span>
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent">
@@ -108,7 +120,9 @@ export default async function ProfilePage() {
             )}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 px-1">
-            Role and membership status are managed by your club.
+            {hasActiveMembership
+              ? "Role and membership status are managed by your club."
+              : "You don't currently have an active club membership."}
           </p>
         </div>
 

@@ -19,11 +19,13 @@ export default async function MemberDetailPage({ params }: Props) {
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
+  // Phase 26C1: profile.role/activeClubId reflect the caller's ACTIVE
+  // club_memberships row, not legacy profiles.role/club_id.
   const profile = await getAuthProfile();
   if (profile?.role !== "admin") redirect("/calendar");
 
   const supabase  = await createClient();
-  const clubId    = profile.club_id ?? "";
+  const clubId    = profile.activeClubId ?? "";
 
   const [detailResult, upcomingResult, historyResult, notesResult, clubResult, prosResult, courtsResult, lessonTypesResult] =
     await Promise.all([

@@ -11,6 +11,9 @@ export default async function AdminMembersPage() {
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
+  // Phase 26C1: profile.role reflects the caller's role in their ACTIVE
+  // club_memberships row; get_members()/get_roster_members()/
+  // get_club_invites() below are similarly scoped to that active club.
   const profile  = await getAuthProfile();
   if (profile?.role !== "admin") redirect("/calendar");
 
