@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { getAuthUser, getAuthProfile, getMyClubMemberships } from "@/lib/supabase/user";
 import BottomNav from "@/components/BottomNav";
 import SideNav from "@/components/SideNav";
 import MemberWelcomeCard from "@/components/MemberWelcomeCard";
@@ -37,10 +37,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const themeKey = profile.themeKey ?? "graphite";
   const clubName = profile.clubName ?? undefined;
 
+  // Phase 26E1: the caller's own switchable memberships, fetched once here
+  // (get_my_club_memberships, migration 0085) and passed to both nav
+  // surfaces. A single-membership user gets an empty-switcher render (the
+  // existing static club-name display, unchanged); two or more renders the
+  // switcher — see SideNav/BottomNav.
+  const memberships = await getMyClubMemberships();
+
   return (
     <div className={`theme-${themeKey} min-h-screen`}>
       {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
-      <SideNav userRole={profile?.role ?? undefined} clubName={clubName} />
+      <SideNav userRole={profile?.role ?? undefined} clubName={clubName} memberships={memberships} />
       {/* Content area: offset right of sidebar on desktop */}
       <div className="flex flex-col min-h-screen md:pl-60">
         <main className="flex-1 app-main-content">
@@ -51,7 +58,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       {/* Bottom nav: visible on mobile, hidden on desktop where SideNav takes over */}
-      <BottomNav userRole={profile?.role ?? undefined} clubName={clubName} />
+      <BottomNav userRole={profile?.role ?? undefined} clubName={clubName} memberships={memberships} />
     </div>
   );
 }

@@ -72,3 +72,41 @@ export const getAuthProfile = cache(async () => {
     themeKey: data.theme_key,
   };
 });
+
+export interface ClubMembershipOption {
+  clubId:           string;
+  clubName:         string;
+  role:             string;
+  isLessonProvider: boolean;
+  isActiveClub:     boolean;
+}
+
+// Per-request memoized list of the caller's own switchable memberships.
+//
+// Phase 26E1: sourced from get_my_club_memberships() (migration 0085) —
+// never a direct club_memberships select, which remains inaccessible to
+// authenticated browser code (RLS enabled, zero policies, all privileges
+// revoked, unchanged since migration 0081). Only status = 'active' and
+// removed_at is null memberships are ever returned; the caller's identity
+// is derived entirely server-side from auth.uid(), never from any
+// client-supplied id. Ordered by the RPC itself: active club first, then
+// club name — no client-side sort needed.
+//
+// Returns an empty array for a signed-out user or a user with zero active
+// memberships (both valid, non-error states for this list — an empty
+// switcher is simply not rendered).
+export const getMyClubMemberships = cache(async (): Promise<ClubMembershipOption[]> => {
+  const user = await getAuthUser();
+  if (!user) return [];
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("get_my_club_memberships");
+  if (!data) return [];
+
+  return data.map((m) => ({
+    clubId: m.club_id,
+    clubName: m.club_name,
+    role: m.role,
+    isLessonProvider: m.is_lesson_provider,
+    isActiveClub: m.is_active_club,
+  }));
+});

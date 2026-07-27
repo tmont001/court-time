@@ -1094,6 +1094,18 @@ export type Database = {
           theme_key: string | null;
         }[];
       };
+      get_my_club_memberships: {
+        Args: Record<string, never>;
+        Returns: {
+          club_id: string;
+          club_name: string;
+          club_slug: string;
+          theme_key: string;
+          role: string;
+          is_lesson_provider: boolean;
+          is_active_club: boolean;
+        }[];
+      };
       create_reservation: {
         Args: {
           p_court_id: string;

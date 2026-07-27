@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { getAuthUser, getAuthProfile, getMyClubMemberships } from "@/lib/supabase/user";
 import Header from "@/components/Header";
+import ClubMembershipList from "@/components/ClubMembershipList";
 import SignOutButton from "./SignOutButton";
 import ProfileEditForm from "./ProfileEditForm";
 
@@ -45,6 +46,17 @@ export default async function ProfilePage() {
   const hasActiveMembership = Boolean(profile?.activeClubId);
   const status = profile?.status ?? "active";
   const statusConfig = STATUS_CONFIG[status] ?? STATUS_CONFIG.active;
+
+  // Phase 26E1: read-only membership list — shown only for a genuinely
+  // multi-club account (never for a single membership, matching the
+  // existing "Club Membership" card above for that common case). Inactive/
+  // suspended/removed memberships are never included — get_my_club_
+  // memberships() (migration 0085) excludes them entirely, not just
+  // hidden client-side. No leave/remove/reactivate control exists here;
+  // selecting another club switches to it via the same shared component/
+  // action used by the desktop and mobile switchers.
+  const memberships = await getMyClubMemberships();
+  const hasMultipleClubs = memberships.length > 1;
 
   return (
     <>
@@ -125,6 +137,22 @@ export default async function ProfilePage() {
               : "You don't currently have an active club membership."}
           </p>
         </div>
+
+        {hasMultipleClubs && (
+          <>
+            <hr className="border-gray-100 dark:border-gray-800" />
+
+            {/* ── Clubs ─────────────────────────────────────────────── */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Clubs
+              </p>
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <ClubMembershipList memberships={memberships} />
+              </div>
+            </div>
+          </>
+        )}
 
         <hr className="border-gray-100 dark:border-gray-800" />
 

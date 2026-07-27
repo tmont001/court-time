@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { ClubMembershipOption } from "@/lib/supabase/user";
+import ClubMembershipList from "./ClubMembershipList";
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -121,6 +124,15 @@ function ProfileIcon() {
   );
 }
 
+function ChevronIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
 // ─── Shared pieces ────────────────────────────────────────────────────────────
 
 function NavLink({
@@ -169,10 +181,16 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 interface Props {
   userRole?: string;
   clubName?: string;
+  /** Phase 26E1: the caller's own active memberships. One membership (the
+   * common case) preserves the plain static club-name text below. Two or
+   * more render it as a switcher trigger instead. */
+  memberships?: ClubMembershipOption[];
 }
 
-export default function SideNav({ userRole = "member", clubName }: Props) {
+export default function SideNav({ userRole = "member", clubName, memberships = [] }: Props) {
   const pathname = usePathname();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const canSwitch = memberships.length > 1;
 
   return (
     <nav
@@ -180,15 +198,45 @@ export default function SideNav({ userRole = "member", clubName }: Props) {
       aria-label="Main navigation"
     >
       {/* Brand header — same height as the page Header (h-14 = 3.5rem) */}
-      <div className="h-14 flex flex-col items-start justify-center px-4 border-b border-gray-200 dark:border-gray-700 shrink-0 overflow-hidden">
+      <div className="relative h-14 flex flex-col items-start justify-center px-4 border-b border-gray-200 dark:border-gray-700 shrink-0 overflow-visible">
         <span className="text-sm font-semibold leading-none text-gray-900 dark:text-gray-100">Court Time</span>
-        {clubName && (
+        {clubName && !canSwitch && (
           <span
             className="mt-0.5 text-xs leading-none text-gray-500 dark:text-gray-400 truncate w-full"
             title={clubName}
           >
             {clubName}
           </span>
+        )}
+        {clubName && canSwitch && (
+          <div className="mt-0.5 w-full">
+            <button
+              type="button"
+              onClick={() => setSwitcherOpen((open) => !open)}
+              onKeyDown={(e) => { if (e.key === "Escape") setSwitcherOpen(false); }}
+              aria-haspopup="listbox"
+              aria-expanded={switcherOpen}
+              aria-label={`Switch club — currently ${clubName}`}
+              className="flex items-center gap-1 max-w-full text-xs leading-none text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+            >
+              <span className="truncate">{clubName}</span>
+              <ChevronIcon />
+            </button>
+
+            {switcherOpen && (
+              <>
+                {/* Click-outside backdrop */}
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setSwitcherOpen(false)}
+                  aria-hidden="true"
+                />
+                <div className="absolute left-2 right-2 top-full mt-1 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg z-50 overflow-hidden">
+                  <ClubMembershipList memberships={memberships} />
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
 
