@@ -443,6 +443,10 @@ export type Database = {
           created_by: string;
           created_at: string;
           updated_at: string;
+          program_id: string | null;              // Phase 27B1
+          program_schedule_rule_id: string | null; // Phase 27B1
+          program_occurrence_date: string | null;  // Phase 27B1
+          is_program_exception: boolean;           // Phase 27B1
         };
         Insert: {
           id?: string;
@@ -458,6 +462,10 @@ export type Database = {
           created_by: string;
           created_at?: string;
           updated_at?: string;
+          program_id?: string | null;              // Phase 27B1
+          program_schedule_rule_id?: string | null; // Phase 27B1
+          program_occurrence_date?: string | null;  // Phase 27B1
+          is_program_exception?: boolean;           // Phase 27B1
         };
         Update: {
           id?: string;
@@ -473,6 +481,10 @@ export type Database = {
           created_by?: string;
           created_at?: string;
           updated_at?: string;
+          program_id?: string | null;              // Phase 27B1
+          program_schedule_rule_id?: string | null; // Phase 27B1
+          program_occurrence_date?: string | null;  // Phase 27B1
+          is_program_exception?: boolean;           // Phase 27B1
         };
         Relationships: [
           {
@@ -492,6 +504,218 @@ export type Database = {
           {
             foreignKeyName: "events_created_by_fkey";
             columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "events_program_id_fkey";
+            columns: ["program_id"];
+            isOneToOne: false;
+            referencedRelation: "programs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "events_program_rule_fkey";
+            columns: ["program_schedule_rule_id", "program_id"];
+            isOneToOne: false;
+            referencedRelation: "program_schedule_rules";
+            referencedColumns: ["id", "program_id"];
+          }
+        ];
+      };
+      programs: {
+        Row: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          enrollment_model: "program" | "per_session" | "admin_managed";
+          status: "draft" | "active" | "cancelled" | "completed";
+          starts_on: string;
+          ends_on: string;
+          default_capacity: number;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          archived_at: string | null;
+          archived_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description?: string | null;
+          enrollment_model: "program" | "per_session" | "admin_managed";
+          status?: "draft" | "active" | "cancelled" | "completed";
+          starts_on: string;
+          ends_on: string;
+          default_capacity: number;
+          created_by: string;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+          archived_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          club_id?: string;
+          event_type_id?: string;
+          title?: string;
+          description?: string | null;
+          enrollment_model?: "program" | "per_session" | "admin_managed";
+          status?: "draft" | "active" | "cancelled" | "completed";
+          starts_on?: string;
+          ends_on?: string;
+          default_capacity?: number;
+          created_by?: string;
+          created_at?: string;
+          updated_at?: string;
+          archived_at?: string | null;
+          archived_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "programs_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "programs_event_type_id_fkey";
+            columns: ["event_type_id"];
+            isOneToOne: false;
+            referencedRelation: "event_types";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "programs_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      program_schedule_rules: {
+        Row: {
+          id: string;
+          program_id: string;
+          day_of_week: number;
+          start_time: string;
+          duration_minutes: number;
+          capacity_override: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          program_id: string;
+          day_of_week: number;
+          start_time: string;
+          duration_minutes: number;
+          capacity_override?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          program_id?: string;
+          day_of_week?: number;
+          start_time?: string;
+          duration_minutes?: number;
+          capacity_override?: number | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "program_schedule_rules_program_id_fkey";
+            columns: ["program_id"];
+            isOneToOne: false;
+            referencedRelation: "programs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      program_rule_courts: {
+        Row: {
+          id: string;
+          program_schedule_rule_id: string;
+          court_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          program_schedule_rule_id: string;
+          court_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          program_schedule_rule_id?: string;
+          court_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "program_rule_courts_program_schedule_rule_id_fkey";
+            columns: ["program_schedule_rule_id"];
+            isOneToOne: false;
+            referencedRelation: "program_schedule_rules";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "program_rule_courts_court_id_fkey";
+            columns: ["court_id"];
+            isOneToOne: false;
+            referencedRelation: "courts";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      program_enrollments: {
+        Row: {
+          id: string;
+          program_id: string;
+          profile_id: string;
+          status: "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          program_id: string;
+          profile_id: string;
+          status: "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          program_id?: string;
+          profile_id?: string;
+          status?: "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "program_enrollments_program_id_fkey";
+            columns: ["program_id"];
+            isOneToOne: false;
+            referencedRelation: "programs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "program_enrollments_profile_id_fkey";
+            columns: ["profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
