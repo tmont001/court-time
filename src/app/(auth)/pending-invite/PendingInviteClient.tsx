@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 interface Props {
@@ -9,14 +8,15 @@ interface Props {
 }
 
 export default function PendingInviteClient({ email }: Props) {
-  const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   async function handleSignOut() {
     setLoading(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/sign-in");
+    // Hard navigation, not router.push — see SignOutButton.tsx for why an
+    // identity change must be a hard application boundary.
+    window.location.replace("/sign-in");
   }
 
   return (

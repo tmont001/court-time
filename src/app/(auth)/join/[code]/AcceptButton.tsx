@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { acceptInviteAction } from "./actions";
 
@@ -14,7 +13,6 @@ interface Props {
 }
 
 export default function AcceptButton({ code, userEmail }: Props) {
-  const router = useRouter();
   const [error,      setError]      = useState<string | null>(null);
   const [loading,    setLoading]    = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -36,7 +34,9 @@ export default function AcceptButton({ code, userEmail }: Props) {
     setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push(`/sign-in?redirect=/join/${code}`);
+    // Hard navigation, not router.push — see SignOutButton.tsx for why an
+    // identity change must be a hard application boundary.
+    window.location.replace(`/sign-in?redirect=/join/${code}`);
   }
 
   return (

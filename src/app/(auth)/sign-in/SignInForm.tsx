@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { acceptPendingInviteAction } from "../join/[code]/actions";
@@ -10,7 +9,6 @@ import { acceptPendingInviteAction } from "../join/[code]/actions";
 const INVITE_PATH_RE = /^\/join\/([0-9a-f]{32})$/i;
 
 export default function SignInForm({ redirectTo }: { redirectTo?: string | null }) {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +64,18 @@ export default function SignInForm({ redirectTo }: { redirectTo?: string | null 
 
     const firstName = profile?.first_name?.trim() ?? "";
     const lastName  = profile?.last_name?.trim()  ?? "";
+    // Hard navigation, not router.push: an identity change must be a hard
+    // application boundary. A soft navigation from /sign-in into the (app)
+    // shell can serve the Header/SideNav/BottomNav from Next's client
+    // router cache, showing the PREVIOUS account's club/role until a
+    // manual refresh (the (app) layout re-renders correctly server-side,
+    // but a cached client render can still be reused for a beat). A full
+    // document load forces every authenticated surface to be fetched fresh
+    // under the new session.
     if (!firstName || !lastName) {
-      router.push("/welcome");
+      window.location.replace("/welcome");
     } else {
-      router.push("/calendar");
+      window.location.replace("/calendar");
     }
   }
 

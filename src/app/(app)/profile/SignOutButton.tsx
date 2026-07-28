@@ -1,15 +1,19 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignOutButton() {
-  const router = useRouter();
-
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/sign-in");
+    // Hard navigation, not router.push: an identity change must be a hard
+    // application boundary. A soft navigation can leave the (app) layout
+    // shell (Header/SideNav/BottomNav — all rendered from the signed-out
+    // user's session) served from Next's client router cache on the next
+    // sign-in, showing the previous account's club/role until a manual
+    // refresh. window.location.replace also drops this page from history,
+    // so Back can't land on a stale authenticated page.
+    window.location.replace("/sign-in");
   }
 
   return (

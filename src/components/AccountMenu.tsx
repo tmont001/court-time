@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 interface Props {
@@ -12,7 +11,6 @@ interface Props {
 }
 
 export default function AccountMenu({ userInitials, userName, userEmail }: Props) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
@@ -30,7 +28,9 @@ export default function AccountMenu({ userInitials, userName, userEmail }: Props
     close();
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/sign-in");
+    // Hard navigation, not router.push — see SignOutButton.tsx for why an
+    // identity change must be a hard application boundary.
+    window.location.replace("/sign-in");
   }
 
   return (
