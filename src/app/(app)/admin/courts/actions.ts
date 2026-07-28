@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 const ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]: STALE_CLUB_MESSAGE,
   not_authenticated:   "You must be signed in.",
   insufficient_role:   "Admin access required.",
   invalid_court:       "Court not found.",
@@ -18,7 +21,10 @@ function revalidateCourts() {
   revalidatePath("/calendar");
 }
 
-export async function addCourt(name: string): Promise<{ error?: string }> {
+export async function addCourt(name: string, expectedClubId: string): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
@@ -33,7 +39,10 @@ export async function addCourt(name: string): Promise<{ error?: string }> {
   return {};
 }
 
-export async function renameCourt(courtId: string, name: string): Promise<{ error?: string }> {
+export async function renameCourt(courtId: string, name: string, expectedClubId: string): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
@@ -48,7 +57,10 @@ export async function renameCourt(courtId: string, name: string): Promise<{ erro
   return {};
 }
 
-export async function reorderCourts(courtOrder: string[]): Promise<{ error?: string }> {
+export async function reorderCourts(courtOrder: string[], expectedClubId: string): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
@@ -65,8 +77,12 @@ export async function reorderCourts(courtOrder: string[]): Promise<{ error?: str
 
 export async function setCourtActive(
   courtId: string,
-  isActive: boolean
+  isActive: boolean,
+  expectedClubId: string,
 ): Promise<{ error?: string; futureCount?: number }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
@@ -89,7 +105,10 @@ export async function setCourtActive(
   return {};
 }
 
-export async function deleteCourt(courtId: string): Promise<{ error?: string }> {
+export async function deleteCourt(courtId: string, expectedClubId: string): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };

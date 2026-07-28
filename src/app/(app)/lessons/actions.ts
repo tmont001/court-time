@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { sendEmail } from "@/lib/email";
 import {
   lessonRequestReceivedTemplate,
@@ -176,7 +178,11 @@ export async function submitLessonRequest(params: {
   p_preferred_court_id?: string | null;
   p_member_note?:        string | null;
   p_preferred_windows?:  Record<string, unknown> | null;
+  expectedClubId:        string;
 }): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("submit_lesson_request", {
@@ -210,7 +216,11 @@ export async function submitLessonRequest(params: {
 
 export async function withdrawLessonRequest(
   requestId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("withdraw_lesson_request", {
@@ -332,7 +342,11 @@ export async function cancelLesson(params: {
   proId:      string;
   actorId:    string;
   reason?:    string | null;
+  expectedClubId: string;
 }): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("cancel_lesson", {
@@ -428,11 +442,15 @@ export interface AdminCreateLessonParams {
   preferredCourtId?: string | null;
   memberNote?:      string | null;
   preferredWindows?: Record<string, unknown> | null;
+  expectedClubId:   string;
 }
 
 export async function adminCreateLessonRequestAction(
   params: AdminCreateLessonParams,
 ): Promise<{ requestId?: string; error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("admin_create_lesson_request", {
@@ -471,6 +489,7 @@ export async function adminCreateLessonRequestAction(
 
 function mapLessonError(msg: string): string {
   const map: Record<string, string> = {
+    [STALE_CLUB_CONTEXT_ERROR]:     STALE_CLUB_MESSAGE,
     not_authenticated:              "Please sign in to continue.",
     no_club:                        "You must belong to a club to use this feature.",
     account_inactive:               "Your account is inactive.",

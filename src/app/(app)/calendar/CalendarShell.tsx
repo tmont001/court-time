@@ -10,6 +10,7 @@ import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import { createReservation, cancelMemberReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -163,6 +164,7 @@ function formatTimeStr(t: string): string {
 // ─── RPC error message map ────────────────────────────────────────────────────
 
 function rpcErrorMessage(code: string | undefined, message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (code === "23P01")                    return "That slot was just taken — please choose another time.";
   if (message === "outside_booking_window") return "That date is outside the booking window.";
   if (message === "cannot_book_past")       return "You cannot book in the past.";
@@ -557,6 +559,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       p_court_id:  bookingSlot.court.id,
       p_starts_at: bookingSlot.slotStart.toISOString(),
       p_ends_at:   endsAt.toISOString(),
+      expectedClubId: clubId,
     });
 
     if (error) {
@@ -1103,6 +1106,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           userId={userId}
           userRole={userRole}
           clubTimezone={clubTimezone}
+          clubId={clubId}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
         />
@@ -1112,6 +1116,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       {creatingBlock && (
         <CreateMaintenanceSheet
           courts={courts}
+          clubId={clubId}
           clubTimezone={clubTimezone}
           selectedDate={selectedDate}
           onClose={closeSlotFlow}
@@ -1129,11 +1134,12 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           reservation={selectedReservation}
           courts={courts}
           clubTimezone={clubTimezone}
+          clubId={clubId}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onMemberCancel={
             selectedReservation.owner_user_id === userId && userRole === "member"
-              ? async () => cancelMemberReservation(selectedReservation.id)
+              ? async () => cancelMemberReservation(selectedReservation.id, clubId)
               : undefined
           }
         />

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -53,6 +54,7 @@ interface Props {
   userId: string;
   userRole: string;
   clubTimezone: string;
+  clubId: string;
   onClose: () => void;
   onRefresh: () => void;
 }
@@ -68,6 +70,7 @@ function formatParticipantName(profile: ParticipantProfile): string {
 }
 
 function mapJoinError(message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (message === "event_full")             return "This event is now full.";
   if (message === "already_joined")         return "You're already signed up.";
   if (message === "event_already_started")  return "This event has already started.";
@@ -78,6 +81,7 @@ function mapJoinError(message: string): string {
 }
 
 function mapLeaveError(message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (message === "not_joined")        return "You are not signed up for this event.";
   if (message === "not_authenticated") return "Please sign in to continue.";
   if (message === "event_archived")    return "This event is archived.";
@@ -85,6 +89,7 @@ function mapLeaveError(message: string): string {
 }
 
 function mapOfferError(message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (message === "offer_not_found")   return "This offer is no longer valid.";
   if (message === "offer_expired")     return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
   if (message === "not_authenticated") return "Please sign in to continue.";
@@ -97,7 +102,7 @@ function mapOfferError(message: string): string {
 const MAX_NAMES = 5;
 
 export default function EventDetailSheet({
-  event, courts, userId, userRole, clubTimezone, onClose, onRefresh,
+  event, courts, userId, userRole, clubTimezone, clubId, onClose, onRefresh,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -198,7 +203,7 @@ export default function EventDetailSheet({
   async function handleJoin() {
     setLoading(true);
     setError(null);
-    const { error: rpcError } = await joinEvent(event.id);
+    const { error: rpcError } = await joinEvent(event.id, clubId);
     if (rpcError) {
       setError(mapJoinError(rpcError));
       setLoading(false);
@@ -212,7 +217,7 @@ export default function EventDetailSheet({
   async function handleLeave() {
     setLoading(true);
     setError(null);
-    const result = await leaveEvent(event.id);
+    const result = await leaveEvent(event.id, clubId);
     if (result?.error) {
       setError(mapLeaveError(result.error));
       setLoading(false);
@@ -226,9 +231,10 @@ export default function EventDetailSheet({
   async function handleCancelEvent() {
     setCancelLoading(true);
     setCancelError(null);
-    const result = await cancelEvent(event.id);
+    const result = await cancelEvent(event.id, clubId);
     if (result?.error) {
       setCancelError(
+        result.error === STALE_CLUB_CONTEXT_ERROR ? STALE_CLUB_MESSAGE :
         result.error === "event_not_found"  ? "This event has already been cancelled." :
         result.error === "event_archived"   ? "This event is archived and cannot be cancelled." :
         "Something went wrong. Please try again."
@@ -243,7 +249,7 @@ export default function EventDetailSheet({
   async function handleAcceptOffer() {
     setOfferLoading("accept");
     setOfferError(null);
-    const result = await acceptWaitlistOffer(event.id);
+    const result = await acceptWaitlistOffer(event.id, clubId);
     if (result?.error) {
       setOfferError(mapOfferError(result.error));
       setOfferLoading(null);
@@ -256,7 +262,7 @@ export default function EventDetailSheet({
   async function handlePassOffer() {
     setOfferLoading("pass");
     setOfferError(null);
-    const result = await declineWaitlistOffer(event.id);
+    const result = await declineWaitlistOffer(event.id, clubId);
     if (result?.error) {
       setOfferError(mapOfferError(result.error));
       setOfferLoading(null);
@@ -493,6 +499,7 @@ export default function EventDetailSheet({
       {rosterOpen && (
         <EventRosterSheet
           eventId={event.id}
+          clubId={clubId}
           clubTimezone={clubTimezone}
           userRole={userRole}
           refreshTick={rosterRefreshTick}

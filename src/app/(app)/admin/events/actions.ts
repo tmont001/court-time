@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +73,7 @@ export async function fetchMoreAdminEvents(
 // ---------------------------------------------------------------------------
 
 const ARCHIVE_ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]: STALE_CLUB_MESSAGE,
   not_authenticated: "You must be signed in.",
   account_inactive:  "Your account is inactive.",
   insufficient_role: "You do not have permission to archive this event.",
@@ -80,6 +83,7 @@ const ARCHIVE_ERROR_MESSAGES: Record<string, string> = {
 };
 
 const UNARCHIVE_ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]: STALE_CLUB_MESSAGE,
   not_authenticated: "You must be signed in.",
   account_inactive:  "Your account is inactive.",
   insufficient_role: "You do not have permission to unarchive this event.",
@@ -89,6 +93,7 @@ const UNARCHIVE_ERROR_MESSAGES: Record<string, string> = {
 
 // These codes are raised as exceptions by the admin_* RPCs in 0051.
 const ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]:     STALE_CLUB_MESSAGE,
   not_authenticated:              "You must be signed in.",
   admin_required:                 "Only admins and pros can manage event rosters.",
   insufficient_role:              "Only admins and pros can manage event rosters.",
@@ -120,7 +125,11 @@ function rpcError(error: { message?: string } | null): string {
 export async function adminAddMember(
   eventId:   string,
   profileId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_add_member", {
@@ -140,7 +149,11 @@ export async function adminAddMember(
 export async function adminRemoveParticipant(
   eventId:   string,
   profileId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_remove_participant", {
@@ -160,7 +173,11 @@ export async function adminRemoveParticipant(
 export async function adminForceConfirm(
   eventId:   string,
   profileId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_force_confirm", {
@@ -180,7 +197,11 @@ export async function adminForceConfirm(
 export async function adminOfferSpot(
   eventId:   string,
   profileId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_offer_spot", {
@@ -199,7 +220,11 @@ export async function adminOfferSpot(
 export async function adminExpireOffer(
   eventId:   string,
   profileId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_expire_offer", {
@@ -219,7 +244,11 @@ export async function adminExpireOffer(
 export async function adminAddGuest(
   eventId:     string,
   displayName: string,
+  expectedClubId: string,
 ): Promise<{ data?: { id: string; display_name: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("admin_add_guest", {
@@ -241,7 +270,11 @@ export async function adminAddGuest(
 export async function adminAddRosterMemberToEvent(
   eventId:        string,
   rosterMemberId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_add_roster_member_to_event", {
@@ -267,7 +300,11 @@ export async function adminAddRosterMemberToEvent(
 export async function adminRemoveGuest(
   eventId: string,
   guestId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("admin_remove_guest", {
@@ -280,13 +317,48 @@ export async function adminRemoveGuest(
 }
 
 // ---------------------------------------------------------------------------
+// markAttendance
+// Phase 26F1: wraps the mark_attendance RPC in a Server Action (moved off
+// the client-side supabase.rpc call in EventRosterSheet.tsx) so the
+// stale-club preflight guard can run before the write. Returns the raw
+// error code/message rather than a pre-mapped string — EventRosterSheet
+// already does its own inline mapping (event_archived -> friendly text) and
+// now also maps stale_club_context the same way, so no behavior changes for
+// existing error codes.
+// ---------------------------------------------------------------------------
+export async function markAttendance(
+  eventId:          string,
+  profileId:        string,
+  attendanceStatus: string | null,
+  expectedClubId:   string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("mark_attendance", {
+    p_event_id:          eventId,
+    p_profile_id:        profileId,
+    p_attendance_status: attendanceStatus,
+  });
+
+  if (error) return { error: error.message };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
 // archiveEventAction
 // Archives a past or cancelled event. Does not notify members, does not
 // modify linked records (participants, guests, reservations).
 // ---------------------------------------------------------------------------
 export async function archiveEventAction(
   eventId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ARCHIVE_ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -308,7 +380,11 @@ export async function archiveEventAction(
 // ---------------------------------------------------------------------------
 export async function unarchiveEventAction(
   eventId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: UNARCHIVE_ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -324,6 +400,7 @@ export async function unarchiveEventAction(
 }
 
 const MEMBER_JOINABLE_ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]: STALE_CLUB_MESSAGE,
   not_authenticated: "You must be signed in.",
   insufficient_role: "You do not have permission to change this event.",
   event_not_found:   "Event not found.",
@@ -341,7 +418,11 @@ const MEMBER_JOINABLE_ERROR_MESSAGES: Record<string, string> = {
 export async function setEventMemberJoinableAction(
   eventId:        string,
   memberJoinable: boolean,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: MEMBER_JOINABLE_ERROR_MESSAGES[guard.error] };
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("set_event_member_joinable", {

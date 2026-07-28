@@ -18,35 +18,39 @@ import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
-async function joinEventAction(formData: FormData) {
+// Phase 26F1: each action is bound with the club id the page was rendered
+// for (see `.bind(null, clubId)` at the call sites below) so the stale-club
+// guard in the underlying calendar action has an expectedClubId to check,
+// without EventsUpcomingClient needing to know about club context at all.
+async function joinEventAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchJoinEvent(eventId);
+  await dispatchJoinEvent(eventId, clubId);
   revalidatePath("/events");
 }
 
-async function leaveEventAction(formData: FormData) {
+async function leaveEventAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchLeaveEvent(eventId);
+  await dispatchLeaveEvent(eventId, clubId);
   revalidatePath("/events");
 }
 
-async function acceptWaitlistOfferAction(formData: FormData) {
+async function acceptWaitlistOfferAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchAcceptWaitlistOffer(eventId);
+  await dispatchAcceptWaitlistOffer(eventId, clubId);
   revalidatePath("/events");
 }
 
-async function declineWaitlistOfferAction(formData: FormData) {
+async function declineWaitlistOfferAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchDeclineWaitlistOffer(eventId);
+  await dispatchDeclineWaitlistOffer(eventId, clubId);
   revalidatePath("/events");
 }
 
@@ -147,12 +151,13 @@ export default async function EventsPage({
       events={events}
       userId={user.id}
       userRole={profile?.role}
+      clubId={clubId}
       clubTimezone={clubTimezone}
       courtNames={courtNames}
-      joinEventAction={joinEventAction}
-      leaveEventAction={leaveEventAction}
-      acceptWaitlistOfferAction={acceptWaitlistOfferAction}
-      declineWaitlistOfferAction={declineWaitlistOfferAction}
+      joinEventAction={joinEventAction.bind(null, clubId)}
+      leaveEventAction={leaveEventAction.bind(null, clubId)}
+      acceptWaitlistOfferAction={acceptWaitlistOfferAction.bind(null, clubId)}
+      declineWaitlistOfferAction={declineWaitlistOfferAction.bind(null, clubId)}
     />
   );
 
@@ -189,6 +194,7 @@ export default async function EventsPage({
                   courts={(adminCourts ?? []) as { id: string; name: string }[]}
                   userId={user.id}
                   userRole={profile!.role!}
+                  clubId={clubId}
                   clubTimezone={clubTimezone}
                 />
               }

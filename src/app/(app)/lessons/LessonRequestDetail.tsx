@@ -14,6 +14,7 @@ import {
 interface Props {
   request:    LessonRequestRow;
   userId:     string;
+  clubId:     string;
   clubTimezone: string;
   onClose:    () => void;
 }
@@ -47,7 +48,7 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
-export default function LessonRequestDetail({ request, userId: _userId, clubTimezone, onClose }: Props) {
+export default function LessonRequestDetail({ request, userId: _userId, clubId, clubTimezone, onClose }: Props) {
   const router = useRouter();
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [confirmCancel,   setConfirmCancel]   = useState(false);
@@ -212,7 +213,7 @@ export default function LessonRequestDetail({ request, userId: _userId, clubTime
               Withdraw this request?
             </p>
             <button
-              onClick={() => action(() => withdrawLessonRequest(request.id))}
+              onClick={() => action(() => withdrawLessonRequest(request.id, clubId))}
               disabled={isPending}
               className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-50"
             >
@@ -257,6 +258,7 @@ export default function LessonRequestDetail({ request, userId: _userId, clubTime
                 proId:     request.pro_id,
                 actorId:   _userId,
                 reason:    cancelReason.trim() || null,
+                expectedClubId: clubId,
               }))}
               disabled={isPending}
               className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-50"

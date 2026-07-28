@@ -6,6 +6,7 @@ import EventRosterSheet from "@/app/(app)/calendar/EventRosterSheet";
 interface Props {
   eventId:      string;
   userRole:     string | null | undefined;
+  clubId:       string;
   clubTimezone: string;
   rosterCount:  number;
   // Card body (non-interactive: pills, title, time, offer deadline)
@@ -17,6 +18,7 @@ interface Props {
 export default function EventCardClient({
   eventId,
   userRole,
+  clubId,
   clubTimezone,
   rosterCount,
   children,
@@ -62,6 +64,7 @@ export default function EventCardClient({
       {rosterOpen && (
         <EventRosterSheet
           eventId={eventId}
+          clubId={clubId}
           userRole={userRole ?? undefined}
           clubTimezone={clubTimezone}
           onClose={() => setRosterOpen(false)}

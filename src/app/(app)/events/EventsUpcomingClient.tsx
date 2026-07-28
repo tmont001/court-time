@@ -39,6 +39,7 @@ interface Props {
   events:                      UpcomingEventData[];
   userId:                      string;
   userRole:                    string | null | undefined;
+  clubId:                      string;
   clubTimezone:                string;
   courtNames:                  Array<{ id: string; name: string }>;
   joinEventAction:             (formData: FormData) => Promise<void>;
@@ -51,6 +52,7 @@ export default function EventsUpcomingClient({
   events,
   userId,
   userRole,
+  clubId,
   clubTimezone,
   courtNames,
   joinEventAction,
@@ -238,6 +240,7 @@ export default function EventsUpcomingClient({
                             key={ev.id}
                             eventId={ev.id}
                             userRole={userRole}
+                            clubId={clubId}
                             clubTimezone={clubTimezone}
                             rosterCount={confirmedCount + offeredCount + waitlistCount}
                             actionArea={

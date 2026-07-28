@@ -40,7 +40,7 @@ export default async function AdminCourtsPage() {
           </p>
         </div>
         <hr className="border-gray-100 dark:border-gray-800" />
-        <CourtManagementList initialCourts={courts ?? []} />
+        <CourtManagementList initialCourts={courts ?? []} clubId={profile?.club_id ?? ""} />
       </div>
     </>
   );

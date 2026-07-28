@@ -5,6 +5,7 @@ import EventRosterSheet, { type RosterParticipantRow } from "@/app/(app)/calenda
 
 interface Props {
   eventId:          string;
+  clubId:           string;
   count:            number;
   userRole?:        string;
   clubTimezone?:    string;
@@ -13,7 +14,7 @@ interface Props {
   onRosterChange?:  (participantRows: RosterParticipantRow[], guestCount: number) => void;
 }
 
-export default function EventRosterButton({ eventId, count, userRole, clubTimezone, readOnly = false, label, onRosterChange }: Props) {
+export default function EventRosterButton({ eventId, clubId, count, userRole, clubTimezone, readOnly = false, label, onRosterChange }: Props) {
   const [open, setOpen] = useState(false);
   const buttonLabel = label ?? (readOnly ? `View Roster (${count})` : `Roster (${count})`);
   return (
@@ -27,6 +28,7 @@ export default function EventRosterButton({ eventId, count, userRole, clubTimezo
       {open && (
         <EventRosterSheet
           eventId={eventId}
+          clubId={clubId}
           userRole={userRole}
           clubTimezone={clubTimezone}
           readOnly={readOnly}

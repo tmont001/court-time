@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import { createClient } from "@/lib/supabase/client";
+import { createMaintenanceBlocks } from "./actions";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ interface Court {
 
 interface Props {
   courts:           Court[];
+  clubId:           string;
   clubTimezone:     string;
   selectedDate:     Date;
   onClose:          () => void;
@@ -68,6 +70,7 @@ function toMins(hour: number, minute: number): number {
 }
 
 function mapBlockError(code: string | undefined, message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR)        return STALE_CLUB_MESSAGE;
   if (code === "23P01")                            return "One or more courts already have a booking at that time.";
   if (message === "invalid_duration")              return "End time must be after start time.";
   if (message === "cannot_create_past")            return "Maintenance blocks cannot be scheduled in the past.";
@@ -80,11 +83,9 @@ function mapBlockError(code: string | undefined, message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CreateMaintenanceSheet({
-  courts, clubTimezone, selectedDate, onClose, onCreated, onBack,
+  courts, clubId, clubTimezone, selectedDate, onClose, onCreated, onBack,
   defaultCourtId, defaultStartHour, defaultStartMinute,
 }: Props) {
-  const supabase = useMemo(() => createClient(), []);
-
   // ── Court multi-select: default to the clicked court, else first court ─────
   const [selectedCourtIds, setSelectedCourtIds] = useState<string[]>(() => {
     if (defaultCourtId) return [defaultCourtId];
@@ -174,12 +175,13 @@ export default function CreateMaintenanceSheet({
       return;
     }
 
-    const { error: rpcError } = await supabase.rpc("create_maintenance_blocks", {
+    const { error: rpcError } = await createMaintenanceBlocks({
       p_court_ids:              selectedCourtIds,
       p_starts_at:              startsAt.toISOString(),
       p_ends_at:                endsAt.toISOString(),
       p_notes:                  notes.trim() || null,
       p_show_notes_to_members:  showNotesToMembers,
+      expectedClubId:           clubId,
     });
 
     if (rpcError) {

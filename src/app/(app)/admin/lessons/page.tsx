@@ -67,6 +67,7 @@ export default async function AdminLessonsPage() {
               courts={courts}
               userId={user.id}
               userRole={profile.role}
+              clubId={clubId}
               clubTimezone={clubTimezone}
             />
           </div>
@@ -84,6 +85,7 @@ export default async function AdminLessonsPage() {
             requests={requests}
             courts={courts}
             userId={user.id}
+            clubId={clubId}
             clubTimezone={clubTimezone}
             pros={pros}
             members={members}

@@ -86,6 +86,7 @@ export default async function MemberDetailPage({ params }: Props) {
             initialHistory={historyItems}
             initialHasMore={historyItems.length === 20}
             initialNotes={notes}
+            clubId={clubId}
             clubTimezone={timezone}
             pros={pros}
             courts={courts}

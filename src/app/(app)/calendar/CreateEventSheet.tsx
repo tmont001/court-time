@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
+import { createEvent } from "./actions";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -66,6 +68,7 @@ function formatSlotLabel(hour: number, minute: number): string {
 }
 
 function mapCreateError(code: string | undefined, message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR)           return STALE_CLUB_MESSAGE;
   if (code === "23P01")                              return "A court is already booked at that time.";
   if (message === "insufficient_role"
    || message === "not_authorized")                  return "Only pros and admins can create events.";
@@ -238,7 +241,7 @@ export default function CreateEventSheet({
     setSubmitting(true);
     setError(null);
 
-    const { error: rpcError } = await supabase.rpc("create_event", {
+    const { error: rpcError } = await createEvent({
       p_event_type_id:  selectedType.id,
       p_title:          title.trim(),
       p_starts_at:      startsAt.toISOString(),
@@ -246,6 +249,7 @@ export default function CreateEventSheet({
       p_court_ids:      selectedCourtIds,
       p_capacity:       capacity,
       p_member_joinable: memberJoinable,
+      expectedClubId:   clubId,
     });
 
     if (rpcError) {

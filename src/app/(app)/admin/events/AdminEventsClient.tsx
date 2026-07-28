@@ -8,6 +8,7 @@ import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
 import { cancelEvent } from "@/app/(app)/calendar/actions";
 import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction, setEventMemberJoinableAction } from "./actions";
 import type { AdminEventRow, ArchiveView } from "./actions";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 type Court        = { id: string; name: string; display_order: number };
 type StatusFilter = "scheduled" | "cancelled" | "all";
@@ -36,6 +37,7 @@ function formatDate(iso: string, tz: string): string {
 }
 
 function mapCancelError(code: string): string {
+  if (code === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (code === "insufficient_role")   return "You do not have permission to cancel this event.";
   if (code === "event_not_found")     return "This event could not be cancelled. It may already be cancelled.";
   if (code === "event_cancelled")     return "This event could not be cancelled. It may already be cancelled.";
@@ -149,7 +151,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   function handleArchive(eventId: string) {
     setArchiveError(null);
     startArchiveTransition(async () => {
-      const result = await archiveEventAction(eventId);
+      const result = await archiveEventAction(eventId, clubId);
       if (result.error) {
         setArchiveError(result.error);
       } else {
@@ -162,7 +164,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   function handleUnarchive(eventId: string) {
     setArchiveError(null);
     startArchiveTransition(async () => {
-      const result = await unarchiveEventAction(eventId);
+      const result = await unarchiveEventAction(eventId, clubId);
       if (result.error) {
         setArchiveError(result.error);
       } else {
@@ -175,7 +177,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   function handleCancel(eventId: string) {
     setCancelError(null);
     startCancelTransition(async () => {
-      const result = await cancelEvent(eventId);
+      const result = await cancelEvent(eventId, clubId);
       if (result.error) {
         setCancelError(mapCancelError(result.error.trim()));
       } else {
@@ -195,7 +197,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     // Optimistic update — immediately reflects the new state.
     setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, member_joinable: nextValue } : ev));
     startJoinableTransition(async () => {
-      const result = await setEventMemberJoinableAction(eventId, nextValue);
+      const result = await setEventMemberJoinableAction(eventId, nextValue, clubId);
       if (result.error) {
         // Revert on failure.
         setEvents(prev => prev.map(ev => ev.id === eventId ? { ...ev, member_joinable: currentValue } : ev));
@@ -608,6 +610,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                           {!isCancelled && (
                             <EventRosterButton
                               eventId={ev.id}
+                              clubId={clubId}
                               count={rosterCount}
                               userRole={userRole}
                               clubTimezone={clubTimezone}

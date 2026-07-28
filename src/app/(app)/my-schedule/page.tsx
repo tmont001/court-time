@@ -11,6 +11,7 @@ import {
   declineWaitlistOffer as dispatchDeclineWaitlistOffer,
   notifyMemberReservationCancelled,
 } from "@/app/(app)/calendar/actions";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
 import PastEventsSection from "./PastEventsSection";
 import LessonsClient from "@/app/(app)/lessons/LessonsClient";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
@@ -53,10 +54,19 @@ type ScheduleItem =
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
-async function cancelReservation(formData: FormData) {
+// Phase 26F1: clubId is bound at the render site below (.bind(null, clubId)),
+// so it's available here without threading it through FormData. This
+// mirrors the existing silent early-return convention this function already
+// uses for the cancellation-window check — a stale club context stops the
+// write the same way, with no separate error UI to wire up here (this form
+// action never surfaced errors in the first place).
+async function cancelReservation(clubId: string, formData: FormData) {
   "use server";
   const id = formData.get("id") as string | null;
   if (!id) return;
+
+  const guard = await assertActiveClub(clubId);
+  if (!guard.ok) return;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -112,35 +122,35 @@ async function cancelReservation(formData: FormData) {
   revalidatePath("/my-schedule");
 }
 
-async function leaveEvent(formData: FormData) {
+async function leaveEvent(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchLeaveEvent(eventId);
+  await dispatchLeaveEvent(eventId, clubId);
   revalidatePath("/my-schedule");
 }
 
-async function acceptWaitlistOfferAction(formData: FormData) {
+async function acceptWaitlistOfferAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchAcceptWaitlistOffer(eventId);
+  await dispatchAcceptWaitlistOffer(eventId, clubId);
   revalidatePath("/my-schedule");
 }
 
-async function declineWaitlistOfferAction(formData: FormData) {
+async function declineWaitlistOfferAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchDeclineWaitlistOffer(eventId);
+  await dispatchDeclineWaitlistOffer(eventId, clubId);
   revalidatePath("/my-schedule");
 }
 
-async function rejoinEventAction(formData: FormData) {
+async function rejoinEventAction(clubId: string, formData: FormData) {
   "use server";
   const eventId = formData.get("event_id") as string | null;
   if (!eventId) return;
-  await dispatchJoinEvent(eventId);
+  await dispatchJoinEvent(eventId, clubId);
   revalidatePath("/my-schedule");
 }
 
@@ -414,7 +424,7 @@ export default async function MySchedulePage({
                                   </p>
                                 </div>
                                 {item.isCancellable ? (
-                                  <form action={cancelReservation}>
+                                  <form action={cancelReservation.bind(null, clubId)}>
                                     <input type="hidden" name="id" value={res.id} />
                                     <button
                                       type="submit"
@@ -494,7 +504,7 @@ export default async function MySchedulePage({
                                 <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
                               ) : isOffered ? (
                                 offerExpiredServerSide ? (
-                                  <form action={rejoinEventAction}>
+                                  <form action={rejoinEventAction.bind(null, clubId)}>
                                     <input type="hidden" name="event_id" value={ev.id} />
                                     <button
                                       type="submit"
@@ -505,7 +515,7 @@ export default async function MySchedulePage({
                                   </form>
                                 ) : (
                                   <div className="flex flex-col items-end gap-1.5 ml-4 shrink-0">
-                                    <form action={acceptWaitlistOfferAction}>
+                                    <form action={acceptWaitlistOfferAction.bind(null, clubId)}>
                                       <input type="hidden" name="event_id" value={ev.id} />
                                       <button
                                         type="submit"
@@ -514,7 +524,7 @@ export default async function MySchedulePage({
                                         Accept
                                       </button>
                                     </form>
-                                    <form action={declineWaitlistOfferAction}>
+                                    <form action={declineWaitlistOfferAction.bind(null, clubId)}>
                                       <input type="hidden" name="event_id" value={ev.id} />
                                       <button
                                         type="submit"
@@ -526,7 +536,7 @@ export default async function MySchedulePage({
                                   </div>
                                 )
                               ) : (
-                                <form action={leaveEvent}>
+                                <form action={leaveEvent.bind(null, clubId)}>
                                   <input type="hidden" name="event_id" value={ev.id} />
                                   <button
                                     type="submit"
@@ -589,6 +599,7 @@ export default async function MySchedulePage({
               pros={pros}
               courts={lessonCourts}
               userId={user.id}
+              clubId={clubId}
               clubTimezone={clubTimezone}
               prosError={prosError}
               autoOpen={autoOpen && !prosError && pros.length > 0}

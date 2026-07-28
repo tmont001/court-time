@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
 import { sendSms } from "@/lib/sms";
 import { sendEmailNotification } from "@/lib/email";
 import {
@@ -28,13 +29,18 @@ export async function createReservation(params: {
   p_player_count?: number | null;
   p_guest_names?:  string[] | null;
   p_notes?:      string | null;
+  expectedClubId: string;
 }): Promise<{ error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: { message: "not_authenticated" } };
 
-  const { error } = await supabase.rpc("create_reservation", params);
+  const { error } = await supabase.rpc("create_reservation", rpcParams);
   if (error) return { error: { code: error.code, message: error.message } };
 
   try {
@@ -48,6 +54,62 @@ export async function createReservation(params: {
   } catch {
     // Email dispatch must never block booking success or surface to the user.
   }
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// createEvent
+// Phase 26F1: wraps the create_event RPC in a Server Action (moved off the
+// client-side supabase.rpc call in CreateEventSheet.tsx) so the stale-club
+// preflight guard can run before the write. Validation, the RPC itself, and
+// success/error shape are otherwise unchanged.
+// ---------------------------------------------------------------------------
+export async function createEvent(params: {
+  p_event_type_id:   string;
+  p_title:           string;
+  p_starts_at:        string;
+  p_ends_at:          string;
+  p_court_ids:        string[];
+  p_capacity:         number;
+  p_member_joinable:  boolean;
+  expectedClubId:     string;
+}): Promise<{ error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("create_event", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// createMaintenanceBlocks
+// Phase 26F1: wraps the create_maintenance_blocks RPC in a Server Action
+// (moved off the client-side supabase.rpc call in CreateMaintenanceSheet.tsx)
+// so the stale-club preflight guard can run before the write. Validation,
+// the RPC itself, and success/error shape are otherwise unchanged.
+// ---------------------------------------------------------------------------
+export async function createMaintenanceBlocks(params: {
+  p_court_ids:             string[];
+  p_starts_at:             string;
+  p_ends_at:               string;
+  p_notes:                 string | null;
+  p_show_notes_to_members: boolean;
+  expectedClubId:          string;
+}): Promise<{ error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("create_maintenance_blocks", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
 
   return {};
 }
@@ -154,7 +216,11 @@ async function dispatchBookingConfirmEmail(ownerUserId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 export async function joinEvent(
   eventId: string,
+  expectedClubId: string,
 ): Promise<{ data?: { status: string } | null; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -292,8 +358,12 @@ async function dispatchEventJoinEmail(
 // is already committed by the time SMS dispatch runs.
 // ---------------------------------------------------------------------------
 export async function adminCancelReservation(
-  reservationId: string
+  reservationId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: reservation, error: rpcError } = await supabase.rpc(
@@ -544,7 +614,13 @@ async function dispatchMemberCancelEmail(ownerUserId: string): Promise<void> {
 // waitlist_promoted) for the user who receives the spot offer.
 // Returns the raw RPC error message so callers can map it to UI strings.
 // ---------------------------------------------------------------------------
-export async function leaveEvent(eventId: string): Promise<{ error?: string }> {
+export async function leaveEvent(
+  eventId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: offeredProfileId, error: rpcError } = await supabase.rpc(
@@ -688,7 +764,11 @@ async function dispatchWaitlistOfferEmail(
 // ---------------------------------------------------------------------------
 export async function acceptWaitlistOffer(
   eventId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -826,7 +906,11 @@ async function dispatchAcceptOfferEmail(
 // ---------------------------------------------------------------------------
 export async function declineWaitlistOffer(
   eventId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { error: rpcError } = await supabase.rpc("decline_waitlist_offer", {
@@ -843,7 +927,13 @@ export async function declineWaitlistOffer(
 // Calls the cancel_event RPC, then dispatches SMS to all notified participants.
 // The actor is excluded from SMS even if they received an in-app notification.
 // ---------------------------------------------------------------------------
-export async function cancelEvent(eventId: string): Promise<{ error?: string }> {
+export async function cancelEvent(
+  eventId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -994,7 +1084,11 @@ async function dispatchEventCancelEmail(
 // ---------------------------------------------------------------------------
 export async function cancelMemberReservation(
   reservationId: string,
+  expectedClubId: string,
 ): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();

@@ -15,6 +15,7 @@ interface Props {
   courts:          Court[];
   userId:          string;
   userRole:        string;
+  clubId:          string;
   clubTimezone:    string;
   pros?:           ClubPro[];
   onCreateRequest?: () => void;
@@ -48,7 +49,7 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
-export default function LessonsTab({ initialRequests, courts, userId, userRole, clubTimezone, pros, onCreateRequest }: Props) {
+export default function LessonsTab({ initialRequests, courts, userId, userRole, clubId, clubTimezone, pros, onCreateRequest }: Props) {
   const router                    = useRouter();
   const [filter, setFilter]       = useState<StatusFilter>("active");
   const [selected, setSelected]   = useState<ProLessonRequestRow | null>(null);
@@ -206,6 +207,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
           request={selected}
           courts={courts}
           userId={userId}
+          clubId={clubId}
           clubTimezone={clubTimezone}
           userRole={userRole}
           pros={pros}

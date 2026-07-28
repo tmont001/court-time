@@ -22,6 +22,7 @@ interface Props {
   request:      ProLessonRequestRow;
   courts:       Court[];
   userId:       string;
+  clubId:       string;
   clubTimezone: string;
   userRole?:    string;
   pros?:        ClubPro[];
@@ -236,7 +237,7 @@ function ReasonForm({
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function LessonProSheet({ request, courts, userId, clubTimezone, userRole, pros, initialMode, onClose }: Props) {
+export default function LessonProSheet({ request, courts, userId, clubId, clubTimezone, userRole, pros, initialMode, onClose }: Props) {
   const router                    = useRouter();
   const [mode, setMode]           = useState<ActionMode>(initialMode ?? null);
   const [dateStr, setDateStr]     = useState<string>(() =>
@@ -436,6 +437,7 @@ export default function LessonProSheet({ request, courts, userId, clubTimezone, 
             proId:     request.pro_id,
             actorId:   userId,
             reason:    reason.trim() || null,
+            expectedClubId: clubId,
           }))}
           onCancel={() => { setMode(null); setReason(""); setError(""); }}
         />

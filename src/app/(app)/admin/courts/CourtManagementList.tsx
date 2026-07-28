@@ -18,9 +18,10 @@ type Status = {
 
 interface Props {
   initialCourts: Court[];
+  clubId:        string;
 }
 
-export default function CourtManagementList({ initialCourts }: Props) {
+export default function CourtManagementList({ initialCourts, clubId }: Props) {
   const router = useRouter();
   const [courts, setCourts] = useState<Court[]>(initialCourts);
   const [isPending, startTransition] = useTransition();
@@ -54,7 +55,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
     const prev = courts;
     setCourts(updated); // optimistic
     startTransition(async () => {
-      const result = await reorderCourts(updated.map((c) => c.id));
+      const result = await reorderCourts(updated.map((c) => c.id), clubId);
       if (result.error) {
         setCourts(prev); // revert
         showStatus({ type: "error", message: result.error });
@@ -84,7 +85,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
     setStatus(null);
     setPendingId(courtId);
     startTransition(async () => {
-      const result = await renameCourt(courtId, trimmed);
+      const result = await renameCourt(courtId, trimmed, clubId);
       setPendingId(null);
       if (result.error) {
         showStatus({ type: "error", message: result.error });
@@ -102,7 +103,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
     setStatus(null);
     setPendingId(court.id);
     startTransition(async () => {
-      const result = await setCourtActive(court.id, isActive);
+      const result = await setCourtActive(court.id, isActive, clubId);
       setPendingId(null);
       if (result.error === "court_has_future_reservations") {
         const n = result.futureCount ?? 0;
@@ -139,7 +140,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
     setStatus(null);
     setPendingId(court.id);
     startTransition(async () => {
-      const result = await deleteCourt(court.id);
+      const result = await deleteCourt(court.id, clubId);
       setPendingId(null);
       setDeletingId(null);
       if (result.error === "court_has_history") {
@@ -164,7 +165,7 @@ export default function CourtManagementList({ initialCourts }: Props) {
     setStatus(null);
     setPendingId("__new__");
     startTransition(async () => {
-      const result = await addCourt(trimmed);
+      const result = await addCourt(trimmed, clubId);
       setPendingId(null);
       if (result.error) {
         showStatus({ type: "error", message: result.error });

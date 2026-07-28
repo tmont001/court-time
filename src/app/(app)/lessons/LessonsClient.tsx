@@ -23,6 +23,7 @@ interface Props {
   pros:            Pro[];
   courts:          Court[];
   userId:          string;
+  clubId:          string;
   clubTimezone:    string;
   /** True when get_club_pros returned an RPC error (not merely an empty list). */
   prosError:       boolean;
@@ -59,6 +60,7 @@ export default function LessonsClient({
   pros,
   courts,
   userId,
+  clubId,
   clubTimezone,
   prosError,
   autoOpen,
@@ -197,6 +199,7 @@ export default function LessonsClient({
         <RequestLessonSheet
           pros={pros}
           courts={courts}
+          clubId={clubId}
           onClose={() => setShowRequest(false)}
           onDone={handleDone}
         />
@@ -206,6 +209,7 @@ export default function LessonsClient({
         <LessonRequestDetail
           request={selected}
           userId={userId}
+          clubId={clubId}
           clubTimezone={clubTimezone}
           onClose={() => setSelected(null)}
         />

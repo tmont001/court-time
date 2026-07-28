@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { adminCancelReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ interface Props {
   reservation:    ReservationBlock;
   courts:         Court[];
   clubTimezone:   string;
+  clubId:         string;
   onClose:        () => void;
   onCancelled:    () => void;
   // When provided, the sheet operates in member-cancel mode (instead of admin).
@@ -50,6 +52,7 @@ function ownerDisplayName(profile: OwnerProfile): string {
 }
 
 function mapCancelError(message: string): string {
+  if (message === STALE_CLUB_CONTEXT_ERROR)  return STALE_CLUB_MESSAGE;
   if (message === "reservation_not_found") return "This booking has already been cancelled.";
   if (message === "insufficient_role")     return "You do not have permission to cancel this booking.";
   return "Something went wrong. Please try again.";
@@ -58,7 +61,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, onClose, onCancelled, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, onClose, onCancelled, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -100,7 +103,7 @@ export default function ReservationDetailSheet({
   async function handleAdminCancel() {
     setLoading(true);
     setError(null);
-    const result = await adminCancelReservation(reservation.id);
+    const result = await adminCancelReservation(reservation.id, clubId);
     if (result?.error) {
       setError(mapCancelError(result.error));
       setLoading(false);
@@ -115,7 +118,7 @@ export default function ReservationDetailSheet({
     setError(null);
     const result = await onMemberCancel();
     if (result?.error) {
-      setError(result.error);
+      setError(result.error === STALE_CLUB_CONTEXT_ERROR ? STALE_CLUB_MESSAGE : result.error);
       setLoading(false);
       return;
     }

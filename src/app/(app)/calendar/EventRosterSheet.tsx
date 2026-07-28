@@ -12,7 +12,9 @@ import {
   adminAddMember,
   adminAddGuest,
   adminAddRosterMemberToEvent,
+  markAttendance,
 } from "@/app/(app)/admin/events/actions";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +40,12 @@ export type RosterParticipantRow = { profile_id: string; role: string; status: s
 
 interface Props {
   eventId:          string;
+  // The club this sheet's page was rendered for (the admin's active club).
+  // Passed through to the roster-mutation actions as expectedClubId so they
+  // can detect a stale club context before writing (Phase 26F1). Distinct
+  // from the `eventClubId` state below, which is the event's own club_id,
+  // fetched separately for the member-picker query.
+  clubId:           string;
   onClose:          () => void;
   clubTimezone?:    string;
   userRole?:        string;
@@ -63,7 +71,7 @@ function formatExpiryTime(isoString: string, tz?: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function EventRosterSheet({ eventId, onClose, clubTimezone, userRole, readOnly = false, refreshTick, onRosterChange }: Props) {
+export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezone, userRole, readOnly = false, refreshTick, onRosterChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const isAdmin  = userRole === "admin" || userRole === "pro";
 
@@ -75,7 +83,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
 
   // ── Club / member picker state ────────────────────────────────────────────
-  const [clubId, setClubId]                   = useState<string | null>(null);
+  const [eventClubId, setEventClubId]         = useState<string | null>(null);
   const [addMemberOpen, setAddMemberOpen]     = useState(false);
   const [memberList, setMemberList]           = useState<MemberOption[]>([]);
   const [membersLoading, setMembersLoading]   = useState(false);
@@ -126,7 +134,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
         .select("club_id")
         .eq("id", eventId)
         .single()
-        .then(({ data }) => { if (data?.club_id) setClubId(data.club_id); });
+        .then(({ data }) => { if (data?.club_id) setEventClubId(data.club_id); });
     }
   }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -146,18 +154,17 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
     setRowUpdating(prev => new Set(prev).add(profileId));
     setRowErrors(prev => { const next = new Map(prev); next.delete(profileId); return next; });
 
-    const { error: rpcError } = await supabase.rpc("mark_attendance", {
-      p_event_id:          eventId,
-      p_profile_id:        profileId,
-      p_attendance_status: newStatus,
-    });
+    const result = await markAttendance(eventId, profileId, newStatus, clubId);
 
     setRowUpdating(prev => { const next = new Set(prev); next.delete(profileId); return next; });
-    if (rpcError) {
+    if (result.error) {
       setRows(prevRows);
-      const msg = rpcError.message?.trim() === "event_archived"
-        ? "This event is archived and its roster is read-only."
-        : "Failed to update. Please try again.";
+      const code = result.error.trim();
+      const msg = code === STALE_CLUB_CONTEXT_ERROR
+        ? STALE_CLUB_MESSAGE
+        : code === "event_archived"
+          ? "This event is archived and its roster is read-only."
+          : "Failed to update. Please try again.";
       setRowErrors(prev => new Map(prev).set(profileId, msg));
     }
   }
@@ -187,7 +194,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
     setMembersLoading(true);
     setMemberList([]);
 
-    if (!clubId) {
+    if (!eventClubId) {
       setMembersLoading(false);
       return;
     }
@@ -207,7 +214,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
       supabase
         .from("profiles")
         .select("id, first_name, last_name")
-        .eq("club_id", clubId)
+        .eq("club_id", eventClubId)
         .eq("status", "active"),
       supabase.rpc("get_roster_members"),
     ]);
@@ -243,8 +250,8 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
 
     const selected = memberList.find(m => m.id === selectedMemberId);
     const result = selected?.source === "roster"
-      ? await adminAddRosterMemberToEvent(eventId, selectedMemberId)
-      : await adminAddMember(eventId, selectedMemberId);
+      ? await adminAddRosterMemberToEvent(eventId, selectedMemberId, clubId)
+      : await adminAddMember(eventId, selectedMemberId, clubId);
 
     setAddMemberLoading(false);
     if (result.error) {
@@ -267,7 +274,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
     }
     setAddGuestLoading(true);
     setAddGuestError(null);
-    const result = await adminAddGuest(eventId, name);
+    const result = await adminAddGuest(eventId, name, clubId);
     setAddGuestLoading(false);
     if (result.error) {
       setAddGuestError(result.error);
@@ -471,7 +478,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveParticipant(eventId, row.profile_id)
+                                    adminRemoveParticipant(eventId, row.profile_id, clubId)
                                   )}
                                   className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
                                 >
@@ -577,7 +584,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   <button
                                     disabled={isUpdating}
                                     onClick={() => handleAdminAction(row.profile_id, () =>
-                                      adminForceConfirm(eventId, row.profile_id)
+                                      adminForceConfirm(eventId, row.profile_id, clubId)
                                     )}
                                     className="text-[10px] font-semibold text-green-600 disabled:opacity-40"
                                   >
@@ -586,7 +593,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                   <button
                                     disabled={isUpdating}
                                     onClick={() => handleAdminAction(row.profile_id, () =>
-                                      adminExpireOffer(eventId, row.profile_id)
+                                      adminExpireOffer(eventId, row.profile_id, clubId)
                                     )}
                                     className="text-[10px] font-semibold text-red-500 disabled:opacity-40"
                                   >
@@ -635,7 +642,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                     <button
                                       disabled={isUpdating}
                                       onClick={() => handleAdminAction(row.profile_id, () =>
-                                        adminForceConfirm(eventId, row.profile_id)
+                                        adminForceConfirm(eventId, row.profile_id, clubId)
                                       )}
                                       className="text-[10px] font-semibold text-green-600 disabled:opacity-40"
                                     >
@@ -644,7 +651,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                     <button
                                       disabled={isUpdating}
                                       onClick={() => handleAdminAction(row.profile_id, () =>
-                                        adminOfferSpot(eventId, row.profile_id)
+                                        adminOfferSpot(eventId, row.profile_id, clubId)
                                       )}
                                       className="text-[10px] font-semibold text-blue-600 disabled:opacity-40"
                                     >
@@ -687,7 +694,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveGuest(eventId, row.profile_id)
+                                    adminRemoveGuest(eventId, row.profile_id, clubId)
                                   )}
                                   className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
                                 >
@@ -728,7 +735,7 @@ export default function EventRosterSheet({ eventId, onClose, clubTimezone, userR
                                 <button
                                   disabled={isUpdating}
                                   onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveGuest(eventId, row.profile_id)
+                                    adminRemoveGuest(eventId, row.profile_id, clubId)
                                   )}
                                   className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
                                 >

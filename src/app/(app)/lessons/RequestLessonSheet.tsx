@@ -19,6 +19,7 @@ interface Court {
 interface Props {
   pros:    Pro[];
   courts:  Court[];
+  clubId:  string;
   onClose: () => void;
   onDone:  () => void;
 }
@@ -31,7 +32,7 @@ function proName(p: Pro): string {
   return [p.first_name, p.last_name].filter(Boolean).join(" ") || "Unnamed Pro";
 }
 
-export default function RequestLessonSheet({ pros, courts, onClose, onDone }: Props) {
+export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDone }: Props) {
   const [step, setStep] = useState<Step>("pro");
   const [selectedPro, setSelectedPro] = useState<Pro | null>(null);
   const [duration, setDuration] = useState<number>(60);
@@ -60,6 +61,7 @@ export default function RequestLessonSheet({ pros, courts, onClose, onDone }: Pr
         p_preferred_windows: windows.trim()
           ? { freeform: windows.trim() } as Record<string, unknown>
           : null,
+        expectedClubId: clubId,
       });
       if (result.error) {
         setError(result.error);

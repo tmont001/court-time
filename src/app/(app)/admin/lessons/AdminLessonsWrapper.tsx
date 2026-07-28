@@ -27,6 +27,7 @@ interface Props {
   requests:     ProLessonRequestRow[];
   courts:       Court[];
   userId:       string;
+  clubId:       string;
   clubTimezone: string;
   pros:         ClubPro[];
   members:      Member[];
@@ -37,6 +38,7 @@ export default function AdminLessonsWrapper({
   requests,
   courts,
   userId,
+  clubId,
   clubTimezone,
   pros,
   members,
@@ -51,6 +53,7 @@ export default function AdminLessonsWrapper({
         courts={courts}
         userId={userId}
         userRole="admin"
+        clubId={clubId}
         clubTimezone={clubTimezone}
         pros={pros}
         onCreateRequest={() => setCreateSheetOpen(true)}
@@ -62,6 +65,7 @@ export default function AdminLessonsWrapper({
           members={members}
           courts={courts}
           lessonTypes={lessonTypes}
+          clubId={clubId}
           onClose={() => setCreateSheetOpen(false)}
         />
       )}

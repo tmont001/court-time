@@ -31,6 +31,7 @@ interface Props {
   members:              Member[];
   courts:               Court[];
   lessonTypes:          LessonType[];
+  clubId:               string;
   preselectedMemberId?: string;
   onClose:              () => void;
 }
@@ -48,6 +49,7 @@ export default function AdminRequestLessonSheet({
   members,
   courts,
   lessonTypes,
+  clubId,
   preselectedMemberId,
   onClose,
 }: Props) {
@@ -109,6 +111,7 @@ export default function AdminRequestLessonSheet({
         preferredWindows: windows.trim()
           ? { freeform: windows.trim() } as Record<string, unknown>
           : null,
+        expectedClubId: clubId,
       });
       if (res.error) { setError(res.error); return; }
       router.refresh();

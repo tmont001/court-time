@@ -78,6 +78,7 @@ interface Props {
   initialHistory: HistoryItem[];
   initialHasMore: boolean;
   initialNotes:   ClientNote[];
+  clubId:         string;
   clubTimezone:   string;
   pros:           ClubPro[];
   courts:         Court[];
@@ -146,6 +147,7 @@ export default function MemberDetailClient({
   initialHistory,
   initialHasMore,
   initialNotes,
+  clubId,
   clubTimezone,
   pros,
   courts,
@@ -702,6 +704,7 @@ export default function MemberDetailClient({
           }]}
           courts={courts}
           lessonTypes={lessonTypes}
+          clubId={clubId}
           preselectedMemberId={member.id}
           onClose={() => setRequestSheetOpen(false)}
         />
