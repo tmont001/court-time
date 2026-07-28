@@ -1,20 +1,21 @@
-import type { Metadata, Viewport } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Court Time",
+  title: 'Court Time',
   description:
-    "Simple court booking and event roster software for tennis clubs. Less chaos. More tennis.",
+    'Simple court booking and event roster software for tennis clubs. Less chaos. More tennis.',
 };
 
 export const viewport: Viewport = {
-  width: "device-width",
+  width: 'device-width',
   initialScale: 1,
-  viewportFit: "cover",
-  colorScheme: "light dark",
+  viewportFit: 'cover',
+  colorScheme: 'light dark',
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)",  color: "#111827" },
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#111827' },
   ],
 };
 
@@ -39,6 +40,7 @@ export default function RootLayout({
         <div className="w-full min-h-screen bg-white dark:bg-gray-900 motion-safe:transition-colors motion-safe:duration-150">
           {children}
         </div>
+        <SpeedInsights />
       </body>
     </html>
   );
