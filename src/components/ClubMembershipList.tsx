@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 import { switchActiveClubAction } from "./switchClubAction";
 import { publishActiveClubChanged } from "@/lib/activeClubChannel";
@@ -24,7 +23,6 @@ interface Props {
 }
 
 export default function ClubMembershipList({ memberships }: Props) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [switchingId, setSwitchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +39,17 @@ export default function ClubMembershipList({ memberships }: Props) {
         return; // a failed switch never publishes a cross-tab change
       }
 
-      // Confirmed success — notify other tabs, then land this tab on
-      // /calendar with a freshly server-rendered context (the same
-      // destination redirect() used to send this tab to before Phase
-      // 26E2). Publishing happens before navigation so the signal isn't
-      // lost if navigation is instant.
+      // Confirmed success — notify other tabs, then perform a full browser
+      // navigation (not router.push/refresh) so this tab lands on a
+      // completely fresh /calendar load. router.push to a route the app
+      // may already be on can preserve mounted client component state
+      // (this row's own "Switching…" state never clears, and CalendarShell
+      // can render a beat before its new courts/clubId props land) — a hard
+      // navigation discards the whole tree and reloads it from scratch, so
+      // neither can happen. Publishing happens before navigation so the
+      // signal isn't lost if navigation is instant.
       publishActiveClubChanged();
-      router.push("/calendar");
-      router.refresh();
+      window.location.assign("/calendar");
     });
   }
 

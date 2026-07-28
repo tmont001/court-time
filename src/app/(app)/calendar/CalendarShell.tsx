@@ -193,6 +193,39 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [selectedCourtIds, setSelectedCourtIds] = useState<Set<string>>(
     () => new Set(courts.map(c => c.id))
   );
+
+  // selectedCourtIds is otherwise only set on mount and by explicit user
+  // interaction (toggleCourt / Select All), so it goes stale when clubId or
+  // courts changes on an already-mounted CalendarShell (e.g. switching the
+  // active club) — the old IDs then match nothing in the new courts list
+  // and the grid renders empty until the user manually reselects.
+  // Reconcile whenever clubId or courts changes; user-driven toggles never
+  // touch these props, so this never overrides a deliberate in-club
+  // selection (including a deliberate "Deselect all").
+  const isMountedRef  = useRef(false);
+  const prevClubIdRef = useRef(clubId);
+  useEffect(() => {
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
+    const clubChanged = prevClubIdRef.current !== clubId;
+    prevClubIdRef.current = clubId;
+
+    setSelectedCourtIds(prev => {
+      const validIds = new Set(courts.map(c => c.id));
+      // Club switch — never retain the prior club's selection, regardless
+      // of whether any of its IDs happen to still be present in validIds.
+      if (clubChanged) return validIds;
+      // Same club, nothing selected — a deliberate "Deselect all", not
+      // stale state to reconcile.
+      if (prev.size === 0) return prev;
+      const reconciled = new Set([...prev].filter(id => validIds.has(id)));
+      // Every previously selected court is gone (the list was replaced) —
+      // fall back to all currently available courts rather than showing none.
+      return reconciled.size > 0 ? reconciled : validIds;
+    });
+  }, [clubId, courts]);
   const [resError, setResError]           = useState(false);
   const [bookingSlot, setBookingSlot]     = useState<BookingSlot | null>(null);
   const [bookingDuration, setBookingDuration] = useState<30 | 60 | 90 | 120>(60);
