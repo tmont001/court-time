@@ -48,7 +48,7 @@ export interface ProgramListRow {
   default_capacity:        number;
   created_by:              string;
   creator_name:            string;
-  event_type:              { key: string; label: string; color: string } | null;
+  event_type:              { id: string; key: string; label: string; color: string } | null;
   rules:                   ProgramRuleRow[];
   generated_count:         number;
   next_session_starts_at:  string | null;
@@ -64,7 +64,7 @@ interface RawProgramRow {
   ends_on:           string;
   default_capacity:  number;
   created_by:        string;
-  event_types:        { key: string; label: string; color: string } | null;
+  event_types:        { id: string; key: string; label: string; color: string } | null;
   program_schedule_rules: {
     id:                string;
     day_of_week:       number;
@@ -123,7 +123,7 @@ export async function getPrograms(
     .from("programs")
     .select(`
       id, title, description, status, enrollment_model, starts_on, ends_on, default_capacity, created_by,
-      event_types(key, label, color),
+      event_types(id, key, label, color),
       program_schedule_rules(id, day_of_week, start_time, duration_minutes, capacity_override)
     `)
     .eq("club_id", clubId)
@@ -229,6 +229,36 @@ export async function createProgram(params: {
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("create_program", {
+    ...rpcParams,
+    p_rules: rpcParams.p_rules as unknown as Json,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  return { data: (data ?? undefined) as ProgramRow | undefined };
+}
+
+// Phase 27C.1: edit a draft program's definition. No revalidatePath here —
+// update_program is only reachable while the program has zero generated
+// events (program_already_generated blocks it otherwise), so /events and
+// /calendar have nothing to invalidate.
+export async function updateProgram(params: {
+  p_program_id:        string;
+  p_event_type_id:     string;
+  p_title:             string;
+  p_enrollment_model:  "program" | "per_session" | "admin_managed";
+  p_starts_on:         string;
+  p_ends_on:           string;
+  p_default_capacity:  number;
+  p_rules:             ProgramRulePayload[];
+  p_description?:      string | null;
+  expectedClubId:      string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("update_program", {
     ...rpcParams,
     p_rules: rpcParams.p_rules as unknown as Json,
   });

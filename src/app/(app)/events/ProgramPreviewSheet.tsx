@@ -43,12 +43,24 @@ interface OccurrenceGroup {
 }
 
 interface Props {
-  programId:     string;
-  programTitle:  string;
-  clubId:        string;
-  clubTimezone:  string;
-  onClose:       () => void;
-  onGenerated:   () => void;
+  programId:         string;
+  programTitle:      string;
+  // Phase 27C.1: scalar fields (not the full ProgramListRow) so this sheet
+  // can be opened equally from the list (which has the enriched row) or
+  // immediately after create/update (which only has the plain ProgramRow
+  // the RPC returns) without waiting on a list refresh to complete first.
+  programStatus:     "draft" | "active" | "cancelled" | "completed";
+  programCreatedBy:  string;
+  clubId:            string;
+  clubTimezone:      string;
+  userRole:          string;
+  userId:            string;
+  onClose:           () => void;
+  onGenerated:       () => void;
+  // Closes this sheet and opens the prefilled edit form for this program.
+  // Only ever rendered (see Edit Draft button below) when the program is a
+  // draft the current user may manage.
+  onEdit:            () => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,10 +91,15 @@ function groupPreviewRows(rows: PreviewRow[]): OccurrenceGroup[] {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ProgramPreviewSheet({
-  programId, programTitle, clubId, clubTimezone, onClose, onGenerated,
+  programId, programTitle, programStatus, programCreatedBy,
+  clubId, clubTimezone, userRole, userId, onClose, onGenerated, onEdit,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
+
+  const canManage = userRole === "admin" || (userRole === "pro" && programCreatedBy === userId);
+  const isDraft   = programStatus === "draft";
+  const showEditDraft = isDraft && canManage;
 
   const [loading, setLoading]   = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -165,11 +182,25 @@ export default function ProgramPreviewSheet({
     <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
       <div className="shrink-0 px-6 pt-5 pb-3">
         <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between md:pr-10">
-          <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate">
-            Preview &amp; Generate — {programTitle}
-          </p>
+        <div className="flex items-center justify-between gap-3 md:pr-10">
+          <button
+            onClick={onClose}
+            className="shrink-0 text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+          >
+            ← Back to Programs
+          </button>
+          {showEditDraft && (
+            <button
+              onClick={onEdit}
+              className="shrink-0 text-xs font-medium text-accent hover:brightness-110"
+            >
+              Edit Draft
+            </button>
+          )}
         </div>
+        <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate mt-2">
+          Preview &amp; Generate — {programTitle}
+        </p>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-4">
@@ -207,7 +238,9 @@ export default function ProgramPreviewSheet({
               </div>
             ) : conflictCount > 0 ? (
               <p className="text-xs text-red-500">
-                Resolve the conflicts below before generating — court/time conflicts block the entire batch.
+                {showEditDraft
+                  ? "Court/time conflicts block the entire batch — use Edit Draft above to change the conflicting rule's time or court, then preview again."
+                  : "Court/time conflicts below block the entire batch and must be resolved before generating."}
               </p>
             ) : null}
 

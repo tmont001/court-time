@@ -1777,6 +1777,37 @@ export type Database = {
           archived_by:       string | null;
         };
       };
+      // Phase 27C.1: edit a draft program's definition
+      update_program: {
+        Args: {
+          p_program_id:        string;
+          p_event_type_id:     string;
+          p_title:             string;
+          p_enrollment_model:  "program" | "per_session" | "admin_managed";
+          p_starts_on:         string;
+          p_ends_on:           string;
+          p_default_capacity:  number;
+          p_rules:             Json;
+          p_description?:      string | null;
+        };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
       preview_program_sessions: {
         Args: {
           p_program_id:    string;

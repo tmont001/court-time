@@ -87,7 +87,10 @@ export default function ProgramsManageClient({
   const [isPending, startTransition] = useTransition();
 
   const [creating, setCreating] = useState(false);
-  const [previewing, setPreviewing] = useState<{ id: string; title: string } | null>(null);
+  const [editing, setEditing] = useState<ProgramListRow | null>(null);
+  const [previewing, setPreviewing] = useState<{
+    id: string; title: string; status: ProgramListRow["status"]; createdBy: string;
+  } | null>(null);
 
   // Sync when the RSC parent refreshes (router.refresh() after a create).
   useEffect(() => {
@@ -107,12 +110,27 @@ export default function ProgramsManageClient({
     });
   }
 
-  function handleCreated(program: ProgramRow) {
+  // Shared by both create and edit-draft saves: refresh the list, then
+  // (re)open Preview for the saved program — the user still has to
+  // explicitly confirm generation inside that sheet either way. Only the
+  // plain ProgramRow the RPC returns is needed here (id/title/status/
+  // created_by), not the enriched ProgramListRow the list refresh will
+  // eventually produce.
+  function handleProgramSaved(program: ProgramRow) {
     setCreating(false);
+    setEditing(null);
     refresh();
-    // Open the newly created program's preview immediately — the user
-    // still has to explicitly confirm generation inside that sheet.
-    setPreviewing({ id: program.id, title: program.title });
+    setPreviewing({ id: program.id, title: program.title, status: program.status, createdBy: program.created_by });
+  }
+
+  // Preview's Edit Draft button has no program reference of its own — look
+  // it up from current list state by the id already being previewed.
+  function handleEditFromPreview() {
+    if (!previewing) return;
+    const program = programs.find(p => p.id === previewing.id);
+    if (!program) return;
+    setPreviewing(null);
+    setEditing(program);
   }
 
   function viewSessions(title: string) {
@@ -195,13 +213,13 @@ export default function ProgramsManageClient({
                   {isDraft ? (
                     <>
                       <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title })}
+                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                         className="text-xs font-medium text-accent hover:brightness-110"
                       >
                         Preview sessions
                       </button>
                       <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title })}
+                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                         className="text-xs font-medium text-accent hover:brightness-110"
                       >
                         Generate sessions
@@ -216,13 +234,13 @@ export default function ProgramsManageClient({
                         View sessions
                       </button>
                       <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title })}
+                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                         className="text-xs font-medium text-accent hover:brightness-110"
                       >
                         Preview remaining dates
                       </button>
                       <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title })}
+                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                         className="text-xs font-medium text-accent hover:brightness-110"
                       >
                         Generate remaining
@@ -242,7 +260,19 @@ export default function ProgramsManageClient({
           clubId={clubId}
           clubTimezone={clubTimezone}
           onClose={() => setCreating(false)}
-          onCreated={handleCreated}
+          onSaved={handleProgramSaved}
+        />
+      )}
+
+      {editing && (
+        <CreateProgramSheet
+          mode="edit"
+          editingProgram={editing}
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setEditing(null)}
+          onSaved={handleProgramSaved}
         />
       )}
 
@@ -250,10 +280,15 @@ export default function ProgramsManageClient({
         <ProgramPreviewSheet
           programId={previewing.id}
           programTitle={previewing.title}
+          programStatus={previewing.status}
+          programCreatedBy={previewing.createdBy}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          userRole={userRole}
+          userId={userId}
           onClose={() => setPreviewing(null)}
           onGenerated={refresh}
+          onEdit={handleEditFromPreview}
         />
       )}
     </div>

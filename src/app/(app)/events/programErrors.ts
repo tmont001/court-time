@@ -59,6 +59,10 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "This program has been archived.";
     case "program_not_generatable":
       return "This program can no longer generate sessions.";
+    case "program_not_editable":
+      return "This program can no longer be edited — only draft programs can be changed.";
+    case "program_already_generated":
+      return "This program already has generated sessions and can no longer be edited directly.";
     case "too_many_occurrences":
       return "That date range would generate too many sessions at once. Narrow the range and try again.";
     case "court_conflict":

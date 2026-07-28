@@ -1,6 +1,7 @@
 "use client";
 
-// CreateProgramSheet — Phase 27C create-program flow. Mirrors
+// CreateProgramSheet — Phase 27C create-program flow, extended in 27C.1 to
+// also serve as the edit-draft flow (mode="edit"). Mirrors
 // calendar/CreateEventSheet.tsx's multi-step ResponsiveSheet pattern
 // (step header, back button, step titles, accent buttons, dark-mode
 // classes) so Programs feels like a natural extension of the existing
@@ -9,14 +10,22 @@
 // Client-side validation (26-week range, capacity_override disabled for
 // whole-program enrollment, each rule needs a court, no duplicate court in
 // a rule, overlapping same-court rules) mirrors the server's own guards
-// (0089) for fast feedback — the server remains the final authority; every
-// one of these is re-validated by create_program regardless of what passes
-// here.
+// (0089/0090) for fast feedback — the server remains the final authority;
+// every one of these is re-validated by create_program/update_program
+// regardless of what passes here.
+//
+// Edit mode (27C.1): all fields and rules are prefilled from the program
+// being edited (courts.map(c => c.id) reconstructs each rule's court
+// selection from the getPrograms embed). Only reachable for a draft
+// program with zero generated events — ProgramsManageClient/
+// ProgramPreviewSheet are responsible for only ever offering "Edit Draft"
+// in that state; update_program independently re-enforces it server-side
+// (program_not_editable / program_already_generated).
 
 import { useState, useEffect, useMemo } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
-import { createProgram, type ProgramRow, type ProgramRulePayload } from "./programsActions";
+import { createProgram, updateProgram, type ProgramRow, type ProgramRulePayload, type ProgramListRow } from "./programsActions";
 import { mapProgramError } from "./programErrors";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -51,11 +60,16 @@ interface RuleDraft {
 }
 
 interface Props {
-  courts:       Court[];
-  clubId:       string;
-  clubTimezone: string;
-  onClose:      () => void;
-  onCreated:    (program: ProgramRow) => void;
+  courts:          Court[];
+  clubId:          string;
+  clubTimezone:    string;
+  onClose:         () => void;
+  onSaved:         (program: ProgramRow) => void;
+  // Omit (or "create") for the create flow. Pass "edit" + the program being
+  // edited to prefill every field/rule and submit through update_program
+  // instead of create_program.
+  mode?:           "create" | "edit";
+  editingProgram?: ProgramListRow;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -102,30 +116,51 @@ function daysBetween(startISO: string, endISO: string): number {
   return Math.round((end - start) / 86_400_000);
 }
 
+// Rebuilds editable RuleDraft state from getPrograms' embedded shape
+// (program_schedule_rules + their program_rule_courts, already joined
+// server-side into ProgramListRow.rules[].courts).
+function rulesFromProgram(program: ProgramListRow): RuleDraft[] {
+  return program.rules.map(r => ({
+    key: newRuleKey(),
+    dayOfWeek: r.day_of_week,
+    startTime: r.start_time.slice(0, 5), // "HH:MM:SS" -> "HH:MM" for <input type="time">
+    durationMinutes: r.duration_minutes,
+    capacityOverride: r.capacity_override != null ? String(r.capacity_override) : "",
+    courtIds: r.courts.map(c => c.id),
+  }));
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClose, onCreated }: Props) {
+export default function CreateProgramSheet({
+  courts, clubId, clubTimezone, onClose, onSaved, mode = "create", editingProgram,
+}: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const isEdit = mode === "edit" && !!editingProgram;
 
   const [step, setStep]                 = useState<1 | 2 | 3>(1);
   const [eventTypes, setEventTypes]     = useState<EventType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(true);
   const [typesError, setTypesError]     = useState<string | null>(null);
 
-  const [selectedTypeId, setSelectedTypeId]   = useState("");
-  const [title, setTitle]                     = useState("");
-  const [description, setDescription]         = useState("");
-  const [enrollmentModel, setEnrollmentModel] = useState<EnrollmentModel>("per_session");
-
   const todayISO = useMemo(
     () => new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone }),
     [clubTimezone]
   );
-  const [startsOn, setStartsOn]           = useState(todayISO);
-  const [endsOn, setEndsOn]               = useState(todayISO);
-  const [defaultCapacity, setDefaultCapacity] = useState(8);
 
-  const [rules, setRules] = useState<RuleDraft[]>([makeRule()]);
+  // Prefilled from editingProgram in edit mode; sensible create-mode
+  // defaults otherwise. Function initializers so this only runs once per
+  // mount — CreateProgramSheet is always freshly instantiated per open
+  // (conditionally rendered by its parent), never kept mounted across a
+  // create/edit target change.
+  const [selectedTypeId, setSelectedTypeId]   = useState(() => editingProgram?.event_type?.id ?? "");
+  const [title, setTitle]                     = useState(() => editingProgram?.title ?? "");
+  const [description, setDescription]         = useState(() => editingProgram?.description ?? "");
+  const [enrollmentModel, setEnrollmentModel] = useState<EnrollmentModel>(() => editingProgram?.enrollment_model ?? "per_session");
+  const [startsOn, setStartsOn]               = useState(() => editingProgram?.starts_on ?? todayISO);
+  const [endsOn, setEndsOn]                   = useState(() => editingProgram?.ends_on ?? todayISO);
+  const [defaultCapacity, setDefaultCapacity] = useState(() => editingProgram?.default_capacity ?? 8);
+  const [rules, setRules] = useState<RuleDraft[]>(() => editingProgram ? rulesFromProgram(editingProgram) : [makeRule()]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState<string | null>(null);
@@ -207,7 +242,7 @@ export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClo
 
   // ── Submit ──────────────────────────────────────────────────────────────
 
-  async function handleCreate() {
+  async function handleSubmit() {
     if (!basicsValid || !rulesValid) return;
     setSubmitting(true);
     setError(null);
@@ -222,7 +257,7 @@ export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClo
       court_ids: r.courtIds,
     }));
 
-    const { data, error: rpcError } = await createProgram({
+    const commonParams = {
       p_event_type_id:    selectedTypeId,
       p_title:             title.trim(),
       p_enrollment_model:  enrollmentModel,
@@ -232,7 +267,11 @@ export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClo
       p_rules:             rulesPayload,
       p_description:       description.trim() || null,
       expectedClubId:      clubId,
-    });
+    };
+
+    const { data, error: rpcError } = isEdit
+      ? await updateProgram({ p_program_id: editingProgram!.id, ...commonParams })
+      : await createProgram(commonParams);
 
     if (rpcError || !data) {
       setError(mapProgramError(rpcError?.code, rpcError?.message ?? ""));
@@ -240,14 +279,14 @@ export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClo
       return;
     }
 
-    onCreated(data);
+    onSaved(data);
     onClose();
   }
 
   const stepTitles: Record<1 | 2 | 3, string> = {
-    1: "Program Details",
+    1: isEdit ? "Edit Program Details" : "Program Details",
     2: "Schedule Rules",
-    3: "Confirm",
+    3: isEdit ? "Confirm Changes" : "Confirm",
   };
 
   const inputClass =
@@ -553,17 +592,19 @@ export default function CreateProgramSheet({ courts, clubId, clubTimezone, onClo
             </div>
 
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              This creates the program as a draft. No sessions are generated yet — you&apos;ll review and confirm a preview next.
+              {isEdit
+                ? "This replaces the program's schedule rules and court assignments. It's only possible while the draft has no generated sessions."
+                : "This creates the program as a draft. No sessions are generated yet — you’ll review and confirm a preview next."}
             </p>
 
             {error && <p className="text-xs text-red-500">{error}</p>}
 
             <button
               disabled={submitting || !basicsValid || !rulesValid}
-              onClick={handleCreate}
+              onClick={handleSubmit}
               className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
             >
-              {submitting ? "Creating…" : "Create Program"}
+              {submitting ? (isEdit ? "Saving…" : "Creating…") : (isEdit ? "Save Changes" : "Create Program")}
             </button>
           </div>
         )}
