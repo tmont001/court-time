@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import EventRosterSheet from "@/app/(app)/calendar/EventRosterSheet";
+import { ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 
 interface Props {
   eventId:      string;
@@ -35,28 +36,29 @@ export default function EventCardClient({
         }`}
         onClick={isAdminOrPro ? () => setRosterOpen(true) : undefined}
       >
-        {/* Non-interactive card body — pills, title, time, offer deadline */}
+        {/* Non-interactive card body — pills, title, time, offer deadline,
+            joined/waitlist counts (all supplied via children) */}
         {children}
 
-        {/* Action area — stopPropagation prevents Join/Leave from triggering card click */}
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-        <div onClick={e => e.stopPropagation()}>
-          {actionArea}
-        </div>
-
-        {/* Roster entry point — visible hint for admin/pro */}
-        {isAdminOrPro && (
+        {/* Merged footer: roster (left) + primary membership action (right)
+            on the same row when space permits, wrapping on narrow widths.
+            stopPropagation prevents either from triggering the card's own
+            roster-open click. */}
+        {(isAdminOrPro || actionArea) && (
           // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
           <div
-            className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700"
+            className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2 flex-wrap"
             onClick={e => e.stopPropagation()}
           >
-            <button
-              onClick={() => setRosterOpen(true)}
-              className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-100"
-            >
-              View Roster ({rosterCount})
-            </button>
+            {isAdminOrPro && (
+              <button
+                onClick={() => setRosterOpen(true)}
+                className={ACTION_BUTTON_SECONDARY}
+              >
+                View Roster ({rosterCount})
+              </button>
+            )}
+            {actionArea && <div className="ml-auto">{actionArea}</div>}
           </div>
         )}
       </div>

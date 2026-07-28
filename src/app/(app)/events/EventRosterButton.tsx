@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import EventRosterSheet, { type RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
+import { ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 
 interface Props {
   eventId:          string;
@@ -21,7 +22,7 @@ export default function EventRosterButton({ eventId, clubId, count, userRole, cl
     <>
       <button
         onClick={() => setOpen(true)}
-        className="text-xs font-medium text-gray-500"
+        className={ACTION_BUTTON_SECONDARY}
       >
         {buttonLabel}
       </button>

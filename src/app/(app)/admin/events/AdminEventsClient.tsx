@@ -9,6 +9,7 @@ import { cancelEvent } from "@/app/(app)/calendar/actions";
 import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction, setEventMemberJoinableAction } from "./actions";
 import type { AdminEventRow, ArchiveView } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 
 type Court        = { id: string; name: string; display_order: number };
 type StatusFilter = "scheduled" | "cancelled" | "all";
@@ -265,7 +266,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const createEventButton = (
     <button
       onClick={() => setCreatingEvent(true)}
-      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+      className={ACTION_BUTTON_PRIMARY}
     >
       + Create Event
     </button>
@@ -521,21 +522,21 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                   <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                     {confirmingCancelId === ev.id ? (
                       /* ── Cancel confirmation — full width ── */
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Cancel this event?</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Members will be notified and linked court reservations will be cancelled.</p>
                         {cancelError && <p className="text-xs text-red-500">{cancelError}</p>}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => { setConfirmingCancelId(null); setCancelError(null); }}
-                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_SECONDARY}
                           >
                             Keep event
                           </button>
                           <button
                             onClick={() => handleCancel(ev.id)}
                             disabled={isCancelPending}
-                            className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_DESTRUCTIVE}
                           >
                             {isCancelPending ? "Cancelling…" : "Cancel Event"}
                           </button>
@@ -543,21 +544,21 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                       </div>
                     ) : confirmingArchiveId === ev.id ? (
                       /* ── Archive confirmation — full width ── */
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Archive this event?</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Past event data and roster history will be preserved.</p>
                         {archiveError && <p className="text-xs text-red-500">{archiveError}</p>}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => { setConfirmingArchiveId(null); setArchiveError(null); }}
-                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_SECONDARY}
                           >
                             Keep
                           </button>
                           <button
                             onClick={() => handleArchive(ev.id)}
                             disabled={isArchivePending}
-                            className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_DESTRUCTIVE}
                           >
                             {isArchivePending ? "Archiving…" : "Archive"}
                           </button>
@@ -565,21 +566,21 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                       </div>
                     ) : confirmingUnarchiveId === ev.id ? (
                       /* ── Unarchive confirmation — full width ── */
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Unarchive this event?</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">This event will return to the default Manage view.</p>
                         {archiveError && <p className="text-xs text-red-500">{archiveError}</p>}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           <button
                             onClick={() => { setConfirmingUnarchiveId(null); setArchiveError(null); }}
-                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_SECONDARY}
                           >
                             Keep archived
                           </button>
                           <button
                             onClick={() => handleUnarchive(ev.id)}
                             disabled={isArchivePending}
-                            className="text-xs font-semibold text-blue-700 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_PRIMARY}
                           >
                             {isArchivePending ? "Restoring…" : "Unarchive"}
                           </button>
@@ -587,7 +588,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                       </div>
                     ) : confirmingMakeAdminManaged === ev.id ? (
                       /* ── Make Admin-managed confirmation ── */
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
                           Make this event admin-managed?
                         </p>
@@ -600,13 +601,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                         {joinableError?.id === ev.id && (
                           <p className="text-xs text-red-500">{joinableError.message}</p>
                         )}
-                        <div className="flex items-center gap-3 pt-0.5">
+                        <div className="flex items-center gap-2 pt-0.5">
                           <button
                             onClick={() => {
                               setConfirmingMakeAdminManaged(null);
                               setJoinableError(null);
                             }}
-                            className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_SECONDARY}
                           >
                             Keep open
                           </button>
@@ -617,7 +618,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                               () => setConfirmingMakeAdminManaged(null),
                             )}
                             disabled={isJoinablePending}
-                            className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                            className={ACTION_BUTTON_DESTRUCTIVE}
                           >
                             {isJoinablePending ? "Saving…" : "Make admin-managed"}
                           </button>
@@ -659,7 +660,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                                   }
                                 }}
                                 disabled={isJoinablePending}
-                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+                                className={ACTION_BUTTON_SECONDARY}
                               >
                                 {ev.member_joinable ? "Make admin-managed" : "Open to members"}
                               </button>
@@ -675,7 +676,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                                   setArchiveError(null);
                                   setJoinableError(null);
                                 }}
-                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-red-200 dark:border-red-800/60 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                                className={ACTION_BUTTON_DESTRUCTIVE}
                               >
                                 Cancel Event
                               </button>
@@ -691,7 +692,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                                   setCancelError(null);
                                   setJoinableError(null);
                                 }}
-                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700/60 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                                className={ACTION_BUTTON_DESTRUCTIVE}
                               >
                                 Archive
                               </button>
@@ -707,7 +708,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                                   setCancelError(null);
                                   setJoinableError(null);
                                 }}
-                                className="text-[11px] font-medium px-2 py-0.5 rounded border border-blue-200 dark:border-blue-700/60 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                                className={ACTION_BUTTON_PRIMARY}
                               >
                                 Unarchive
                               </button>

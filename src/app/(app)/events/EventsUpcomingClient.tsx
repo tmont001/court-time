@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import EventCardClient from "./EventCardClient";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -244,58 +245,51 @@ export default function EventsUpcomingClient({
                             clubTimezone={clubTimezone}
                             rosterCount={confirmedCount + offeredCount + waitlistCount}
                             actionArea={
-                              <div className="flex items-center justify-between mt-2">
-                                <p className="text-xs text-gray-400 dark:text-gray-500">
-                                  {confirmedCount + offeredCount + guestCount} / {ev.capacity} joined
-                                  {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
-                                </p>
-
-                                {isHost ? null : isOffered ? (
-                                  offerExpiredServerSide ? (
-                                    <form action={joinEventAction}>
-                                      <input type="hidden" name="event_id" value={ev.id} />
-                                      <button type="submit" className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                        Rejoin
-                                      </button>
-                                    </form>
-                                  ) : (
-                                    <div className="flex items-center gap-3">
-                                      <form action={declineWaitlistOfferAction}>
-                                        <input type="hidden" name="event_id" value={ev.id} />
-                                        <button type="submit" className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                          Pass
-                                        </button>
-                                      </form>
-                                      <form action={acceptWaitlistOfferAction}>
-                                        <input type="hidden" name="event_id" value={ev.id} />
-                                        <button type="submit" className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100">
-                                          Accept
-                                        </button>
-                                      </form>
-                                    </div>
-                                  )
-                                ) : isJoined || isWaitlisted ? (
-                                  <form action={leaveEventAction}>
+                              isHost ? null : isOffered ? (
+                                offerExpiredServerSide ? (
+                                  <form action={joinEventAction}>
                                     <input type="hidden" name="event_id" value={ev.id} />
-                                    <button
-                                      type="submit"
-                                      className="text-xs font-medium text-red-500 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                    >
-                                      {isWaitlisted ? "Leave Waitlist" : "Leave"}
+                                    <button type="submit" className={ACTION_BUTTON_PRIMARY}>
+                                      Rejoin
                                     </button>
                                   </form>
                                 ) : (
-                                  <form action={joinEventAction}>
-                                    <input type="hidden" name="event_id" value={ev.id} />
-                                    <button
-                                      type="submit"
-                                      className="text-xs font-medium text-blue-600 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                    >
-                                      {isFull ? "Join Waitlist" : "Join Event"}
-                                    </button>
-                                  </form>
-                                )}
-                              </div>
+                                  <div className="flex items-center gap-2">
+                                    <form action={declineWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button type="submit" className={ACTION_BUTTON_DESTRUCTIVE}>
+                                        Pass
+                                      </button>
+                                    </form>
+                                    <form action={acceptWaitlistOfferAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button type="submit" className={ACTION_BUTTON_PRIMARY}>
+                                        Accept
+                                      </button>
+                                    </form>
+                                  </div>
+                                )
+                              ) : isJoined || isWaitlisted ? (
+                                <form action={leaveEventAction}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button
+                                    type="submit"
+                                    className={ACTION_BUTTON_DESTRUCTIVE}
+                                  >
+                                    {isWaitlisted ? "Leave Waitlist" : "Leave"}
+                                  </button>
+                                </form>
+                              ) : (
+                                <form action={joinEventAction}>
+                                  <input type="hidden" name="event_id" value={ev.id} />
+                                  <button
+                                    type="submit"
+                                    className={ACTION_BUTTON_PRIMARY}
+                                  >
+                                    {isFull ? "Join Waitlist" : "Join Event"}
+                                  </button>
+                                </form>
+                              )
                             }
                           >
                             {/* Type pill + status badges */}
@@ -350,6 +344,12 @@ export default function EventsUpcomingClient({
                                 Accept by {formatTime(offerExpiresAt, clubTimezone)}
                               </p>
                             )}
+
+                            {/* Joined/waitlist counts — own line, above the roster+action footer */}
+                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                              {confirmedCount + offeredCount + guestCount} / {ev.capacity} joined
+                              {waitlistCount > 0 ? ` · ${waitlistCount} waitlisted` : ""}
+                            </p>
                           </EventCardClient>
                         );
                       })}

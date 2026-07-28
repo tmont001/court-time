@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
+import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
 
 type Court = { id: string; name: string; display_order: number };
 
@@ -36,7 +37,7 @@ export default function EventsCreateButton({ courts, clubId, clubTimezone, onCre
     <>
       <button
         onClick={() => setOpen(true)}
-        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+        className={`shrink-0 ${ACTION_BUTTON_PRIMARY}`}
       >
         + Create Event
       </button>

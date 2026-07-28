@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import CreateProgramSheet from "./CreateProgramSheet";
 import ProgramPreviewSheet from "./ProgramPreviewSheet";
 import { getPrograms, type ProgramListRow, type ProgramRow } from "./programsActions";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,24 +32,6 @@ interface Props {
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// Phase 27C.2: real compact button styling for Program card actions —
-// replaces the previous plain borderless text links. Scoped to this file
-// only (no shared button component introduced in this checkpoint; broader
-// app-wide button consistency is deferred visual-design polish).
-const PRIMARY_ACTION_CLASS =
-  "px-3 py-2 rounded-lg text-xs font-semibold text-white dark:text-gray-900 bg-accent " +
-  "hover:brightness-110 hover:shadow-sm motion-safe:hover:-translate-y-0.5 " +
-  "active:scale-95 motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
-const SECONDARY_ACTION_CLASS =
-  "px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 " +
-  "border border-gray-300 dark:border-gray-600 " +
-  "hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 " +
-  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -164,7 +147,7 @@ export default function ProgramsManageClient({
   const createButton = (
     <button
       onClick={() => setCreating(true)}
-      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+      className={ACTION_BUTTON_PRIMARY}
     >
       + Create Program
     </button>
@@ -237,7 +220,7 @@ export default function ProgramsManageClient({
                   {isDraft ? (
                     <button
                       onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                      className={PRIMARY_ACTION_CLASS}
+                      className={ACTION_BUTTON_PRIMARY}
                     >
                       Preview &amp; Generate
                     </button>
@@ -245,13 +228,13 @@ export default function ProgramsManageClient({
                     <>
                       <button
                         onClick={() => viewSessions(p.title)}
-                        className={SECONDARY_ACTION_CLASS}
+                        className={ACTION_BUTTON_SECONDARY}
                       >
                         View Sessions
                       </button>
                       <button
                         onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                        className={PRIMARY_ACTION_CLASS}
+                        className={ACTION_BUTTON_PRIMARY}
                       >
                         Manage Sessions
                       </button>

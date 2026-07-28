@@ -15,6 +15,7 @@ import {
   markAttendance,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/app/(app)/events/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -356,7 +357,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                   {!addMemberOpen ? (
                     <button
                       onClick={openAddMember}
-                      className="text-xs font-medium text-blue-600"
+                      className={ACTION_BUTTON_SECONDARY}
                     >
                       + Add Member
                     </button>
@@ -405,7 +406,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                   {!addGuestOpen ? (
                     <button
                       onClick={() => { setAddGuestOpen(true); setAddGuestError(null); }}
-                      className="block text-xs font-medium text-blue-600"
+                      className={`block ${ACTION_BUTTON_SECONDARY}`}
                     >
                       + Add Guest
                     </button>
@@ -480,7 +481,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                   onClick={() => handleAdminAction(row.profile_id, () =>
                                     adminRemoveParticipant(eventId, row.profile_id, clubId)
                                   )}
-                                  className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
+                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
                                   {isUpdating ? "…" : "Remove"}
                                 </button>
@@ -696,7 +697,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                   onClick={() => handleAdminAction(row.profile_id, () =>
                                     adminRemoveGuest(eventId, row.profile_id, clubId)
                                   )}
-                                  className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
+                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
                                   {isUpdating ? "…" : "Remove"}
                                 </button>
@@ -737,7 +738,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                   onClick={() => handleAdminAction(row.profile_id, () =>
                                     adminRemoveGuest(eventId, row.profile_id, clubId)
                                   )}
-                                  className="ml-3 shrink-0 text-[10px] font-semibold text-red-500 disabled:opacity-40"
+                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
                                   {isUpdating ? "…" : "Remove"}
                                 </button>

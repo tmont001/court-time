@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import LessonProSheet from "./LessonProSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
+import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
 
 interface Court {
   id:   string;
@@ -84,7 +85,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
         <div className="mb-3">
           <button
             onClick={onCreateRequest}
-            className="w-full py-2.5 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold"
+            className="w-full py-2.5 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold hover:brightness-110 hover:shadow-sm motion-safe:hover:-translate-y-0.5 active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
           >
             + Create Lesson Request
           </button>
@@ -191,7 +192,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
               >
                 <button
                   onClick={() => { setSelected(r); setProposeMode(true); }}
-                  className="w-full md:w-auto text-xs font-semibold px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-100"
+                  className={`w-full md:w-auto ${ACTION_BUTTON_PRIMARY}`}
                 >
                   Propose a Time
                 </button>
