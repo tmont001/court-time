@@ -1747,6 +1747,68 @@ export type Database = {
         };
         Returns: Json;
       };
+      // Phase 27B2: program definition and session generation RPCs
+      create_program: {
+        Args: {
+          p_event_type_id:    string;
+          p_title:             string;
+          p_enrollment_model:  "program" | "per_session" | "admin_managed";
+          p_starts_on:         string;
+          p_ends_on:           string;
+          p_default_capacity:  number;
+          p_rules:             Json;
+          p_description?:      string | null;
+        };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
+      preview_program_sessions: {
+        Args: {
+          p_program_id:    string;
+          p_from_date?:    string | null;
+          p_through_date?: string | null;
+        };
+        Returns: {
+          program_schedule_rule_id:  string;
+          occurrence_date:            string;
+          starts_at:                  string;
+          ends_at:                    string;
+          court_id:                   string;
+          court_name:                 string;
+          already_generated:          boolean;
+          has_conflict:               boolean;
+          conflicting_reservation_id: string | null;
+          conflicting_event_id:       string | null;
+          conflict_reason:            string | null;
+        }[];
+      };
+      generate_program_sessions: {
+        Args: {
+          p_program_id:    string;
+          p_from_date?:    string | null;
+          p_through_date?: string | null;
+        };
+        Returns: {
+          inserted_count: number;
+          skipped_count:  number;
+          event_ids:      string[];
+        }[];
+      };
       // Phase 19B: admin participant action RPCs
       admin_add_member: {
         Args: { p_event_id: string; p_profile_id: string };
