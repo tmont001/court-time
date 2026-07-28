@@ -53,10 +53,14 @@ interface Props {
   courts:            Court[];
   clubId:            string;
   // When false, the "+ Create Event" button is hidden (used when a parent already shows one).
-  showCreateButton?: boolean;
+  showCreateButton?:   boolean;
+  // Phase 27C: seeds the search box — used by the Programs "View sessions"
+  // link (?q=<program title>, generated events share the program's title)
+  // so admins land on a pre-filtered list without a new session/filter UI.
+  initialSearchQuery?: string;
 }
 
-export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true }: Props) {
+export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true, initialSearchQuery = "" }: Props) {
   const router                            = useRouter();
   const [events, setEvents]               = useState<AdminEventRow[]>(initialEvents);
   const [hasMore, setHasMore]             = useState(initialHasMore);
@@ -71,7 +75,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [dateFilter,            setDateFilter]            = useState<DateFilter>("all");
   const [sortOrder,             setSortOrder]             = useState<SortOrder>("desc");
   const [eventTypeFilter,       setEventTypeFilter]       = useState<string | null>(null);
-  const [searchQuery,           setSearchQuery]           = useState("");
+  const [searchQuery,           setSearchQuery]           = useState(initialSearchQuery);
   const [archiveView,           setArchiveView]           = useState<ArchiveView>("active");
 
   // One confirmation slot shared across the three inline flows; opening one
@@ -91,6 +95,16 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     setEvents(initialEvents);
     setHasMore(initialHasMore);
   }, [initialEvents, initialHasMore]);
+
+  // Phase 27C: re-sync the search box whenever initialSearchQuery changes —
+  // not just on first mount. This component stays mounted across the
+  // same-route navigation Programs' "View sessions" link performs (only
+  // ?q=... changes), so without this effect a later click with a
+  // different program title would never actually update the visible
+  // search box.
+  useEffect(() => {
+    setSearchQuery(initialSearchQuery);
+  }, [initialSearchQuery]);
 
   function handleRosterChange(
     eventId:         string,

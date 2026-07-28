@@ -122,13 +122,17 @@ where n.nspname = 'public'
   and p.proname = '_validate_program_definition';
 
 
--- A7. Zero EXECUTE grants of any kind (including authenticated) on
--- _validate_program_definition.
+-- A7. Zero EXECUTE grants to PUBLIC/anon/authenticated on
+-- _validate_program_definition. Scoped to these three grantees only —
+-- postgres (the function owner) and service_role are expected to retain
+-- execution privilege and must not be treated as a failure here; this
+-- check is about client-reachable roles, not the owner/service role.
 -- Expected: 0 rows.
 select routine_name, grantee, privilege_type
 from information_schema.routine_privileges
 where routine_schema = 'public'
-  and routine_name = '_validate_program_definition';
+  and routine_name = '_validate_program_definition'
+  and grantee in ('PUBLIC', 'anon', 'authenticated');
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

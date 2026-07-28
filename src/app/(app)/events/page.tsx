@@ -13,6 +13,9 @@ import EventsUpcomingClient, { type UpcomingEventData } from "./EventsUpcomingCl
 import EventsAdminShell from "./EventsAdminShell";
 import AdminEventsClient from "@/app/(app)/admin/events/AdminEventsClient";
 import LessonsTab from "./LessonsTab";
+import ManageSubview from "./ManageSubview";
+import ProgramsManageClient from "./ProgramsManageClient";
+import { getPrograms, type ProgramListRow } from "./programsActions";
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 
@@ -59,10 +62,17 @@ async function declineWaitlistOfferAction(clubId: string, formData: FormData) {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; q?: string; manageView?: string }>;
 }) {
-  const { tab } = await searchParams;
+  const { tab, q, manageView } = await searchParams;
   const initialTab = tab === "manage" ? "manage" : tab === "lessons" ? "lessons" : "upcoming";
+  // Phase 27C: seeds AdminEventsClient's search box from the Programs
+  // "View sessions" link — generated events share their program's title.
+  const initialSearchQuery = typeof q === "string" ? q : "";
+  // URL-backed Manage sub-view (?manageView=events|programs) — lets "View
+  // sessions" force ManageSubview open on Events even when it's already
+  // mounted on Programs.
+  const initialManageSub = manageView === "programs" ? "programs" : "events";
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -74,8 +84,8 @@ export default async function EventsPage({
   const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";
   const now            = new Date().toISOString();
 
-  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events, lesson requests)
-  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult, proLessonsResult] = await Promise.all([
+  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events, lesson requests, programs)
+  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
@@ -123,6 +133,10 @@ export default async function EventsPage({
     isAdminOrPro
       ? supabase.rpc("get_pro_lesson_requests")
       : Promise.resolve({ data: null }),
+    // Pro/admin: Programs list for the Manage → Programs sub-tab
+    isAdminOrPro
+      ? getPrograms(clubId)
+      : Promise.resolve({ programs: [] as ProgramListRow[] }),
   ]);
 
   const clubTimezone  = clubResult.data?.timezone ?? "America/New_York";
@@ -130,6 +144,8 @@ export default async function EventsPage({
   const adminEvents   = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
   const adminCourts   = adminCourtsResult.data ?? [];
   const proLessons    = (proLessonsResult.data ?? []) as ProLessonRequestRow[];
+  const programs      = "programs" in programsResult ? programsResult.programs : [];
+  const programsError = "error" in programsResult ? programsResult.error : undefined;
 
   // ── Batch-fetch court names for reservation display in EventsUpcomingClient ──
   const allCourtIds = [...new Set(
@@ -177,15 +193,32 @@ export default async function EventsPage({
             <EventsAdminShell
               upcoming={upcomingContent}
               manage={
-                <AdminEventsClient
-                  initialEvents={adminEvents}
-                  hasMore={adminEvents.length === 25}
-                  clubTimezone={clubTimezone}
-                  userRole={profile!.role!}
-                  userId={user.id}
-                  courts={adminCourts as { id: string; name: string; display_order: number }[]}
-                  clubId={clubId}
-                  showCreateButton={false}
+                <ManageSubview
+                  initialSub={initialManageSub}
+                  eventsPanel={
+                    <AdminEventsClient
+                      initialEvents={adminEvents}
+                      hasMore={adminEvents.length === 25}
+                      clubTimezone={clubTimezone}
+                      userRole={profile!.role!}
+                      userId={user.id}
+                      courts={adminCourts as { id: string; name: string; display_order: number }[]}
+                      clubId={clubId}
+                      showCreateButton={false}
+                      initialSearchQuery={initialSearchQuery}
+                    />
+                  }
+                  programsPanel={
+                    <ProgramsManageClient
+                      initialPrograms={programs}
+                      initialError={programsError}
+                      courts={adminCourts as { id: string; name: string; display_order: number }[]}
+                      clubId={clubId}
+                      clubTimezone={clubTimezone}
+                      userRole={profile!.role!}
+                      userId={user.id}
+                    />
+                  }
                 />
               }
               lessons={
