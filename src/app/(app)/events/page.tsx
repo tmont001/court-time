@@ -62,17 +62,17 @@ async function declineWaitlistOfferAction(clubId: string, formData: FormData) {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; q?: string; manageView?: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
-  const { tab, q, manageView } = await searchParams;
+  // Phase 27C.2: ?manageView and ?q (the Programs "View Sessions" link's
+  // URL contract) are no longer parsed here — ManageSubview and
+  // AdminEventsClient each read them directly via useSearchParams(), a
+  // live client-side subscription to the current URL that doesn't depend
+  // on this Server Component's props reliably propagating down through
+  // already-mounted client-component layers on a same-route navigation.
+  // See both components for the full rationale.
+  const { tab } = await searchParams;
   const initialTab = tab === "manage" ? "manage" : tab === "lessons" ? "lessons" : "upcoming";
-  // Phase 27C: seeds AdminEventsClient's search box from the Programs
-  // "View sessions" link — generated events share their program's title.
-  const initialSearchQuery = typeof q === "string" ? q : "";
-  // URL-backed Manage sub-view (?manageView=events|programs) — lets "View
-  // sessions" force ManageSubview open on Events even when it's already
-  // mounted on Programs.
-  const initialManageSub = manageView === "programs" ? "programs" : "events";
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -194,7 +194,6 @@ export default async function EventsPage({
               upcoming={upcomingContent}
               manage={
                 <ManageSubview
-                  initialSub={initialManageSub}
                   eventsPanel={
                     <AdminEventsClient
                       initialEvents={adminEvents}
@@ -205,7 +204,6 @@ export default async function EventsPage({
                       courts={adminCourts as { id: string; name: string; display_order: number }[]}
                       clubId={clubId}
                       showCreateButton={false}
-                      initialSearchQuery={initialSearchQuery}
                     />
                   }
                   programsPanel={

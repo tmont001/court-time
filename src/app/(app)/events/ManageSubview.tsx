@@ -8,31 +8,45 @@
 // (since this whole component only ever renders inside EventsAdminShell's
 // `manage` slot, which page.tsx only passes for isAdminOrPro) members never
 // see it.
+//
+// Phase 27C.2: reads ?manageView=events|programs directly via
+// useSearchParams() instead of a server-passed `initialSub` prop synced by
+// a useEffect. The prior prop-drilling approach relied on a fresh RSC
+// render (triggered by ProgramsManageClient's router.push to a new
+// ?manageView=... URL) reliably propagating new props down through two
+// already-mounted client-component layers (EventsAdminShell, then this
+// component) on a same-route, search-params-only navigation — a path this
+// app has no other proven case of relying on for reactivity (the existing
+// router.refresh()-based patterns elsewhere always target the SAME URL, not
+// a new one). useSearchParams() is the canonical, purpose-built hook for a
+// client component to read the *current* URL's search params reactively —
+// it subscribes directly to client-side navigation and does not depend on
+// prop delivery through intermediate components at all, removing that
+// entire class of uncertainty.
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 
 type SubTab = "events" | "programs";
 
 interface Props {
   eventsPanel:   React.ReactNode;
   programsPanel: React.ReactNode;
-  // URL-backed (?manageView=events|programs) so links like Programs'
-  // "View sessions" can force this subview open from outside — page.tsx
-  // reads the search param and passes it down as this prop.
-  initialSub?: SubTab;
 }
 
-export default function ManageSubview({ eventsPanel, programsPanel, initialSub = "events" }: Props) {
-  const [sub, setSub] = useState<SubTab>(initialSub);
+export default function ManageSubview({ eventsPanel, programsPanel }: Props) {
+  const searchParams = useSearchParams();
+  const manageView = searchParams.get("manageView") === "programs" ? "programs" : "events";
 
-  // ManageSubview stays mounted across a same-route navigation (only
-  // search params change), so its own useState initializer only runs once
-  // on first mount — without this effect, a later "View sessions" click
-  // (new manageView=events in the URL) would never actually switch the
-  // already-mounted subview back to Events.
+  const [sub, setSub] = useState<SubTab>(manageView);
+
+  // Reacts only to the URL's manageView param changing (e.g. Programs'
+  // "View Sessions" link) — does not fire on, and is never overwritten by,
+  // a manual click on the toggle buttons below, since those only call
+  // setSub locally and never touch the URL.
   useEffect(() => {
-    setSub(initialSub);
-  }, [initialSub]);
+    setSub(manageView);
+  }, [manageView]);
 
   return (
     <>

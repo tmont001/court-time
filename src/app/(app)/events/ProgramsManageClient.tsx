@@ -32,6 +32,24 @@ interface Props {
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Phase 27C.2: real compact button styling for Program card actions —
+// replaces the previous plain borderless text links. Scoped to this file
+// only (no shared button component introduced in this checkpoint; broader
+// app-wide button consistency is deferred visual-design polish).
+const PRIMARY_ACTION_CLASS =
+  "px-3 py-2 rounded-lg text-xs font-semibold text-white dark:text-gray-900 bg-accent " +
+  "hover:brightness-110 hover:shadow-sm motion-safe:hover:-translate-y-0.5 " +
+  "active:scale-95 motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150 " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
+  "disabled:opacity-40 disabled:pointer-events-none";
+const SECONDARY_ACTION_CLASS =
+  "px-3 py-2 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 " +
+  "border border-gray-300 dark:border-gray-600 " +
+  "hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 " +
+  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
+  "disabled:opacity-40 disabled:pointer-events-none";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTimeOfDay(time: string): string {
@@ -134,6 +152,12 @@ export default function ProgramsManageClient({
   }
 
   function viewSessions(title: string) {
+    // Close any open Programs sheet/state first — View Sessions is a full
+    // subview switch (Programs -> Events), so nothing from Programs should
+    // still be open underneath it afterwards.
+    setCreating(false);
+    setEditing(null);
+    setPreviewing(null);
     router.push(`/events?tab=manage&manageView=events&q=${encodeURIComponent(title)}`);
   }
 
@@ -209,41 +233,27 @@ export default function ProgramsManageClient({
 
               {/* Actions */}
               {canManage && (
-                <div className="flex flex-wrap gap-3 mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex flex-wrap gap-2 mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
                   {isDraft ? (
-                    <>
-                      <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                        className="text-xs font-medium text-accent hover:brightness-110"
-                      >
-                        Preview sessions
-                      </button>
-                      <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                        className="text-xs font-medium text-accent hover:brightness-110"
-                      >
-                        Generate sessions
-                      </button>
-                    </>
+                    <button
+                      onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
+                      className={PRIMARY_ACTION_CLASS}
+                    >
+                      Preview &amp; Generate
+                    </button>
                   ) : (
                     <>
                       <button
                         onClick={() => viewSessions(p.title)}
-                        className="text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+                        className={SECONDARY_ACTION_CLASS}
                       >
-                        View sessions
+                        View Sessions
                       </button>
                       <button
                         onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                        className="text-xs font-medium text-accent hover:brightness-110"
+                        className={PRIMARY_ACTION_CLASS}
                       >
-                        Preview remaining dates
-                      </button>
-                      <button
-                        onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
-                        className="text-xs font-medium text-accent hover:brightness-110"
-                      >
-                        Generate remaining
+                        Manage Sessions
                       </button>
                     </>
                   )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
@@ -54,14 +54,20 @@ interface Props {
   clubId:            string;
   // When false, the "+ Create Event" button is hidden (used when a parent already shows one).
   showCreateButton?:   boolean;
-  // Phase 27C: seeds the search box — used by the Programs "View sessions"
-  // link (?q=<program title>, generated events share the program's title)
-  // so admins land on a pre-filtered list without a new session/filter UI.
-  initialSearchQuery?: string;
 }
 
-export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true, initialSearchQuery = "" }: Props) {
+export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true }: Props) {
   const router                            = useRouter();
+  // Phase 27C.2: read the search box's seed value (?q=<program title>,
+  // used by the Programs "View Sessions" link — generated events share
+  // their program's title) directly via useSearchParams() rather than a
+  // server-passed prop. This is a live client-side subscription to the
+  // current URL, so it updates reliably on a same-route navigation
+  // regardless of whether a fresh RSC render's props happen to propagate
+  // down through this component's already-mounted parent chain — the same
+  // reasoning behind ManageSubview's identical switch (see that file).
+  const searchParams = useSearchParams();
+  const qParam = searchParams.get("q") ?? "";
   const [events, setEvents]               = useState<AdminEventRow[]>(initialEvents);
   const [hasMore, setHasMore]             = useState(initialHasMore);
   const [fetchError, setFetchError]       = useState<string | null>(null);
@@ -75,7 +81,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [dateFilter,            setDateFilter]            = useState<DateFilter>("all");
   const [sortOrder,             setSortOrder]             = useState<SortOrder>("desc");
   const [eventTypeFilter,       setEventTypeFilter]       = useState<string | null>(null);
-  const [searchQuery,           setSearchQuery]           = useState(initialSearchQuery);
+  const [searchQuery,           setSearchQuery]           = useState(qParam);
   const [archiveView,           setArchiveView]           = useState<ArchiveView>("active");
 
   // One confirmation slot shared across the three inline flows; opening one
@@ -96,15 +102,16 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
     setHasMore(initialHasMore);
   }, [initialEvents, initialHasMore]);
 
-  // Phase 27C: re-sync the search box whenever initialSearchQuery changes —
-  // not just on first mount. This component stays mounted across the
-  // same-route navigation Programs' "View sessions" link performs (only
-  // ?q=... changes), so without this effect a later click with a
-  // different program title would never actually update the visible
-  // search box.
+  // Re-sync the search box whenever the URL's q param changes — not just on
+  // first mount. This component stays mounted across the same-route
+  // navigation Programs' "View Sessions" link performs (only ?q=...
+  // changes), so without this effect a later click with a different
+  // program title would never actually update the visible search box. Does
+  // not fire on, and is never overwritten by, the user manually editing
+  // the search box, since typing there never touches the URL.
   useEffect(() => {
-    setSearchQuery(initialSearchQuery);
-  }, [initialSearchQuery]);
+    setSearchQuery(qParam);
+  }, [qParam]);
 
   function handleRosterChange(
     eventId:         string,
