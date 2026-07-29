@@ -1294,6 +1294,34 @@ export type Database = {
         Args: Record<string, never>;
         Returns: boolean;
       };
+      get_reporting_overview: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          gross_utilization_pct: number;
+          member_demand_utilization_pct: number;
+          total_reservations: number;
+          cancelled_reservations: number;
+          cancellation_rate_pct: number;
+          sessions_held: number;
+          total_session_capacity: number;
+          total_session_enrollment: number;
+          session_fill_rate_pct: number;
+          active_member_count: number;
+          outstanding_waitlist_count: number;
+        }[];
+      };
+      get_court_utilization: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          court_id: string;
+          court_name: string;
+          available_hours: number;
+          gross_reserved_hours: number;
+          member_demand_reserved_hours: number;
+          gross_utilization_pct: number;
+          member_demand_utilization_pct: number;
+        }[];
+      };
       set_active_club: {
         Args: { p_club_id: string };
         Returns: {
