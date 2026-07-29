@@ -1896,6 +1896,49 @@ export type Database = {
           updated_at:        string;
         };
       };
+      // Phase 27D3A: admin/pro program roster management RPCs
+      get_program_roster: {
+        Args: { p_program_id: string };
+        Returns: {
+          enrollment_id:     string;
+          program_id:        string;
+          profile_id:        string;
+          first_name:        string | null;
+          last_name:         string | null;
+          email:             string | null;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          waitlisted_at:     string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        }[];
+      };
+      add_program_member: {
+        Args: { p_program_id: string; p_profile_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      remove_program_member: {
+        Args: { p_program_id: string; p_profile_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
       // Phase 19B: admin participant action RPCs
       admin_add_member: {
         Args: { p_event_id: string; p_profile_id: string };
