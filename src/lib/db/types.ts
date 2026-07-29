@@ -1950,6 +1950,87 @@ export type Database = {
           display_name:  string;
         }[];
       };
+      // Phase 27E: program lifecycle RPCs
+      cancel_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
+      complete_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
+      archive_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
+      unarchive_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          club_id:           string;
+          event_type_id:     string;
+          title:             string;
+          description:       string | null;
+          enrollment_model:  "program" | "per_session" | "admin_managed";
+          status:            "draft" | "active" | "cancelled" | "completed";
+          starts_on:         string;
+          ends_on:           string;
+          default_capacity:  number;
+          created_by:        string;
+          created_at:        string;
+          updated_at:        string;
+          archived_at:       string | null;
+          archived_by:       string | null;
+        };
+      };
       // Phase 19B: admin participant action RPCs
       admin_add_member: {
         Args: { p_event_id: string; p_profile_id: string };

@@ -20,6 +20,12 @@
 // program_not_found, program_not_whole_enrollment, program_not_enrollable,
 // and enrollment_not_found are already handled above and are reused as-is;
 // only target_member_not_found and target_member_inactive are new.
+//
+// Phase 27E: extended to also cover the four lifecycle RPCs (cancel_program,
+// complete_program, archive_program, unarchive_program — 0094).
+// not_authenticated, insufficient_role, and program_not_found are reused
+// as-is; program_not_cancellable, program_not_completable,
+// program_not_archivable, already_archived, and not_archived are new.
 
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -97,6 +103,16 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "That date range would generate too many sessions at once. Narrow the range and try again.";
     case "court_conflict":
       return "One or more sessions would conflict with an existing booking. Resolve the conflict and try again.";
+    case "program_not_cancellable":
+      return "This program can't be cancelled right now.";
+    case "program_not_completable":
+      return "This program isn't ready to be marked complete yet.";
+    case "program_not_archivable":
+      return "Only cancelled or completed programs can be archived.";
+    case "already_archived":
+      return "This program is already archived.";
+    case "not_archived":
+      return "This program isn't archived.";
     default:
       return "Something went wrong. Please try again.";
   }

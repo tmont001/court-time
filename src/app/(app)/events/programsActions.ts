@@ -52,7 +52,14 @@ export interface ProgramListRow {
   rules:                   ProgramRuleRow[];
   generated_count:         number;
   next_session_starts_at:  string | null;
+  archived_at:             string | null;
 }
+
+// Phase 27E: mirrors ArchiveView (src/app/(app)/admin/events/actions.ts)
+// exactly — defined locally rather than imported so this module stays
+// self-contained, matching how each actions.ts file in this directory
+// already defines its own list-row/filter types independently.
+export type ProgramArchiveView = "active" | "archived" | "all";
 
 interface RawProgramRow {
   id:                string;
@@ -64,6 +71,7 @@ interface RawProgramRow {
   ends_on:           string;
   default_capacity:  number;
   created_by:        string;
+  archived_at:       string | null;
   event_types:        { id: string; key: string; label: string; color: string } | null;
   program_schedule_rules: {
     id:                string;
@@ -113,20 +121,32 @@ export interface GenerateResult {
 // generate to refresh the list — the exact fetchMoreAdminEvents split
 // already used for the sibling Events manage surface.
 export async function getPrograms(
-  clubId: string
+  clubId: string,
+  archiveView: ProgramArchiveView = "active",
 ): Promise<{ programs: ProgramListRow[] } | { error: string }> {
   if (!clubId) return { programs: [] };
 
   const supabase = await createClient();
 
-  const { data: programsData, error: programsErr } = await supabase
+  const baseQuery = supabase
     .from("programs")
     .select(`
-      id, title, description, status, enrollment_model, starts_on, ends_on, default_capacity, created_by,
+      id, title, description, status, enrollment_model, starts_on, ends_on, default_capacity, created_by, archived_at,
       event_types(id, key, label, color),
       program_schedule_rules(id, day_of_week, start_time, duration_minutes, capacity_override)
     `)
-    .eq("club_id", clubId)
+    .eq("club_id", clubId);
+
+  // Phase 27E: same three-way filter shape as fetchMoreAdminEvents
+  // (admin/events/actions.ts) — default "active" excludes archived
+  // programs so the normal Manage → Programs list is unaffected by
+  // archiving until the caller explicitly asks to see archived/all.
+  const filteredQuery =
+    archiveView === "archived" ? baseQuery.not("archived_at", "is", null) :
+    archiveView === "all"      ? baseQuery :
+    /* active (default) */       baseQuery.is("archived_at", null);
+
+  const { data: programsData, error: programsErr } = await filteredQuery
     .order("created_at", { ascending: false });
 
   if (programsErr) {
@@ -205,6 +225,7 @@ export async function getPrograms(
       .sort((a, b) => a.day_of_week - b.day_of_week || a.start_time.localeCompare(b.start_time)),
     generated_count:        generatedCountByProgram.get(p.id) ?? 0,
     next_session_starts_at: nextSessionByProgram.get(p.id) ?? null,
+    archived_at:            p.archived_at,
   }));
 
   return { programs };
@@ -292,4 +313,91 @@ export async function generateProgramSessions(params: {
   // with exactly one row for this call shape.
   const row = Array.isArray(data) ? data[0] : data;
   return { data: row as GenerateResult | undefined };
+}
+
+// ─── Lifecycle (Phase 27E) ──────────────────────────────────────────────────
+//
+// cancel_program can cancel future generated events and release their
+// reservations — /calendar and /my-schedule are revalidated alongside
+// /events for that reason, matching the same reasoning already used in
+// programEnrollmentActions.ts/programRosterActions.ts (an extra
+// revalidation on an action that didn't happen to touch a given surface is
+// harmless; skipping one that was needed is not). complete_program/
+// archive_program/unarchive_program never touch events/reservations, but
+// revalidate all three anyway for the same reason and for consistency.
+
+export async function cancelProgram(params: {
+  p_program_id:   string;
+  expectedClubId: string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("cancel_program", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: (data ?? undefined) as ProgramRow | undefined };
+}
+
+export async function completeProgram(params: {
+  p_program_id:   string;
+  expectedClubId: string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("complete_program", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: (data ?? undefined) as ProgramRow | undefined };
+}
+
+export async function archiveProgram(params: {
+  p_program_id:   string;
+  expectedClubId: string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("archive_program", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: (data ?? undefined) as ProgramRow | undefined };
+}
+
+export async function unarchiveProgram(params: {
+  p_program_id:   string;
+  expectedClubId: string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("unarchive_program", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: (data ?? undefined) as ProgramRow | undefined };
 }
