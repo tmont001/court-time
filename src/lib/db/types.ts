@@ -1322,6 +1322,62 @@ export type Database = {
           member_demand_utilization_pct: number;
         }[];
       };
+      get_reservation_summary: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          total_reservations: number;
+          pending_reservations: number;
+          confirmed_reservations: number;
+          cancelled_reservations: number;
+          cancellation_rate_pct: number;
+          member_booking_count: number;
+          event_count: number;
+          pro_lesson_count: number;
+          maintenance_count: number;
+          admin_block_count: number;
+          daily_series: { local_date: string; total_count: number; cancelled_count: number }[];
+        }[];
+      };
+      get_event_program_summary: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          standalone_sessions_held: number;
+          program_sessions_held: number;
+          total_sessions_held: number;
+          total_capacity: number;
+          confirmed_members: number;
+          guests: number;
+          total_enrollment: number;
+          fill_rate_pct: number;
+          attended_count: number;
+          no_show_count: number;
+          attendance_marked_count: number;
+          attendance_rate_pct: number;
+          no_show_rate_pct: number;
+          cancelled_standalone_sessions: number;
+          cancelled_program_sessions: number;
+        }[];
+      };
+      get_waitlist_demand: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          event_waitlisted_entries: number;
+          event_live_offer_entries: number;
+          program_waitlisted_entries: number;
+          program_live_offer_entries: number;
+          total_outstanding_entries: number;
+        }[];
+      };
+      get_member_engagement_summary: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          active_member_snapshot_count: number;
+          engaged_member_count: number;
+          members_with_reservations: number;
+          members_with_event_participation: number;
+          members_with_program_enrollment: number;
+        }[];
+      };
       set_active_club: {
         Args: { p_club_id: string };
         Returns: {
