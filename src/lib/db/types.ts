@@ -684,6 +684,7 @@ export type Database = {
           profile_id: string;
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at: string | null;
+          waitlisted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -693,6 +694,7 @@ export type Database = {
           profile_id: string;
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
+          waitlisted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -702,6 +704,7 @@ export type Database = {
           profile_id?: string;
           status?: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
+          waitlisted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1839,6 +1842,59 @@ export type Database = {
           skipped_count:  number;
           event_ids:      string[];
         }[];
+      };
+      // Phase 27D1: whole-program enrollment state machine
+      join_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      leave_program: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      accept_program_waitlist_offer: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      decline_program_waitlist_offer: {
+        Args: { p_program_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
       };
       // Phase 19B: admin participant action RPCs
       admin_add_member: {
