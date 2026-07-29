@@ -1939,6 +1939,17 @@ export type Database = {
           updated_at:        string;
         };
       };
+      // Phase 27D3C: membership-native eligible-member lookup for the
+      // program roster Add Member picker
+      get_program_eligible_members: {
+        Args: { p_program_id: string };
+        Returns: {
+          profile_id:    string;
+          first_name:    string | null;
+          last_name:     string | null;
+          display_name:  string;
+        }[];
+      };
       // Phase 19B: admin participant action RPCs
       admin_add_member: {
         Args: { p_event_id: string; p_profile_id: string };

@@ -10,6 +10,7 @@ import { useState, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import CreateProgramSheet from "./CreateProgramSheet";
 import ProgramPreviewSheet from "./ProgramPreviewSheet";
+import ProgramRosterSheet from "./ProgramRosterSheet";
 import { getPrograms, type ProgramListRow, type ProgramRow } from "./programsActions";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 
@@ -92,6 +93,7 @@ export default function ProgramsManageClient({
   const [previewing, setPreviewing] = useState<{
     id: string; title: string; status: ProgramListRow["status"]; createdBy: string;
   } | null>(null);
+  const [viewingRoster, setViewingRoster] = useState<ProgramListRow | null>(null);
 
   // Sync when the RSC parent refreshes (router.refresh() after a create).
   useEffect(() => {
@@ -232,6 +234,17 @@ export default function ProgramsManageClient({
                       >
                         View Sessions
                       </button>
+                      {/* Phase 27D3B: whole-program roster management —
+                          active programs only; per_session/admin_managed
+                          have no program_enrollments rows to manage here. */}
+                      {p.status === "active" && p.enrollment_model === "program" && (
+                        <button
+                          onClick={() => setViewingRoster(p)}
+                          className={ACTION_BUTTON_SECONDARY}
+                        >
+                          Roster
+                        </button>
+                      )}
                       <button
                         onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                         className={ACTION_BUTTON_PRIMARY}
@@ -282,6 +295,16 @@ export default function ProgramsManageClient({
           onClose={() => setPreviewing(null)}
           onGenerated={refresh}
           onEdit={handleEditFromPreview}
+        />
+      )}
+
+      {viewingRoster && (
+        <ProgramRosterSheet
+          programId={viewingRoster.id}
+          programTitle={viewingRoster.title}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setViewingRoster(null)}
         />
       )}
     </div>

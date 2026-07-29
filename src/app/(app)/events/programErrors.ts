@@ -14,6 +14,12 @@
 // in one place; not_authenticated, program_not_found, and stale-club
 // handling below already cover the enrollment RPCs' own use of those same
 // codes with no changes needed.
+//
+// Phase 27D3B: extended to also cover the two Phase 27D3A staff roster RPCs
+// (add_program_member, remove_program_member — 0092). insufficient_role,
+// program_not_found, program_not_whole_enrollment, program_not_enrollable,
+// and enrollment_not_found are already handled above and are reused as-is;
+// only target_member_not_found and target_member_inactive are new.
 
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -79,6 +85,10 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "That spot offer is no longer available.";
     case "offer_expired":
       return "That spot offer has expired.";
+    case "target_member_not_found":
+      return "That member could not be found.";
+    case "target_member_inactive":
+      return "That member is inactive.";
     case "program_not_editable":
       return "This program can no longer be edited — only draft programs can be changed.";
     case "program_already_generated":
