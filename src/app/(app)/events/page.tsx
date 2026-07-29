@@ -16,6 +16,7 @@ import LessonsTab from "./LessonsTab";
 import ManageSubview from "./ManageSubview";
 import ProgramsManageClient from "./ProgramsManageClient";
 import { getPrograms, type ProgramListRow } from "./programsActions";
+import { getMemberPrograms, type MemberProgramCard } from "./programEnrollmentActions";
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 
@@ -82,29 +83,40 @@ export default async function EventsPage({
 
   const clubId         = profile?.club_id ?? "";
   const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";
+  // Phase 27D2 correction: whole-program enrollment (Join/Leave/Accept/Pass)
+  // is a member-only surface — admins and pros keep their existing Upcoming
+  // experience unchanged. current_user_role()'s three-value vocabulary
+  // ('member' | 'pro' | 'admin', see 0081) means this is the exact
+  // complement of isAdminOrPro, but is spelled out explicitly (rather than
+  // reusing !isAdminOrPro) so both the fetch guard below and the render
+  // guard passed to EventsUpcomingClient say plainly what they're gating on.
+  const isMember       = profile?.role === "member";
   const now            = new Date().toISOString();
 
-  // Parallel fetches: timezone + upcoming events + admin-only data (courts, all events, lesson requests, programs)
-  const [clubResult, eventsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
+  // Parallel fetches: timezone + upcoming events + member programs + admin-only data (courts, all events, lesson requests, programs)
+  const [clubResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
     supabase
       .from("events")
       .select(`
-        id, title, starts_at, ends_at, capacity, status, created_by,
+        id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
         event_types(key, label, color),
         event_participants(profile_id, role, status, offer_expires_at),
         event_guests(id),
-        reservations(court_id, reason, status)
+        reservations(court_id, reason, status),
+        programs(enrollment_model)
       `)
       .eq("club_id", clubId)
       .eq("status", "scheduled")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .eq("member_joinable" as any, true)
       .gte("starts_at", now)
       .is("archived_at", null)
       .order("starts_at", { ascending: true }),
+    // Phase 27D2 correction: whole-program offerings for the Upcoming tab's
+    // Programs section — member-only. Only fetched when the caller is a
+    // plain member, so admins/pros never pay for this query.
+    clubId && isMember ? getMemberPrograms(clubId, user.id) : Promise.resolve({ programs: [] as MemberProgramCard[] }),
     // Admin/pro: all events (past + future) for the Manage tab; excludes archived by default
     isAdminOrPro
       ? supabase
@@ -140,12 +152,25 @@ export default async function EventsPage({
   ]);
 
   const clubTimezone  = clubResult.data?.timezone ?? "America/New_York";
-  const events        = (eventsResult.data ?? []) as unknown as UpcomingEventData[];
+  // Phase 27D2: the DB-level member_joinable filter was removed from the
+  // events query above (see its comment) because every generated session
+  // under a whole-program offering has member_joinable=false and must
+  // still appear in Upcoming — just without per-session join controls
+  // (handled in EventsUpcomingClient via the embedded `programs` field).
+  // Filter here instead: keep an event if it's ordinarily member-joinable,
+  // OR if it's a generated session of a whole-program ('program'
+  // enrollment_model) offering. admin_managed sessions (also
+  // member_joinable=false, enrollment_model≠'program') are correctly
+  // excluded, unchanged from prior behavior.
+  const rawEvents = (eventsResult.data ?? []) as unknown as Array<UpcomingEventData & { member_joinable: boolean }>;
+  const events = rawEvents.filter(ev => ev.member_joinable || ev.programs?.enrollment_model === "program");
   const adminEvents   = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
   const adminCourts   = adminCourtsResult.data ?? [];
   const proLessons    = (proLessonsResult.data ?? []) as ProLessonRequestRow[];
   const programs      = "programs" in programsResult ? programsResult.programs : [];
   const programsError = "error" in programsResult ? programsResult.error : undefined;
+  const memberPrograms      = "programs" in memberProgramsResult ? memberProgramsResult.programs : [];
+  const memberProgramsError = "error" in memberProgramsResult ? memberProgramsResult.error : undefined;
 
   // ── Batch-fetch court names for reservation display in EventsUpcomingClient ──
   const allCourtIds = [...new Set(
@@ -165,6 +190,9 @@ export default async function EventsPage({
   const upcomingContent = (
     <EventsUpcomingClient
       events={events}
+      isMember={isMember}
+      programs={memberPrograms}
+      programsError={memberProgramsError}
       userId={user.id}
       userRole={profile?.role}
       clubId={clubId}

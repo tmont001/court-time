@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import EventCardClient from "./EventCardClient";
+import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
+import type { MemberProgramCard } from "./programEnrollmentActions";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -34,10 +37,24 @@ export interface UpcomingEventData {
   event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
   event_guests:       Array<{ id: string }>;
   reservations:       Array<{ court_id: string; reason: string; status: string }>;
+  // Phase 27D2: present only for generated program sessions (null for
+  // standalone/per_session/admin_managed events without a parent program).
+  // Used solely to suppress per-session Join/Leave controls for
+  // enrollment_model='program' — see the "Enrollment through program"
+  // branch below.
+  programs:           { enrollment_model: "program" | "per_session" | "admin_managed" } | null;
 }
 
 interface Props {
   events:                      UpcomingEventData[];
+  // Phase 27D2 correction: whole-program enrollment is member-only — page.tsx
+  // only fetches `programs` when the caller's active-club role is 'member'
+  // (empty otherwise), and this flag additionally gates rendering the
+  // Programs section directly, rather than relying only on `programs` being
+  // empty for admins/pros.
+  isMember:                    boolean;
+  programs:                    MemberProgramCard[];
+  programsError?:              string;
   userId:                      string;
   userRole:                    string | null | undefined;
   clubId:                      string;
@@ -51,6 +68,9 @@ interface Props {
 
 export default function EventsUpcomingClient({
   events,
+  isMember,
+  programs,
+  programsError,
   userId,
   userRole,
   clubId,
@@ -61,12 +81,15 @@ export default function EventsUpcomingClient({
   acceptWaitlistOfferAction,
   declineWaitlistOfferAction,
 }: Props) {
+  const router = useRouter();
   const [searchQuery,      setSearchQuery]      = useState("");
   const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
 
   const courtName = new Map(courtNames.map(c => [c.id, c.name]));
 
-  // Unique event types present in the loaded events, sorted by label.
+  // Unique event types present in the loaded events and programs, sorted
+  // by label — a program's event type is included even if no per-session
+  // event of that type happens to be loaded right now.
   const eventTypeOptions = (() => {
     const seen  = new Set<string>();
     const types: Array<{ key: string; label: string; color: string }> = [];
@@ -74,6 +97,12 @@ export default function EventsUpcomingClient({
       if (ev.event_types && !seen.has(ev.event_types.key)) {
         seen.add(ev.event_types.key);
         types.push(ev.event_types);
+      }
+    }
+    for (const p of programs) {
+      if (p.event_type && !seen.has(p.event_type.key)) {
+        seen.add(p.event_type.key);
+        types.push(p.event_type);
       }
     }
     return types.sort((a, b) => a.label.localeCompare(b.label));
@@ -85,6 +114,17 @@ export default function EventsUpcomingClient({
     if (eventTypeFilter && ev.event_types?.key !== eventTypeFilter) return false;
     if (searchQuery.trim()) {
       if (!ev.title.toLowerCase().includes(searchQuery.trim().toLowerCase())) return false;
+    }
+    return true;
+  });
+
+  // Same filter bar, applied to programs — reuses the existing search/type
+  // state rather than adding a second filter UI (Phase 27D2: "respect the
+  // Upcoming search and event-type filter where practical").
+  const filteredPrograms = programs.filter(p => {
+    if (eventTypeFilter && p.event_type?.key !== eventTypeFilter) return false;
+    if (searchQuery.trim()) {
+      if (!p.title.toLowerCase().includes(searchQuery.trim().toLowerCase())) return false;
     }
     return true;
   });
@@ -115,7 +155,7 @@ export default function EventsUpcomingClient({
         </p>
       </div>
 
-      {events.length === 0 ? (
+      {events.length === 0 && programs.length === 0 ? (
         <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
           No upcoming events yet.
         </div>
@@ -174,8 +214,43 @@ export default function EventsUpcomingClient({
             )}
           </div>
 
+          {/* Programs section — member-only whole-program offerings, one
+              card per program (never per generated session). Rendered
+              before the chronological event list per Phase 27D2. Gated
+              explicitly on isMember (not only on `programs` being empty)
+              so admins/pros never see this section or its Join/Leave/
+              Accept controls, matching their existing Upcoming experience. */}
+          {isMember && programsError && programs.length === 0 && (
+            <div className="px-4 pb-3 flex items-center justify-between gap-2">
+              <span className="text-xs text-red-500">{programsError}</span>
+              <button
+                onClick={() => router.refresh()}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline shrink-0"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {isMember && filteredPrograms.length > 0 && (
+            <div className="pb-2">
+              <p className="px-4 pb-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Programs
+              </p>
+              <div className="px-4 space-y-3">
+                {filteredPrograms.map(p => (
+                  <ProgramEnrollmentCard
+                    key={p.id}
+                    program={p}
+                    clubId={clubId}
+                    clubTimezone={clubTimezone}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Events list or filtered-empty state */}
-          {filteredEvents.length === 0 ? (
+          {filteredEvents.length === 0 && filteredPrograms.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-2 text-gray-400 dark:text-gray-500 text-sm px-8 text-center">
               <span>No events match your search.</span>
               {hasActiveFilters && (
@@ -187,7 +262,7 @@ export default function EventsUpcomingClient({
                 </button>
               )}
             </div>
-          ) : (
+          ) : filteredEvents.length === 0 ? null : (
             <div className="pb-6">
               {sortedDateKeys.map(key => {
                 const dayEvents = grouped.get(key)!;
@@ -225,6 +300,14 @@ export default function EventsUpcomingClient({
                         const isOffered    = myStatus === "offered";
                         const isJoined     = isHost || isConfirmed;
 
+                        // Phase 27D2: generated sessions under a whole-program
+                        // (enrollment_model='program') offering have no
+                        // per-session join/leave/waitlist — enrollment lives at
+                        // the program level (see the Programs section above).
+                        // member_joinable=false already blocks the RPC path for
+                        // these events; this only controls what the card shows.
+                        const isProgramManaged = ev.programs?.enrollment_model === "program";
+
                         const offerExpiresAt        = isOffered ? (myEntry?.offer_expires_at ?? null) : null;
                         const offerExpiredServerSide = offerExpiresAt ? new Date(offerExpiresAt) <= new Date() : false;
 
@@ -245,7 +328,11 @@ export default function EventsUpcomingClient({
                             clubTimezone={clubTimezone}
                             rosterCount={confirmedCount + offeredCount + waitlistCount}
                             actionArea={
-                              isHost ? null : isOffered ? (
+                              isProgramManaged ? (
+                                <span className="text-xs text-gray-400 dark:text-gray-500 italic">
+                                  Enrollment through program
+                                </span>
+                              ) : isHost ? null : isOffered ? (
                                 offerExpiredServerSide ? (
                                   <form action={joinEventAction}>
                                     <input type="hidden" name="event_id" value={ev.id} />

@@ -6,6 +6,14 @@
 // — every RPC raises `error.message` as the literal documented error code,
 // so this is a plain string switch, never a raw Postgres message shown to
 // the user.
+//
+// Phase 27D2: extended to also cover the four Phase 27D1 whole-program
+// enrollment RPCs (join_program, leave_program, accept_program_waitlist_offer,
+// decline_program_waitlist_offer — 0091). Reusing this single switch rather
+// than adding a second mapping function keeps every /events error message
+// in one place; not_authenticated, program_not_found, and stale-club
+// handling below already cover the enrollment RPCs' own use of those same
+// codes with no changes needed.
 
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -59,6 +67,18 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "This program has been archived.";
     case "program_not_generatable":
       return "This program can no longer generate sessions.";
+    case "program_not_whole_enrollment":
+      return "This program doesn't use whole-program enrollment.";
+    case "program_not_enrollable":
+      return "This program isn't open for enrollment right now.";
+    case "already_enrolled":
+      return "You're already enrolled or on the waitlist for this program.";
+    case "enrollment_not_found":
+      return "You're not currently enrolled in this program.";
+    case "offer_not_found":
+      return "That spot offer is no longer available.";
+    case "offer_expired":
+      return "That spot offer has expired.";
     case "program_not_editable":
       return "This program can no longer be edited — only draft programs can be changed.";
     case "program_already_generated":
