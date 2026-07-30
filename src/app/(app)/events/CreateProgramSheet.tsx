@@ -305,11 +305,14 @@ export default function CreateProgramSheet({
   const labelClass = "text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide";
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
-      {/* Handle + header */}
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between md:pr-10">
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      size="wide"
+      mobileInteraction="draggable"
+      label={stepTitles[step]}
+      header={
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {step > 1 && (
               <button
@@ -323,11 +326,8 @@ export default function CreateProgramSheet({
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500">{step} of 3</p>
         </div>
-      </div>
-
-      {/* Scrollable content */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">
-
+      }
+    >
         {/* ── Step 1: basics ─────────────────────────────────────────────── */}
         {step === 1 && (
           <div className="pt-1 space-y-5">
@@ -635,7 +635,6 @@ export default function CreateProgramSheet({
           </div>
         )}
 
-      </div>
     </ResponsiveSheet>
   );
 }

@@ -1080,37 +1080,43 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
       {/* ── Slot action menu — hidden when sub-form is active ──────────── */}
       {pendingSlotAction && !bookingSlot && !creatingEvent && !creatingBlock && (
-        <ResponsiveSheet onClose={closeSlotFlow} variant="modal">
-          <div className="px-6 pt-5 pb-8">
-            <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 pr-8">{pendingSlotAction.court.name}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 mb-5">
-              {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
-                timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
-              })}
-            </p>
-            <div className="space-y-2">
+        <ResponsiveSheet
+          onClose={closeSlotFlow}
+          variant="modal"
+          mobileInteraction="draggable"
+          label={pendingSlotAction.court.name}
+          header={
+            <>
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{pendingSlotAction.court.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {pendingSlotAction.slotStart.toLocaleTimeString("en-US", {
+                  timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+                })}
+              </p>
+            </>
+          }
+        >
+          <div className="space-y-2">
+            <button
+              onClick={openBookingFromSlot}
+              className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
+            >
+              Book Court
+            </button>
+            <button
+              onClick={openEventFromSlot}
+              className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
+            >
+              Create Event
+            </button>
+            {userRole === "admin" && (
               <button
-                onClick={openBookingFromSlot}
-                className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
-              >
-                Book Court
-              </button>
-              <button
-                onClick={openEventFromSlot}
+                onClick={openBlockFromSlot}
                 className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
               >
-                Create Event
+                Maintenance Block
               </button>
-              {userRole === "admin" && (
-                <button
-                  onClick={openBlockFromSlot}
-                  className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
-                >
-                  Maintenance Block
-                </button>
-              )}
-            </div>
+            )}
           </div>
         </ResponsiveSheet>
       )}

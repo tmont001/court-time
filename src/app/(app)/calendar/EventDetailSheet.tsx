@@ -307,12 +307,14 @@ export default function EventDetailSheet({
 
   return (
     <>
-      <ResponsiveSheet onClose={onClose} variant="modal">
-        <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
-
-        {/* Handle — hidden on desktop (ResponsiveSheet provides close button) */}
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-
+      <ResponsiveSheet
+        onClose={onClose}
+        variant="modal"
+        mobileInteraction="draggable"
+        label={event.title}
+        header={null}
+        active={!rosterOpen}
+      >
         {/* Event type pill + admin-managed badge */}
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
           <span
@@ -492,7 +494,6 @@ export default function EventDetailSheet({
           </div>
         )}
 
-        </div>
       </ResponsiveSheet>
 
       {/* ── Event Roster Sheet — admin/pro only, layers above this sheet ── */}
