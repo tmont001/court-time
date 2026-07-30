@@ -537,13 +537,13 @@ export default function MembersClient({
               onChange={e => setSearch(e.target.value)}
               placeholder="Search members by name, email, or phone"
               aria-label="Search members"
-              className="ct-input w-full pr-8 text-sm"
+              className="ct-input w-full pr-8 text-base md:text-sm"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
                 aria-label="Clear search"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none"
+                className="absolute right-0 top-1/2 -translate-y-1/2 p-2.5 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs leading-none"
               >
                 ✕
               </button>
@@ -554,7 +554,7 @@ export default function MembersClient({
               value={roleFilter}
               onChange={e => setRoleFilter(e.target.value)}
               aria-label="Filter by role"
-              className="ct-input text-sm flex-1 min-w-0"
+              className="ct-input text-base md:text-sm flex-1 min-w-0"
             >
               <option value="">All roles</option>
               <option value="member">Member</option>
@@ -565,7 +565,7 @@ export default function MembersClient({
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
               aria-label="Filter by status"
-              className="ct-input text-sm flex-1 min-w-0"
+              className="ct-input text-base md:text-sm flex-1 min-w-0"
             >
               <option value="">All statuses</option>
               <option value="active">Active</option>
@@ -617,9 +617,9 @@ export default function MembersClient({
 
       {/* Member list */}
       {membersError ? (
-        <div className="mx-4 mt-2 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
-          <p className="text-sm font-semibold text-red-700">Failed to load members</p>
-          <p className="text-xs text-red-500 mt-1 break-all">{membersError}</p>
+        <div className="mx-4 mt-2 px-4 py-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-700">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-400">Failed to load members</p>
+          <p className="text-xs text-red-500 dark:text-red-400 mt-1 break-all">{membersError}</p>
         </div>
       ) : totalCount === 0 ? (
         <div className="flex flex-col items-center justify-center h-32 gap-1">
@@ -1050,7 +1050,7 @@ function ProfileCard({
             value={m.role}
             disabled={controlsDisabled || changingRoleId === m.id}
             onChange={(e) => onRoleChange(m.id, e.target.value)}
-            className="ct-input py-1.5 text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ct-input py-1.5 text-base md:text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {ROLE_OPTIONS.map(({ value, label }) => (
               <option key={value} value={value}>{label}</option>

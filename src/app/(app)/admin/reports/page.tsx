@@ -333,12 +333,12 @@ export default async function AdminReportsPage({
             <form
               method="GET"
               action="/admin/reports"
-              className={`ct-card mt-2 px-3 py-2.5 flex flex-wrap items-end gap-2 ${
+              className={`ct-card mt-2 px-3 py-3 grid grid-cols-1 gap-3 w-full min-w-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end md:gap-2 md:py-2.5 ${
                 resolved.range === "custom" ? "ring-1 ring-accent" : ""
               }`}
             >
               <input type="hidden" name="range" value="custom" />
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full min-w-0 max-w-full">
                 <label htmlFor="report-start" className="text-[10px] text-gray-500 dark:text-gray-400">
                   Custom start
                 </label>
@@ -347,10 +347,10 @@ export default async function AdminReportsPage({
                   type="date"
                   name="start"
                   defaultValue={resolved.range === "custom" ? resolved.startDate : ""}
-                  className="ct-input text-xs py-1.5 w-auto"
+                  className="ct-input ct-date-input text-base md:text-xs py-1.5 w-full min-w-0 max-w-full box-border"
                 />
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1 w-full min-w-0 max-w-full">
                 <label htmlFor="report-end" className="text-[10px] text-gray-500 dark:text-gray-400">
                   Custom end
                 </label>
@@ -359,10 +359,10 @@ export default async function AdminReportsPage({
                   type="date"
                   name="end"
                   defaultValue={resolved.range === "custom" ? resolved.endDate : ""}
-                  className="ct-input text-xs py-1.5 w-auto"
+                  className="ct-input ct-date-input text-base md:text-xs py-1.5 w-full min-w-0 max-w-full box-border"
                 />
               </div>
-              <button type="submit" className="ct-button-secondary text-xs py-1.5 px-3">
+              <button type="submit" className="ct-button-secondary text-xs py-1.5 px-3 w-full md:w-auto">
                 Apply
               </button>
             </form>

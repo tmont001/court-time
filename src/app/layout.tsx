@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import SystemThemeSync from '@/components/SystemThemeSync';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -37,6 +38,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased motion-safe:transition-colors motion-safe:duration-150">
+        <SystemThemeSync />
         <div className="w-full min-h-screen bg-white dark:bg-gray-900 motion-safe:transition-colors motion-safe:duration-150">
           {children}
         </div>

@@ -21,13 +21,13 @@ export default function TestSmsSection({ twilioConfigured }: Props) {
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-semibold text-gray-900">Test SMS</p>
-      <p className="text-xs text-gray-500">
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Test SMS</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
         Sends a test message to your own phone number. Requires SMS enabled in your profile.
       </p>
 
       {!twilioConfigured ? (
-        <p className="text-xs text-gray-400">SMS is not configured yet.</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500">SMS is not configured yet.</p>
       ) : (
         <>
           <button
@@ -39,12 +39,12 @@ export default function TestSmsSection({ twilioConfigured }: Props) {
           </button>
 
           {result?.sid && (
-            <p className="text-xs font-medium text-green-600">
+            <p className="text-xs font-medium text-green-600 dark:text-green-400">
               Sent — SID: {result.sid}
             </p>
           )}
           {result?.error && (
-            <p className="text-xs font-medium text-red-500">{result.error}</p>
+            <p className="text-xs font-medium text-red-500 dark:text-red-400">{result.error}</p>
           )}
         </>
       )}

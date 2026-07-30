@@ -54,7 +54,7 @@ interface RuleDraft {
   key:               string; // client-only id for React keys / removal, not sent to the server
   dayOfWeek:         number;
   startTime:         string; // "HH:MM"
-  durationMinutes:   number;
+  durationMinutes:   string; // raw input text while editing; coerced to a number at submit
   capacityOverride:  string; // raw input text; "" = no override
   courtIds:          string[];
 }
@@ -85,7 +85,7 @@ function makeRule(): RuleDraft {
     key: newRuleKey(),
     dayOfWeek: 1,
     startTime: "09:00",
-    durationMinutes: 60,
+    durationMinutes: "60",
     capacityOverride: "",
     courtIds: [],
   };
@@ -104,9 +104,9 @@ function rulesOverlap(a: RuleDraft, b: RuleDraft): boolean {
   if (a.dayOfWeek !== b.dayOfWeek) return false;
   if (!a.courtIds.some(id => b.courtIds.includes(id))) return false;
   const aStart = timeToMinutes(a.startTime);
-  const aEnd   = aStart + a.durationMinutes;
+  const aEnd   = aStart + Number(a.durationMinutes);
   const bStart = timeToMinutes(b.startTime);
-  const bEnd   = bStart + b.durationMinutes;
+  const bEnd   = bStart + Number(b.durationMinutes);
   return aStart < bEnd && bStart < aEnd; // half-open — adjacent windows never overlap
 }
 
@@ -124,7 +124,7 @@ function rulesFromProgram(program: ProgramListRow): RuleDraft[] {
     key: newRuleKey(),
     dayOfWeek: r.day_of_week,
     startTime: r.start_time.slice(0, 5), // "HH:MM:SS" -> "HH:MM" for <input type="time">
-    durationMinutes: r.duration_minutes,
+    durationMinutes: String(r.duration_minutes),
     capacityOverride: r.capacity_override != null ? String(r.capacity_override) : "",
     courtIds: r.courts.map(c => c.id),
   }));
@@ -159,7 +159,9 @@ export default function CreateProgramSheet({
   const [enrollmentModel, setEnrollmentModel] = useState<EnrollmentModel>(() => editingProgram?.enrollment_model ?? "per_session");
   const [startsOn, setStartsOn]               = useState(() => editingProgram?.starts_on ?? todayISO);
   const [endsOn, setEndsOn]                   = useState(() => editingProgram?.ends_on ?? todayISO);
-  const [defaultCapacity, setDefaultCapacity] = useState(() => editingProgram?.default_capacity ?? 8);
+  // Raw input text while editing (permits a temporarily empty field); coerced
+  // to a number via defaultCapacityNum below, and clamped to >=1 at blur/submit.
+  const [defaultCapacity, setDefaultCapacity] = useState(() => String(editingProgram?.default_capacity ?? 8));
   const [rules, setRules] = useState<RuleDraft[]>(() => editingProgram ? rulesFromProgram(editingProgram) : [makeRule()]);
 
   const [submitting, setSubmitting] = useState(false);
@@ -196,11 +198,17 @@ export default function CreateProgramSheet({
   const rangeDays  = daysBetween(startsOn, endsOn);
   const rangeValid = rangeDays >= 0 && rangeDays <= MAX_RANGE_DAYS;
 
+  const defaultCapacityNum = Number(defaultCapacity);
+
   const ruleErrors = useMemo(() => {
     const errs: string[] = [];
     for (const r of rules) {
       if (r.courtIds.length === 0) {
         errs.push(`${DAY_NAMES[r.dayOfWeek]} ${r.startTime}: select at least one court.`);
+      }
+      const durationNum = Number(r.durationMinutes);
+      if (r.durationMinutes.trim() === "" || !Number.isFinite(durationNum) || durationNum < 1) {
+        errs.push(`${DAY_NAMES[r.dayOfWeek]} ${r.startTime}: enter a duration of at least 1 minute.`);
       }
     }
     for (let i = 0; i < rules.length; i++) {
@@ -215,7 +223,8 @@ export default function CreateProgramSheet({
     return errs;
   }, [rules]);
 
-  const basicsValid = selectedTypeId !== "" && title.trim().length > 0 && rangeValid && defaultCapacity > 0;
+  const basicsValid = selectedTypeId !== "" && title.trim().length > 0 && rangeValid &&
+    Number.isFinite(defaultCapacityNum) && defaultCapacityNum > 0;
   const rulesValid   = rules.length > 0 && ruleErrors.length === 0;
 
   // ── Rule editing ────────────────────────────────────────────────────────
@@ -250,7 +259,7 @@ export default function CreateProgramSheet({
     const rulesPayload: ProgramRulePayload[] = rules.map(r => ({
       day_of_week:        r.dayOfWeek,
       start_time:         r.startTime,
-      duration_minutes:   r.durationMinutes,
+      duration_minutes:   Math.max(1, Number(r.durationMinutes) || 1),
       capacity_override:  enrollmentModel === "program" || r.capacityOverride.trim() === ""
         ? null
         : Number(r.capacityOverride),
@@ -263,7 +272,7 @@ export default function CreateProgramSheet({
       p_enrollment_model:  enrollmentModel,
       p_starts_on:         startsOn,
       p_ends_on:           endsOn,
-      p_default_capacity:  defaultCapacity,
+      p_default_capacity:  Math.max(1, defaultCapacityNum || 1),
       p_rules:             rulesPayload,
       p_description:       description.trim() || null,
       expectedClubId:      clubId,
@@ -290,7 +299,7 @@ export default function CreateProgramSheet({
   };
 
   const inputClass =
-    "mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 " +
+    "mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 " +
     "focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 " +
     "dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150";
   const labelClass = "text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide";
@@ -331,11 +340,13 @@ export default function CreateProgramSheet({
               ) : eventTypes.length === 0 ? (
                 <p className="text-sm text-gray-400 py-3">No active event types configured.</p>
               ) : (
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2" role="radiogroup" aria-label="Event Type">
                   {eventTypes.map(t => (
                     <button
                       key={t.id}
                       type="button"
+                      role="radio"
+                      aria-checked={selectedTypeId === t.id}
                       onClick={() => setSelectedTypeId(t.id)}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border motion-safe:transition-colors active:scale-95 ${
                         selectedTypeId === t.id
@@ -374,7 +385,7 @@ export default function CreateProgramSheet({
 
             <div>
               <label className={labelClass}>Enrollment Model</label>
-              <div className="flex flex-wrap gap-2 pt-2">
+              <div className="flex flex-wrap gap-2 pt-2" role="radiogroup" aria-label="Enrollment Model">
                 {([
                   { value: "program",        label: "Whole program" },
                   { value: "per_session",    label: "Per session" },
@@ -383,6 +394,8 @@ export default function CreateProgramSheet({
                   <button
                     key={opt.value}
                     type="button"
+                    role="radio"
+                    aria-checked={enrollmentModel === opt.value}
                     onClick={() => setEnrollmentModel(opt.value)}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border motion-safe:transition-colors active:scale-95 ${
                       enrollmentModel === opt.value
@@ -433,7 +446,13 @@ export default function CreateProgramSheet({
                 type="number"
                 min={1}
                 value={defaultCapacity}
-                onChange={e => setDefaultCapacity(Math.max(1, Number(e.target.value) || 1))}
+                onChange={e => setDefaultCapacity(e.target.value)}
+                onBlur={() => {
+                  const n = Number(defaultCapacity);
+                  if (defaultCapacity.trim() === "" || !Number.isFinite(n) || n < 1) {
+                    setDefaultCapacity("8");
+                  }
+                }}
                 className={inputClass}
               />
             </div>
@@ -497,7 +516,13 @@ export default function CreateProgramSheet({
                       type="number"
                       min={1}
                       value={r.durationMinutes}
-                      onChange={e => updateRule(r.key, { durationMinutes: Math.max(1, Number(e.target.value) || 1) })}
+                      onChange={e => updateRule(r.key, { durationMinutes: e.target.value })}
+                      onBlur={() => {
+                        const n = Number(r.durationMinutes);
+                        if (r.durationMinutes.trim() === "" || !Number.isFinite(n) || n < 1) {
+                          updateRule(r.key, { durationMinutes: "60" });
+                        }
+                      }}
                       className={inputClass}
                     />
                   </div>
@@ -511,7 +536,7 @@ export default function CreateProgramSheet({
                       disabled={enrollmentModel === "program"}
                       value={r.capacityOverride}
                       onChange={e => updateRule(r.key, { capacityOverride: e.target.value })}
-                      placeholder={String(defaultCapacity)}
+                      placeholder={defaultCapacity || "8"}
                       className={`${inputClass} disabled:opacity-40 disabled:cursor-not-allowed`}
                     />
                   </div>
@@ -519,13 +544,14 @@ export default function CreateProgramSheet({
 
                 <div>
                   <label className={labelClass}>Courts</label>
-                  <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="flex flex-wrap gap-2 pt-2" role="group" aria-label="Courts">
                     {courts.map(court => {
                       const isSelected = r.courtIds.includes(court.id);
                       return (
                         <button
                           key={court.id}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => toggleCourtInRule(r.key, court.id)}
                           className={`px-3 py-1.5 rounded-full text-xs font-medium border motion-safe:transition-colors active:scale-95 ${
                             isSelected
@@ -577,7 +603,7 @@ export default function CreateProgramSheet({
             <div className="rounded-xl bg-gray-50 dark:bg-gray-700/50 border border-gray-100 dark:border-gray-700 px-4 py-3 space-y-2">
               <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title.trim()}</p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                {startsOn} – {endsOn} · {defaultCapacity} spot{defaultCapacity !== 1 ? "s" : ""} ·{" "}
+                {startsOn} – {endsOn} · {defaultCapacity} spot{defaultCapacityNum !== 1 ? "s" : ""} ·{" "}
                 {enrollmentModel === "program" ? "Whole program" : enrollmentModel === "per_session" ? "Per session" : "Admin managed"}
               </p>
               <div className="pt-1 space-y-1">

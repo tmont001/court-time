@@ -293,9 +293,9 @@ export default function EventDetailSheet({
   const buttonClass = isHost || joinBlockedByPast
     ? "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
     : isWaitlisted
-    ? "bg-amber-50 text-amber-700 border border-amber-200"
+    ? "bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700"
     : myPart
-    ? "bg-red-50 text-red-600 border border-red-200"
+    ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700"
     : "bg-accent text-white dark:text-gray-900";
 
   // ── Participant display ────────────────────────────────────────────────────

@@ -251,7 +251,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                       if (e.key === "Escape") handleRenameCancel();
                     }}
                     maxLength={60}
-                    className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
+                    className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
                   />
                   <button
                     onClick={() => handleRenameSubmit(court.id)}
@@ -289,7 +289,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                     <button
                       onClick={() => handleMove(idx, "up")}
                       disabled={idx === 0 || anyPending}
-                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
+                      className="p-2 -m-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
                       aria-label="Move up"
                     >
                       ↑
@@ -297,7 +297,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                     <button
                       onClick={() => handleMove(idx, "down")}
                       disabled={idx === courts.length - 1 || anyPending}
-                      className="p-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
+                      className="p-2 -m-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
                       aria-label="Move down"
                     >
                       ↓
@@ -362,7 +362,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
             }}
             placeholder="Court name"
             maxLength={60}
-            className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
+            className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-gray-400 dark:focus:ring-gray-500"
           />
           <button
             onClick={handleAddSubmit}

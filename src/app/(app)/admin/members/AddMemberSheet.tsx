@@ -72,7 +72,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
   const inviteUrl = inviteCode ? `${origin}/join/${inviteCode}` : "";
 
   const inputClass =
-    "mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500 motion-safe:transition-all motion-safe:duration-150";
+    "mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 dark:placeholder-gray-500 motion-safe:transition-all motion-safe:duration-150";
 
   // ── Validation ─────────────────────────────────────────────────────────────
 
@@ -251,7 +251,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
                   readOnly
                   value={inviteUrl}
                   onFocus={e => e.target.select()}
-                  className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 focus:outline-none"
+                  className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 />
                 <button
                   onClick={handleCopyInvite}
@@ -294,6 +294,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="text"
+                autoComplete="given-name"
                 value={firstName}
                 onChange={e => setFirstName(e.target.value)}
                 placeholder="First name"
@@ -308,6 +309,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="text"
+                autoComplete="family-name"
                 value={lastName}
                 onChange={e => setLastName(e.target.value)}
                 placeholder="Last name"
@@ -322,6 +324,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setEmailError(null); }}
                 onBlur={() => validateEmailField(email, false)}
@@ -345,6 +348,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="tel"
+                autoComplete="tel"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 placeholder="555-0100"
@@ -356,11 +360,13 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Role
               </label>
-              <div className="mt-1.5 flex gap-2">
+              <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
                 {(["member", "pro", "admin"] as RosterRole[]).map(r => (
                   <button
                     key={r}
                     type="button"
+                    role="radio"
+                    aria-checked={role === r}
                     onClick={() => setRole(r)}
                     className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                       role === r
@@ -418,6 +424,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="text"
+                autoComplete="given-name"
                 value={firstName}
                 onChange={e => setFirstName(e.target.value)}
                 placeholder="First name"
@@ -432,6 +439,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="text"
+                autoComplete="family-name"
                 value={lastName}
                 onChange={e => setLastName(e.target.value)}
                 placeholder="Last name"
@@ -445,6 +453,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setEmailError(null); }}
                 onBlur={() => validateEmailField(email, true)}
@@ -463,6 +472,7 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               </label>
               <input
                 type="tel"
+                autoComplete="tel"
                 value={phone}
                 onChange={e => setPhone(e.target.value)}
                 placeholder="555-0100"
@@ -474,11 +484,13 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Role
               </label>
-              <div className="mt-1.5 flex gap-2">
+              <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
                 {(["member", "pro"] as InviteRole[]).map(r => (
                   <button
                     key={r}
                     type="button"
+                    role="radio"
+                    aria-checked={role === r}
                     onClick={() => setRole(r)}
                     className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                       role === r

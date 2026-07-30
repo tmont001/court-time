@@ -361,7 +361,7 @@ export default function CreateEventSheet({
                   value={title}
                   onChange={e => setTitle(e.target.value)}
                   placeholder={selectedType.label}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                 />
               </div>
 
@@ -376,7 +376,7 @@ export default function CreateEventSheet({
                     onChange={e => {
                       if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
                     }}
-                    className="text-xs text-gray-500 dark:text-gray-400 bg-transparent border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-0.5 focus:outline-none focus:border-accent motion-safe:transition-colors"
+                    className="text-base md:text-xs text-gray-500 dark:text-gray-400 bg-transparent border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-0.5 focus:outline-none focus:border-accent motion-safe:transition-colors"
                   />
                 </div>
                 <div className="flex gap-1.5 overflow-x-auto pt-1 pb-1 hide-scrollbar">
@@ -413,7 +413,7 @@ export default function CreateEventSheet({
                     setStartHour(h);
                     setStartMinute(m);
                   }}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                 >
                   {TIME_SLOTS.map(slot => (
                     <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -428,11 +428,13 @@ export default function CreateEventSheet({
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Duration — ends {endTimeLabel}
                 </label>
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2" role="radiogroup" aria-label="Duration">
                   {DURATION_PRESETS.map(mins => (
                     <button
                       key={mins}
                       type="button"
+                      role="radio"
+                      aria-checked={!isCustomDuration && durationMinutes === mins}
                       onClick={() => { setDurationMinutes(mins); setIsCustomDuration(false); }}
                       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                         !isCustomDuration && durationMinutes === mins
@@ -445,6 +447,8 @@ export default function CreateEventSheet({
                   ))}
                   <button
                     type="button"
+                    role="radio"
+                    aria-checked={isCustomDuration}
                     onClick={() => { setIsCustomDuration(true); setCustomDurationText(String(durationMinutes)); }}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                       isCustomDuration
@@ -464,7 +468,7 @@ export default function CreateEventSheet({
                       value={customDurationText}
                       onChange={e => handleCustomDuration(e.target.value)}
                       placeholder="e.g. 75"
-                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                      className="w-24 rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
                     />
                     <span className="text-xs text-gray-500">min</span>
                     {customDurationText.length > 0 && !customDurationValid && (
@@ -494,20 +498,21 @@ export default function CreateEventSheet({
             <div className="pt-1 space-y-5">
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Select Courts</label>
-                <div className="flex flex-wrap gap-2 pt-2">
+                <div className="flex flex-wrap gap-2 pt-2" role="group" aria-label="Select Courts">
                   {courts.map(court => {
                     const isSelected   = selectedCourtIds.includes(court.id);
                     const hasConflict  = conflictingCourtIds.has(court.id);
                     return (
                       <button
                         key={court.id}
+                        aria-pressed={isSelected}
                         onClick={() => toggleCourt(court.id)}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors active:scale-95 ${
                           hasConflict
                             ? "border-amber-400 bg-amber-50 text-amber-700"
                             : isSelected
                             ? "bg-accent text-white dark:text-gray-900 border-accent"
-                            : "bg-white text-gray-600 border-gray-200 dark:border-gray-700 hover:border-accent hover:text-accent"
+                            : "bg-white text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-700 hover:border-accent hover:text-accent"
                         }`}
                       >
                         {court.name}{hasConflict ? " ⚠" : ""}
@@ -548,7 +553,7 @@ export default function CreateEventSheet({
                 <select
                   value={capacity}
                   onChange={e => setCapacity(Number(e.target.value))}
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 bg-white motion-safe:transition-all motion-safe:duration-150"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 bg-white motion-safe:transition-all motion-safe:duration-150"
                 >
                   {Array.from({ length: Math.max(50, capacity) }, (_, i) => i + 1).map(n => (
                     <option key={n} value={n}>{n}</option>

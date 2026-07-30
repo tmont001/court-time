@@ -240,7 +240,7 @@ export default function ProgramsManageClient({
             <select
               value={archiveView}
               onChange={e => handleArchiveViewChange(e.target.value as ProgramArchiveView)}
-              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg text-xs font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+              className="appearance-none pl-3 pr-7 py-1.5 rounded-lg text-base md:text-xs font-medium bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 shadow-sm cursor-pointer focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
             >
               <option value="active">Active</option>
               <option value="archived">Archived</option>

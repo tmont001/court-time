@@ -129,7 +129,7 @@ export default function AdminRequestLessonSheet({
         {showBack && (
           <button
             onClick={handleBack}
-            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:outline-none"
+            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             ← Back
           </button>
@@ -208,7 +208,7 @@ export default function AdminRequestLessonSheet({
               <select
                 value={lessonTypeId}
                 onChange={e => handleTypeChange(e.target.value)}
-                className="w-full ct-input text-sm"
+                className="w-full ct-input text-base md:text-sm"
               >
                 <option value="">No specific type</option>
                 {lessonTypes.map(lt => (
@@ -256,7 +256,7 @@ export default function AdminRequestLessonSheet({
               <select
                 value={preferredCourtId}
                 onChange={e => setPreferredCourtId(e.target.value)}
-                className="w-full ct-input text-sm"
+                className="w-full ct-input text-base md:text-sm"
               >
                 <option value="">No preference</option>
                 {courts.map(c => (
@@ -276,7 +276,7 @@ export default function AdminRequestLessonSheet({
               placeholder="e.g. Mon/Wed mornings, any weekday before noon"
               rows={2}
               maxLength={500}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
           </div>
 
@@ -293,7 +293,7 @@ export default function AdminRequestLessonSheet({
               placeholder="e.g. Member is working on their serve, beginner level"
               rows={2}
               maxLength={500}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
           </div>
 

@@ -15,7 +15,12 @@ import {
   markAttendance,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
-import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/app/(app)/events/actionButtonStyles";
+import {
+  ACTION_BUTTON_SECONDARY,
+  ACTION_BUTTON_DESTRUCTIVE_COMPACT,
+  ACTION_BUTTON_POSITIVE_COMPACT,
+  ACTION_BUTTON_INFO_COMPACT,
+} from "@/app/(app)/events/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -375,7 +380,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                           <select
                             value={selectedMemberId}
                             onChange={e => setSelectedMemberId(e.target.value)}
-                            className="flex-1 min-w-0 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5"
+                            className="flex-1 min-w-0 text-base md:text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5"
                           >
                             {memberList.map(m => (
                               <option key={m.id} value={m.id}>{m.display_name}</option>
@@ -422,7 +427,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                           value={guestName}
                           onChange={e => setGuestName(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") handleAddGuest(); }}
-                          className="flex-1 min-w-0 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5 placeholder-gray-400 dark:placeholder-gray-500"
+                          className="flex-1 min-w-0 text-base md:text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5 placeholder-gray-400 dark:placeholder-gray-500"
                         />
                         <button
                           disabled={addGuestLoading}
@@ -587,7 +592,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                     onClick={() => handleAdminAction(row.profile_id, () =>
                                       adminForceConfirm(eventId, row.profile_id, clubId)
                                     )}
-                                    className="text-[10px] font-semibold text-green-600 disabled:opacity-40"
+                                    className={ACTION_BUTTON_POSITIVE_COMPACT}
                                   >
                                     {isUpdating ? "…" : "Force Confirm"}
                                   </button>
@@ -596,7 +601,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                     onClick={() => handleAdminAction(row.profile_id, () =>
                                       adminExpireOffer(eventId, row.profile_id, clubId)
                                     )}
-                                    className="text-[10px] font-semibold text-red-500 disabled:opacity-40"
+                                    className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                                   >
                                     {isUpdating ? "…" : "Expire"}
                                   </button>
@@ -645,7 +650,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                       onClick={() => handleAdminAction(row.profile_id, () =>
                                         adminForceConfirm(eventId, row.profile_id, clubId)
                                       )}
-                                      className="text-[10px] font-semibold text-green-600 disabled:opacity-40"
+                                      className={ACTION_BUTTON_POSITIVE_COMPACT}
                                     >
                                       {isUpdating ? "…" : "Force Confirm"}
                                     </button>
@@ -654,7 +659,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                       onClick={() => handleAdminAction(row.profile_id, () =>
                                         adminOfferSpot(eventId, row.profile_id, clubId)
                                       )}
-                                      className="text-[10px] font-semibold text-blue-600 disabled:opacity-40"
+                                      className={ACTION_BUTTON_INFO_COMPACT}
                                     >
                                       {isUpdating ? "…" : "Offer Spot"}
                                     </button>

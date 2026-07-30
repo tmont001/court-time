@@ -721,7 +721,7 @@ export default function MemberDetailClient({
               placeholder="Add a note about this member…"
               rows={3}
               maxLength={1000}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
             {noteAddError && (
               <p className="mt-1 text-xs text-red-600 dark:text-red-400">{noteAddError}</p>
@@ -751,7 +751,7 @@ export default function MemberDetailClient({
                         rows={3}
                         maxLength={1000}
                         autoFocus
-                        className="w-full ct-input text-sm resize-none"
+                        className="w-full ct-input text-base md:text-sm resize-none"
                       />
                       {noteOpError[note.id] && (
                         <p className="text-xs text-red-600 dark:text-red-400">{noteOpError[note.id]}</p>

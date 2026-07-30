@@ -243,10 +243,13 @@
   width: 100%;
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  font-size: 1rem; /* 16px on mobile — prevents iOS Safari zoom-on-focus */
   border: 1px solid rgb(209 213 219);   /* gray-300 */
   background-color: white;
   color: rgb(17 24 39);                 /* gray-900 */
+}
+@media (min-width: 768px) {
+  .ct-input { font-size: 0.875rem; } /* restore desktop density */
 }
 .dark .ct-input {
   border-color: rgb(75 85 99);          /* gray-600 */
@@ -260,6 +263,31 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .ct-input { transition: border-color 150ms ease-out, box-shadow 150ms ease-out; }
+}
+
+/* Native <input type="date"> width containment. iOS/WebKit renders its own
+   oversized, centered date presentation whose intrinsic layout can exceed a
+   percentage width even with min-w-0 on every ancestor. Scoped to date
+   inputs only — do not apply to .ct-input generally. */
+.ct-date-input {
+  display: block;
+  inline-size: 100%;
+  width: 100%;
+  min-inline-size: 0;
+  min-width: 0;
+  max-inline-size: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari only (this feature query has no Android/desktop match) —
+     drops WebKit's native date-field chrome in favor of a normal
+     left-aligned text-input appearance, which respects the width
+     constraints above instead of overflowing the card. */
+  .ct-date-input {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 /* Content card surface — slightly more shadow than shadow-sm */

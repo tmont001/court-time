@@ -402,7 +402,7 @@ function InviteLinkRow({ result, origin }: { result: InviteRowResult; origin: st
             readOnly
             value={url}
             onFocus={e => e.target.select()}
-            className="flex-1 min-w-0 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 focus:outline-none"
+            className="flex-1 min-w-0 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1 text-base md:text-[11px] text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           />
           <button
             onClick={handleCopy}
@@ -632,7 +632,7 @@ export default function ImportMembersSheet({
                 onChange={e => { setPasteText(e.target.value); setParseError(null); }}
                 placeholder={"first_name,last_name,email,phone,notes\nJohn,Smith,john@example.com,,"}
                 rows={5}
-                className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-gray-100 px-3 py-2 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent resize-y font-mono"
+                className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-base md:text-xs text-gray-900 dark:text-gray-100 px-3 py-2 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent resize-y font-mono"
               />
               <button onClick={handlePasteSubmit} disabled={!pasteText.trim()} className="mt-2 px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-medium disabled:opacity-40">
                 Preview
@@ -684,7 +684,7 @@ export default function ImportMembersSheet({
                 onChange={e => { setInvitePasteText(e.target.value); setInviteParseError(null); }}
                 placeholder={"first_name,last_name,email,role\nJohn,Smith,john@example.com,member"}
                 rows={5}
-                className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs text-gray-900 dark:text-gray-100 px-3 py-2 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent resize-y font-mono"
+                className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-base md:text-xs text-gray-900 dark:text-gray-100 px-3 py-2 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent resize-y font-mono"
               />
               <button onClick={handlePasteSubmit} disabled={!invitePasteText.trim()} className="mt-2 px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-medium disabled:opacity-40">
                 Preview

@@ -665,7 +665,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                 if (e.target.value) setSelectedDate(new Date(e.target.value + "T12:00:00Z"));
               }}
               aria-label="Jump to date"
-              className="absolute inset-0 opacity-0 cursor-pointer"
+              className="absolute inset-0 opacity-0 cursor-pointer text-base"
             />
           </div>
 
@@ -959,7 +959,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                           isClickable ? "cursor-pointer" : "pointer-events-none"
                         } ${
                           isOwn
-                            ? "border-2 border-blue-500 bg-blue-50 text-blue-700"
+                            ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                             : isBlocked
                             ? "text-gray-400"
                             : "bg-gray-400 text-white"

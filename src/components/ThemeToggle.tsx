@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { THEME_STORAGE_KEY, THEME_CHANGE_EVENT, dispatchThemeChange, type ThemeChangeDetail } from "@/lib/theme";
 
 function SunIcon() {
   return (
@@ -43,18 +44,26 @@ export default function ThemeToggle() {
   useEffect(() => {
     setMounted(true);
     setIsDark(document.documentElement.classList.contains("dark"));
+
+    // Stay in sync with theme changes this instance didn't itself trigger —
+    // a live system-preference change from SystemThemeSync, or a manual
+    // toggle from a different mounted ThemeToggle instance.
+    function handleThemeChange(e: Event) {
+      const detail = (e as CustomEvent<ThemeChangeDetail>).detail;
+      if (!detail) return;
+      setIsDark(detail.dark);
+    }
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange);
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
   }, []);
 
   function toggle() {
     const next = !isDark;
     setIsDark(next);
-    if (next) {
-      document.documentElement.classList.add("dark");
-      localStorage.setItem("court-time-theme", "dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      localStorage.setItem("court-time-theme", "light");
-    }
+    document.documentElement.classList.toggle("dark", next);
+    localStorage.setItem(THEME_STORAGE_KEY, next ? "dark" : "light");
+    // Sync any other mounted ThemeToggle instance immediately.
+    dispatchThemeChange(next);
   }
 
   // Render a same-size placeholder until mounted to prevent hydration mismatch.

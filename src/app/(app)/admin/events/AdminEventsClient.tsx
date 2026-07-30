@@ -274,7 +274,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
 
   // Shared class for all dropdown controls so they stay visually consistent.
   const selectClass =
-    "appearance-none pl-3 pr-7 py-1.5 rounded-lg text-xs font-medium " +
+    "appearance-none pl-3 pr-7 py-1.5 rounded-lg text-base md:text-xs font-medium " +
     "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 " +
     "border border-gray-200 dark:border-gray-700 shadow-sm " +
     "cursor-pointer focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600";
@@ -288,12 +288,12 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           placeholder="Search events…"
-          className="w-full pl-3 pr-8 py-1.5 rounded-lg text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 border border-gray-200 dark:border-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
+          className="w-full pl-3 pr-8 py-1.5 rounded-lg text-base md:text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 border border-gray-200 dark:border-gray-700 shadow-sm focus:outline-none focus:ring-1 focus:ring-gray-300 dark:focus:ring-gray-600"
         />
         {searchQuery && (
           <button
             onClick={() => setSearchQuery("")}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-base leading-none"
+            className="absolute right-0 top-1/2 -translate-y-1/2 p-2.5 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-base leading-none"
             aria-label="Clear search"
           >
             ×

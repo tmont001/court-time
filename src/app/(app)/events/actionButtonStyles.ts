@@ -71,3 +71,28 @@ export const ACTION_BUTTON_DESTRUCTIVE_COMPACT =
   "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
   "disabled:opacity-40 disabled:pointer-events-none";
+
+// Compact positive variant — same treatment as ACTION_BUTTON_DESTRUCTIVE_COMPACT
+// but green, for a compact affirmative admin roster action (e.g. "Force
+// Confirm" on an offered/waitlisted participant) that needs to keep its own
+// distinct semantic color rather than the shared accent.
+export const ACTION_BUTTON_POSITIVE_COMPACT =
+  "px-2 py-1 rounded-md text-[11px] font-semibold " +
+  "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 " +
+  "border border-green-300 dark:border-green-800/60 " +
+  "hover:bg-green-100 dark:hover:bg-green-900/40 hover:border-green-400 dark:hover:border-green-700 " +
+  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
+  "disabled:opacity-40 disabled:pointer-events-none";
+
+// Compact informational variant — same treatment, blue, for a compact
+// neutral-but-notable admin roster action (e.g. "Offer Spot" on a
+// waitlisted participant).
+export const ACTION_BUTTON_INFO_COMPACT =
+  "px-2 py-1 rounded-md text-[11px] font-semibold " +
+  "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 " +
+  "border border-blue-300 dark:border-blue-800/60 " +
+  "hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:border-blue-400 dark:hover:border-blue-700 " +
+  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
+  "disabled:opacity-40 disabled:pointer-events-none";

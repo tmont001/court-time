@@ -36,9 +36,9 @@ export default async function AdminAuditLogPage() {
             </Link>
           </div>
         {error ? (
-          <div className="mx-4 mt-6 px-4 py-3 bg-red-50 rounded-xl border border-red-200">
-            <p className="text-sm font-semibold text-red-700">Failed to load audit log</p>
-            <p className="text-xs text-red-500 mt-1 break-all">{error.message}</p>
+          <div className="mx-4 mt-6 px-4 py-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-700">
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">Failed to load audit log</p>
+            <p className="text-xs text-red-500 dark:text-red-400 mt-1">Please try again.</p>
           </div>
         ) : (
           <AuditLogTable initialRows={initialRows} />

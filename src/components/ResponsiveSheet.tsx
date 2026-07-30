@@ -68,8 +68,11 @@ export default function ResponsiveSheet({
           onClick={onClose}
         />
         <div
-          className="ct-sheet-enter fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl"
-          style={{ zIndex: mobilePanelZ }}
+          className="ct-sheet-enter fixed bottom-0 left-0 right-0 flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl overflow-hidden"
+          style={{
+            zIndex: mobilePanelZ,
+            maxHeight: "calc(100dvh - env(safe-area-inset-bottom, 0px) - 1.5rem)",
+          }}
           onClick={e => e.stopPropagation()}
         >
           {children}

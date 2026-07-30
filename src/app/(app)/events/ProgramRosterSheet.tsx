@@ -314,7 +314,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                         value={memberSearch}
                         onChange={e => handleMemberSearchChange(e.target.value)}
                         placeholder="Search members…"
-                        className="w-full mb-2 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 px-2 py-1.5"
+                        className="w-full mb-2 text-base md:text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 px-2 py-1.5"
                       />
                       {filteredMemberList.length === 0 ? (
                         <p className="text-xs text-gray-400">No members match your search.</p>
@@ -323,7 +323,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                           <select
                             value={selectedMemberId}
                             onChange={e => setSelectedMemberId(e.target.value)}
-                            className="flex-1 min-w-0 text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5"
+                            className="flex-1 min-w-0 text-base md:text-xs rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-2 py-1.5"
                           >
                             {filteredMemberList.map(m => (
                               <option key={m.id} value={m.id}>{m.display_name}</option>

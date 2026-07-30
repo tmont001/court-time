@@ -79,7 +79,7 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
         {step !== "pro" && (
           <button
             onClick={handleBack}
-            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 focus-visible:outline-none"
+            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
             ← Back
           </button>
@@ -129,10 +129,12 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
             Duration
           </p>
-          <div className="grid grid-cols-4 gap-2 mb-4">
+          <div className="grid grid-cols-4 gap-2 mb-4" role="radiogroup" aria-label="Duration">
             {DURATIONS.map(d => (
               <button
                 key={d}
+                role="radio"
+                aria-checked={duration === d}
                 onClick={() => setDuration(d)}
                 className={`py-3 rounded-xl text-sm font-semibold border-2 motion-safe:transition-all motion-safe:duration-100 ${
                   duration === d
@@ -163,7 +165,7 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
             <select
               value={preferredCourt}
               onChange={e => setPreferredCourt(e.target.value)}
-              className="w-full ct-input text-sm"
+              className="w-full ct-input text-base md:text-sm"
             >
               <option value="">No preference</option>
               {courts.map(c => (
@@ -182,7 +184,7 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
               placeholder={"e.g. Mon/Wed mornings, or any weekday before noon"}
               rows={3}
               maxLength={500}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
           </div>
 
@@ -196,7 +198,7 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
               placeholder="e.g. Working on my serve, beginner level"
               rows={2}
               maxLength={300}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
           </div>
 

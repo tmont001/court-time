@@ -25,10 +25,10 @@ function statusBadge(status: string) {
     proposed:  "bg-blue-100 text-blue-700",
     confirmed: "bg-green-100 text-green-700",
     declined:  "bg-red-100 text-red-700",
-    withdrawn: "bg-gray-100 text-gray-500",
-    cancelled: "bg-gray-100 text-gray-500",
+    withdrawn: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+    cancelled: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
   };
-  const cls = map[status] ?? "bg-gray-100 text-gray-500";
+  const cls = map[status] ?? "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400";
   const label = status.charAt(0).toUpperCase() + status.slice(1);
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${cls}`}>
@@ -249,7 +249,7 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
               placeholder="Reason (optional)"
               rows={2}
               maxLength={300}
-              className="w-full ct-input text-sm resize-none"
+              className="w-full ct-input text-base md:text-sm resize-none"
             />
             <button
               onClick={() => action(() => cancelLesson({

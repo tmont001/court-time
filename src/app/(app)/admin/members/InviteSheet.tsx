@@ -115,7 +115,7 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                     readOnly
                     value={inviteUrl}
                     onFocus={(e) => e.target.select()}
-                    className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 focus:outline-none"
+                    className="flex-1 min-w-0 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
                   <button
                     onClick={handleCopy}
@@ -147,10 +147,12 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Role
                 </label>
-                <div className="mt-1.5 flex gap-2">
+                <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
                   {ROLE_OPTIONS.map(({ value, label }) => (
                     <button
                       key={value}
+                      role="radio"
+                      aria-checked={role === value}
                       onClick={() => setRole(value)}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                         role === value
@@ -188,10 +190,11 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                 </label>
                 <input
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="member@example.com"
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
                 />
                 <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
                   If filled, only that email address can accept this invite.
@@ -203,10 +206,12 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Expires after
                 </label>
-                <div className="mt-1.5 flex gap-2">
+                <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Expires after">
                   {EXPIRY_OPTIONS.map(({ label, days }) => (
                     <button
                       key={days}
+                      role="radio"
+                      aria-checked={expiryDays === days}
                       onClick={() => setExpiryDays(days)}
                       className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
                         expiryDays === days

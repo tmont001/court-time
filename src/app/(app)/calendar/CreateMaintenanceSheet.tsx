@@ -281,7 +281,7 @@ export default function CreateMaintenanceSheet({
             <select
               value={`${startHour}:${startMinute}`}
               onChange={e => handleStartChange(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
             >
               {startSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -301,7 +301,7 @@ export default function CreateMaintenanceSheet({
                 setEndHour(h);
                 setEndMinute(m);
               }}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
             >
               {endSlots.map(slot => (
                 <option key={`${slot.hour}:${slot.minute}`} value={`${slot.hour}:${slot.minute}`}>
@@ -319,7 +319,7 @@ export default function CreateMaintenanceSheet({
               value={notes}
               onChange={e => setNotes(e.target.value)}
               placeholder="e.g. Resurfacing, Equipment repair"
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white motion-safe:transition-all motion-safe:duration-150 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white motion-safe:transition-all motion-safe:duration-150 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
             />
           </div>
 

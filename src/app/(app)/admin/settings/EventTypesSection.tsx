@@ -75,7 +75,7 @@ function ColorSwatchPicker({
             title={preset.name}
             aria-label={preset.name}
             onClick={() => onChange(preset.hex)}
-            className={`h-7 w-7 shrink-0 rounded-full border-2 motion-safe:transition-transform motion-safe:duration-100 ${
+            className={`h-8 w-8 shrink-0 rounded-full border-2 motion-safe:transition-transform motion-safe:duration-100 ${
               color.toLowerCase() === preset.hex.toLowerCase()
                 ? "border-gray-700 dark:border-gray-100 scale-110 shadow-sm"
                 : "border-transparent hover:scale-105"
@@ -453,7 +453,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
             }}
             maxLength={80}
             autoFocus
-            className="w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
+            className="w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
           />
           <ColorSwatchPicker
             color={newType.color}
@@ -565,7 +565,7 @@ function EventTypeRow({
             onChange={e => onEditChange({ label: e.target.value })}
             maxLength={80}
             autoFocus
-            className="w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
+            className="w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
           />
           <ColorSwatchPicker
             color={edit!.color}
