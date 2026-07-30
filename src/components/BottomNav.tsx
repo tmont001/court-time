@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 import ClubMembershipList from "./ClubMembershipList";
 
@@ -159,13 +159,14 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
       </nav>
 
       {moreOpen && (
-        <BottomSheet onClose={() => setMoreOpen(false)} className="px-4 pb-8">
-          <div className="mb-3">
-            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
-              More
-            </p>
-            {clubName && (
-              <div className="mt-0.5 flex items-center justify-between gap-2">
+        <ResponsiveSheet
+          onClose={() => setMoreOpen(false)}
+          variant="modal"
+          mobileInteraction="draggable"
+          label="More"
+          header={
+            clubName ? (
+              <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {clubName}
                 </p>
@@ -179,8 +180,12 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
                   </button>
                 )}
               </div>
-            )}
-          </div>
+            ) : null
+          }
+        >
+          <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-3">
+            More
+          </p>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700 overflow-hidden">
             {moreLinks.map(link => {
               const isActive = isLinkActive(link.href, link.exact);
@@ -197,18 +202,24 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
               );
             })}
           </div>
-        </BottomSheet>
+        </ResponsiveSheet>
       )}
 
       {switcherOpen && (
-        <BottomSheet onClose={() => setSwitcherOpen(false)} className="px-4 pb-8">
+        <ResponsiveSheet
+          onClose={() => setSwitcherOpen(false)}
+          variant="modal"
+          mobileInteraction="draggable"
+          label="Switch Club"
+          header={null}
+        >
           <p className="mb-3 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
             Switch Club
           </p>
           <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
             <ClubMembershipList memberships={memberships} />
           </div>
-        </BottomSheet>
+        </ResponsiveSheet>
       )}
     </>
   );

@@ -72,30 +72,34 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
   }
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
-      {/* Header */}
-      <div className="relative flex items-center justify-center mb-4">
-        {step !== "pro" && (
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label="Request a Lesson"
+      header={
+        <div className="relative flex items-center justify-center">
+          {step !== "pro" && (
+            <button
+              onClick={handleBack}
+              className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              ← Back
+            </button>
+          )}
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Request a Lesson
+          </h2>
           <button
-            onClick={handleBack}
-            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onClick={onClose}
+            className="absolute right-0 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 md:hidden"
+            aria-label="Close"
           >
-            ← Back
+            ✕
           </button>
-        )}
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-          Request a Lesson
-        </h2>
-        <button
-          onClick={onClose}
-          className="absolute right-0 text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 md:hidden"
-          aria-label="Close"
-        >
-          ✕
-        </button>
-      </div>
-
+        </div>
+      }
+    >
       {/* Step: choose pro */}
       {step === "pro" && (
         <div className="space-y-2">
@@ -262,7 +266,6 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
           </button>
         </div>
       )}
-      </div>
     </ResponsiveSheet>
   );
 }

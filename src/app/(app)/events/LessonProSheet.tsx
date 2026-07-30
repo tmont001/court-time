@@ -281,13 +281,18 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
-      <div className="relative flex items-center justify-center mb-4">
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Lesson Request</h2>
-        <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
-      </div>
-
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label="Lesson Request"
+      header={
+        <div className="relative flex items-center justify-center">
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Lesson Request</h2>
+          <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
+        </div>
+      }
+    >
       {/* Request summary */}
       <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden mb-4">
         <div className="px-4 py-2.5 flex items-center justify-between text-sm">
@@ -543,7 +548,6 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
           )}
         </div>
       )}
-      </div>
     </ResponsiveSheet>
   );
 }

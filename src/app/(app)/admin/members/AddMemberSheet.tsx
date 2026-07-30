@@ -159,11 +159,13 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
   else if (successName)                          title = "Member Added";
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-      {/* Header */}
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between pr-8">
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label={title}
+      header={
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {addMode !== "select" && !isEdit && !successName && !inviteCode && (
               <button
@@ -179,11 +181,8 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
             Close
           </button>
         </div>
-      </div>
-
-      {/* Scrollable body */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">
-
+      }
+    >
         {/* ── Mode selector ── */}
         {addMode === "select" && (
           <div className="space-y-4 pt-2">
@@ -530,7 +529,6 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
           </div>
         )}
 
-      </div>
     </ResponsiveSheet>
   );
 }

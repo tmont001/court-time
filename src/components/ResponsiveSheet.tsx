@@ -20,12 +20,13 @@
 //   a focus trap + focus restoration, Escape on every viewport, and a
 //   reference-counted body-scroll lock.
 //
-//   Mobile touch gesture: ported directly from BottomSheet.tsx's proven,
-//   real-device-working mechanics — native `touchstart`/`touchmove`/
-//   `touchend`/`touchcancel` listeners attached via addEventListener directly
-//   on the drag-handle strip's DOM node (not React's onTouch* JSX props,
-//   which register as passive by default and cannot call preventDefault —
-//   see BottomSheet.tsx's own comment on this). A Pointer Events fallback
+//   Mobile touch gesture: ported directly from the former BottomSheet.tsx
+//   component's proven, real-device-working mechanics (that component has
+//   since been deleted — all of its consumers now render through this file
+//   instead) — native `touchstart`/`touchmove`/`touchend`/`touchcancel`
+//   listeners attached via addEventListener directly on the drag-handle
+//   strip's DOM node (not React's onTouch* JSX props, which register as
+//   passive by default and cannot call preventDefault). A Pointer Events fallback
 //   remains for mouse input only (desktop dev testing with a mouse-emulated
 //   "mobile" viewport) — every pointer handler bails out immediately when
 //   `pointerType === "touch"`, so real touch input always goes through the
@@ -83,7 +84,7 @@ interface DraggableSheetProps extends CommonProps {
   /** The scrollable body. */
   children: React.ReactNode;
   /** Set false to suspend this sheet's own Escape/focus-trap/backdrop-click
-   *  /drag while a nested, non-enabled sheet is open on top of it (e.g.
+   *  /drag while a nested sheet (enabled or not) is open on top of it (e.g.
    *  EventRosterSheet opened from EventDetailSheet). The sheet stays
    *  visually mounted and layered correctly, but becomes `inert` +
    *  `aria-hidden` — fully unavailable to keyboard/AT — until `active`
@@ -200,7 +201,7 @@ export default function ResponsiveSheet(props: Props) {
 
   // Body-scroll lock — engaged for the lifetime of every mounted enabled
   // sheet, regardless of `active`, so a suspended parent sheet (behind a
-  // nested non-enabled sheet) still keeps the page locked.
+  // nested sheet on top of it) still keeps the page locked.
   useEffect(() => {
     if (!enabled) return;
     lockBodyScroll();
@@ -255,7 +256,7 @@ export default function ResponsiveSheet(props: Props) {
   }, [enabled, active]);
 
   // Escape (both viewports) + Tab/Shift+Tab containment — only while active
-  // (a nested non-enabled sheet on top suspends both).
+  // (a nested sheet open on top suspends both).
   useEffect(() => {
     if (!enabled || !active) return;
 
@@ -411,8 +412,9 @@ export default function ResponsiveSheet(props: Props) {
     resetDrag(true); // cancel never dismisses
   }, [resetDrag]);
 
-  // ── Real touch input — ported directly from BottomSheet.tsx's proven
-  // mechanics. Registered via addEventListener directly on the handle-strip
+  // ── Real touch input — ported directly from the former BottomSheet.tsx
+  // component's proven mechanics (deleted; this file is now the sole
+  // consumer of that logic). Registered via addEventListener directly on the handle-strip
   // DOM node, NOT React's onTouch* JSX props: React registers synthetic
   // touchstart/touchmove listeners as passive by default, which silently
   // prevents preventDefault() from taking effect and lets the browser win

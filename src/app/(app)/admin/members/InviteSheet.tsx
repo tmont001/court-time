@@ -82,27 +82,26 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
   }
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-        {/* Handle + header */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-          <div className="flex items-center justify-between pr-8">
-            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
-              {generatedCode ? "Invite Link Ready" : "Send Invite"}
-            </p>
-            {/* Close — mobile only; desktop uses ResponsiveSheet × button */}
-            <button
-              onClick={onClose}
-              className="text-sm text-gray-500 dark:text-gray-400 md:hidden"
-            >
-              Close
-            </button>
-          </div>
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label={generatedCode ? "Invite Link Ready" : "Send Invite"}
+      header={
+        <div className="flex items-center justify-between">
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            {generatedCode ? "Invite Link Ready" : "Send Invite"}
+          </p>
+          {/* Close — mobile only; desktop uses ResponsiveSheet × button */}
+          <button
+            onClick={onClose}
+            className="text-sm text-gray-500 dark:text-gray-400 md:hidden"
+          >
+            Close
+          </button>
         </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">
-
+      }
+    >
           {generatedCode ? (
             /* ── Success: display link ── */
             <div className="space-y-4 pt-2">
@@ -244,7 +243,6 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
 
             </div>
           )}
-        </div>
     </ResponsiveSheet>
   );
 }

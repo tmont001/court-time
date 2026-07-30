@@ -308,17 +308,18 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   return (
     // On mobile: z-60 backdrop / z-70 panel to layer above EventDetailSheet.
     // On desktop: ResponsiveSheet uses default z-40/z-50 (EventDetailSheet not visible).
+    // This sheet is always the topmost overlay when open (nothing nests above
+    // it), so it never needs `active={false}` itself — it owns its own real
+    // drag/Escape/focus-trap/backdrop now instead of deferring to Phase 29B2.
     <ResponsiveSheet
       onClose={onClose}
       variant="panel"
       mobileBackdropZ={60}
       mobilePanelZ={70}
-    >
-      {/* Header */}
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        {/* Handle — mobile only */}
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between pr-8">
+      mobileInteraction="draggable"
+      label="Roster"
+      header={
+        <div className="flex items-center justify-between">
           <div>
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Roster</p>
             {!loading && !error && totalAttending > 0 && (
@@ -330,11 +331,8 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
           {/* Close — mobile only; desktop uses ResponsiveSheet × button */}
           <button onClick={onClose} className="text-sm text-gray-400 font-medium md:hidden">Close</button>
         </div>
-      </div>
-
-      {/* Scrollable body — flex-1 so panel fills height on desktop */}
-      <div className="overflow-y-auto flex-1 px-6 pb-8">
-
+      }
+    >
           {loading && (
             <p className="text-sm text-gray-400 py-8 text-center">Loading roster…</p>
           )}
@@ -762,7 +760,6 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
             </>
           )}
 
-        </div>
     </ResponsiveSheet>
   );
 }

@@ -484,9 +484,9 @@
    Slides up 16px + fades in over 180ms. Exit is skipped — components
    unmount immediately, which avoids needing exit-animation state.
    fill-mode: both applies the `from` state (opacity:0) before the first
-   paint, so there is no flash. The BottomSheet drag logic overrides
-   style.transform with inline styles during gestures — inline styles win
-   over animation fills in the cascade, so there is no conflict. */
+   paint, so there is no flash. ResponsiveSheet's draggable-mode drag logic
+   overrides style.transform with inline styles during gestures — inline
+   styles win over animation fills in the cascade, so there is no conflict. */
 @keyframes ct-sheet-enter-keyframes {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0);    }
@@ -544,11 +544,12 @@
 }
 
 /* ── Handlebar pill ────────────────────────────────────────────────────── */
-/* Used on both the draggable BottomSheet handle and the decorative
-   handlebars in CreateEventSheet, CreateMaintenanceSheet, and the
-   slot action sheet. Slightly more visible than the previous bg-gray-200
-   hairline (now gray-300 / gray-600). Same 40px width as the old w-10 class.
-   Centering and margin-bottom are applied per-use-site. */
+/* Used on ResponsiveSheet's draggable-mode handle strip (every consumer, as
+   of Phase 29B2, uses draggable mode — the "static" mobileInteraction still
+   exists in ResponsiveSheet's API but currently has no active consumer).
+   Slightly more visible than the previous bg-gray-200 hairline (now
+   gray-300 / gray-600). Same 40px width as the old w-10 class. Centering and
+   margin-bottom are applied per-use-site. */
 .ct-handlebar {
   width: 2.5rem;
   height: 4px;

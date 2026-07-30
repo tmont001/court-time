@@ -196,25 +196,26 @@ export default function CreateMaintenanceSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-        {/* Handle + header */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-          <div className="flex items-center gap-3">
-            {onBack && (
-              <button
-                onClick={onBack}
-                className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-              >
-                ← Back
-              </button>
-            )}
-            <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
-          </div>
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label={`Block Court${selectedCourtIds.length !== 1 ? "s" : ""}`}
+      header={
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+            >
+              ← Back
+            </button>
+          )}
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Block Court{selectedCourtIds.length !== 1 ? "s" : ""}</p>
         </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-5 pt-1">
+      }
+    >
+        <div className="space-y-5 pt-1">
 
           {/* Court multi-select */}
           <div>

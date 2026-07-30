@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import BottomSheet from "@/components/BottomSheet";
+import ResponsiveSheet from "@/components/ResponsiveSheet";
 import type { Json } from "@/lib/db/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -208,8 +208,12 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
   // ── Mobile: bottom sheet with drag handle ─────────────────────────────────
 
   return (
-    <BottomSheet onClose={onClose}>
-      <div className="px-6 pt-5 pb-3">
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label="Notifications"
+      header={
         <div className="flex items-center justify-between">
           <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Notifications</p>
           {hasUnread && (
@@ -221,10 +225,9 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
             </button>
           )}
         </div>
-      </div>
-      <div className="overflow-y-auto max-h-[55vh] pb-8 px-6">
-        {listContent}
-      </div>
-    </BottomSheet>
+      }
+    >
+      {listContent}
+    </ResponsiveSheet>
   );
 }

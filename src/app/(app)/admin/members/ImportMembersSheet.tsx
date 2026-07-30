@@ -558,10 +558,14 @@ export default function ImportMembersSheet({
   // ── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
-      <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      size="wide"
+      mobileInteraction="draggable"
+      label="Import Members"
+      header={null}
+    >
         {/* ─── Mode selector ──────────────────────────────────────────────── */}
         {step === "mode" && (
           <div className="space-y-5">
@@ -969,7 +973,6 @@ export default function ImportMembersSheet({
           </div>
         )}
 
-      </div>
     </ResponsiveSheet>
   );
 }

@@ -128,12 +128,13 @@ export default function ReservationDetailSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal">
-      <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
-
-      {/* Handle — hidden on desktop */}
-      <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      mobileInteraction="draggable"
+      label={courtName}
+      header={null}
+    >
       {/* Court */}
       <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{courtName}</p>
 
@@ -176,7 +177,6 @@ export default function ReservationDetailSheet({
         {loading ? "Cancelling…" : "Cancel Booking"}
       </button>
 
-      </div>
     </ResponsiveSheet>
   );
 }

@@ -122,24 +122,29 @@ export default function AdminRequestLessonSheet({
   const showBack = !(step === "member" && !skipMemberSelect) && !(step === "pro" && skipMemberSelect);
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
-      <div className="px-4 pt-5 pb-8 overflow-y-auto flex-1">
-      {/* Header */}
-      <div className="relative flex items-center justify-center mb-5">
-        {showBack && (
-          <button
-            onClick={handleBack}
-            className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            ← Back
-          </button>
-        )}
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-          Create Lesson Request
-        </h2>
-        <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
-      </div>
-
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      size="wide"
+      mobileInteraction="draggable"
+      label="Create Lesson Request"
+      header={
+        <div className="relative flex items-center justify-center">
+          {showBack && (
+            <button
+              onClick={handleBack}
+              className="absolute left-0 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              ← Back
+            </button>
+          )}
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
+            Create Lesson Request
+          </h2>
+          <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
+        </div>
+      }
+    >
       {/* Step: member */}
       {step === "member" && !skipMemberSelect && (
         <div className="space-y-2">
@@ -371,7 +376,6 @@ export default function AdminRequestLessonSheet({
           </button>
         </div>
       )}
-      </div>
     </ResponsiveSheet>
   );
 }

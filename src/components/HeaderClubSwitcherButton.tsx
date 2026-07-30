@@ -5,11 +5,11 @@ import ClubMembershipList from "@/components/ClubMembershipList";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 
 // Mobile-only entry point to club switching from the top-left header icon.
-// Unlike BottomNav's More -> "Switch club" (a full-width pull-up
-// BottomSheet, left unchanged), this is a small anchored popover directly
-// below the button — a BottomSheet here would be partially obstructed by
-// the fixed bottom navigation and the floating "+ Event" control on pages
-// like Calendar. Reuses ClubMembershipList (and, through it,
+// Unlike BottomNav's More -> "Switch club" (a full-width pull-up sheet,
+// rendered via ResponsiveSheet), this is a small anchored popover directly
+// below the button — a pull-up sheet here would be partially obstructed by
+// the fixed bottom navigation and the calendar's floating create button on
+// pages like Calendar. Reuses ClubMembershipList (and, through it,
 // switchActiveClubAction) unmodified — no second membership-list or
 // switching implementation.
 

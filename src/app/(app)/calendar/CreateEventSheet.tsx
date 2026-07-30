@@ -290,36 +290,36 @@ export default function CreateEventSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
-        {/* Handle + header */}
-        <div className="shrink-0 px-6 pt-5 pb-3">
-          <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-          <div className="flex items-center justify-between md:pr-10">
-            <div className="flex items-center gap-3">
-              {step > 1 ? (
-                <button
-                  onClick={() => { setStep((s) => (s - 1) as 1 | 2 | 3 | 4); setError(null); }}
-                  className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-                >
-                  ← Back
-                </button>
-              ) : onBack ? (
-                <button
-                  onClick={onBack}
-                  className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-                >
-                  ← Back
-                </button>
-              ) : null}
-              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{stepTitles[step]}</p>
-            </div>
-            <p className="text-xs text-gray-400 dark:text-gray-500">{step} of 4</p>
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      size="wide"
+      mobileInteraction="draggable"
+      label={stepTitles[step]}
+      header={
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {step > 1 ? (
+              <button
+                onClick={() => { setStep((s) => (s - 1) as 1 | 2 | 3 | 4); setError(null); }}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+              >
+                ← Back
+              </button>
+            ) : onBack ? (
+              <button
+                onClick={onBack}
+                className="text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+              >
+                ← Back
+              </button>
+            ) : null}
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{stepTitles[step]}</p>
           </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">{step} of 4</p>
         </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">
-
+      }
+    >
           {/* ── Step 1: Event type selection ─────────────────────────────── */}
           {step === 1 && (
             <div className="space-y-3 pt-1">
@@ -613,7 +613,6 @@ export default function CreateEventSheet({
             </div>
           )}
 
-        </div>
     </ResponsiveSheet>
   );
 }

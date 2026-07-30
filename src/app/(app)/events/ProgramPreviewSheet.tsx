@@ -179,31 +179,37 @@ export default function ProgramPreviewSheet({
   }
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="modal" size="wide">
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between gap-3 md:pr-10">
-          <button
-            onClick={onClose}
-            className="shrink-0 text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-          >
-            ← Back to Programs
-          </button>
-          {showEditDraft && (
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="modal"
+      size="wide"
+      mobileInteraction="draggable"
+      label={`Preview & Generate — ${programTitle}`}
+      header={
+        <>
+          <div className="flex items-center justify-between gap-3">
             <button
-              onClick={onEdit}
-              className="shrink-0 text-xs font-medium text-accent hover:brightness-110"
+              onClick={onClose}
+              className="shrink-0 text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
             >
-              Edit Draft
+              ← Back to Programs
             </button>
-          )}
-        </div>
-        <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate mt-2">
-          Preview &amp; Generate — {programTitle}
-        </p>
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8 space-y-4">
+            {showEditDraft && (
+              <button
+                onClick={onEdit}
+                className="shrink-0 text-xs font-medium text-accent hover:brightness-110"
+              >
+                Edit Draft
+              </button>
+            )}
+          </div>
+          <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate mt-2">
+            Preview &amp; Generate — {programTitle}
+          </p>
+        </>
+      }
+    >
+        <div className="space-y-4">
 
         {loading ? (
           <p className="text-sm text-gray-400 py-8 text-center">Loading preview…</p>

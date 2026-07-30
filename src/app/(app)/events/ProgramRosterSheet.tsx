@@ -238,11 +238,13 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet onClose={onClose} variant="panel">
-      {/* Header */}
-      <div className="shrink-0 px-6 pt-5 pb-3">
-        <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-        <div className="flex items-center justify-between pr-8">
+    <ResponsiveSheet
+      onClose={onClose}
+      variant="panel"
+      mobileInteraction="draggable"
+      label="Program Roster"
+      header={
+        <div className="flex items-center justify-between">
           <div className="min-w-0">
             <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Program Roster</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{programTitle}</p>
@@ -251,10 +253,8 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
             Close
           </button>
         </div>
-      </div>
-
-      {/* Scrollable body */}
-      <div className="overflow-y-auto flex-1 px-6 pb-8">
+      }
+    >
         {loading && (
           <p className="text-sm text-gray-400 py-8 text-center">Loading roster…</p>
         )}
@@ -571,7 +571,6 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
             )}
           </>
         )}
-      </div>
     </ResponsiveSheet>
   );
 }

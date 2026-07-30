@@ -7,6 +7,7 @@ import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
+import CalendarFab from "./CalendarFab";
 import { createReservation, cancelMemberReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
@@ -367,6 +368,50 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     return map;
   }, [events]);
 
+  // Phase 29B2 (corrected in source review): horizontal-scroll stabilization.
+  // compute() runs both on mount and on every ResizeObserver firing
+  // (container resize, mobile Safari address-bar collapse/expand changing
+  // --page-fill-height, etc.), which can change colW incidentally without
+  // the user having asked to scroll anywhere. We must not let an incidental
+  // colW recompute silently move the user's existing horizontal scroll
+  // position — but we also must not confuse "same court count" with "same
+  // context": two different clubs/dates can happen to have the same number
+  // of visible courts, and a naive court-count comparison would wrongly
+  // treat that as an incidental resize instead of a genuine reset.
+  //
+  // calendarContextKey below is the explicit, single source of truth for
+  // "is this genuinely a different calendar view": club + club-local date +
+  // the ordered list of currently visible court IDs (which already fully
+  // captures the court-filter selection — selectedCourtIds only affects
+  // scroll positioning through which IDs end up in filteredCourts, so there
+  // is nothing further to fold in). Changing the date is deliberately folded
+  // into the same key as club/court-filter changes — any change to any of
+  // the three inputs is treated identically, as one explicit reset rule,
+  // rather than inferring a date-change reset from a court-count side effect.
+  //
+  // Refs (not state — this is derived/incidental bookkeeping, not UI state):
+  //   - hasComputedOnceRef: false only for the very first compute() (mount) —
+  //     nothing to preserve yet, so it's skipped entirely.
+  //   - prevContextKeyRef: when calendarContextKey changes, the old scroll
+  //     ratio has no meaningful correspondence to the new view, so we clear
+  //     any pending ratio correction and explicitly reset scrollLeft to 0.
+  //   - prevColWRef + pendingScrollRatioRef: when colW changes incidentally
+  //     within the *same* context (e.g. a container resize), we capture the
+  //     scroll position as a ratio of the old column width, then re-apply it
+  //     against the new column width once the new width has actually been
+  //     committed to the DOM (via the colW-keyed layout effect below) — so
+  //     the visible court stays visible instead of the browser clamping
+  //     scrollLeft against the resized content width. Sheets opening/closing
+  //     never touch club/date/court-filter state, so they can only ever fall
+  //     into this incidental-resize branch (if they affect layout at all),
+  //     never the reset branch.
+  const calendarContextKey = `${clubId}|${selectedISO}|${filteredCourts.map(c => c.id).join(",")}`;
+
+  const hasComputedOnceRef    = useRef(false);
+  const prevContextKeyRef     = useRef<string | null>(null);
+  const prevColWRef           = useRef<number | null>(null);
+  const pendingScrollRatioRef = useRef<number | null>(null);
+
   // Placed after filteredCourts/timeSlots to avoid the forward-reference TS error.
   useLayoutEffect(() => {
     const el = gridContainerRef.current;
@@ -374,7 +419,27 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     const compute = () => {
       const available = el.clientWidth - GUTTER_W;
       const count     = Math.max(filteredCourts.length, 1);
-      setColW(Math.min(Math.max(Math.floor(available / count), MIN_colW), MAX_colW));
+      const newColW   = Math.min(Math.max(Math.floor(available / count), MIN_colW), MAX_colW);
+
+      if (!hasComputedOnceRef.current) {
+        // First-ever layout: nothing to preserve, natural scrollLeft (0) is correct.
+        hasComputedOnceRef.current = true;
+      } else if (calendarContextKey !== prevContextKeyRef.current) {
+        // Genuine context reset (club, date, or visible court set changed) —
+        // explicit, intentional reset, exactly once per context change.
+        pendingScrollRatioRef.current = null;
+        el.scrollLeft = 0;
+      } else if (newColW !== prevColWRef.current) {
+        // Incidental colW change within the same context — preserve the
+        // visible position as a ratio, applied once the new width is
+        // actually painted.
+        const prevColW = prevColWRef.current || newColW;
+        pendingScrollRatioRef.current = el.scrollLeft / prevColW;
+      }
+      prevContextKeyRef.current = calendarContextKey;
+      prevColWRef.current = newColW;
+
+      setColW(newColW);
       setContainerW(el.clientWidth);
 
       // Stretch row height to fill available vertical space (desktop), capped
@@ -387,7 +452,17 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     const ro = new ResizeObserver(compute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [filteredCourts.length, timeSlots.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calendarContextKey, timeSlots.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Applies a pending scroll-ratio correction (set above) only after colW has
+  // actually been committed to the DOM, so it reads/writes against the real
+  // new column widths rather than the stale pre-render ones. No-op otherwise.
+  useLayoutEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el || pendingScrollRatioRef.current === null) return;
+    el.scrollLeft = pendingScrollRatioRef.current * colW;
+    pendingScrollRatioRef.current = null;
+  }, [colW]);
 
   const innerWidth = GUTTER_W + Math.max(filteredCourts.length * colW, colW);
 
@@ -1059,22 +1134,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
         {/* ── FAB — pro/admin only, anchored to the calendar content area ─ */}
         {(userRole === "pro" || userRole === "admin") && (
-          <div className="absolute bottom-4 right-4 z-30 flex flex-col items-end gap-2">
-            {userRole === "admin" && (
-              <button
-                onClick={() => setCreatingBlock(true)}
-                className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.97] motion-safe:hover:-translate-y-0.5 motion-safe:transition-all motion-safe:duration-150"
-              >
-                + Block
-              </button>
-            )}
-            <button
-              onClick={() => setCreatingEvent(true)}
-              className="px-4 py-2 rounded-full bg-accent text-white dark:text-gray-900 text-sm font-semibold shadow-md hover:shadow-lg active:scale-[0.97] motion-safe:hover:-translate-y-0.5 motion-safe:transition-all motion-safe:duration-150"
-            >
-              + Event
-            </button>
-          </div>
+          <CalendarFab
+            userRole={userRole}
+            onCreateEvent={() => setCreatingEvent(true)}
+            onCreateBlock={() => setCreatingBlock(true)}
+          />
         )}
       </div>
 
@@ -1189,11 +1253,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
         <ResponsiveSheet
           onClose={closeSlotFlow}
           variant="modal"
-        >
-          <div className="px-6 pt-5 pb-8 overflow-y-auto flex-1">
-            <div className="ct-handlebar mx-auto mb-4 md:hidden" />
-
-            <div className="flex items-center gap-3 mb-3">
+          mobileInteraction="draggable"
+          label={bookingSlot.court.name}
+          header={
+            <div className="flex items-center gap-3">
               {pendingSlotAction && (
                 <button
                   onClick={backToSlotMenu}
@@ -1202,8 +1265,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                   ← Back
                 </button>
               )}
-              <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{bookingSlot.court.name}</p>
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{bookingSlot.court.name}</p>
             </div>
+          }
+        >
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{sheetDateLabel}</p>
             <p className="text-sm text-gray-700 dark:text-gray-300 mt-1 font-medium">
               {sheetStartLabel} – {sheetEndLabel}
@@ -1242,7 +1307,6 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             >
               {bookingLoading ? "Booking…" : "Confirm Booking"}
             </button>
-          </div>
         </ResponsiveSheet>
       )}
     </>
