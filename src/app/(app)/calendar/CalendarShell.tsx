@@ -55,6 +55,11 @@ interface RawEventRow {
   status: string;
   created_by: string;
   member_joinable: boolean;
+  event_type_id: string;
+  description: string | null;
+  updated_at: string;
+  program_id: string | null;
+  is_program_exception: boolean;
   event_types: {
     key: string;
     label: string;
@@ -75,6 +80,11 @@ interface EventWithDetails {
   status: string;
   created_by: string;
   member_joinable: boolean;
+  event_type_id: string;
+  description: string | null;
+  updated_at: string;
+  program_id: string | null;
+  is_program_exception: boolean;
   event_types: {
     key: string;
     label: string;
@@ -552,6 +562,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       .from("events")
       .select(`
         id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
+        event_type_id, description, updated_at, program_id, is_program_exception,
         event_types(key, label, color, shows_participant_names),
         event_participants(profile_id, role, status, offer_expires_at),
         event_guests(id),
@@ -575,6 +586,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           status:             r.status,
           created_by:         r.created_by,
           member_joinable:    r.member_joinable,
+          event_type_id:      r.event_type_id,
+          description:        r.description,
+          updated_at:         r.updated_at,
+          program_id:         r.program_id,
+          is_program_exception: r.is_program_exception,
           event_types:        r.event_types,
           event_participants: r.event_participants,
           event_guests:       r.event_guests,

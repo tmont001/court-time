@@ -1,10 +1,13 @@
 # Phase 30C — Admin Event Editing — QA
 
-Scope of this document (Phase 30C1 only): `supabase/migrations/0099_event_edit_foundation.sql`
-— the new `update_event` RPC, the `event_updated` notification kind, and the
-isolated `cancel_event` Pro-ownership correction. **SQL/RPC sections only.**
-UI and real-device sections are added in a later Phase 30C slice once the
-Calendar and Manage Events integrations exist — do not add them here yet.
+Sections 1–20 (Phase 30C1): `supabase/migrations/0099_event_edit_foundation.sql`
+— the `update_event` RPC, the `event_updated` notification kind, and the
+isolated `cancel_event` Pro-ownership correction. **SQL/RPC only.**
+
+Sections 21+ (Phase 30C2): the application layer — `EditEventSheet`, the
+`updateEventAdmin` server action, the Calendar and Manage Events
+integrations, notification delivery/preferences, and the corrected
+creator-Pro Cancel Event visibility in the UI. **Manual/UI only.**
 
 Run every case below against a non-production/staging Supabase project.
 Migration `0099` must be applied there first.
@@ -389,3 +392,153 @@ block editing, lesson rescheduling, public events, payment behavior.
       every historical redefinition), and `update_event` must not become
       stricter than creation without being explicitly asked to. This
       pre-existing product gap is out of scope for Phase 30C1 to close.
+
+---
+
+## 21. Calendar — standalone event edit
+
+- [ ] As Admin, open an eligible future scheduled event on **Calendar** →
+      tap **Edit Event** → `EditEventSheet` opens as a nested child sheet
+      over `EventDetailSheet`; title, event type, date, start time,
+      duration, courts, capacity, and description are all editable.
+- [ ] Change the title, event type, date/time, one court, and capacity in a
+      single save — confirm the save succeeds, the sheet closes, and the
+      Calendar view reflects every change (correct day/slot/court, updated
+      title and type pill).
+- [ ] Change only the description — save succeeds; no other displayed field
+      changes.
+- [ ] Cancel out of the edit via **Discard** — confirm no changes were
+      submitted and the event is unchanged on reload.
+
+## 22. Manage Events — standalone event edit
+
+- [ ] As Admin, on **Manage Events**, open an eligible event card's **Edit**
+      action — the same `EditEventSheet` opens (not nested under another
+      sheet on this surface).
+- [ ] Edit and save — confirm the card list updates in place with the new
+      title/date/time/capacity, and that the active filters, search text,
+      sort order, and View (Active/Archived/All) selection are all
+      **preserved** after the save (per `reloadFromStart`'s existing
+      behavior).
+- [ ] Confirm Manage Events' own Edit button is Admin-only — a Pro viewing
+      an event they created sees no Edit action (Phase 30C has no Pro edit
+      exception, only the Admin path), while their existing Cancel/Archive
+      actions on that event are unaffected.
+
+## 23. Program-session field restrictions (UI)
+
+- [ ] Open a program-generated session (via either Calendar or Manage
+      Events) for edit — confirm the Title, Event Type, and Description
+      controls are **not shown** at all (not just disabled); the sheet is
+      clearly labeled as editing this one session, not the whole program.
+- [ ] Confirm only Date, Start Time, Duration, Courts, and Capacity are
+      editable for a program session.
+- [ ] Save a program-session edit (e.g. change only the start time) —
+      succeeds; confirm on reload that the session's title, event type, and
+      description are **unchanged** from before the edit (the hidden
+      pass-through fields resubmitted their original values correctly).
+
+## 24. Stale-edit conflict (UI)
+
+- [ ] Open the same event for edit in two browser sessions (or two tabs);
+      save the edit in the first — succeeds. Attempt to save a different
+      edit in the second (now-stale) session — confirm an inline amber
+      "stale edit conflict" banner appears with a **Reload** action, and
+      the save is **not** applied.
+- [ ] Tap **Reload** — confirm the form resets to the event's current
+      (post-first-edit) values, including any program-session hidden
+      fields, and the banner clears. Confirm the edit is never silently
+      auto-applied on top of the newer data.
+
+## 25. Multi-court and capacity validation (UI)
+
+- [ ] Remove all courts from an event and attempt to save — confirm a clear
+      inline validation error (courts required) and the save is blocked
+      client-side (or rejected with a friendly mapped error if it reaches
+      the server).
+- [ ] Select the same court twice (if the UI allows it) — confirm no
+      duplicate court is submitted, or a friendly "duplicate court" error
+      is shown.
+- [ ] Enter a capacity below the event's current confirmed+offered+guest
+      count and save — confirm the friendly mapped message for
+      `capacity_below_participants` is shown, not a raw error code.
+- [ ] Enter an invalid custom duration (zero, negative, non-numeric) —
+      confirm inline validation blocks the save before it reaches the
+      server.
+- [ ] Successfully add a second court and increase capacity in the same
+      save — confirm both changes are reflected after reload.
+
+## 26. Notifications and preferences (UI)
+
+- [ ] After a material edit (date/time/court/capacity/title/type change),
+      confirm each affected participant has a new **in-app** notification
+      (bell icon / notifications list) referencing the event update,
+      regardless of their `event_updated` preference setting.
+- [ ] With a participant's **Event updated** preference toggled **off**
+      under `/profile/notifications` beforehand, confirm they still receive
+      the in-app notification but **no** email for that edit.
+- [ ] With the preference toggled **on** (default), confirm the participant
+      receives both the in-app notification and an email (subject "Event
+      updated — <club name>").
+- [ ] Edit only the `description` field — confirm **no** notification
+      (in-app or email) is created for any participant, matching §15.
+- [ ] Confirm the `/profile/notifications` page lists **Event updated** as
+      a configurable preference with its description noting it only
+      controls email delivery.
+
+## 27. Nested-sheet behavior — desktop and mobile
+
+- [ ] **Desktop, Calendar**: with `EventDetailSheet` open, tap **Edit
+      Event** — confirm `EventDetailSheet` visually suspends (dimmed/
+      inert, its own Escape/backdrop-click no longer closes it) while
+      `EditEventSheet` is open above it at the correct z-index.
+- [ ] **Desktop, Calendar**: press Escape while `EditEventSheet` is open —
+      confirm only `EditEventSheet` closes, `EventDetailSheet` remains
+      open and interactive again.
+- [ ] **Mobile, Calendar**: open `EditEventSheet` from `EventDetailSheet`
+      — confirm it is draggable independently, dismissible by its own drag
+      gesture without affecting the parent sheet underneath.
+- [ ] **Desktop and mobile, Calendar**: close `EditEventSheet` without
+      saving (Discard or drag-dismiss) — confirm focus returns correctly
+      to `EventDetailSheet` and it is interactive again (Escape/backdrop
+      click work normally once more).
+- [ ] **Manage Events**: confirm `EditEventSheet` here is not nested under
+      any parent sheet and behaves like the existing `CreateEventSheet` on
+      this surface (no `active` suspension needed, since there is no
+      parent sheet to suspend).
+- [ ] Saving successfully from a nested Calendar edit — confirm
+      `EventDetailSheet` also closes and the Calendar refreshes to show
+      the updated event (matches `onRefresh`'s existing close-and-refresh
+      behavior).
+
+## 28. Creator-Pro Cancel Event — UI correction
+
+- [ ] **Pro creates an event, then views its detail sheet on Calendar** —
+      confirm **Cancel Event** is now visible (this was the verified bug:
+      previously only `View Roster`/`Join Event` appeared, since visibility
+      was incorrectly keyed off roster Host status rather than
+      `events.created_by`).
+- [ ] That same Pro taps **Cancel Event** and confirms — succeeds; the
+      event is cancelled and the sheet reflects the cancelled state.
+- [ ] **Pro views an event created by a different Pro or by an Admin** —
+      confirm **Cancel Event** is **not** shown on Calendar.
+- [ ] **Member views any event's detail sheet** — confirm **Cancel Event**
+      is never shown, regardless of who created it.
+- [ ] **Manage Events**: confirm the creator-Pro's own event already shows
+      a working Cancel action (this surface's `canActOnEvent` gate was
+      already correct — no bug here, only regression-checking it wasn't
+      disturbed by this phase's changes).
+- [ ] **Admin** sees and can use Cancel Event on any event on both
+      Calendar and Manage Events, unchanged.
+
+## 29. Member personal court-booking cancellation — unchanged (regression)
+
+- [ ] As a Member, cancel one of your own personal court reservations from
+      **My Schedule** (or wherever this flow lives) — confirm it still goes
+      through `cancel_member_reservation` exactly as before, honoring the
+      club's configured grace-period and cancellation-window rules, and is
+      completely unaffected by this phase's `cancel_event`/`update_event`
+      changes (a personal reservation is not an event).
+- [ ] Confirm a Member still **cannot** cancel an *event* (§28's Member
+      case) even though their own personal reservation cancellation works
+      normally — the two flows remain fully independent.

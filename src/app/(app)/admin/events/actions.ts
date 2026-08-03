@@ -3,27 +3,25 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { sendSms } from "@/lib/sms";
+import { sendEmailNotification } from "@/lib/email";
+import { eventUpdatedTemplate } from "@/lib/email-templates";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { ADMIN_EVENT_SELECT, mapAdminEventRow } from "./adminEventRow";
+import type { RawAdminEventRow, AdminEventRow } from "./adminEventRow";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ArchiveView = "active" | "archived" | "all";
 
-export type AdminEventRow = {
-  id:                 string;
-  title:              string;
-  starts_at:          string;
-  ends_at:            string;
-  capacity:           number;
-  status:             string;
-  created_by:         string;
-  member_joinable:    boolean;
-  archived_at:        string | null;
-  archived_by:        string | null;
-  event_types:        { key: string; label: string; color: string } | null;
-  event_participants: Array<{ profile_id: string; role: string; status: string }>;
-  event_guests:       Array<{ id: string }>;
-};
+// Re-exported so existing "@/app/(app)/admin/events/actions" consumers
+// (e.g. AdminEventsClient.tsx) don't need to change their import path.
+// Type-only re-exports are erased at compile time, so they don't run afoul
+// of "use server"'s async-function-only export constraint the way a
+// re-exported value or function (mapAdminEventRow, ADMIN_EVENT_SELECT)
+// would — those stay in ./adminEventRow and are imported from there
+// directly by any caller that needs them (see events/page.tsx).
+export type { RawAdminEventRow, AdminEventRow };
 
 // ─── fetchMoreAdminEvents ─────────────────────────────────────────────────────
 
@@ -48,12 +46,7 @@ export async function fetchMoreAdminEvents(
 
   const baseQuery = supabase
     .from("events")
-    .select(`
-      id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, archived_at, archived_by,
-      event_types(key, label, color),
-      event_participants(profile_id, role, status),
-      event_guests(id)
-    `)
+    .select(ADMIN_EVENT_SELECT)
     .eq("club_id", profile.club_id)
     .order("starts_at", { ascending: false });
 
@@ -64,7 +57,11 @@ export async function fetchMoreAdminEvents(
   const { data, error } = await filteredQuery.range(offset, offset + 24);
 
   if (error) return { events: [], error: error.message };
-  return { events: (data ?? []) as unknown as AdminEventRow[] };
+
+  const rows = (data ?? []) as unknown as RawAdminEventRow[];
+  const events: AdminEventRow[] = rows.map(mapAdminEventRow);
+
+  return { events };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,4 +437,164 @@ export async function setEventMemberJoinableAction(
   revalidatePath("/events");
   revalidatePath("/calendar");
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// updateEventAdmin
+// Phase 30C2: Admin-only edit of a single eligible future event (standalone
+// or one individual program-generated session). Calls update_event, which
+// performs one genuine UPDATE on `events` plus a transactional court-set
+// diff against its linked reservations (never cancel-and-recreate), and
+// returns the updated event, which fields actually changed, and the exact
+// {notification_id, user_id} pairs for every participant notified. Errors
+// are returned raw (code/message) — EditEventSheet owns the friendly
+// mapping, matching the updateMemberReservationAdmin precedent.
+// ---------------------------------------------------------------------------
+
+interface UpdateEventResult {
+  event:           Record<string, unknown>;
+  changed_fields:  string[];
+  notifications:   Array<{ notification_id: string; user_id: string }>;
+}
+
+export async function updateEventAdmin(params: {
+  p_event_id:             string;
+  p_expected_updated_at:  string;
+  p_title:                string;
+  p_event_type_id:        string;
+  p_starts_at:            string;
+  p_ends_at:              string;
+  p_court_ids:            string[];
+  p_capacity:             number;
+  p_description?:         string | null;
+  expectedClubId:         string;
+}): Promise<{ data?: { changedFields: string[] }; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("update_event", {
+    ...rpcParams,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  const result = data as unknown as UpdateEventResult | null;
+  const changedFields = result?.changed_fields ?? [];
+  const notifications = result?.notifications ?? [];
+
+  for (const { notification_id, user_id } of notifications) {
+    try {
+      await dispatchEventUpdatedSms(notification_id, user_id);
+    } catch {
+      // SMS dispatch must never block edit success or surface to the user.
+    }
+
+    try {
+      await dispatchEventUpdatedEmail(notification_id, user_id);
+    } catch {
+      // Email dispatch must never block edit success or surface to the user.
+    }
+  }
+
+  revalidatePath("/calendar");
+  revalidatePath("/events");
+
+  return { data: { changedFields } };
+}
+
+// ---------------------------------------------------------------------------
+// dispatchEventUpdatedSms / dispatchEventUpdatedEmail — internal, not
+// exported. Driven by the exact {notification_id, user_id} pair returned by
+// update_event for each recipient — never a "newest matching kind" re-query,
+// which matters even more here than for a single-recipient dispatch since a
+// material edit can notify many participants in one call.
+// ---------------------------------------------------------------------------
+
+async function dispatchEventUpdatedSms(
+  notificationId: string,
+  userId:         string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("id", notificationId)
+    .single();
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+async function dispatchEventUpdatedEmail(
+  notificationId: string,
+  userId:         string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("id", notificationId)
+    .single();
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    userId,
+    "event_updated",
+    (clubName) => eventUpdatedTemplate(clubName, notification.body),
+  );
 }

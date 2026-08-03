@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet";
+import EditEventSheet from "./EditEventSheet";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
@@ -25,6 +26,11 @@ interface EventWithDetails {
   status: string;
   created_by: string;
   member_joinable: boolean;
+  // Phase 30C2: additional fields required by EditEventSheet.
+  event_type_id: string;
+  description: string | null;
+  updated_at: string;
+  program_id: string | null;
   event_types: {
     key: string;
     label: string;
@@ -118,6 +124,7 @@ export default function EventDetailSheet({
   const [rosterRefreshTick, setRosterRefreshTick]     = useState(0);
   const [offerLoading, setOfferLoading]               = useState<"accept" | "pass" | null>(null);
   const [offerError, setOfferError]                   = useState<string | null>(null);
+  const [editOpen, setEditOpen]                       = useState(false);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -163,7 +170,14 @@ export default function EventDetailSheet({
 
   // Members should not be able to join or waitlist for events that have already started.
   const isPastEvent    = new Date(event.starts_at) < new Date();
-  const canCancelEvent = userRole === "admin" || isHost;
+  // Phase 30C2 correction: event-management ownership (cancel/edit) is
+  // determined by events.created_by, matching the corrected cancel_event
+  // RPC contract exactly — never by roster Host status. create_event has
+  // not auto-inserted a host participant row since migration 0058, so a
+  // Pro's own events would otherwise never satisfy an isHost-based check.
+  const canCancelEvent = userRole === "admin" || (userRole === "pro" && event.created_by === userId);
+  // Edit is Admin-only in Phase 30C — no Pro exception, unlike cancellation.
+  const canEdit         = userRole === "admin" && event.status === "scheduled" && !isPastEvent;
   const canViewRoster  = userRole === "admin" || userRole === "pro";
 
   // Total active participants shown in the roster button label (confirmed + offered + waitlisted + guests).
@@ -313,7 +327,7 @@ export default function EventDetailSheet({
         mobileInteraction="draggable"
         label={event.title}
         header={null}
-        active={!rosterOpen}
+        active={!rosterOpen && !editOpen}
       >
         {/* Event type pill + admin-managed badge */}
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
@@ -460,7 +474,17 @@ export default function EventDetailSheet({
           </>
         )}
 
-        {/* Cancel Event — admin or host only */}
+        {/* Edit — admin-only, eligible events only */}
+        {canEdit && (
+          <button
+            onClick={() => setEditOpen(true)}
+            className="mt-4 w-full py-3 rounded-xl text-sm font-semibold bg-gray-50 dark:bg-gray-700/60 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600"
+          >
+            Edit Event
+          </button>
+        )}
+
+        {/* Cancel Event — admin, or the Pro who created this event */}
         {canCancelEvent && (
           <div className="mt-4 text-center">
             {!cancelConfirming ? (
@@ -509,6 +533,18 @@ export default function EventDetailSheet({
             setLocalParticipants(rows);
             setLocalGuestCount(gc);
           }}
+        />
+      )}
+
+      {/* ── Edit Event Sheet — admin only, layers above this sheet ──────── */}
+      {editOpen && (
+        <EditEventSheet
+          event={event}
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); onRefresh(); }}
         />
       )}
     </>

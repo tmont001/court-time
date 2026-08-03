@@ -84,6 +84,14 @@ export function eventCancelledTemplate(
   return { subject: `Event cancelled — ${clubName}`, html, text };
 }
 
+export function eventUpdatedTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View calendar", `${APP_URL}/calendar`);
+  return { subject: `Event updated — ${clubName}`, html, text };
+}
+
 export function waitlistOfferTemplate(
   clubName: string,
   body:     string,

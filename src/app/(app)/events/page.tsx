@@ -18,6 +18,7 @@ import ProgramsManageClient from "./ProgramsManageClient";
 import { getPrograms, type ProgramListRow } from "./programsActions";
 import { getMemberPrograms, type MemberProgramCard } from "./programEnrollmentActions";
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
+import { ADMIN_EVENT_SELECT, mapAdminEventRow, type RawAdminEventRow } from "@/app/(app)/admin/events/adminEventRow";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 
 // ─── Server actions ───────────────────────────────────────────────────────────
@@ -117,16 +118,17 @@ export default async function EventsPage({
     // Programs section — member-only. Only fetched when the caller is a
     // plain member, so admins/pros never pay for this query.
     clubId && isMember ? getMemberPrograms(clubId, user.id) : Promise.resolve({ programs: [] as MemberProgramCard[] }),
-    // Admin/pro: all events (past + future) for the Manage tab; excludes archived by default
+    // Admin/pro: all events (past + future) for the Manage tab; excludes archived by default.
+    // Selects the same ADMIN_EVENT_SELECT columns as fetchMoreAdminEvents'
+    // reload query (Phase 30C2 fix) so both the initial page load and every
+    // subsequent Load More/View-change reload provide the complete
+    // editable-event shape EditEventSheet needs — previously this query was
+    // missing event_type_id/description/updated_at/program_id/
+    // is_program_exception/reservations entirely.
     isAdminOrPro
       ? supabase
           .from("events")
-          .select(`
-            id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, archived_at, archived_by,
-            event_types(key, label, color),
-            event_participants(profile_id, role, status),
-            event_guests(id)
-          `)
+          .select(ADMIN_EVENT_SELECT)
           .eq("club_id", clubId)
           .is("archived_at", null)
           .order("starts_at", { ascending: false })
@@ -164,7 +166,8 @@ export default async function EventsPage({
   // excluded, unchanged from prior behavior.
   const rawEvents = (eventsResult.data ?? []) as unknown as Array<UpcomingEventData & { member_joinable: boolean }>;
   const events = rawEvents.filter(ev => ev.member_joinable || ev.programs?.enrollment_model === "program");
-  const adminEvents   = (adminEventsResult.data ?? []) as unknown as AdminEventRow[];
+  const adminEventsRaw = (adminEventsResult.data ?? []) as unknown as RawAdminEventRow[];
+  const adminEvents: AdminEventRow[] = adminEventsRaw.map(mapAdminEventRow);
   const adminCourts   = adminCourtsResult.data ?? [];
   const proLessons    = (proLessonsResult.data ?? []) as ProLessonRequestRow[];
   const programs      = "programs" in programsResult ? programsResult.programs : [];

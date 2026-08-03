@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import EventRosterButton from "@/app/(app)/events/EventRosterButton";
 import type { RosterParticipantRow } from "@/app/(app)/calendar/EventRosterSheet";
 import CreateEventSheet from "@/app/(app)/calendar/CreateEventSheet";
+import EditEventSheet from "@/app/(app)/calendar/EditEventSheet";
 import { cancelEvent } from "@/app/(app)/calendar/actions";
 import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction, setEventMemberJoinableAction } from "./actions";
 import type { AdminEventRow, ArchiveView } from "./actions";
@@ -77,6 +78,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
   const [isCancelPending,  startCancelTransition]    = useTransition();
   const [isJoinablePending, startJoinableTransition] = useTransition();
   const [creatingEvent, setCreatingEvent] = useState(false);
+  const [editingEvent, setEditingEvent]   = useState<AdminEventRow | null>(null);
 
   const [statusFilter,          setStatusFilter]          = useState<StatusFilter>("scheduled");
   const [dateFilter,            setDateFilter]            = useState<DateFilter>("all");
@@ -448,6 +450,9 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             // Cancel eligibility: future scheduled non-archived events only.
             const canCancel = !isArchived && ev.status === "scheduled" && isFuture && canActOnEvent;
 
+            // Edit eligibility: Admin-only in Phase 30C — no Pro exception, unlike cancellation.
+            const canEdit = userRole === "admin" && !isArchived && ev.status === "scheduled" && isFuture;
+
             // Toggle eligibility: future scheduled non-archived events only.
             const canToggleMemberJoinable = !isArchived && !isCancelled && isFuture && canActOnEvent;
 
@@ -457,7 +462,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             ).length;
 
             // Show the action footer when any action or roster button is available.
-            const showActionFooter = !isCancelled || canArchive || canCancel || canToggleMemberJoinable || (isArchived && canActOnEvent);
+            const showActionFooter = !isCancelled || canArchive || canCancel || canEdit || canToggleMemberJoinable || (isArchived && canActOnEvent);
 
             return (
               <div
@@ -665,6 +670,14 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
                                 {ev.member_joinable ? "Make admin-managed" : "Open to members"}
                               </button>
                             )}
+                            {canEdit && (
+                              <button
+                                onClick={() => setEditingEvent(ev)}
+                                className={ACTION_BUTTON_SECONDARY}
+                              >
+                                Edit
+                              </button>
+                            )}
                             {canCancel && (
                               <button
                                 onClick={() => {
@@ -751,6 +764,17 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           clubTimezone={clubTimezone}
           onClose={() => setCreatingEvent(false)}
           onCreated={() => { setCreatingEvent(false); router.refresh(); }}
+        />
+      )}
+
+      {editingEvent && (
+        <EditEventSheet
+          event={editingEvent}
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setEditingEvent(null)}
+          onSaved={async () => { setEditingEvent(null); await reloadFromStart(); }}
         />
       )}
     </>
