@@ -1,0 +1,130 @@
+-- 0098_remove_reservation_direct_update_policy.sql
+-- Phase 30B2: remove the obsolete reservation direct-update RLS policy.
+--
+-- Contract, Phase 2 of 2 (expand-deploy-contract). Migration 0097
+-- (Phase 30B1) added the two SECURITY DEFINER RPCs this checkpoint's
+-- removal depends on — update_member_reservation and
+-- cancel_member_reservation.
+--
+-- Why 0097 retained reservations_cancel_own: 0097 was additive and
+-- backward-compatible by design. The policy was left in place so that
+-- whatever application build was still serving traffic at the moment 0097
+-- was applied — the pre-Phase-30B1 version, which performed member
+-- self-cancel via a raw client-side `reservations` UPDATE — kept working
+-- through the rollout window, along with any stale browser sessions or
+-- lingering old deployment instances still active during that window. The
+-- Phase 30B1 application itself, once deployed, does not rely on this
+-- policy and does not use the raw UPDATE path at all: member/pro owner
+-- cancellation calls cancel_member_reservation (SECURITY DEFINER)
+-- exclusively. The policy was retained purely as a rollout safety net for
+-- whatever might still be running against the database during that
+-- window, not because the new application needed it.
+--
+-- ┌───────────────────────────────────────────────────────────────────────┐
+-- │ PREREQUISITES — every item below must be independently confirmed at   │
+-- │ apply time before this migration is run. None of them is asserted as  │
+-- │ already true by this file — it is being prepared ahead of that        │
+-- │ confirmation, not after it.                                           │
+-- └───────────────────────────────────────────────────────────────────────┘
+--   1. The Phase 30B1 application has been deployed to production.
+--   2. The intended production bake period has elapsed.
+--   3. No cancellation regressions have been observed during that period.
+--   4. A final source audit, run immediately before applying this
+--      migration, confirms zero application call sites anywhere in the
+--      codebase perform a raw `reservations` table UPDATE.
+--   5. A final, live `pg_policies` query against the target database
+--      confirms `reservations_cancel_own` is still the only UPDATE policy
+--      on `public.reservations` immediately before it is dropped — catalog
+--      state can drift between when this migration was prepared and when
+--      it is actually applied, so this check must be re-run at apply
+--      time, not assumed from an earlier snapshot.
+--
+-- Do not apply this migration until every item above is independently
+-- verified against the target environment at apply time.
+--
+-- Current mutation paths (per the repository source audit performed while
+-- preparing this migration — re-verify per prerequisite 4 above at apply
+-- time):
+--   - Member and Pro owner cancellation (Calendar and My Schedule) now
+--     occur exclusively through cancel_member_reservation — a
+--     SECURITY DEFINER RPC that enforces ownership, reason/status scope,
+--     and the cancellation-window/grace rule entirely in Postgres.
+--   - Admin cancellation (Calendar and My Schedule, including an admin's
+--     own booking) occurs exclusively through admin_cancel_reservation
+--     — unchanged, always has been SECURITY DEFINER, never depended on
+--     this policy.
+--   - Admin reservation editing (court/date/start time/duration) occurs
+--     exclusively through update_member_reservation — also
+--     SECURITY DEFINER, also never depended on this policy.
+--   - notify_reservation_cancelled_by_member remains in the database for
+--     compatibility (per 0097) but has zero active application call
+--     sites; its own SECURITY DEFINER execution is unaffected by this
+--     migration either way.
+--
+-- Repository policy history: an exhaustive search of every migration
+-- (0001-0097) for CREATE POLICY / ALTER POLICY / DROP POLICY statements
+-- affecting `reservations` confirms exactly three policies have ever been
+-- created on this table, all in 0003_reservations.sql and never altered
+-- or replaced since: reservations_select_same_club (SELECT),
+-- reservations_insert_own (INSERT), and reservations_cancel_own (UPDATE)
+-- — the only UPDATE policy ever defined on this table. This matches a
+-- live pg_policies snapshot taken against the production catalog
+-- immediately before this migration was prepared. Prerequisite 5 above
+-- requires re-confirming this snapshot at apply time.
+--
+-- With every reservation-cancelling and reservation-editing path now
+-- funneled through a SECURITY DEFINER RPC, reservations_cancel_own — the
+-- one remaining RLS policy that ever granted a plain authenticated client
+-- direct UPDATE access to public.reservations — is dead code from the
+-- application's perspective and is a strictly unnecessary residual
+-- attack surface: as flagged during the Phase 30B1 migration review, its
+-- WITH CHECK clause constrains only the cancellation-shaped columns
+-- (status/cancelled_by/cancellation_kind/owner_user_id) and does not pin
+-- every other column to its prior value, so a raw client update crafted
+-- to satisfy that WITH CHECK could in principle smuggle unrelated field
+-- changes through alongside a valid-looking self-cancel. Removing the
+-- policy closes that gap entirely — after this migration, every
+-- reservation mutation is authorized and validated inside a
+-- SECURITY DEFINER function, never by RLS alone.
+--
+-- Scope: this migration removes exactly one policy. It does not touch
+-- any other policy, function, table, constraint, grant, or column —
+-- reservations_select_same_club and reservations_insert_own (both from
+-- 0003) are untouched, as are update_member_reservation,
+-- cancel_member_reservation, admin_cancel_reservation, create_reservation,
+-- and every notification/audit/authorization helper. These two policies
+-- are the only ones expected to remain on public.reservations after this
+-- migration runs, and no UPDATE policy is expected to remain at all.
+--
+-- Apply in Supabase SQL Editor (cloud only), only once every prerequisite
+-- listed above is independently confirmed against the target environment.
+-- Not applied by this checkpoint — this file is prepared for migration
+-- review only.
+
+drop policy if exists "reservations_cancel_own" on public.reservations;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ROLLBACK
+-- ═══════════════════════════════════════════════════════════════════════════
+-- If this migration needs to be reversed, recreate the exact policy
+-- definition from migration 0003_reservations.sql (the only migration that
+-- ever defined it; it was never altered between 0003 and its removal here):
+--
+--   create policy "reservations_cancel_own"
+--     on public.reservations for update
+--     using  (owner_user_id = auth.uid())
+--     with check (
+--       status            = 'cancelled'
+--       and cancelled_by  = auth.uid()
+--       and cancellation_kind = 'member'
+--       and owner_user_id = auth.uid()
+--     );
+--
+-- Recreating this policy would restore the pre-Phase-30B2 behavior exactly
+-- (including the WITH CHECK gap noted above) — it does not need to be
+-- re-applied for any Phase 30B1 functionality to keep working, since
+-- cancel_member_reservation, admin_cancel_reservation, and
+-- update_member_reservation are all SECURITY DEFINER and have never
+-- depended on this policy. This rollback would only be needed if some
+-- as-yet-unknown code path is later found to still require raw
+-- client-side reservation UPDATE access.
