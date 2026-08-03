@@ -4,19 +4,29 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { adminCancelReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import EditReservationSheet from "./EditReservationSheet";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// Phase 30B1: widened to match the full runtime row CalendarShell already
+// fetches (select("*")) and passes through — status, format, player_count,
+// guest_names, and updated_at were previously present on the object at
+// runtime but inaccessible through this narrower type.
 interface ReservationBlock {
   id:                    string;
   court_id:              string;
   owner_user_id:         string;
   starts_at:             string;
   ends_at:               string;
+  status:                string;
   reason:                string;
+  format:                string | null;
+  player_count:          number | null;
+  guest_names:           string[] | null;
   notes:                 string | null;
   show_notes_to_members: boolean;
+  updated_at:            string;
 }
 
 interface Court {
@@ -38,6 +48,8 @@ interface Props {
   clubId:         string;
   onClose:        () => void;
   onCancelled:    () => void;
+  // Phase 30B1: fired after a successful admin edit.
+  onUpdated:      () => void;
   // When provided, the sheet operates in member-cancel mode (instead of admin).
   onMemberCancel?: () => Promise<{ error?: string }>;
 }
@@ -61,13 +73,14 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, onClose, onCancelled, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
+  const [editOpen, setEditOpen]         = useState(false);
 
   useEffect(() => {
     // Owner-profile fetch is only needed for admin mode (to display "Booked by").
@@ -97,6 +110,15 @@ export default function ReservationDetailSheet({
   });
 
   const ownerName = ownerProfile ? ownerDisplayName(ownerProfile) : "Loading…";
+
+  // Admin (not member-cancel mode) may edit only a confirmed member_booking
+  // reservation whose start is still in the future. Member and Pro owners
+  // never see Edit — the first reservation-edit release is admin-only.
+  const canEdit =
+    !onMemberCancel &&
+    reservation.reason === "member_booking" &&
+    reservation.status === "confirmed" &&
+    new Date(reservation.starts_at) > new Date();
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -128,55 +150,81 @@ export default function ReservationDetailSheet({
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <ResponsiveSheet
-      onClose={onClose}
-      variant="modal"
-      mobileInteraction="draggable"
-      label={courtName}
-      header={null}
-    >
-      {/* Court */}
-      <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{courtName}</p>
-
-      {/* Date */}
-      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{dateLabel}</p>
-
-      {/* Time */}
-      <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
-
-      {/* Owner — admin mode only; member is viewing their own booking */}
-      {!onMemberCancel && (
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
-      )}
-
-      {/* Maintenance notes — only for maintenance/admin_block reason */}
-      {reservation.reason === "maintenance" && (
-        <div className="mt-3">
-          {reservation.notes?.trim() ? (
-            <>
-              <p className="text-sm text-gray-700 dark:text-gray-300">{reservation.notes.trim()}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {reservation.show_notes_to_members ? "Visible to members" : "Hidden from members"}
-              </p>
-            </>
-          ) : (
-            <p className="text-xs text-gray-400 dark:text-gray-500">No reason added.</p>
-          )}
-        </div>
-      )}
-
-      {/* Error */}
-      {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
-
-      {/* Cancel — member mode or admin mode */}
-      <button
-        disabled={loading}
-        onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
-        className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40"
+    <>
+      <ResponsiveSheet
+        onClose={onClose}
+        variant="modal"
+        mobileInteraction="draggable"
+        label={courtName}
+        header={null}
+        active={!editOpen}
       >
-        {loading ? "Cancelling…" : "Cancel Booking"}
-      </button>
+        {/* Court */}
+        <p className="text-base font-semibold text-gray-900 dark:text-gray-100 pr-8">{courtName}</p>
 
-    </ResponsiveSheet>
+        {/* Date */}
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{dateLabel}</p>
+
+        {/* Time */}
+        <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
+
+        {/* Owner — admin mode only; member is viewing their own booking */}
+        {!onMemberCancel && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
+        )}
+
+        {/* Maintenance notes — only for maintenance/admin_block reason */}
+        {reservation.reason === "maintenance" && (
+          <div className="mt-3">
+            {reservation.notes?.trim() ? (
+              <>
+                <p className="text-sm text-gray-700 dark:text-gray-300">{reservation.notes.trim()}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {reservation.show_notes_to_members ? "Visible to members" : "Hidden from members"}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 dark:text-gray-500">No reason added.</p>
+            )}
+          </div>
+        )}
+
+        {/* Error */}
+        {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+
+        {/* Edit — admin mode only, eligible reservations only */}
+        {canEdit && (
+          <button
+            disabled={loading}
+            onClick={() => setEditOpen(true)}
+            className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-gray-50 dark:bg-gray-700/60 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 disabled:opacity-40"
+          >
+            Edit
+          </button>
+        )}
+
+        {/* Cancel — member mode or admin mode */}
+        <button
+          disabled={loading}
+          onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
+          className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${canEdit ? "mt-3" : "mt-5"}`}
+        >
+          {loading ? "Cancelling…" : "Cancel Booking"}
+        </button>
+
+      </ResponsiveSheet>
+
+      {/* ── Edit sheet — admin only, layers above this sheet ────────────── */}
+      {editOpen && (
+        <EditReservationSheet
+          reservation={reservation}
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); onUpdated(); }}
+        />
+      )}
+    </>
   );
 }

@@ -9,6 +9,7 @@ type ConfigurableKind =
   | "reservation_confirmed"
   | "reservation_cancelled_by_member"
   | "reservation_cancelled_by_admin"
+  | "reservation_rescheduled"
   | "event_joined"
   | "event_cancelled"
   | "waitlist_offer"
@@ -46,6 +47,11 @@ const CONFIGURABLE_KINDS: { kind: ConfigurableKind; label: string; description: 
     kind:        "reservation_cancelled_by_admin",
     label:       "Booking cancelled by club",
     description: "When your club cancels one of your court reservations.",
+  },
+  {
+    kind:        "reservation_rescheduled",
+    label:       "Booking rescheduled",
+    description: "When the club edits the court, date, or time of one of your bookings. This only controls email — the in-app notification always appears.",
   },
   {
     kind:        "event_joined",

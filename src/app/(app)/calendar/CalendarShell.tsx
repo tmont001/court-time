@@ -1240,8 +1240,14 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           clubId={clubId}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
+          onUpdated={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onMemberCancel={
-            selectedReservation.owner_user_id === userId && userRole === "member"
+            // Phase 30B1: widened from member-only to include Pro — a Pro
+            // may already self-cancel their own member_booking reservation
+            // via /my-schedule and via the underlying RPC/RLS; this closes
+            // the previous /calendar-only UI gap rather than leaving it
+            // inconsistent with /my-schedule.
+            selectedReservation.owner_user_id === userId && (userRole === "member" || userRole === "pro")
               ? async () => cancelMemberReservation(selectedReservation.id, clubId)
               : undefined
           }

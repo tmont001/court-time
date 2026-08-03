@@ -871,7 +871,7 @@ export type Database = {
           id:         string;
           club_id:    string;
           user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           body:       string;
           is_read:    boolean;
           metadata:   Json | null;
@@ -881,7 +881,7 @@ export type Database = {
           id?:         string;
           club_id:     string;
           user_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           body:        string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -891,7 +891,7 @@ export type Database = {
           id?:         string;
           club_id?:    string;
           user_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled";
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           body?:       string;
           is_read?:    boolean;
           metadata?:   Json | null;
@@ -973,7 +973,7 @@ export type Database = {
           id:         string;
           user_id:    string;
           club_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          kind:       "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           enabled:    boolean;
           updated_at: string;
         };
@@ -981,7 +981,7 @@ export type Database = {
           id?:         string;
           user_id:     string;
           club_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "event_joined" | "event_cancelled" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
+          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           enabled?:    boolean;
           updated_at?: string;
         };
@@ -989,7 +989,7 @@ export type Database = {
           id?:         string;
           user_id?:    string;
           club_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_member" | "event_joined" | "announcement";
+          kind?:       "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
           enabled?:    boolean;
           updated_at?: string;
         };
@@ -1583,6 +1583,28 @@ export type Database = {
           cancelled_by: string | null;
           cancellation_kind: string | null;
         };
+      };
+      update_member_reservation: {
+        Args: {
+          p_reservation_id: string;
+          p_expected_club_id: string;
+          p_expected_updated_at: string;
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_format?: string | null;
+          p_player_count?: number | null;
+          p_guest_names?: string[] | null;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      cancel_member_reservation: {
+        Args: {
+          p_reservation_id: string;
+          p_expected_club_id: string;
+        };
+        Returns: Json;
       };
       get_members: {
         Args: Record<string, never>;

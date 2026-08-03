@@ -60,6 +60,14 @@ export function reservationCancelledByAdminTemplate(
   return { subject: `Your booking was cancelled — ${clubName}`, html, text };
 }
 
+export function reservationRescheduledTemplate(
+  clubName: string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const { html, text } = layout(clubName, body, "View calendar", `${APP_URL}/calendar`);
+  return { subject: `Booking rescheduled — ${clubName}`, html, text };
+}
+
 export function eventJoinedTemplate(
   clubName: string,
   body:     string,

@@ -9,11 +9,27 @@ import {
   reservationConfirmedTemplate,
   reservationCancelledByMemberTemplate,
   reservationCancelledByAdminTemplate,
+  reservationRescheduledTemplate,
   eventJoinedTemplate,
   eventCancelledTemplate,
   waitlistOfferTemplate,
   waitlistPromotedTemplate,
 } from "@/lib/email-templates";
+
+// ---------------------------------------------------------------------------
+// Shared result shape for update_member_reservation / cancel_member_reservation
+// — both RPCs return jsonb of this shape (see supabase/migrations/0097).
+// Only the fields actually consumed here are typed; the reservation payload
+// itself is passed straight through to callers as an unknown-shaped record.
+// ---------------------------------------------------------------------------
+interface ReservationMutationResult {
+  reservation: Record<string, unknown> & { owner_user_id: string };
+  notification_id: string | null;
+}
+
+interface UpdateMemberReservationResult extends ReservationMutationResult {
+  changed_fields: string[];
+}
 
 // ---------------------------------------------------------------------------
 // createReservation
@@ -483,54 +499,82 @@ async function dispatchAdminCancelEmail(ownerUserId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// notifyMemberReservationCancelled
-// Called from my-schedule/page.tsx after a member self-cancels a reservation.
-// Calls the notify_reservation_cancelled_by_member security-definer RPC (which
-// inserts the notification — RLS blocks direct inserts from regular sessions),
-// then dispatches SMS non-blocking. Any error in dispatch is swallowed so it
-// never surfaces to the user.
+// updateMemberReservationAdmin
+// Phase 30B1: admin-only edit of a single confirmed member_booking
+// reservation. Calls update_member_reservation, which performs one genuine
+// UPDATE (never cancel-and-recreate) and returns the updated reservation
+// plus which fields actually changed and the id of any material
+// (court/date/time) notification it inserted. Best-effort email/SMS
+// dispatch runs only after the DB transaction has already committed, and
+// only when the RPC reports a material notification was created — never
+// for notes/format/player_count/guest_names-only edits.
 // ---------------------------------------------------------------------------
-export async function notifyMemberReservationCancelled(
-  userId:        string,
-  reservationId: string,
-): Promise<void> {
+export async function updateMemberReservationAdmin(params: {
+  p_reservation_id:      string;
+  p_expected_updated_at: string;
+  p_court_id:            string;
+  p_starts_at:           string;
+  p_ends_at:             string;
+  p_format?:             string | null;
+  p_player_count?:       number | null;
+  p_guest_names?:        string[] | null;
+  p_notes?:              string | null;
+  expectedClubId:        string;
+}): Promise<{ data?: { changedFields: string[] }; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
   const supabase = await createClient();
 
-  const { error: rpcError } = await supabase.rpc(
-    "notify_reservation_cancelled_by_member",
-    { p_reservation_id: reservationId }
-  );
-  if (rpcError) return; // notification not created — skip SMS
+  const { data, error } = await supabase.rpc("update_member_reservation", {
+    ...rpcParams,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
 
-  try {
-    await dispatchMemberCancelSms(userId);
-  } catch {
-    // SMS dispatch must never block or surface errors.
+  const result = data as unknown as UpdateMemberReservationResult | null;
+  const changedFields   = result?.changed_fields ?? [];
+  const notificationId  = result?.notification_id ?? null;
+  const ownerUserId     = result?.reservation.owner_user_id;
+
+  if (notificationId && ownerUserId) {
+    try {
+      await dispatchReservationRescheduledSms(notificationId, ownerUserId);
+    } catch {
+      // SMS dispatch must never block edit success or surface to the user.
+    }
+
+    try {
+      await dispatchReservationRescheduledEmail(notificationId, ownerUserId);
+    } catch {
+      // Email dispatch must never block edit success or surface to the user.
+    }
   }
 
-  try {
-    await dispatchMemberCancelEmail(userId);
-  } catch {
-    // Email dispatch must never block or surface errors.
-  }
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: { changedFields } };
 }
 
 // ---------------------------------------------------------------------------
-// dispatchMemberCancelSms — internal, not exported
-// Finds the reservation_cancelled_by_member notification just inserted by the
-// RPC, checks the member's SMS eligibility, sends if opted in, and records the
-// delivery attempt. Mirrors dispatchAdminCancelSms exactly.
+// dispatchReservationRescheduledSms / dispatchReservationRescheduledEmail
+// — internal, not exported.
+// Driven by the exact notification_id returned by update_member_reservation
+// — never re-queries "newest matching kind", since a fast second edit could
+// otherwise pick up the wrong row.
 // ---------------------------------------------------------------------------
-async function dispatchMemberCancelSms(ownerUserId: string): Promise<void> {
+async function dispatchReservationRescheduledSms(
+  notificationId: string,
+  ownerUserId:    string,
+): Promise<void> {
   const supabase = await createClient();
 
   const { data: notification } = await supabase
     .from("notifications")
     .select("id, body")
-    .eq("user_id", ownerUserId)
-    .eq("kind", "reservation_cancelled_by_member")
-    .order("created_at", { ascending: false })
-    .limit(1)
+    .eq("id", notificationId)
     .single();
 
   if (!notification) return;
@@ -584,16 +628,157 @@ async function dispatchMemberCancelSms(ownerUserId: string): Promise<void> {
   }
 }
 
-async function dispatchMemberCancelEmail(ownerUserId: string): Promise<void> {
+async function dispatchReservationRescheduledEmail(
+  notificationId: string,
+  ownerUserId:    string,
+): Promise<void> {
   const supabase = await createClient();
 
   const { data: notification } = await supabase
     .from("notifications")
     .select("id, body")
-    .eq("user_id", ownerUserId)
+    .eq("id", notificationId)
+    .single();
+
+  if (!notification) return;
+
+  await sendEmailNotification(
+    supabase,
+    notification.id,
+    ownerUserId,
+    "reservation_rescheduled",
+    (clubName) => reservationRescheduledTemplate(clubName, notification.body),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// notifyMemberReservationCancelled
+// Superseded by cancel_member_reservation (Phase 30B1), which now performs
+// the notification insert inline as part of the same transaction as the
+// cancellation. The underlying notify_reservation_cancelled_by_member RPC
+// remains in the database for compatibility, but nothing in this codebase
+// calls this wrapper anymore — kept for compatibility, not deleted.
+// Called from my-schedule/page.tsx after a member self-cancels a reservation.
+// Calls the notify_reservation_cancelled_by_member security-definer RPC (which
+// inserts the notification — RLS blocks direct inserts from regular sessions),
+// then dispatches SMS non-blocking. Any error in dispatch is swallowed so it
+// never surfaces to the user.
+// ---------------------------------------------------------------------------
+export async function notifyMemberReservationCancelled(
+  userId:        string,
+  reservationId: string,
+): Promise<void> {
+  const supabase = await createClient();
+
+  const { error: rpcError } = await supabase.rpc(
+    "notify_reservation_cancelled_by_member",
+    { p_reservation_id: reservationId }
+  );
+  if (rpcError) return; // notification not created — skip SMS
+
+  // This compatibility-only path has no notification_id to work with (the
+  // RPC it calls returns void) — it preserves its own original "newest
+  // matching kind" lookup, decoupled from the notification_id-driven
+  // dispatch helpers the new cancel_member_reservation path uses.
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id")
+    .eq("user_id", userId)
     .eq("kind", "reservation_cancelled_by_member")
     .order("created_at", { ascending: false })
     .limit(1)
+    .single();
+
+  if (!notification) return;
+
+  try {
+    await dispatchMemberCancelSms(userId, notification.id);
+  } catch {
+    // SMS dispatch must never block or surface errors.
+  }
+
+  try {
+    await dispatchMemberCancelEmail(userId, notification.id);
+  } catch {
+    // Email dispatch must never block or surface errors.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// dispatchMemberCancelSms — internal, not exported
+// Phase 30B1: driven by the exact notification_id returned by
+// cancel_member_reservation (never a "newest matching kind" re-query — a
+// fast second cancellation elsewhere could otherwise pick up the wrong
+// row). Checks the member's SMS eligibility, sends if opted in, and
+// records the delivery attempt. Mirrors dispatchAdminCancelSms exactly.
+// ---------------------------------------------------------------------------
+async function dispatchMemberCancelSms(ownerUserId: string, notificationId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("id", notificationId)
+    .single();
+
+  if (!notification) return;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("sms_opt_in, phone")
+    .eq("id", ownerUserId)
+    .single();
+
+  if (!profile) return;
+
+  if (!profile.sms_opt_in) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "opted_out",
+    });
+    return;
+  }
+
+  if (!profile.phone) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "no_phone",
+    });
+    return;
+  }
+
+  const body = `${notification.body}\n\nReply STOP to opt out.`;
+  const { sid, error: smsError } = await sendSms(profile.phone, body);
+
+  if (sid) {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id:     notification.id,
+      p_channel:             "sms",
+      p_status:              "sent",
+      p_provider:            "twilio",
+      p_provider_message_id: sid,
+      p_sent_at:             new Date().toISOString(),
+    });
+  } else {
+    await supabase.rpc("record_delivery_attempt", {
+      p_notification_id: notification.id,
+      p_channel:         "sms",
+      p_status:          "failed",
+      p_provider:        "twilio",
+      p_error:           smsError ?? "Unknown error",
+    });
+  }
+}
+
+async function dispatchMemberCancelEmail(ownerUserId: string, notificationId: string): Promise<void> {
+  const supabase = await createClient();
+
+  const { data: notification } = await supabase
+    .from("notifications")
+    .select("id, body")
+    .eq("id", notificationId)
     .single();
 
   if (!notification) return;
@@ -1076,11 +1261,14 @@ async function dispatchEventCancelEmail(
 
 // ---------------------------------------------------------------------------
 // cancelMemberReservation
-// Member self-cancel for a confirmed court reservation.
-// Enforces the same cancellation-window and grace-period rules as the inline
-// server action in my-schedule/page.tsx. Returns { error } when cancellation
-// is blocked or fails so callers can surface a message to the user.
-// Revalidates both /my-schedule and /calendar to keep both views fresh.
+// Phase 30B1: Member or Pro self-cancel for a confirmed member_booking
+// reservation, via the cancel_member_reservation RPC. All cancellation-
+// window/grace-period enforcement now happens server-side inside Postgres
+// (see supabase/migrations/0097) — this action no longer computes it in
+// TypeScript, and no longer performs a raw `reservations` table UPDATE.
+// Admin cancellation is unaffected and continues through
+// adminCancelReservation / admin_cancel_reservation.
+// Revalidates both /calendar and /my-schedule to keep both views fresh.
 // ---------------------------------------------------------------------------
 export async function cancelMemberReservation(
   reservationId: string,
@@ -1094,60 +1282,31 @@ export async function cancelMemberReservation(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
-  const { data: actorProfile } = await supabase
-    .from("profiles")
-    .select("role, club_id")
-    .eq("id", user.id)
-    .single();
+  const { data, error: rpcError } = await supabase.rpc("cancel_member_reservation", {
+    p_reservation_id:   reservationId,
+    p_expected_club_id: expectedClubId,
+  });
 
-  if (!actorProfile) return { error: "Profile not found." };
+  if (rpcError) return { error: rpcError.message };
 
-  // Members (non-admin) are subject to cancellation-window and grace-period rules.
-  if (actorProfile.role !== "admin") {
-    const { data: targetRes } = await supabase
-      .from("reservations")
-      .select("starts_at, created_at")
-      .eq("id", reservationId)
-      .eq("owner_user_id", user.id)
-      .single();
+  const result = data as unknown as ReservationMutationResult | null;
+  const notificationId = result?.notification_id ?? null;
 
-    if (!targetRes) return { error: "Reservation not found." };
+  if (notificationId) {
+    try {
+      await dispatchMemberCancelSms(user.id, notificationId);
+    } catch {
+      // SMS dispatch must never block or surface errors.
+    }
 
-    const { data: settings } = await supabase
-      .from("club_settings")
-      .select("cancellation_window_hours, cancellation_grace_minutes")
-      .eq("club_id", actorProfile.club_id ?? "")
-      .single();
-
-    const windowMs    = (settings?.cancellation_window_hours  ?? 24) * 60 * 60 * 1000;
-    const graceMs     = (settings?.cancellation_grace_minutes ??  5) * 60 * 1000;
-    const insideWindow = new Date(targetRes.starts_at).getTime() - Date.now() < windowMs;
-    const withinGrace  = graceMs > 0 && Date.now() - new Date(targetRes.created_at).getTime() < graceMs;
-
-    if (insideWindow && !withinGrace) {
-      return { error: "This booking can no longer be cancelled — the cancellation window has passed." };
+    try {
+      await dispatchMemberCancelEmail(user.id, notificationId);
+    } catch {
+      // Email dispatch must never block or surface errors.
     }
   }
 
-  const { error: updateError } = await supabase
-    .from("reservations")
-    .update({
-      status:            "cancelled",
-      cancelled_at:      new Date().toISOString(),
-      cancelled_by:      user.id,
-      cancellation_kind: "member",
-    })
-    .eq("id", reservationId)
-    .eq("owner_user_id", user.id);
-
-  if (updateError) return { error: "Could not cancel the booking. Please try again." };
-
-  try {
-    await notifyMemberReservationCancelled(user.id, reservationId);
-  } catch {
-    // Notification dispatch must never surface to the user.
-  }
-
+  revalidatePath("/calendar");
   revalidatePath("/my-schedule");
   return {};
 }

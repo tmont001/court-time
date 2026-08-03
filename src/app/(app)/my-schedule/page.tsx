@@ -9,7 +9,8 @@ import {
   joinEvent as dispatchJoinEvent,
   acceptWaitlistOffer as dispatchAcceptWaitlistOffer,
   declineWaitlistOffer as dispatchDeclineWaitlistOffer,
-  notifyMemberReservationCancelled,
+  adminCancelReservation as dispatchAdminCancelReservation,
+  cancelMemberReservation as dispatchCancelMemberReservation,
 } from "@/app/(app)/calendar/actions";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import PastEventsSection from "./PastEventsSection";
@@ -57,9 +58,23 @@ type ScheduleItem =
 // Phase 26F1: clubId is bound at the render site below (.bind(null, clubId)),
 // so it's available here without threading it through FormData. This
 // mirrors the existing silent early-return convention this function already
-// uses for the cancellation-window check — a stale club context stops the
-// write the same way, with no separate error UI to wire up here (this form
-// action never surfaced errors in the first place).
+// uses — a stale club context stops the write the same way, with no
+// separate error UI to wire up here (this form action never surfaced
+// errors in the first place).
+//
+// Phase 30B1: no longer computes the cancellation-window/grace rule in
+// TypeScript and no longer performs a raw `reservations` table UPDATE —
+// this second, independent raw-update implementation (the first being the
+// one that used to live in calendar/actions.ts's cancelMemberReservation)
+// is fully replaced by routing to the same RPC-backed actions the calendar
+// screen uses. Role-aware routing: an admin's own booking is now always
+// cancelled through admin_cancel_reservation (unconditional, no window
+// enforcement) — the same path an admin uses to cancel any other member's
+// booking from the calendar — rather than the previous inconsistent
+// behavior where an admin's own booking on this page fell into the same
+// window-bypass branch as a member/pro's. A Member or Pro owner is routed
+// to cancel_member_reservation, which enforces the window/grace rule
+// inside Postgres.
 async function cancelReservation(clubId: string, formData: FormData) {
   "use server";
   const id = formData.get("id") as string | null;
@@ -74,49 +89,14 @@ async function cancelReservation(clubId: string, formData: FormData) {
 
   const { data: actorProfile } = await supabase
     .from("profiles")
-    .select("role, club_id")
+    .select("role")
     .eq("id", user.id)
     .single();
 
-  if (actorProfile && actorProfile.role !== "admin") {
-    const { data: targetRes } = await supabase
-      .from("reservations")
-      .select("starts_at, created_at")
-      .eq("id", id)
-      .eq("owner_user_id", user.id)
-      .single();
-
-    if (targetRes) {
-      const { data: settings } = await supabase
-        .from("club_settings")
-        .select("cancellation_window_hours, cancellation_grace_minutes")
-        .eq("club_id", actorProfile.club_id ?? "")
-        .single();
-
-      const windowMs     = (settings?.cancellation_window_hours  ?? 24) * 60 * 60 * 1000;
-      const graceMs      = (settings?.cancellation_grace_minutes ?? 5)  * 60 * 1000;
-      const insideWindow = new Date(targetRes.starts_at).getTime() - Date.now() < windowMs;
-      const withinGrace  = graceMs > 0 && Date.now() - new Date(targetRes.created_at).getTime() < graceMs;
-
-      if (insideWindow && !withinGrace) return;
-    }
-  }
-
-  await supabase
-    .from("reservations")
-    .update({
-      status:            "cancelled",
-      cancelled_at:      new Date().toISOString(),
-      cancelled_by:      user.id,
-      cancellation_kind: "member",
-    })
-    .eq("id", id)
-    .eq("owner_user_id", user.id);
-
-  try {
-    await notifyMemberReservationCancelled(user.id, id);
-  } catch {
-    // intentionally swallowed
+  if (actorProfile?.role === "admin") {
+    await dispatchAdminCancelReservation(id, clubId);
+  } else {
+    await dispatchCancelMemberReservation(id, clubId);
   }
 
   revalidatePath("/my-schedule");
