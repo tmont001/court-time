@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
@@ -189,6 +190,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
   const supabase = useMemo(() => createClient(), []);
+  const router   = useRouter();
 
   // ── State ──────────────────────────────────────────────────────────────────
   // Initialize from the server-supplied date string (UTC noon = same calendar date in any timezone).
@@ -623,6 +625,30 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     }
   }
 
+  // Phase 30G: resolves a pro_lesson reservation's exact linked lesson
+  // request (never inferred from notes/names/owner alone — only the
+  // reservations.id = lesson_requests.linked_reservation_id join, scoped
+  // to this club) and navigates into the existing lesson-management
+  // surface. Eligible statuses only — 'confirmed', or a pending-reschedule
+  // 'proposed' (which this join can only ever match via a non-null
+  // linked_reservation_id, so a first-time proposal can never be reached
+  // here). Client-side clickability already restricts who can trigger
+  // this; the destination page independently re-derives authorization
+  // from its own RPC-scoped request list, not from this navigation alone.
+  async function handleManageLesson(reservationId: string) {
+    const { data } = await supabase
+      .from("lesson_requests")
+      .select("id")
+      .eq("linked_reservation_id", reservationId)
+      .eq("club_id", clubId)
+      .in("status", ["confirmed", "proposed"])
+      .maybeSingle();
+
+    if (data?.id) {
+      router.push(`/events?tab=lessons&lessonId=${data.id}`);
+    }
+  }
+
   function openBookingFromSlot() {
     if (!pendingSlotAction) return;
     setBookingSlot({ court: pendingSlotAction.court, slotStart: pendingSlotAction.slotStart, slotIdx: pendingSlotAction.slotIdx });
@@ -1027,17 +1053,35 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         const isAdmin   = userRole === "admin";
                         const blockPos  = { top: top + 1, height, left: 2, right: 2 };
 
-                        // Lesson blocks are managed via /lessons or /events, not the calendar.
+                        // Lesson blocks are managed via /lessons or /events, not the calendar —
+                        // except that, for an eligible viewer, clicking navigates into that
+                        // existing surface (Phase 30G) rather than opening any in-calendar form.
                         // Render with the same event-card structure: items-start pt-1 px-1.5 font-semibold.
                         // Privacy: the pro who owns the reservation (isOwn) or an admin may see the
                         // note ("Pro lesson with [member name]"). All other viewers see "Private Lesson".
                         if (isLesson) {
                           const note = (res.notes ?? "").trim();
                           const lessonLabel = (isOwn || isAdmin) ? (note || "Private Lesson") : "Private Lesson";
+                          // Admin (any), or the assigned Pro (owner) only — never another Pro,
+                          // never a Member. Matches only a future, still-confirmed reservation;
+                          // the destination page independently re-derives this from its own
+                          // RPC-scoped data, this is a UX-only pre-filter.
+                          const canManageLesson =
+                            (isAdmin || (userRole === "pro" && isOwn)) &&
+                            res.status === "confirmed" &&
+                            new Date(res.starts_at) > new Date();
                           return (
                             <div
                               key={res.id}
-                              className="absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 pointer-events-none bg-violet-50 border border-violet-300 text-violet-800 dark:bg-violet-950/40 dark:border-violet-700 dark:text-violet-200"
+                              role={canManageLesson ? "button" : undefined}
+                              tabIndex={canManageLesson ? 0 : undefined}
+                              onClick={canManageLesson ? () => handleManageLesson(res.id) : undefined}
+                              onKeyDown={canManageLesson ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleManageLesson(res.id); }
+                              } : undefined}
+                              className={`absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 bg-violet-50 border border-violet-300 text-violet-800 dark:bg-violet-950/40 dark:border-violet-700 dark:text-violet-200 ${
+                                canManageLesson ? "cursor-pointer" : "pointer-events-none"
+                              }`}
                               style={blockPos}
                             >
                               {lessonLabel}

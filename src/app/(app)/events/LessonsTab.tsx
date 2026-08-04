@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import LessonProSheet from "./LessonProSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
 import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
@@ -52,6 +53,8 @@ function fmt(iso: string, tz: string): string {
 
 export default function LessonsTab({ initialRequests, courts, userId, userRole, clubId, clubTimezone, pros, onCreateRequest }: Props) {
   const router                    = useRouter();
+  const pathname                  = usePathname();
+  const searchParams              = useSearchParams();
   const [filter, setFilter]       = useState<StatusFilter>("active");
   const [selected, setSelected]   = useState<ProLessonRequestRow | null>(null);
   const [proposeMode, setProposeMode] = useState(false);
@@ -60,6 +63,84 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   // Use props directly — router.refresh() causes RSC to pass fresh props
   const requests    = initialRequests;
   const activeCount = requests.filter(r => ACTIVE_STATUSES.includes(r.status)).length;
+
+  // Phase 30G: Calendar's pro_lesson block click navigates here with
+  // ?lessonId=<request id>, auto-opening that exact request's existing
+  // LessonProSheet. `requests` is already the caller's own RPC-scoped list
+  // (get_pro_lesson_requests — pro sees only pro_id=auth.uid() rows, admin
+  // sees the whole club) — matching against it, rather than an independent
+  // lookup, is what makes this authorization-safe: an unrelated pro's
+  // requests array never contains another pro's row, so a manually typed
+  // lessonId for someone else's lesson simply finds no match. Fires once
+  // per lessonId value (via the ref) so it never fights a user's own click
+  // on a different card.
+  const lessonIdParam = searchParams.get("lessonId");
+  const autoOpenAttemptRef = useRef<string | null>(null);
+  const supabase = useMemo(() => createClient(), []);
+
+  // Strips lessonId from the URL (preserving tab=lessons and every other
+  // param) without adding a new history entry, and re-arms the attempt ref
+  // so clicking the same lesson block again from Calendar (or retrying the
+  // same manually-typed URL after the underlying lesson becomes eligible)
+  // can re-open it.
+  function clearLessonIdParam() {
+    autoOpenAttemptRef.current = null;
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has("lessonId")) return;
+    params.delete("lessonId");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  useEffect(() => {
+    if (!lessonIdParam) return;
+    if (autoOpenAttemptRef.current === lessonIdParam) return;
+    autoOpenAttemptRef.current = lessonIdParam;
+
+    const match = requests.find(r => r.id === lessonIdParam);
+    if (!match || !match.linked_reservation_id) { clearLessonIdParam(); return; }
+
+    const statusEligible =
+      match.status === "confirmed" ||
+      (match.status === "proposed" && match.linked_reservation_id !== null);
+    if (!statusEligible) { clearLessonIdParam(); return; }
+
+    let cancelled = false;
+
+    (async () => {
+      // Phase 30G correction: lesson_requests.proposed_starts_at is not
+      // authoritative for a pending reschedule — it holds the new
+      // candidate, not the original lesson's time. The linked reservation
+      // itself is the only reliable source of "is the original lesson
+      // still confirmed, same-club, and in the future." Validated
+      // directly here — never inferred from names, notes, owner_user_id,
+      // or a matching court/time.
+      const { data: reservation } = await supabase
+        .from("reservations")
+        .select("id, club_id, reason, status, starts_at")
+        .eq("id", match.linked_reservation_id as string)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const reservationEligible =
+        !!reservation &&
+        reservation.club_id === clubId &&
+        reservation.reason === "pro_lesson" &&
+        reservation.status === "confirmed" &&
+        new Date(reservation.starts_at) > new Date();
+
+      if (!reservationEligible) {
+        clearLessonIdParam();
+        return;
+      }
+
+      setSelected(match);
+      setProposeMode(false);
+    })();
+
+    return () => { cancelled = true; };
+  }, [lessonIdParam, requests]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derive unique pro options from request data (for admin filter)
   const proOptions = userRole === "admin"
@@ -225,7 +306,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
           userRole={userRole}
           pros={pros}
           initialMode={proposeMode ? "propose" : undefined}
-          onClose={() => { setSelected(null); setProposeMode(false); router.refresh(); }}
+          onClose={() => { setSelected(null); setProposeMode(false); clearLessonIdParam(); router.refresh(); }}
         />
       )}
     </div>
