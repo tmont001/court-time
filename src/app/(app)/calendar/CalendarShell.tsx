@@ -1254,6 +1254,10 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           courts={courts}
           clubTimezone={clubTimezone}
           clubId={clubId}
+          // Phase 30D correction: explicit Admin-role authorization for
+          // Edit Block/Edit eligibility — never inferred from whether
+          // onMemberCancel happens to be supplied below.
+          isAdmin={userRole === "admin"}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onUpdated={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}

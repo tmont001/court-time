@@ -1599,6 +1599,19 @@ export type Database = {
         };
         Returns: Json;
       };
+      update_maintenance_block: {
+        Args: {
+          p_reservation_id: string;
+          p_expected_club_id: string;
+          p_expected_updated_at: string;
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_notes?: string | null;
+          p_show_notes_to_members?: boolean;
+        };
+        Returns: Json;
+      };
       update_event: {
         Args: {
           p_event_id: string;

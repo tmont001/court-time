@@ -131,6 +131,52 @@ export async function createMaintenanceBlocks(params: {
 }
 
 // ---------------------------------------------------------------------------
+// updateMaintenanceBlock
+// Phase 30D: Admin-only edit of a single, still-future, confirmed
+// maintenance reservation row (court/time/notes/visibility). There is no
+// durable multi-court group identity in this schema (see the Phase 30D
+// audit) — this always edits exactly the one reservation row the admin
+// clicked, never a reconstructed "group." Calls update_maintenance_block,
+// which performs one in-place UPDATE and returns which fields actually
+// changed. No notification is ever dispatched — maintenance blocks have no
+// participant/customer to notify.
+// ---------------------------------------------------------------------------
+interface UpdateMaintenanceBlockResult {
+  reservation:      Record<string, unknown>;
+  changed_fields:   string[];
+}
+
+export async function updateMaintenanceBlock(params: {
+  p_reservation_id:        string;
+  p_expected_updated_at:   string;
+  p_court_id:              string;
+  p_starts_at:             string;
+  p_ends_at:               string;
+  p_notes?:                string | null;
+  p_show_notes_to_members: boolean;
+  expectedClubId:          string;
+}): Promise<{ data?: { changedFields: string[] }; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("update_maintenance_block", {
+    ...rpcParams,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  const result = data as unknown as UpdateMaintenanceBlockResult | null;
+  const changedFields = result?.changed_fields ?? [];
+
+  revalidatePath("/calendar");
+
+  return { data: { changedFields } };
+}
+
+// ---------------------------------------------------------------------------
 // dispatchBookingConfirmSms — internal, not exported
 // Finds the reservation_confirmed notification just inserted by the RPC,
 // checks the member's SMS eligibility, sends if opted in, and records the

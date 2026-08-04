@@ -8,6 +8,8 @@ const ACTION_LABELS: Record<string, string> = {
   admin_cancel_reservation:  "Cancelled reservation",
   cancel_event:              "Cancelled event",
   create_maintenance_block:  "Created maintenance block",
+  create_maintenance_blocks: "Created maintenance block",
+  update_maintenance_block:  "Updated maintenance block",
   update_club_settings:      "Updated settings",
   admin_add_member:          "Added member to event",
   admin_remove_participant:  "Removed participant from event",

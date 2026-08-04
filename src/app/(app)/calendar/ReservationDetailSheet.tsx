@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { adminCancelReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
+import EditMaintenanceSheet from "./EditMaintenanceSheet";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -46,6 +47,11 @@ interface Props {
   courts:         Court[];
   clubTimezone:   string;
   clubId:         string;
+  // Phase 30D correction: explicit Admin-role authorization for Edit/Edit
+  // Block eligibility. Callback presence (onMemberCancel below) is a UI
+  // display-mode signal, not an authorization source, and must never be
+  // used to derive it.
+  isAdmin:        boolean;
   onClose:        () => void;
   onCancelled:    () => void;
   // Phase 30B1: fired after a successful admin edit.
@@ -73,7 +79,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, onClose, onCancelled, onUpdated, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, isAdmin, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -111,12 +117,26 @@ export default function ReservationDetailSheet({
 
   const ownerName = ownerProfile ? ownerDisplayName(ownerProfile) : "Loading…";
 
-  // Admin (not member-cancel mode) may edit only a confirmed member_booking
-  // reservation whose start is still in the future. Member and Pro owners
-  // never see Edit — the first reservation-edit release is admin-only.
+  // Admin may edit only a confirmed member_booking reservation whose start
+  // is still in the future. Member and Pro owners never see Edit — the
+  // first reservation-edit release is admin-only. Authorization comes
+  // exclusively from the explicit isAdmin prop, never from whether
+  // onMemberCancel happens to be supplied — callback presence is a
+  // display-mode signal (member-cancel mode vs. admin mode), not proof of
+  // role, and must never substitute for a real authorization check.
   const canEdit =
-    !onMemberCancel &&
+    isAdmin &&
     reservation.reason === "member_booking" &&
+    reservation.status === "confirmed" &&
+    new Date(reservation.starts_at) > new Date();
+
+  // Phase 30D: Admin-only edit of a single maintenance block. There is no
+  // durable multi-court group identity in this schema — this always edits
+  // exactly the reservation row that was clicked (see the Phase 30D audit).
+  // Same isAdmin-only authorization source as canEdit above.
+  const canEditMaintenance =
+    isAdmin &&
+    reservation.reason === "maintenance" &&
     reservation.status === "confirmed" &&
     new Date(reservation.starts_at) > new Date();
 
@@ -193,13 +213,13 @@ export default function ReservationDetailSheet({
         {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
         {/* Edit — admin mode only, eligible reservations only */}
-        {canEdit && (
+        {(canEdit || canEditMaintenance) && (
           <button
             disabled={loading}
             onClick={() => setEditOpen(true)}
             className="mt-5 w-full py-3 rounded-xl text-sm font-semibold bg-gray-50 dark:bg-gray-700/60 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 disabled:opacity-40"
           >
-            Edit
+            {canEditMaintenance ? "Edit Block" : "Edit"}
           </button>
         )}
 
@@ -207,15 +227,25 @@ export default function ReservationDetailSheet({
         <button
           disabled={loading}
           onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
-          className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${canEdit ? "mt-3" : "mt-5"}`}
+          className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${(canEdit || canEditMaintenance) ? "mt-3" : "mt-5"}`}
         >
-          {loading ? "Cancelling…" : "Cancel Booking"}
+          {loading ? "Cancelling…" : reservation.reason === "maintenance" ? "Cancel Block" : "Cancel Booking"}
         </button>
 
       </ResponsiveSheet>
 
       {/* ── Edit sheet — admin only, layers above this sheet ────────────── */}
-      {editOpen && (
+      {editOpen && canEditMaintenance && (
+        <EditMaintenanceSheet
+          block={reservation}
+          courts={courts}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => { setEditOpen(false); onUpdated(); }}
+        />
+      )}
+      {editOpen && canEdit && (
         <EditReservationSheet
           reservation={reservation}
           courts={courts}
