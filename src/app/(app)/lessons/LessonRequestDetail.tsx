@@ -113,12 +113,22 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
         </div>
       </div>
 
-      {/* Proposed time (if status = proposed) */}
+      {/* Proposed time (if status = proposed). linked_reservation_id set
+          means this is a reschedule of an already-confirmed lesson — the
+          original confirmed reservation is untouched and remains booked
+          until the member responds here. */}
       {request.status === "proposed" && request.proposed_starts_at && (
         <div className="ct-card px-4 py-3 mb-4 border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
           <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1">
-            Time proposed by {proName}
+            {request.linked_reservation_id
+              ? `Reschedule proposed by ${proName}`
+              : `Time proposed by ${proName}`}
           </p>
+          {request.linked_reservation_id && (
+            <p className="text-xs text-blue-700 dark:text-blue-400 mb-1.5">
+              Your original confirmed lesson stays booked until you accept or decline this change.
+            </p>
+          )}
           <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
             {fmt(request.proposed_starts_at, clubTimezone)}
             {request.proposed_ends_at
@@ -233,8 +243,10 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
           </div>
         )}
 
-        {/* Confirmed: cancel */}
-        {request.status === "confirmed" && !confirmCancel && (
+        {/* Confirmed, or a pending reschedule proposal on an otherwise-
+            confirmed lesson: cancel outright. */}
+        {(request.status === "confirmed" ||
+          (request.status === "proposed" && request.linked_reservation_id)) && !confirmCancel && (
           <button
             onClick={() => setConfirmCancel(true)}
             className="w-full border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl py-3 text-sm font-medium"

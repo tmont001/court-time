@@ -2534,10 +2534,11 @@ export type Database = {
       };
       propose_lesson_time: {
         Args: {
-          p_request_id:  string;
-          p_starts_at:   string;
-          p_ends_at:     string;
-          p_court_id?:   string | null;
+          p_request_id:            string;
+          p_expected_updated_at:   string;
+          p_starts_at:             string;
+          p_ends_at:               string;
+          p_court_id?:             string | null;
         };
         Returns: {
           id: string; status: string; proposed_starts_at: string | null; proposed_ends_at: string | null; proposed_court_id: string | null; updated_at: string;

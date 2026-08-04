@@ -252,6 +252,16 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
 
   const memberName = [request.member_first_name, request.member_last_name].filter(Boolean).join(" ") || "Member";
 
+  // Phase 30E: an eligible confirmed lesson, or an already-pending
+  // reschedule proposal (status='proposed' with linked_reservation_id set)
+  // that may be revised again before the member responds. Same
+  // authorization as the original "Propose a Time" action — Admin (any) or
+  // the assigned Pro only.
+  const isAssignedProOrAdmin = userRole === "admin" || (userRole === "pro" && request.pro_id === userId);
+  const isPendingReschedule  = request.status === "proposed" && request.linked_reservation_id !== null;
+  const isRescheduleEligible = isAssignedProOrAdmin &&
+    (request.status === "confirmed" || isPendingReschedule);
+
   const startsAt = useMemo(() => {
     const slot = TIME_SLOTS[slotIdx];
     return localDateTimeToUTC(dateStr, slot.hour, slot.minute, clubTimezone);
@@ -403,11 +413,12 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
           isPending={isPending}
           submitLabel="Send Proposal"
           onSubmit={() => doAction(() => proposeLessonTime({
-            p_request_id: request.id,
-            p_starts_at:  startsAt.toISOString(),
-            p_ends_at:    endsAt.toISOString(),
-            p_court_id:   courtId || null,
-            member_id:    request.member_id,
+            p_request_id:           request.id,
+            p_expected_updated_at:  request.updated_at,
+            p_starts_at:            startsAt.toISOString(),
+            p_ends_at:              endsAt.toISOString(),
+            p_court_id:             courtId || null,
+            member_id:              request.member_id,
           }))}
           onCancel={() => { setMode(null); setError(""); }}
         />
@@ -498,9 +509,15 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
 
       {mode === null && (
         <div className="space-y-2">
-          {/* Admin: reassign provider on pending/proposed */}
+          {/* Admin: reassign provider on pending/proposed, first-time
+              requests only. Hidden for a pending reschedule
+              (linked_reservation_id set) — the RPC now rejects that case
+              server-side too, since it would otherwise leave
+              linked_reservation_id pointing at a reservation still owned
+              by the old pro. */}
           {userRole === "admin" && (pros?.length ?? 0) > 0 &&
-            (request.status === "pending" || request.status === "proposed") && (
+            (request.status === "pending" || request.status === "proposed") &&
+            !request.linked_reservation_id && (
             <button
               onClick={() => { setNewProId(""); setError(""); setMode("reassign"); }}
               className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700/40 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
@@ -527,8 +544,13 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             </>
           )}
 
-          {/* Proposed (awaiting member): pro can still decline the whole request */}
-          {request.status === "proposed" && (
+          {/* Proposed (awaiting member), first-time proposal only: pro can
+              still decline the whole request. Hidden for a pending
+              reschedule (linked_reservation_id set) — declining the whole
+              request here would abandon the still-active confirmed
+              reservation without cancelling it; Cancel Lesson is the
+              correct action for that case instead. */}
+          {request.status === "proposed" && !request.linked_reservation_id && (
             <button
               onClick={() => setMode("decline")}
               className="w-full border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl py-3 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"
@@ -537,8 +559,22 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             </button>
           )}
 
-          {/* Confirmed: cancel lesson */}
-          {request.status === "confirmed" && (
+          {/* Phase 30E: confirmed lesson (start a reschedule) or an
+              already-pending reschedule (revise it again) — Admin or the
+              assigned Pro only. */}
+          {isRescheduleEligible && (
+            <button
+              onClick={() => setMode("propose")}
+              className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
+            >
+              {isPendingReschedule ? "Revise Proposed Time" : "Propose New Time"}
+            </button>
+          )}
+
+          {/* Confirmed, or a pending reschedule on an otherwise-confirmed
+              lesson: cancel the lesson outright. */}
+          {(request.status === "confirmed" ||
+            (request.status === "proposed" && request.linked_reservation_id)) && (
             <button
               onClick={() => setMode("cancel")}
               className="w-full border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl py-3 text-sm font-medium hover:bg-red-50 dark:hover:bg-red-950/30 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300"

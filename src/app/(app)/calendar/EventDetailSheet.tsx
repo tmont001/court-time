@@ -486,33 +486,33 @@ export default function EventDetailSheet({
 
         {/* Cancel Event — admin, or the Pro who created this event */}
         {canCancelEvent && (
-          <div className="mt-4 text-center">
+          <div className="mt-4">
             {!cancelConfirming ? (
               <button
                 onClick={() => setCancelConfirming(true)}
-                className="text-xs text-red-500 underline"
+                className="w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40"
               >
                 Cancel Event
               </button>
             ) : (
               <div>
-                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Cancel this event?</p>
-                <div className="flex gap-2 justify-center">
+                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 text-center">Cancel this event?</p>
+                <div className="flex gap-2">
                   <button
                     onClick={() => { setCancelConfirming(false); setCancelError(null); }}
-                    className="px-3 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 disabled:opacity-40"
                   >
                     Keep
                   </button>
                   <button
                     disabled={cancelLoading}
                     onClick={handleCancelEvent}
-                    className="px-3 py-1 rounded-full text-xs font-medium bg-red-600 text-white disabled:opacity-40"
+                    className="flex-1 py-3 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-40"
                   >
                     {cancelLoading ? "Cancelling…" : "Yes, cancel"}
                   </button>
                 </div>
-                {cancelError && <p className="mt-2 text-xs text-red-500">{cancelError}</p>}
+                {cancelError && <p className="mt-2 text-xs text-red-500 text-center">{cancelError}</p>}
               </div>
             )}
           </div>

@@ -281,21 +281,28 @@ export async function declineLessonProposal(
 }
 
 // ─── proposeLessonTime ────────────────────────────────────────────────────────
+// Phase 30E: also used to propose/revise a reschedule of an already-
+// confirmed lesson (allowed by the RPC when status is 'confirmed', or
+// 'proposed' with a linked_reservation_id already set). p_expected_updated_at
+// is required optimistic concurrency, compared against the request's current
+// updated_at server-side — mismatch raises stale_edit_conflict.
 
 export async function proposeLessonTime(params: {
-  p_request_id: string;
-  p_starts_at:  string;
-  p_ends_at:    string;
-  p_court_id?:  string | null;
-  member_id:    string;
+  p_request_id:            string;
+  p_expected_updated_at:   string;
+  p_starts_at:             string;
+  p_ends_at:               string;
+  p_court_id?:             string | null;
+  member_id:               string;
 }): Promise<{ error?: string }> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("propose_lesson_time", {
-    p_request_id: params.p_request_id,
-    p_starts_at:  params.p_starts_at,
-    p_ends_at:    params.p_ends_at,
-    p_court_id:   params.p_court_id ?? null,
+    p_request_id:           params.p_request_id,
+    p_expected_updated_at:  params.p_expected_updated_at,
+    p_starts_at:            params.p_starts_at,
+    p_ends_at:              params.p_ends_at,
+    p_court_id:             params.p_court_id ?? null,
   });
 
   if (error) return { error: mapLessonError(error.message) };
@@ -504,6 +511,9 @@ function mapLessonError(msg: string): string {
     not_assigned_pro:               "You can only manage requests assigned to you.",
     invalid_status_for_propose:     "This request cannot be updated at this time.",
     cannot_propose_past_time:       "Please choose a future date and time.",
+    stale_edit_conflict:            "This lesson was changed by someone else. Reload and try again.",
+    cannot_reschedule_started_lesson: "This lesson has already started and can no longer be rescheduled.",
+    linked_reservation_not_found:   "The confirmed booking for this lesson could not be found.",
     duration_mismatch:              "The proposed duration doesn't match the requested duration.",
     invalid_status_for_confirm:     "This request cannot be confirmed in its current state.",
     cannot_confirm_past_time:       "Please choose a future date and time.",

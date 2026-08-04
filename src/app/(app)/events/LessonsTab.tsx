@@ -78,6 +78,14 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
     r.status === "pending" &&
     (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
 
+  // Phase 30E: a confirmed lesson (start a reschedule), or an already-
+  // pending reschedule proposal (status='proposed' with linked_reservation_id
+  // set — revise it again before the member responds). Same authorization
+  // as canPropose — Admin (any) or the assigned Pro only.
+  const canReschedule = (r: ProLessonRequestRow) =>
+    (r.status === "confirmed" || (r.status === "proposed" && r.linked_reservation_id !== null)) &&
+    (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
+
   return (
     <div className="px-4 pb-8 pt-2">
       {/* Admin: create request button */}
@@ -185,7 +193,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
               </p>
             )}
 
-            {canPropose(r) && (
+            {(canPropose(r) || canReschedule(r)) && (
               <div
                 className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50"
                 onClick={e => e.stopPropagation()}
@@ -194,7 +202,11 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
                   onClick={() => { setSelected(r); setProposeMode(true); }}
                   className={`w-full md:w-auto ${ACTION_BUTTON_PRIMARY}`}
                 >
-                  Propose a Time
+                  {canPropose(r)
+                    ? "Propose a Time"
+                    : r.status === "proposed"
+                    ? "Revise Proposed Time"
+                    : "Propose New Time"}
                 </button>
               </div>
             )}
