@@ -1279,6 +1279,75 @@ export type Database = {
           }
         ];
       };
+      pilot_inquiries: {
+        Row: {
+          id:                        string;
+          created_at:                string;
+          updated_at:                string;
+          status:                    "new" | "contacted" | "qualified" | "closed";
+          contact_name:              string;
+          email:                     string;
+          phone:                     string | null;
+          preferred_contact_method:  "email" | "phone" | "either" | null;
+          club_name:                 string;
+          facility_type:             "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
+          facility_type_other:       string | null;
+          website:                   string | null;
+          court_count:               number;
+          approximate_member_count:  number;
+          current_process:           string;
+          operational_challenge:     string;
+          preferred_operating_model: "staff_managed" | "member_self_service" | "not_sure";
+          additional_details:        string | null;
+          source:                    string;
+          request_fingerprint:       string | null;
+        };
+        Insert: {
+          id?:                        string;
+          created_at?:                string;
+          updated_at?:                string;
+          status?:                    "new" | "contacted" | "qualified" | "closed";
+          contact_name:               string;
+          email:                      string;
+          phone?:                     string | null;
+          preferred_contact_method?:  "email" | "phone" | "either" | null;
+          club_name:                  string;
+          facility_type:              "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
+          facility_type_other?:       string | null;
+          website?:                   string | null;
+          court_count:                number;
+          approximate_member_count:   number;
+          current_process:            string;
+          operational_challenge:      string;
+          preferred_operating_model:  "staff_managed" | "member_self_service" | "not_sure";
+          additional_details?:        string | null;
+          source?:                    string;
+          request_fingerprint?:       string | null;
+        };
+        Update: {
+          id?:                        string;
+          created_at?:                string;
+          updated_at?:                string;
+          status?:                    "new" | "contacted" | "qualified" | "closed";
+          contact_name?:              string;
+          email?:                     string;
+          phone?:                     string | null;
+          preferred_contact_method?:  "email" | "phone" | "either" | null;
+          club_name?:                 string;
+          facility_type?:             "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
+          facility_type_other?:       string | null;
+          website?:                   string | null;
+          court_count?:               number;
+          approximate_member_count?:  number;
+          current_process?:           string;
+          operational_challenge?:     string;
+          preferred_operating_model?: "staff_managed" | "member_self_service" | "not_sure";
+          additional_details?:        string | null;
+          source?:                    string;
+          request_fingerprint?:       string | null;
+        };
+        Relationships: [];
+      };
     };
     Views: { [_ in never]: never };
     Functions: {
@@ -2845,6 +2914,27 @@ export type Database = {
       delete_pro_blackout: {
         Args: { p_blackout_id: string };
         Returns: undefined;
+      };
+      submit_pilot_inquiry: {
+        Args: {
+          p_contact_name:              string;
+          p_email:                     string;
+          p_club_name:                 string;
+          p_facility_type:             string;
+          p_court_count:               number;
+          p_approximate_member_count:  number;
+          p_current_process:           string;
+          p_operational_challenge:     string;
+          p_preferred_operating_model: string;
+          p_facility_type_other?:      string | null;
+          p_phone?:                    string | null;
+          p_preferred_contact_method?: string | null;
+          p_website?:                  string | null;
+          p_additional_details?:       string | null;
+          p_source?:                   string | null;
+          p_fingerprint?:              string | null;
+        };
+        Returns: { id: string; deduped: boolean }[];
       };
     };
     Enums: { [_ in never]: never };
