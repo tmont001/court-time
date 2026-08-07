@@ -3,9 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
-import { sendSms } from "@/lib/sms";
-import { sendEmailNotification } from "@/lib/email";
-import { eventUpdatedTemplate } from "@/lib/email-templates";
+import { dispatchEventNotification, dispatchWaitlistNotification } from "@/lib/notification-dispatch";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { ADMIN_EVENT_SELECT, mapAdminEventRow } from "./adminEventRow";
 import type { RawAdminEventRow, AdminEventRow } from "./adminEventRow";
@@ -166,6 +164,13 @@ export async function adminRemoveParticipant(
 // adminForceConfirm
 // Moves a waitlisted, offered, or cancelled member directly to confirmed.
 // Bypasses capacity; sends a waitlist_promoted notification to the member.
+// Phase 31C: admin_force_confirm (migration 0102) now returns the exact
+// notification_id it created (stamped with metadata.triggered_by =
+// auth.uid(), authorizing this specific Admin or Pro actor — this RPC has
+// always allowed role in ('admin','pro')) instead of the bare participant
+// row. Dispatch runs through dispatchWaitlistNotification, which resolves
+// body/authorization via get_waitlist_delivery_context — no raw
+// notifications SELECT.
 // ---------------------------------------------------------------------------
 export async function adminForceConfirm(
   eventId:   string,
@@ -177,12 +182,21 @@ export async function adminForceConfirm(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("admin_force_confirm", {
+  const { data, error } = await supabase.rpc("admin_force_confirm", {
     p_event_id:   eventId,
     p_profile_id: profileId,
   });
 
   if (error) return { error: rpcError(error) };
+
+  const result = data as unknown as { participant: Record<string, unknown>; notification_id: string } | null;
+
+  try {
+    await dispatchWaitlistNotification(supabase, result?.notification_id ?? null);
+  } catch {
+    // Email/SMS dispatch must never surface as a user-facing error.
+  }
+
   return {};
 }
 
@@ -190,6 +204,14 @@ export async function adminForceConfirm(
 // adminOfferSpot
 // Manually offers a spot to a specific waitlisted member, bypassing FIFO order.
 // Blocked when another non-expired offer already exists or the event is full.
+// Phase 31C: admin_offer_spot (migration 0102) now returns the exact
+// notification_id it created (stamped with metadata.triggered_by =
+// auth.uid(), authorizing this specific Admin or Pro actor) instead of the
+// bare participant row. Dispatch runs through dispatchWaitlistNotification,
+// which resolves body/authorization via get_waitlist_delivery_context — no
+// raw notifications SELECT. An unrelated Pro cannot resolve or deliver this
+// notification, since get_waitlist_delivery_context only authorizes the
+// recipient, a same-club Admin, or the exact triggered_by actor.
 // ---------------------------------------------------------------------------
 export async function adminOfferSpot(
   eventId:   string,
@@ -201,12 +223,21 @@ export async function adminOfferSpot(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("admin_offer_spot", {
+  const { data, error } = await supabase.rpc("admin_offer_spot", {
     p_event_id:   eventId,
     p_profile_id: profileId,
   });
 
   if (error) return { error: rpcError(error) };
+
+  const result = data as unknown as { participant: Record<string, unknown>; notification_id: string } | null;
+
+  try {
+    await dispatchWaitlistNotification(supabase, result?.notification_id ?? null);
+  } catch {
+    // Email/SMS dispatch must never surface as a user-facing error.
+  }
+
   return {};
 }
 
@@ -485,17 +516,16 @@ export async function updateEventAdmin(params: {
   const changedFields = result?.changed_fields ?? [];
   const notifications = result?.notifications ?? [];
 
-  for (const { notification_id, user_id } of notifications) {
+  // Phase 31C: dispatch runs through dispatchEventNotification for each
+  // exact {notification_id, user_id} pair, resolving body/authorization via
+  // get_event_delivery_context — never a raw notifications SELECT, which
+  // matters even more here than for a single-recipient dispatch since a
+  // material edit can notify many participants in one call.
+  for (const { notification_id } of notifications) {
     try {
-      await dispatchEventUpdatedSms(notification_id, user_id);
+      await dispatchEventNotification(supabase, notification_id);
     } catch {
-      // SMS dispatch must never block edit success or surface to the user.
-    }
-
-    try {
-      await dispatchEventUpdatedEmail(notification_id, user_id);
-    } catch {
-      // Email dispatch must never block edit success or surface to the user.
+      // Email/SMS dispatch must never block edit success or surface to the user.
     }
   }
 
@@ -503,98 +533,4 @@ export async function updateEventAdmin(params: {
   revalidatePath("/events");
 
   return { data: { changedFields } };
-}
-
-// ---------------------------------------------------------------------------
-// dispatchEventUpdatedSms / dispatchEventUpdatedEmail — internal, not
-// exported. Driven by the exact {notification_id, user_id} pair returned by
-// update_event for each recipient — never a "newest matching kind" re-query,
-// which matters even more here than for a single-recipient dispatch since a
-// material edit can notify many participants in one call.
-// ---------------------------------------------------------------------------
-
-async function dispatchEventUpdatedSms(
-  notificationId: string,
-  userId:         string,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("id", notificationId)
-    .single();
-
-  if (!notification) return;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("sms_opt_in, phone")
-    .eq("id", userId)
-    .single();
-
-  if (!profile) return;
-
-  if (!profile.sms_opt_in) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "opted_out",
-    });
-    return;
-  }
-
-  if (!profile.phone) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "no_phone",
-    });
-    return;
-  }
-
-  const body = `${notification.body}\n\nReply STOP to opt out.`;
-  const { sid, error: smsError } = await sendSms(profile.phone, body);
-
-  if (sid) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id:     notification.id,
-      p_channel:             "sms",
-      p_status:              "sent",
-      p_provider:            "twilio",
-      p_provider_message_id: sid,
-      p_sent_at:             new Date().toISOString(),
-    });
-  } else {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "failed",
-      p_provider:        "twilio",
-      p_error:           smsError ?? "Unknown error",
-    });
-  }
-}
-
-async function dispatchEventUpdatedEmail(
-  notificationId: string,
-  userId:         string,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("id", notificationId)
-    .single();
-
-  if (!notification) return;
-
-  await sendEmailNotification(
-    supabase,
-    notification.id,
-    userId,
-    "event_updated",
-    (clubName) => eventUpdatedTemplate(clubName, notification.body),
-  );
 }

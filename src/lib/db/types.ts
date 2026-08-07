@@ -1494,6 +1494,16 @@ export type Database = {
         Args: { p_event_id: string };
         Returns: string | null;  // offered profile_id or null (Phase 18A: was promoted profile_id)
       };
+      // Phase 31C: exact-identity companion to leave_event, added in
+      // migration 0102. Same business logic (shared internal
+      // _leave_event_impl — not callable from the app), richer return.
+      leave_event_v2: {
+        Args: { p_event_id: string };
+        Returns: {
+          offered_profile_id: string | null;
+          notification_id:    string | null;
+        };
+      };
       // Phase 18A: new RPCs
       accept_waitlist_offer: {
         Args: { p_event_id: string };
@@ -1542,24 +1552,28 @@ export type Database = {
           cancellation_kind: string | null;
         };
       };
+      // Phase 31C: cancel_event's return type changed in migration 0102 from
+      // the raw `events` row to a jsonb bundle carrying the exact
+      // {notification_id, user_id} pair for every confirmed/waitlisted/
+      // offered participant notified — captured before any status mutation,
+      // so it correctly includes previously-offered participants (fixed in
+      // 0102's correction round). No app caller ever consumed the old raw
+      // row shape (only `{ error }` was read), so this is a safe in-place
+      // type update, not a new function.
       cancel_event: {
         Args: { p_event_id: string };
-        Returns: {
-          id: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description: string | null;
-          starts_at: string;
-          ends_at: string;
-          capacity: number;
-          court_count: number;
-          status: string;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-        };
+        Returns: Json;
+        // Runtime shape: {
+        //   event: { id, club_id, event_type_id, title, description,
+        //            starts_at, ends_at, capacity, court_count, status,
+        //            created_by, created_at, updated_at },
+        //   notifications: Array<{ notification_id: string; user_id: string }>
+        // }
       };
+      // UNTOUCHED by migration 0102 — left byte-for-byte as-is for
+      // app-deploy-window safety (adminCancelReservation still reads
+      // `reservation.owner_user_id` off the raw return). Superseded by
+      // admin_cancel_reservation_v2 below as of Phase 31C.
       admin_cancel_reservation: {
         Args: { p_reservation_id: string };
         Returns: {
@@ -1583,6 +1597,19 @@ export type Database = {
           cancelled_by: string | null;
           cancellation_kind: string | null;
         };
+      };
+      // Phase 31C: exact-identity companion added in migration 0102. Same
+      // mutation/audit/notification body as admin_cancel_reservation; adds
+      // notification_id to the return so the caller never re-queries
+      // notifications for it.
+      admin_cancel_reservation_v2: {
+        Args: { p_reservation_id: string };
+        Returns: Json;
+        // Runtime shape: {
+        //   reservation: <reservations row, same shape as
+        //     admin_cancel_reservation's Returns above>,
+        //   notification_id: string | null
+        // }
       };
       update_member_reservation: {
         Args: {
@@ -1846,9 +1873,26 @@ export type Database = {
         Args: { p_reservation_id: string };
         Returns: undefined;
       };
+      // UNTOUCHED by migration 0102 — left byte-for-byte as-is for
+      // app-deploy-window safety (sendAnnouncementAction still reads the
+      // bare integer recipient count directly). Superseded by
+      // send_announcement_v2 below as of Phase 31C.
       send_announcement: {
         Args: { p_title: string; p_body: string };
         Returns: number;
+      };
+      // Phase 31C: exact-identity companion added in migration 0102. Same
+      // preference-filtered bulk-insert body as send_announcement; adds a
+      // durable per-send batch id and the exact {notification_id, user_id}
+      // set actually inserted.
+      send_announcement_v2: {
+        Args: { p_title: string; p_body: string };
+        Returns: Json;
+        // Runtime shape: {
+        //   batch_id: string,
+        //   recipient_count: number,
+        //   notifications: Array<{ notification_id: string; user_id: string }>
+        // }
       };
       update_notification_preference: {
         Args: { p_kind: string; p_enabled: boolean };
@@ -1865,6 +1909,72 @@ export type Database = {
       email_already_delivered: {
         Args: { p_notification_id: string };
         Returns: boolean;
+      };
+      // Phase 31C: added in migration 0102. Domain-scoped, exact-identity
+      // delivery-context RPCs — see supabase/migrations/0102 for full
+      // authorization rules. Each returns null on any authorization
+      // failure or wrong-domain kind rather than raising.
+      get_reservation_delivery_context: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { notification_id, recipient_user_id,
+        //   club_id, kind, body, metadata }
+      };
+      get_event_delivery_context: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { notification_id, recipient_user_id,
+        //   club_id, kind, body, metadata }
+      };
+      get_waitlist_delivery_context: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { notification_id, recipient_user_id,
+        //   club_id, kind, body, metadata }
+      };
+      get_waitlist_recipient_email: {
+        Args: { p_notification_id: string };
+        Returns: string | null;
+      };
+      get_waitlist_recipient_sms_contact: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
+      };
+      // Phase 31C (migration 0103): reservation/event SMS-reliability
+      // correction. Authorization identical to get_reservation_delivery_
+      // context / get_event_delivery_context respectively — see 0103 for
+      // the full rule set. Replaces the raw profiles read previously used
+      // for reservation/event SMS contact resolution, which two confirmed
+      // local reproductions showed was not pilot-reliable.
+      get_reservation_recipient_sms_contact: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
+      };
+      get_event_recipient_sms_contact: {
+        Args: { p_notification_id: string };
+        Returns: Json;
+        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
+      };
+      // Phase 31C (migration 0103): pilot-level best-effort SMS idempotency,
+      // mirroring email_already_delivered's role for email. Unlike
+      // email_already_delivered, this re-derives the notification's domain
+      // (reservation/event/waitlist) from its own kind and applies that
+      // domain's exact authorization rule before disclosing anything —
+      // returns false for an unauthorized or cross-club caller, identical
+      // to "not yet delivered".
+      sms_already_delivered: {
+        Args: { p_notification_id: string };
+        Returns: boolean;
+      };
+      get_announcement_batch_delivery_context: {
+        Args: { p_batch_id: string };
+        Returns: {
+          notification_id:   string;
+          recipient_user_id: string;
+          body:               string;
+        }[];
       };
       upsert_operating_hours_override: {
         Args: {
@@ -2184,33 +2294,31 @@ export type Database = {
         Args: { p_event_id: string; p_profile_id: string };
         Returns: undefined;
       };
+      // Phase 31C: return type changed in migration 0102 from the raw
+      // `event_participants` row to a jsonb bundle carrying the exact
+      // notification_id, with `triggered_by: auth.uid()` stamped into that
+      // notification's metadata so a Pro actor (this RPC has always allowed
+      // role in ('admin','pro')) can dispatch it without granting access to
+      // any other, unrelated Pro. No app caller ever consumed the old raw
+      // row shape (only `{ error }` was read), so this is a safe in-place
+      // type update, not a new function.
       admin_force_confirm: {
         Args: { p_event_id: string; p_profile_id: string };
-        Returns: {
-          id:                string;
-          event_id:          string;
-          profile_id:        string;
-          role:              string;
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
+        Returns: Json;
+        // Runtime shape: {
+        //   participant: { id, event_id, profile_id, role, status,
+        //     attendance_status, offer_expires_at, created_at, updated_at },
+        //   notification_id: string
+        // }
       };
       admin_offer_spot: {
         Args: { p_event_id: string; p_profile_id: string };
-        Returns: {
-          id:                string;
-          event_id:          string;
-          profile_id:        string;
-          role:              string;
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
+        Returns: Json;
+        // Runtime shape: {
+        //   participant: { id, event_id, profile_id, role, status,
+        //     attendance_status, offer_expires_at, created_at, updated_at },
+        //   notification_id: string
+        // }
       };
       admin_expire_offer: {
         Args: { p_event_id: string; p_profile_id: string };

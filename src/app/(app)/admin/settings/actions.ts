@@ -333,6 +333,18 @@ export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
   return { sid: sid ?? undefined };
 }
 
+// Phase 31C: calls send_announcement_v2 (migration 0102) instead of
+// send_announcement. send_announcement_v2 shares the identical
+// preference-filtered bulk-insert body (including excluding the sending
+// Admin from recipients at the database level — so no app-level actor
+// check is needed here) and additionally returns a durable batch_id plus
+// the exact {notification_id, user_id} pair for every recipient actually
+// inserted, replacing the previous 5-second created_at-window re-query
+// (which was both racy across concurrent announcements and — since it
+// queried by kind only, with no club_id filter — a latent cross-club
+// disclosure risk had it ever executed against real cross-user rows).
+// send_announcement's original bare-integer return is still used nowhere
+// else, so cutting the Server Action over to the v2 in-place is safe.
 export async function sendAnnouncementAction(
   formData: FormData
 ): Promise<{ success?: boolean; message?: string; recipientCount?: number; error?: string }> {
@@ -343,7 +355,7 @@ export async function sendAnnouncementAction(
   const title = (formData.get("title") as string | null)?.trim() ?? "";
   const body  = (formData.get("body")  as string | null)?.trim() ?? "";
 
-  const { data: recipientCount, error } = await supabase.rpc("send_announcement", {
+  const { data, error } = await supabase.rpc("send_announcement_v2", {
     p_title: title,
     p_body:  body,
   });
@@ -353,47 +365,37 @@ export async function sendAnnouncementAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to send announcement. Please try again." };
   }
 
-  try {
-    await dispatchAnnouncementEmails(user.id, title);
-  } catch {
-    // Email dispatch must never block announcement success or surface to the user.
+  const result = data as unknown as {
+    batch_id:        string;
+    recipient_count: number;
+    notifications:   Array<{ notification_id: string; user_id: string }>;
+  } | null;
+  const recipientCount = result?.recipient_count ?? 0;
+  const notifications  = result?.notifications ?? [];
+
+  // The announcement body text is already known locally — the same `body`
+  // that was just inserted verbatim as each notification's body by
+  // send_announcement_v2 — so no re-fetch of notification content is
+  // needed for the template.
+  for (const { notification_id, user_id } of notifications) {
+    try {
+      await sendEmailNotification(
+        supabase,
+        notification_id,
+        user_id,
+        "announcement",
+        (clubName) => announcementTemplate(clubName, title, body),
+      );
+    } catch {
+      // Email dispatch must never block announcement success or surface to
+      // the user, and one recipient's failure must never stop the rest.
+    }
   }
 
   revalidatePath("/admin/settings");
   return {
     success:        true,
-    message:        `Announcement sent to ${recipientCount ?? 0} member${(recipientCount ?? 0) === 1 ? "" : "s"}.`,
-    recipientCount: recipientCount ?? 0,
+    message:        `Announcement sent to ${recipientCount} member${recipientCount === 1 ? "" : "s"}.`,
+    recipientCount,
   };
-}
-
-async function dispatchAnnouncementEmails(
-  actorUserId: string,
-  title:       string,
-): Promise<void> {
-  const supabase = await createClient();
-
-  // Query notifications created by this send_announcement call (within 5 s).
-  const cutoff = new Date(Date.now() - 5000).toISOString();
-
-  const { data: notifications } = await supabase
-    .from("notifications")
-    .select("id, body, user_id")
-    .eq("kind", "announcement")
-    .gte("created_at", cutoff);
-
-  if (!notifications?.length) return;
-
-  for (const notification of notifications) {
-    // Do not email the admin who sent the announcement.
-    if (notification.user_id === actorUserId) continue;
-
-    await sendEmailNotification(
-      supabase,
-      notification.id,
-      notification.user_id,
-      "announcement",
-      (clubName) => announcementTemplate(clubName, title, notification.body),
-    );
-  }
 }

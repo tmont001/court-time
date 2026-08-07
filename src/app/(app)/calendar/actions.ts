@@ -8,13 +8,14 @@ import { sendEmailNotification } from "@/lib/email";
 import {
   reservationConfirmedTemplate,
   reservationCancelledByMemberTemplate,
-  reservationCancelledByAdminTemplate,
-  reservationRescheduledTemplate,
   eventJoinedTemplate,
-  eventCancelledTemplate,
-  waitlistOfferTemplate,
   waitlistPromotedTemplate,
 } from "@/lib/email-templates";
+import {
+  dispatchReservationNotification,
+  dispatchEventNotification,
+  dispatchWaitlistNotification,
+} from "@/lib/notification-dispatch";
 
 // ---------------------------------------------------------------------------
 // Shared result shape for update_member_reservation / cancel_member_reservation
@@ -415,9 +416,15 @@ async function dispatchEventJoinEmail(
 
 // ---------------------------------------------------------------------------
 // adminCancelReservation
-// Calls the admin_cancel_reservation RPC, then attempts to send an SMS to
-// the reservation owner. SMS failures are non-blocking — the cancellation
-// is already committed by the time SMS dispatch runs.
+// Phase 31C: calls admin_cancel_reservation_v2 (migration 0102), which
+// returns the exact notification_id it created alongside the reservation —
+// replacing admin_cancel_reservation, whose reservation-only return gave the
+// caller no safe way to look up its notification (the previous raw
+// `notifications` SELECT by user_id/kind was blocked by RLS for this
+// cross-user admin-initiated case; see Phase 31A/31B). Dispatch runs through
+// dispatchReservationNotification, which resolves body/authorization via
+// get_reservation_delivery_context instead of any client-side notifications
+// query.
 // ---------------------------------------------------------------------------
 export async function adminCancelReservation(
   reservationId: string,
@@ -428,120 +435,25 @@ export async function adminCancelReservation(
 
   const supabase = await createClient();
 
-  const { data: reservation, error: rpcError } = await supabase.rpc(
-    "admin_cancel_reservation",
+  const { data, error: rpcError } = await supabase.rpc(
+    "admin_cancel_reservation_v2",
     { p_reservation_id: reservationId }
   );
 
   if (rpcError) return { error: rpcError.message };
-  if (!reservation) return { error: "reservation_not_found" };
 
-  try {
-    await dispatchAdminCancelSms(reservation.owner_user_id);
-  } catch {
-    // SMS dispatch must never surface as a user-facing error.
-  }
+  const result = data as unknown as ReservationMutationResult | null;
+  if (!result?.reservation) return { error: "reservation_not_found" };
 
-  try {
-    await dispatchAdminCancelEmail(reservation.owner_user_id);
-  } catch {
-    // Email dispatch must never surface as a user-facing error.
+  if (result.notification_id) {
+    try {
+      await dispatchReservationNotification(supabase, result.notification_id);
+    } catch {
+      // Email/SMS dispatch must never surface as a user-facing error.
+    }
   }
 
   return {};
-}
-
-// ---------------------------------------------------------------------------
-// dispatchAdminCancelSms — internal, not exported
-// Finds the in-app notification just created by the RPC, checks the owner's
-// SMS eligibility, calls sendSms if opted in, and records the delivery attempt.
-// ---------------------------------------------------------------------------
-async function dispatchAdminCancelSms(ownerUserId: string): Promise<void> {
-  const supabase = await createClient();
-
-  // The notification was just inserted by admin_cancel_reservation; the most
-  // recent reservation_cancelled_by_admin row for this user is the right one.
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("user_id", ownerUserId)
-    .eq("kind", "reservation_cancelled_by_admin")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!notification) return;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("sms_opt_in, phone")
-    .eq("id", ownerUserId)
-    .single();
-
-  if (!profile) return;
-
-  if (!profile.sms_opt_in) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "opted_out",
-    });
-    return;
-  }
-
-  if (!profile.phone) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "no_phone",
-    });
-    return;
-  }
-
-  const body = `${notification.body}\n\nReply STOP to opt out.`;
-  const { sid, error: smsError } = await sendSms(profile.phone, body);
-
-  if (sid) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id:     notification.id,
-      p_channel:             "sms",
-      p_status:              "sent",
-      p_provider:            "twilio",
-      p_provider_message_id: sid,
-      p_sent_at:             new Date().toISOString(),
-    });
-  } else {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "failed",
-      p_provider:        "twilio",
-      p_error:           smsError ?? "Unknown error",
-    });
-  }
-}
-
-async function dispatchAdminCancelEmail(ownerUserId: string): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("user_id", ownerUserId)
-    .eq("kind", "reservation_cancelled_by_admin")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  if (!notification) return;
-
-  await sendEmailNotification(
-    supabase,
-    notification.id,
-    ownerUserId,
-    "reservation_cancelled_by_admin",
-    (clubName) => reservationCancelledByAdminTemplate(clubName, notification.body),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -582,19 +494,17 @@ export async function updateMemberReservationAdmin(params: {
   const result = data as unknown as UpdateMemberReservationResult | null;
   const changedFields   = result?.changed_fields ?? [];
   const notificationId  = result?.notification_id ?? null;
-  const ownerUserId     = result?.reservation.owner_user_id;
 
-  if (notificationId && ownerUserId) {
+  // Phase 31C: dispatch runs through dispatchReservationNotification, which
+  // resolves body/authorization via get_reservation_delivery_context using
+  // the exact notification_id above — no raw notifications SELECT, never a
+  // "newest matching kind" re-query (which could otherwise pick up the
+  // wrong row on a fast second edit).
+  if (notificationId) {
     try {
-      await dispatchReservationRescheduledSms(notificationId, ownerUserId);
+      await dispatchReservationNotification(supabase, notificationId);
     } catch {
-      // SMS dispatch must never block edit success or surface to the user.
-    }
-
-    try {
-      await dispatchReservationRescheduledEmail(notificationId, ownerUserId);
-    } catch {
-      // Email dispatch must never block edit success or surface to the user.
+      // Email/SMS dispatch must never block edit success or surface to the user.
     }
   }
 
@@ -602,99 +512,6 @@ export async function updateMemberReservationAdmin(params: {
   revalidatePath("/my-schedule");
 
   return { data: { changedFields } };
-}
-
-// ---------------------------------------------------------------------------
-// dispatchReservationRescheduledSms / dispatchReservationRescheduledEmail
-// — internal, not exported.
-// Driven by the exact notification_id returned by update_member_reservation
-// — never re-queries "newest matching kind", since a fast second edit could
-// otherwise pick up the wrong row.
-// ---------------------------------------------------------------------------
-async function dispatchReservationRescheduledSms(
-  notificationId: string,
-  ownerUserId:    string,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("id", notificationId)
-    .single();
-
-  if (!notification) return;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("sms_opt_in, phone")
-    .eq("id", ownerUserId)
-    .single();
-
-  if (!profile) return;
-
-  if (!profile.sms_opt_in) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "opted_out",
-    });
-    return;
-  }
-
-  if (!profile.phone) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "no_phone",
-    });
-    return;
-  }
-
-  const body = `${notification.body}\n\nReply STOP to opt out.`;
-  const { sid, error: smsError } = await sendSms(profile.phone, body);
-
-  if (sid) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id:     notification.id,
-      p_channel:             "sms",
-      p_status:              "sent",
-      p_provider:            "twilio",
-      p_provider_message_id: sid,
-      p_sent_at:             new Date().toISOString(),
-    });
-  } else {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "failed",
-      p_provider:        "twilio",
-      p_error:           smsError ?? "Unknown error",
-    });
-  }
-}
-
-async function dispatchReservationRescheduledEmail(
-  notificationId: string,
-  ownerUserId:    string,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: notification } = await supabase
-    .from("notifications")
-    .select("id, body")
-    .eq("id", notificationId)
-    .single();
-
-  if (!notification) return;
-
-  await sendEmailNotification(
-    supabase,
-    notification.id,
-    ownerUserId,
-    "reservation_rescheduled",
-    (clubName) => reservationRescheduledTemplate(clubName, notification.body),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -840,10 +657,14 @@ async function dispatchMemberCancelEmail(ownerUserId: string, notificationId: st
 
 // ---------------------------------------------------------------------------
 // leaveEvent
-// Calls leave_event RPC and dispatches SMS to the next offered user (if any).
-// Phase 18A: leave_event now creates a waitlist_offer notification (not
-// waitlist_promoted) for the user who receives the spot offer.
-// Returns the raw RPC error message so callers can map it to UI strings.
+// Phase 31C: calls leave_event_v2 (migration 0102) instead of leave_event.
+// leave_event_v2 shares leave_event's exact business logic (both delegate to
+// the same internal _leave_event_impl — never called directly by the app)
+// but additionally returns the exact notification_id of any waitlist_offer
+// it created, replacing the previous "5-candidate metadata match" lookup
+// (which was also blocked by RLS for this Member-to-Member cross-user case
+// — see Phase 31A/31B). Returns the raw RPC error message so callers can
+// map it to UI strings; external behavior is otherwise unchanged.
 // ---------------------------------------------------------------------------
 export async function leaveEvent(
   eventId: string,
@@ -854,137 +675,22 @@ export async function leaveEvent(
 
   const supabase = await createClient();
 
-  const { data: offeredProfileId, error: rpcError } = await supabase.rpc(
-    "leave_event",
+  const { data, error: rpcError } = await supabase.rpc(
+    "leave_event_v2",
     { p_event_id: eventId }
   );
 
   if (rpcError) return { error: rpcError.message };
 
-  try {
-    await dispatchWaitlistOfferSms(eventId, offeredProfileId);
-  } catch {
-    // SMS dispatch must never surface as a user-facing error.
-  }
+  const result = data as unknown as { offered_profile_id: string | null; notification_id: string | null } | null;
 
   try {
-    await dispatchWaitlistOfferEmail(eventId, offeredProfileId);
+    await dispatchWaitlistNotification(supabase, result?.notification_id ?? null);
   } catch {
-    // Email dispatch must never surface as a user-facing error.
+    // Email/SMS dispatch must never surface as a user-facing error.
   }
 
   return {};
-}
-
-// ---------------------------------------------------------------------------
-// dispatchWaitlistOfferSms — internal, not exported
-// Skips immediately when no one was offered (offeredProfileId is null).
-// Otherwise finds the waitlist_offer notification just created by the RPC,
-// checks the offered user's SMS eligibility, and records the delivery attempt.
-// Phase 18A: leave_event now creates waitlist_offer (not waitlist_promoted).
-// ---------------------------------------------------------------------------
-async function dispatchWaitlistOfferSms(
-  eventId:         string,
-  offeredProfileId: string | null,
-): Promise<void> {
-  if (!offeredProfileId) return;
-
-  const supabase = await createClient();
-
-  // Fetch the most recent waitlist_offer notifications for this user and
-  // confirm the event_id matches in JS (avoids PostgREST JSONB filter syntax).
-  const { data: candidates } = await supabase
-    .from("notifications")
-    .select("id, body, metadata")
-    .eq("user_id", offeredProfileId)
-    .eq("kind", "waitlist_offer")
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  const notification = candidates?.find(
-    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
-  ) ?? null;
-
-  if (!notification) return;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("sms_opt_in, phone")
-    .eq("id", offeredProfileId)
-    .single();
-
-  if (!profile) return;
-
-  if (!profile.sms_opt_in) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "opted_out",
-    });
-    return;
-  }
-
-  if (!profile.phone) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "no_phone",
-    });
-    return;
-  }
-
-  const body = `${notification.body}\n\nReply STOP to opt out.`;
-  const { sid, error: smsError } = await sendSms(profile.phone, body);
-
-  if (sid) {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id:     notification.id,
-      p_channel:             "sms",
-      p_status:              "sent",
-      p_provider:            "twilio",
-      p_provider_message_id: sid,
-      p_sent_at:             new Date().toISOString(),
-    });
-  } else {
-    await supabase.rpc("record_delivery_attempt", {
-      p_notification_id: notification.id,
-      p_channel:         "sms",
-      p_status:          "failed",
-      p_provider:        "twilio",
-      p_error:           smsError ?? "Unknown error",
-    });
-  }
-}
-
-async function dispatchWaitlistOfferEmail(
-  eventId:          string,
-  offeredProfileId: string | null,
-): Promise<void> {
-  if (!offeredProfileId) return;
-
-  const supabase = await createClient();
-
-  const { data: candidates } = await supabase
-    .from("notifications")
-    .select("id, body, metadata")
-    .eq("user_id", offeredProfileId)
-    .eq("kind", "waitlist_offer")
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  const notification = candidates?.find(
-    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
-  ) ?? null;
-
-  if (!notification) return;
-
-  await sendEmailNotification(
-    supabase,
-    notification.id,
-    offeredProfileId,
-    "waitlist_offer",
-    (clubName) => waitlistOfferTemplate(clubName, notification.body),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1155,9 +861,22 @@ export async function declineWaitlistOffer(
 
 // ---------------------------------------------------------------------------
 // cancelEvent
-// Calls the cancel_event RPC, then dispatches SMS to all notified participants.
-// The actor is excluded from SMS even if they received an in-app notification.
+// Phase 31C: cancel_event (migration 0102) now returns the exact
+// {notification_id, user_id} pair for every confirmed/waitlisted/offered
+// participant it notified, captured before any participant-status mutation
+// runs (fixing a bug in 0102's first draft that silently excluded offered
+// participants) — replacing the previous 5-second created_at-window
+// re-query, which was both racy across concurrent cancellations and blocked
+// by RLS for every recipient other than the actor. The actor is still
+// excluded from email/SMS (they already received their in-app notification
+// as a participant, if applicable) even though they are never excluded from
+// the returned array itself.
 // ---------------------------------------------------------------------------
+interface CancelEventResult {
+  event:         Record<string, unknown>;
+  notifications: Array<{ notification_id: string; user_id: string }>;
+}
+
 export async function cancelEvent(
   eventId: string,
   expectedClubId: string,
@@ -1170,139 +889,28 @@ export async function cancelEvent(
   const { data: { user } } = await supabase.auth.getUser();
   const actorUserId = user?.id ?? null;
 
-  const { error: rpcError } = await supabase.rpc("cancel_event", {
+  const { data, error: rpcError } = await supabase.rpc("cancel_event", {
     p_event_id: eventId,
   });
 
   if (rpcError) return { error: rpcError.message };
 
-  try {
-    await dispatchEventCancelSms(eventId, actorUserId);
-  } catch {
-    // SMS dispatch must never surface as a user-facing error.
-  }
+  const result = data as unknown as CancelEventResult | null;
+  const notifications = result?.notifications ?? [];
 
-  try {
-    await dispatchEventCancelEmail(eventId, actorUserId);
-  } catch {
-    // Email dispatch must never surface as a user-facing error.
+  for (const { notification_id, user_id } of notifications) {
+    // Do not email/SMS the actor even though they may appear in the
+    // returned array (e.g. a host who was also a confirmed participant).
+    if (user_id === actorUserId) continue;
+
+    try {
+      await dispatchEventNotification(supabase, notification_id);
+    } catch {
+      // Email/SMS dispatch must never surface as a user-facing error.
+    }
   }
 
   return {};
-}
-
-// ---------------------------------------------------------------------------
-// dispatchEventCancelSms — internal, not exported
-// Queries the event_cancelled notifications just created by the RPC (within a
-// 5-second window), skips the actor, and dispatches SMS to each recipient.
-// ---------------------------------------------------------------------------
-async function dispatchEventCancelSms(
-  eventId:     string,
-  actorUserId: string | null,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const cutoff = new Date(Date.now() - 5000).toISOString();
-
-  const { data: notifications } = await supabase
-    .from("notifications")
-    .select("id, body, user_id, metadata")
-    .eq("kind", "event_cancelled")
-    .gte("created_at", cutoff);
-
-  if (!notifications?.length) return;
-
-  // Filter to notifications for this specific event (JSONB metadata check in JS
-  // avoids relying on PostgREST JSONB filter syntax).
-  const relevant = notifications.filter(
-    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
-  );
-
-  for (const notification of relevant) {
-    // Do not SMS the actor even if they received an in-app notification.
-    if (notification.user_id === actorUserId) continue;
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("sms_opt_in, phone")
-      .eq("id", notification.user_id)
-      .single();
-
-    if (!profile) continue;
-
-    if (!profile.sms_opt_in) {
-      await supabase.rpc("record_delivery_attempt", {
-        p_notification_id: notification.id,
-        p_channel:         "sms",
-        p_status:          "opted_out",
-      });
-      continue;
-    }
-
-    if (!profile.phone) {
-      await supabase.rpc("record_delivery_attempt", {
-        p_notification_id: notification.id,
-        p_channel:         "sms",
-        p_status:          "no_phone",
-      });
-      continue;
-    }
-
-    const body = `${notification.body}\n\nReply STOP to opt out.`;
-    const { sid, error: smsError } = await sendSms(profile.phone, body);
-
-    if (sid) {
-      await supabase.rpc("record_delivery_attempt", {
-        p_notification_id:     notification.id,
-        p_channel:             "sms",
-        p_status:              "sent",
-        p_provider:            "twilio",
-        p_provider_message_id: sid,
-        p_sent_at:             new Date().toISOString(),
-      });
-    } else {
-      await supabase.rpc("record_delivery_attempt", {
-        p_notification_id: notification.id,
-        p_channel:         "sms",
-        p_status:          "failed",
-        p_provider:        "twilio",
-        p_error:           smsError ?? "Unknown error",
-      });
-    }
-  }
-}
-
-async function dispatchEventCancelEmail(
-  eventId:     string,
-  actorUserId: string | null,
-): Promise<void> {
-  const supabase = await createClient();
-
-  const cutoff = new Date(Date.now() - 5000).toISOString();
-
-  const { data: notifications } = await supabase
-    .from("notifications")
-    .select("id, body, user_id, metadata")
-    .eq("kind", "event_cancelled")
-    .gte("created_at", cutoff);
-
-  if (!notifications?.length) return;
-
-  const relevant = notifications.filter(
-    n => (n.metadata as Record<string, string> | null)?.event_id === eventId
-  );
-
-  for (const notification of relevant) {
-    if (notification.user_id === actorUserId) continue;
-
-    await sendEmailNotification(
-      supabase,
-      notification.id,
-      notification.user_id,
-      "event_cancelled",
-      (clubName) => eventCancelledTemplate(clubName, notification.body),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------

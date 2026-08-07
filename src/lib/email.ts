@@ -24,7 +24,9 @@ export async function sendEmail(
   }
 }
 
-// sendEmailNotification — shared delivery helper for all 8 notification kinds.
+// sendEmailNotification — shared delivery helper for every email-eligible
+// notification kind, across every domain (reservation, event, waitlist,
+// announcement, lesson templates aside — lessons use their own dispatcher).
 //
 // Guards (in order):
 //   1. RESEND_API_KEY absent → return (avoids spurious 'failed' rows in
@@ -33,9 +35,24 @@ export async function sendEmail(
 //      bypasses admin-only RLS on notification_deliveries) → return if sent.
 //   3. Preference check via user_pref_enabled() (security definer, works
 //      cross-user) → record opted_out + return if disabled.
-//   4. Email fetch via get_user_email_for_notification() (security definer,
-//      same-club + same-user-or-admin/pro check) → return if null.
+//   4. Email fetch via `emailLookupRpc` (security definer) → return if null.
 //
+// Phase 31C: `emailLookupRpc` selects which security-definer RPC resolves
+// the recipient's email address. Both share the identical
+// `{ p_notification_id }` argument shape and `string | null` return type:
+//   - get_user_email_for_notification (default) — authorizes the caller as
+//     the recipient OR admin/pro. Correct for reservation, event, and
+//     announcement domains, where the calling Server Action has already
+//     been gated by get_reservation_delivery_context / get_event_delivery_
+//     context (or is itself the Admin who ran send_announcement_v2) before
+//     this function is ever reached — so by the time this resolves, the
+//     caller's authorization has already been independently established.
+//   - get_waitlist_recipient_email — required for the waitlist domain,
+//     where the acting caller triggering a delivery (e.g. a Member calling
+//     leave_event) is frequently neither the recipient nor admin/pro, which
+//     get_user_email_for_notification would deny (see migration 0102,
+//     section 5). Authorizes recipient / same-club Admin / the exact
+//     metadata.triggered_by actor instead.
 // Never throws.
 export async function sendEmailNotification(
   supabase:        SupabaseClient<Database>,
@@ -43,6 +60,7 @@ export async function sendEmailNotification(
   recipientUserId: string,
   kind:            string,
   buildTemplate:   (clubName: string) => { subject: string; html: string; text: string },
+  emailLookupRpc:  "get_user_email_for_notification" | "get_waitlist_recipient_email" = "get_user_email_for_notification",
 ): Promise<void> {
   // Guard 1: skip entirely if Resend is not configured.
   if (!process.env.RESEND_API_KEY) return;
@@ -71,12 +89,10 @@ export async function sendEmailNotification(
     return;
   }
 
-  // Guard 4: fetch recipient email via notification-scoped security-definer
-  // RPC. The function verifies: caller is authenticated; both caller and
-  // notification are in the same club; caller is the recipient OR is admin/pro.
-  // Returns null on any authorization failure (e.g. regular-member-triggered
-  // waitlist offer where recipient is a different member).
-  const { data: recipientEmail } = await supabase.rpc("get_user_email_for_notification", {
+  // Guard 4: fetch recipient email via the selected notification-scoped
+  // security-definer RPC (see emailLookupRpc doc above). Returns null on any
+  // authorization failure.
+  const { data: recipientEmail } = await supabase.rpc(emailLookupRpc, {
     p_notification_id: notificationId,
   });
   if (!recipientEmail) return;
