@@ -374,3 +374,25 @@ recipient (RLS already permits an own-row `SELECT`), and their underlying
 RPCs were not part of migration 0102's exact-identity contracts. No action
 needed; verify only that these still function (they were not touched by
 this checkpoint's edits) as a smoke test alongside the above.
+
+---
+
+## Phase 31 closeout note — known external limitation (non-blocking)
+
+Confirmed at Phase 31 closeout: Twilio accepts every SMS submission from
+this application and returns a real provider message SID (recorded in
+`notification_deliveries` as `status = 'sent'`, `provider_message_id` set)
+— the application-level SMS pipeline (contact resolution, duplicate
+protection, dispatch, delivery logging) is verified working end to end.
+
+Final carrier delivery of those messages is currently blocked by **Twilio
+error 30032** (unverified trial toll-free sender). This is an external
+provider-account configuration limitation — it requires completing Twilio's
+toll-free verification process, not an application code or database change
+— and does not indicate a defect in this checkpoint's work. It does not
+block Phase 31 closeout.
+
+Do not surface this error code, "toll-free," "trial account," or any other
+Twilio-specific terminology in product UI — `notification_deliveries.error`
+may record it for operator/developer diagnosis, but no user-facing string
+in this codebase should ever reference it.
