@@ -305,17 +305,31 @@ export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
+  // Phase 31D: replaces a raw `.from("profiles").select("phone, sms_opt_in,
+  // club_id")` that was silently failing — sms_opt_in was never part of the
+  // column-level SELECT grant added in migration 0079, so that query was
+  // denied in full, and its discarded error was indistinguishable from "no
+  // phone on file." get_my_communication_settings() (migration 0104) is a
+  // security-definer RPC scoped to the caller's own row; club_id alone
+  // remains readable under the existing grant and is fetched separately.
+  const { data: commSettingsRaw, error: commSettingsError } = await supabase.rpc("get_my_communication_settings");
+  const commSettings = commSettingsRaw as unknown as { phone: string | null; sms_opt_in: boolean } | null;
+
+  if (commSettingsError || !commSettings) {
+    return { error: "Communication settings could not be loaded. Please refresh and try again." };
+  }
+
+  if (!commSettings.phone) return { error: "Add a phone number to your profile first." };
+  if (!commSettings.sms_opt_in) return { error: "Enable SMS in your profile first." };
+
   const { data: profile } = await supabase
     .from("profiles")
-    .select("phone, sms_opt_in, club_id")
+    .select("club_id")
     .eq("id", user.id)
     .single();
 
-  if (!profile?.phone) return { error: "Add a phone number to your profile first." };
-  if (!profile.sms_opt_in) return { error: "Enable SMS in your profile first." };
-
   let clubName = "Court Time";
-  if (profile.club_id) {
+  if (profile?.club_id) {
     const { data: club } = await supabase
       .from("clubs")
       .select("name")
@@ -325,7 +339,7 @@ export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
   }
 
   const { sid, error } = await sendSms(
-    profile.phone,
+    commSettings.phone,
     `This is a test message from ${clubName}.\n\nReply STOP to opt out.`
   );
 

@@ -31,7 +31,12 @@ export async function updateProfile(formData: FormData): Promise<{ error?: strin
 
   if (error) return { error: "Failed to save changes. Please try again." };
 
+  // Phase 31D: /profile/notifications now displays this same phone number
+  // (SmsPreferenceSection), so a phone edit here must revalidate that page
+  // too — otherwise it could keep showing a stale number until an
+  // unrelated navigation happened to refetch it.
   revalidatePath("/profile");
+  revalidatePath("/profile/notifications");
   return {};
 }
 
@@ -63,5 +68,6 @@ export async function updateSmsPreference(optIn: boolean): Promise<{ error?: str
   if (error) return { error: "Failed to update SMS preference. Please try again." };
 
   revalidatePath("/profile");
+  revalidatePath("/profile/notifications");
   return {};
 }

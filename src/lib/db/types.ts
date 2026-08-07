@@ -1405,6 +1405,22 @@ export type Database = {
           theme_key: string | null;
         }[];
       };
+      // Phase 31D (migration 0104): profiles.sms_opt_in was never added to
+      // the column-level SELECT grant established in
+      // 0079_phase25_account_foundation.sql, so any raw client select
+      // combining it with other columns (e.g. phone) is denied in full —
+      // the root cause of the Phase 31D contact-resolution defect. This
+      // SECURITY DEFINER RPC derives the caller solely from auth.uid(),
+      // accepts no parameters, and returns only the caller's own phone/
+      // sms_opt_in — never another user's row, never any other profile
+      // field. Returns null if unauthenticated or (anomalously) no profile
+      // row exists; callers must treat null as a failed lookup, not "no
+      // phone."
+      get_my_communication_settings: {
+        Args: Record<string, never>;
+        Returns: Json;
+        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
+      };
       get_my_club_memberships: {
         Args: Record<string, never>;
         Returns: {

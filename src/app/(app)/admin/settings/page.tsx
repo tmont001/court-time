@@ -9,7 +9,7 @@ import EventTypesSection from "./EventTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
 import DateOverridesEditor from "./DateOverridesEditor";
-import TestSmsSection from "./TestSmsSection";
+import DeliveryDiagnosticsSection from "./DeliveryDiagnosticsSection";
 import AnnouncementsSection from "./AnnouncementsSection";
 
 export default async function AdminSettingsPage() {
@@ -47,10 +47,14 @@ export default async function AdminSettingsPage() {
     id: string; key: string; label: string; color: string; is_active: boolean;
   }[];
 
-  const twilioConfigured =
+  // Server-only config checks — booleans only ever reach the rendered page;
+  // no environment-variable name or value is passed as a prop or exposed to
+  // the client.
+  const smsConfigured =
     !!process.env.TWILIO_ACCOUNT_SID &&
     !!process.env.TWILIO_AUTH_TOKEN &&
     !!process.env.TWILIO_FROM_NUMBER;
+  const emailConfigured = !!process.env.RESEND_API_KEY;
 
   return (
     <>
@@ -162,15 +166,16 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
-        {/* ── Notifications ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Notifications
-          </p>
-          <TestSmsSection twilioConfigured={twilioConfigured} />
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            More notification options coming soon.
-          </p>
+        {/* ── Delivery diagnostics ── */}
+        {/* Phase 31D: closed by default, visually secondary — operator-only
+            provider status and test controls, kept separate from Member
+            notification preferences (which live at /profile/notifications)
+            and from Admin announcement composition above. */}
+        <section>
+          <DeliveryDiagnosticsSection
+            emailConfigured={emailConfigured}
+            smsConfigured={smsConfigured}
+          />
         </section>
 
       </div>
