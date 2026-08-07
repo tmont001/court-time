@@ -2,6 +2,41 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/db/types";
 
+// Public route boundary — the single source of truth for which routes are
+// reachable without a session. Every route not listed here is treated as
+// part of the authenticated application and requires a signed-in user.
+//
+// PUBLIC_EXACT_ROUTES — routes with no sub-paths. Matched exactly so that an
+// unrelated future route sharing a prefix (e.g. "/sign-in-help") is never
+// accidentally treated as public.
+//
+// PUBLIC_PATH_PREFIXES — routes that legitimately have sub-paths (currently
+// only the dynamic invite-code segment under /join).
+const PUBLIC_EXACT_ROUTES = new Set([
+  "/",
+  "/features",
+  "/pricing",
+  "/contact",
+  "/privacy",
+  "/terms",
+  "/sign-in",
+  "/sign-up",
+  "/forgot-password",
+  "/reset-password",
+  "/welcome",
+  "/pending-invite",
+  "/auth/confirm",
+]);
+
+const PUBLIC_PATH_PREFIXES = ["/join/"];
+
+function isPublicRoute(pathname: string): boolean {
+  return (
+    PUBLIC_EXACT_ROUTES.has(pathname) ||
+    PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  );
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -32,18 +67,7 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isAppRoute =
-    !pathname.startsWith("/sign-in") &&
-    !pathname.startsWith("/forgot-password") &&
-    !pathname.startsWith("/reset-password") &&
-    !pathname.startsWith("/welcome") &&
-    !pathname.startsWith("/join") &&
-    !pathname.startsWith("/pending-invite") &&
-    !pathname.startsWith("/sign-up") &&
-    !pathname.startsWith("/auth/confirm") &&
-    pathname !== "/";
-
-  if (isAppRoute && !user) {
+  if (!isPublicRoute(pathname) && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     return NextResponse.redirect(url);

@@ -1,24 +1,13 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 import MarketingReveal from "../components/MarketingReveal";
+import PricingCards from "./PricingCards";
+import ComparisonTable from "./ComparisonTable";
 
 export const metadata: Metadata = {
   title: "Pricing — Court Time",
   description:
-    "Simple, transparent pricing for clubs. Founding club offer: $149/month or $1,490/year — two months free.",
+    "Court Time's Founding Club pricing for pilot clubs: $149/month or $1,490/year, with guided onboarding and direct founder support. Pilot scope and commercial terms are discussed with each club.",
 };
-
-const FOUNDING_FEATURES = [
-  "Unlimited court bookings",
-  "Event management with waitlists",
-  "Full member roster, including no-account members",
-  "Bulk member import from spreadsheet",
-  "Admin dashboard with audit log",
-  "Email and in-app notifications",
-  "Mobile-friendly member experience",
-  "Direct access to the Court Time team",
-  "Early access to new features",
-];
 
 const FAQ = [
   {
@@ -26,139 +15,77 @@ const FAQ = [
     a: "No. Your monthly or annual fee covers your entire club regardless of member count.",
   },
   {
-    q: "What does setup involve?",
+    q: "What does onboarding involve?",
     a: "We configure your club together — courts, operating hours, event types, and member settings. No technical work required from your team.",
   },
   {
     q: "When does billing start?",
-    a: "Not during the founding period. We'll agree on billing terms before any charges apply.",
+    a: "Not before we agree on terms together. No charges apply during the founding evaluation and onboarding period without your agreement.",
+  },
+  {
+    q: "How does annual pricing work?",
+    a: "Paying annually is equivalent to two months free compared to paying monthly.",
   },
   {
     q: "Can I cancel?",
-    a: "Yes. We want clubs that want to be here. Cancellation terms will be outlined in your agreement.",
+    a: "Yes. Cancellation terms are outlined in your agreement, agreed before any charges begin.",
+  },
+  {
+    q: "What happens after I request a pilot?",
+    a: "We'll set up a conversation to learn about your club. If it's a fit, we'll walk through onboarding together — reaching out isn't a commitment.",
   },
 ];
 
 export default function PricingPage() {
   return (
-    <div className="max-w-4xl mx-auto px-4 py-16">
+    <div className="px-4 py-16">
 
       {/* Header */}
-      <MarketingReveal className="text-center mb-14">
+      <MarketingReveal className="text-center mb-12 max-w-xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">
           Simple, transparent pricing.
         </h1>
-        <p className="text-base text-gray-600 dark:text-gray-300 max-w-xl mx-auto">
-          One plan. Everything included. No per-member fees.
+        <p className="text-base text-gray-600 dark:text-gray-300">
+          One plan for pilot clubs today. No per-member fees, no self-service
+          checkout — everything is arranged directly with our team.
         </p>
       </MarketingReveal>
 
-      {/* Founding Club card */}
-      <MarketingReveal className="mb-4 max-w-lg mx-auto">
-        <div className="rounded-2xl border-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-800 p-8 hover:shadow-xl motion-safe:transition-shadow motion-safe:duration-300">
+      {/* Plan cards */}
+      <MarketingReveal className="max-w-5xl mx-auto mb-6">
+        <PricingCards />
+      </MarketingReveal>
 
-          {/* Header row */}
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-1.5">
-                Founding Club
-              </p>
-              <h2 className="text-4xl font-bold text-gray-900 dark:text-gray-100 leading-none">
-                $149
-                <span className="text-lg font-medium text-gray-500 dark:text-gray-400"> / month</span>
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5">
-                or{" "}
-                <span className="font-semibold text-gray-800 dark:text-gray-200">$1,490 / year</span>
-                {" "}— two months free
-              </p>
-            </div>
-            <span className="shrink-0 inline-block px-2.5 py-1 text-[10px] font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full mt-1">
-              Limited availability
-            </span>
-          </div>
+      <MarketingReveal className="text-center mb-4">
+        <a
+          href="#compare"
+          className="text-sm underline underline-offset-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 motion-safe:transition-colors motion-safe:duration-150"
+        >
+          Compare all features
+        </a>
+      </MarketingReveal>
 
-          {/* Founding period note */}
-          <div className="rounded-lg bg-gray-50 dark:bg-gray-700/40 border border-gray-100 dark:border-gray-700 px-4 py-3 mb-6">
-            <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-              Founding Club pricing is available for the first 10 clubs or until
-              public launch, whichever comes first. Founding clubs keep this price
-              for their first 12 months.
-            </p>
-          </div>
-
-          {/* Feature list */}
-          <ul className="space-y-2.5 mb-8">
-            {FOUNDING_FEATURES.map((f) => (
-              <li
-                key={f}
-                className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300"
-              >
-                <span className="mt-0.5 text-green-600 dark:text-green-400 shrink-0 font-bold">✓</span>
-                {f}
-              </li>
-            ))}
-          </ul>
-
-          <Link
-            href="/contact"
-            className="block w-full text-center py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold hover:bg-gray-700 dark:hover:bg-gray-300 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
-          >
-            Contact us to get started
-          </Link>
-
-          <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-4">
-            No credit card required · Setup is free during the founding period
+      {/* Disclosure */}
+      <MarketingReveal className="max-w-2xl mx-auto mb-16">
+        <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 px-4 py-3 text-center">
+          <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+            Starter and Club are planned standard packages and are not
+            currently available for purchase. Final packaging may evolve
+            before public launch. There is no self-service checkout —
+            every plan is arranged directly with our team.
           </p>
         </div>
       </MarketingReveal>
 
-      {/* Future standard plans */}
-      <MarketingReveal delay="delay-1" className="max-w-lg mx-auto mb-14">
-        <div className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 px-6 py-6 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm motion-safe:transition-all motion-safe:duration-200">
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-5">
-            Standard plans — after founding period
-          </p>
-          <div className="flex flex-col gap-5">
-
-            {/* Starter */}
-            <div className="group rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-4 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm motion-safe:transition-all motion-safe:duration-200">
-              <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Starter</p>
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">$249 / month</span>
-                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">or $2,490 / yr</span>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                For small clubs, HOAs, and community courts. Up to 5 courts and
-                100 members. Simple booking, member access, and basic event
-                sign-ups.
-              </p>
-            </div>
-
-            {/* Club */}
-            <div className="group rounded-lg border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 py-4 hover:border-gray-200 dark:hover:border-gray-600 hover:shadow-sm motion-safe:transition-all motion-safe:duration-200">
-              <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Club</p>
-                <div className="text-right shrink-0">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">$399 / month</span>
-                  <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">or $3,990 / yr</span>
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 dark:text-gray-500 leading-relaxed">
-                For larger clubs with more operational needs. Up to 12 courts and
-                300 members. Includes event rosters, waitlists, bulk imports, more
-                admins and pros, and priority support.
-              </p>
-            </div>
-
-          </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            Annual plans include two months free. Founding clubs are not affected by standard plan pricing during their first 12 months.
-          </p>
-        </div>
-      </MarketingReveal>
+      {/* Comparison table */}
+      <section id="compare" tabIndex={-1} className="max-w-5xl mx-auto mb-16 scroll-mt-20 outline-none">
+        <MarketingReveal>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 text-center mb-6">
+            Compare all features
+          </h2>
+          <ComparisonTable />
+        </MarketingReveal>
+      </section>
 
       {/* FAQ */}
       <div className="max-w-lg mx-auto">

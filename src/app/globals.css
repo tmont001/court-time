@@ -603,3 +603,103 @@
     transition: none;
   }
 }
+
+/* ── Marketing product-visual motion ─────────────────────────────────────────
+   Small shared utility for the looping product illustrations on /features.
+   Every rule below has a plain, non-animated default OUTSIDE the
+   prefers-reduced-motion:no-preference guard — that default is the "stable,
+   complete state" shown when motion is reduced (this intentionally does NOT
+   rely on the blanket reduced-motion rule above, which only shortens a
+   running animation to ~0ms/1 iteration; for a 3-way cross-fade that would
+   land on each element's raw 100% keyframe value, which is not necessarily
+   the state we want visible). Loops are ~7–8s, with matching 0%/100% values
+   on every keyframe so the infinite loop has no visible jump-cut. */
+
+/* Generic 3-phase stacked cross-fade — reused by the event/waitlist, lesson,
+   and member visuals for "state A → state B → state C, then reset." Stack
+   the three elements in the same grid cell/position; each ends up visible
+   in its own third of the loop. Default (reduced motion): only stack-3
+   (the final, positive state) is visible. */
+.mkt-viz-stack-1 { opacity: 0; }
+.mkt-viz-stack-2 { opacity: 0; }
+.mkt-viz-stack-3 { opacity: 1; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-viz-stack-1 { animation: mkt-viz-stack-1 7s ease-in-out infinite; }
+  .mkt-viz-stack-2 { animation: mkt-viz-stack-2 7s ease-in-out infinite; }
+  .mkt-viz-stack-3 { animation: mkt-viz-stack-3 7s ease-in-out infinite; }
+
+  @keyframes mkt-viz-stack-1 {
+    0%       { opacity: 0; }
+    4%, 20%  { opacity: 1; }
+    26%      { opacity: 0; }
+    100%     { opacity: 0; }
+  }
+  @keyframes mkt-viz-stack-2 {
+    0%, 26%  { opacity: 0; }
+    32%, 52% { opacity: 1; }
+    58%      { opacity: 0; }
+    100%     { opacity: 0; }
+  }
+  @keyframes mkt-viz-stack-3 {
+    0%, 58%  { opacity: 0; }
+    64%, 94% { opacity: 1; }
+    100%     { opacity: 0; }
+  }
+}
+
+/* Court-schedule visual: an available cell briefly highlights, then a
+   reservation block fades/scales into that exact spot and holds. Default
+   (reduced motion): the reservation is simply already there, no highlight. */
+.mkt-viz-cell-highlight { background-color: transparent; }
+.mkt-viz-reservation-block { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-viz-cell-highlight { animation: mkt-viz-cell-highlight 7s ease-in-out infinite; }
+  .mkt-viz-reservation-block { animation: mkt-viz-reservation-appear 7s ease-in-out infinite; }
+
+  @keyframes mkt-viz-cell-highlight {
+    0%, 30%     { background-color: transparent; }
+    36%, 44%    { background-color: rgba(59, 130, 246, 0.16); } /* blue-500 @ 16% */
+    52%, 100%   { background-color: transparent; }
+  }
+  @keyframes mkt-viz-reservation-appear {
+    0%, 44%    { opacity: 0; transform: scale(0.85); }
+    52%, 92%   { opacity: 1; transform: scale(1); }
+    100%       { opacity: 0; transform: scale(0.85); }
+  }
+}
+
+/* Reporting visual: three sections reveal in a staggered sequence, hold,
+   then fade out together before the loop resets. Default (reduced motion):
+   everything is simply visible, no staggering. */
+.mkt-viz-reveal-a, .mkt-viz-reveal-b, .mkt-viz-reveal-c {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-viz-reveal-a { animation: mkt-viz-reveal-a 8s ease-in-out infinite; }
+  .mkt-viz-reveal-b { animation: mkt-viz-reveal-b 8s ease-in-out infinite; }
+  .mkt-viz-reveal-c { animation: mkt-viz-reveal-c 8s ease-in-out infinite; }
+
+  @keyframes mkt-viz-reveal-a {
+    0%       { opacity: 0; transform: translateY(6px); }
+    8%       { opacity: 0; transform: translateY(6px); }
+    18%, 86% { opacity: 1; transform: translateY(0); }
+    94%      { opacity: 0; transform: translateY(6px); }
+    100%     { opacity: 0; transform: translateY(6px); }
+  }
+  @keyframes mkt-viz-reveal-b {
+    0%, 26%  { opacity: 0; transform: translateY(6px); }
+    36%, 86% { opacity: 1; transform: translateY(0); }
+    94%      { opacity: 0; transform: translateY(6px); }
+    100%     { opacity: 0; transform: translateY(6px); }
+  }
+  @keyframes mkt-viz-reveal-c {
+    0%, 44%  { opacity: 0; transform: translateY(6px); }
+    54%, 86% { opacity: 1; transform: translateY(0); }
+    94%      { opacity: 0; transform: translateY(6px); }
+    100%     { opacity: 0; transform: translateY(6px); }
+  }
+}

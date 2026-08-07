@@ -6,7 +6,7 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Court Time',
   description:
-    'Simple court booking and event roster software for tennis clubs. Less chaos. More tennis.',
+    'Club operations software for tennis clubs — court scheduling, events and programs, lesson coordination, and club administration. Less chaos. More tennis.',
 };
 
 export const viewport: Viewport = {

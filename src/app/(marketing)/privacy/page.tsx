@@ -11,7 +11,7 @@ export default function PrivacyPage() {
         Privacy Policy
       </h1>
       <p className="text-xs text-gray-400 dark:text-gray-500 mb-10">
-        Last updated: July 7, 2026
+        Last updated: August 6, 2026
       </p>
 
       <div className="space-y-8 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
@@ -38,7 +38,8 @@ export default function PrivacyPage() {
             <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Account information:</span> name, email address, and password (hashed) for members who create accounts.</li>
             <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Contact information:</span> phone numbers, where provided.</li>
             <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Roster data:</span> member names and contact information entered by club administrators, including for members who have not created an account.</li>
-            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Activity data:</span> court bookings, event registrations, and cancellations.</li>
+            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Activity data:</span> court bookings, event and program registrations, lesson requests, and cancellations.</li>
+            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Notification preferences:</span> your chosen delivery methods, including email and, if you opt in, SMS text alerts for supported updates.</li>
             <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Admin notes:</span> internal notes added by club administrators about members.</li>
           </ul>
         </section>
@@ -60,8 +61,9 @@ export default function PrivacyPage() {
             Who Can Access Your Data
           </h2>
           <ul className="space-y-1.5 list-none">
-            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Club members</span> can see their own account information and their own bookings and event registrations.</li>
-            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Club administrators</span> can see member roster information, booking activity, and event rosters for their club.</li>
+            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Club members</span> can see their own account information and their own bookings, event registrations, and lesson requests.</li>
+            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Pros</span> can see lesson requests and details for lessons assigned to them.</li>
+            <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Club administrators</span> can see member roster information, booking activity, event rosters, and lesson activity for their club.</li>
             <li>· <span className="font-medium text-gray-700 dark:text-gray-200">Court Time operators</span> may access data as needed to provide support, investigate issues, and operate the Service.</li>
           </ul>
         </section>
@@ -80,13 +82,16 @@ export default function PrivacyPage() {
 
         <section>
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2">
-            Email Notifications
+            Email and SMS Notifications
           </h2>
           <p>
             We send transactional emails related to your use of the Service —
-            such as booking confirmations, event updates, and waitlist offers.
-            You can manage your email notification preferences in your account
-            settings. We do not send marketing emails without your consent.
+            such as booking confirmations, event updates, lesson requests, and
+            waitlist offers. If you opt in and provide a phone number, we may
+            also send SMS text alerts for supported updates. You can manage
+            your email and SMS notification preferences in your account
+            settings, including opting out of text alerts at any time. We do
+            not send marketing emails or texts without your consent.
           </p>
         </section>
 
