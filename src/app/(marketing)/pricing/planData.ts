@@ -19,7 +19,7 @@ export const CORE_FEATURES: CoreFeature[] = [
   { key: "reporting", label: "Reporting" },
   { key: "inAppNotifications", label: "In-app notifications" },
   { key: "emailNotifications", label: "Email notifications and announcements" },
-  { key: "optionalSmsAlerts", label: "Optional transactional text alerts" },
+  { key: "optionalSmsAlerts", label: "Optional transactional text notifications" },
   { key: "responsiveWebAccess", label: "Responsive web access" },
 ];
 

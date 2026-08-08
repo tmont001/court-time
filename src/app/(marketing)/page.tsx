@@ -56,7 +56,7 @@ const FEATURES = [
     title: 'Announcements & Alerts',
     label: 'Communication',
     description:
-      'Email notifications and an in-app notification bell keep members in the loop, with optional text alerts for supported updates.',
+      'Email notifications and an in-app notification bell keep members in the loop. Optional text notifications for supported transactional updates.',
   },
 ];
 

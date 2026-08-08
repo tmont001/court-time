@@ -43,7 +43,7 @@ const STORIES = [
   },
   {
     heading: "Know what's happening across the club.",
-    body: "Court utilization, reservation activity, and event and program participation, with cancellation and session fill-rate visibility for admins. Keep members in the loop with in-app notifications, email announcements, and optional text alerts for supported updates.",
+    body: "Court utilization, reservation activity, and event and program participation, with cancellation and session fill-rate visibility for admins. Keep members in the loop with in-app notifications and email announcements. Optional text notifications for supported transactional updates.",
     Visual: ReportingVisual,
   },
 ];
