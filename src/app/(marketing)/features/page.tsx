@@ -11,6 +11,13 @@ export const metadata: Metadata = {
   title: "Features — Court Time",
   description:
     "See Court Time in action: real-time court scheduling, events and waitlists, lesson coordination, member administration, and reporting in one system.",
+  alternates: { canonical: "/features" },
+  openGraph: {
+    title: "Features — Court Time",
+    description:
+      "See Court Time in action: real-time court scheduling, events and waitlists, lesson coordination, member administration, and reporting in one system.",
+    url: "/features",
+  },
 };
 
 const STORIES = [

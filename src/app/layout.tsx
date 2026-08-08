@@ -1,12 +1,40 @@
 import type { Metadata, Viewport } from 'next';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import SystemThemeSync from '@/components/SystemThemeSync';
+import { SITE_URL } from '@/lib/siteUrl';
 import './globals.css';
 
+const SITE_DESCRIPTION =
+  'Club operations software for tennis clubs — court scheduling, events and programs, lesson coordination, and club administration. Less chaos. More tennis.';
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Court Time',
-  description:
-    'Club operations software for tennis clubs — court scheduling, events and programs, lesson coordination, and club administration. Less chaos. More tennis.',
+  description: SITE_DESCRIPTION,
+  // Default, page-agnostic social preview — most public pages override
+  // title/description below, but every page inherits this shape so a share
+  // is never blank. No og:image yet: no Court Time brand asset exists in
+  // this repo, and generating one is a deliberate Phase 32D+ deferral
+  // rather than a rushed placeholder (see the production checklist).
+  openGraph: {
+    type: 'website',
+    siteName: 'Court Time',
+    title: 'Court Time',
+    description: SITE_DESCRIPTION,
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'Court Time',
+    description: SITE_DESCRIPTION,
+  },
+  // Default: public pages are indexable. The authenticated (app) and
+  // transactional (auth) route groups override this to noindex — see
+  // their own layout.tsx files.
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export const viewport: Viewport = {

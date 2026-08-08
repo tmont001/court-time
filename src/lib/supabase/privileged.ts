@@ -15,6 +15,10 @@
 // for this privileged identity, and this client never reads or writes
 // cookies at all. persistSession/autoRefreshToken/detectSessionInUrl are
 // all disabled because there is no session here to manage.
+// Defense-in-depth: makes any accidental import from client code a build
+// error rather than a runtime secret leak. Ships as part of Next.js's own
+// dependency tree, so no new package.json dependency is added.
+import "server-only";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/types";
 

@@ -6,6 +6,13 @@ export const metadata: Metadata = {
   title: "Request a Pilot — Court Time",
   description:
     "Request a pilot for your tennis club. Tell us about your club and preferred operating model, and we'll be in touch to talk through onboarding.",
+  alternates: { canonical: "/contact" },
+  openGraph: {
+    title: "Request a Pilot — Court Time",
+    description:
+      "Request a pilot for your tennis club. Tell us about your club and preferred operating model, and we'll be in touch to talk through onboarding.",
+    url: "/contact",
+  },
 };
 
 export default function ContactPage() {

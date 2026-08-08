@@ -7,6 +7,13 @@ export const metadata: Metadata = {
   title: "Pricing — Court Time",
   description:
     "Court Time's Founding Club pricing for pilot clubs: $149/month or $1,490/year, with guided onboarding and direct founder support. Pilot scope and commercial terms are discussed with each club.",
+  alternates: { canonical: "/pricing" },
+  openGraph: {
+    title: "Pricing — Court Time",
+    description:
+      "Court Time's Founding Club pricing for pilot clubs: $149/month or $1,490/year, with guided onboarding and direct founder support.",
+    url: "/pricing",
+  },
 };
 
 const FAQ = [

@@ -1,3 +1,12 @@
+import type { Metadata } from "next";
+
+// Sign-in/sign-up/password-reset/invite-acceptance are transactional utility
+// pages tied to a specific link or flow, not marketing content — none of
+// them belong in search results.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
+
 export default function AuthLayout({
   children,
 }: {

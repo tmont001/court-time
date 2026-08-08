@@ -33,16 +33,33 @@ running the bootstrap script for the first time. They are not repeated per club.
 
 ### 1 — Vercel environment variables
 
-Set the following in your Vercel project → Settings → Environment Variables:
+Set the following in your Vercel project → Settings → Environment Variables.
+The **Exposure** column is precise on purpose — getting it wrong for a
+server-only variable leaks a credential to every visitor's browser.
 
-| Variable | Required | Notes |
-| --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key (not service role) |
-| `RESEND_API_KEY` | No | Optional — email delivery via Resend; see email note below |
-| `TWILIO_ACCOUNT_SID` | No | Optional — in-app notifications work without it |
-| `TWILIO_AUTH_TOKEN` | No | Optional — see SMS note below |
-| `TWILIO_FROM_NUMBER` | No | Optional — e.g. `+1xxxxxxxxxx` |
+| Variable | Required | Exposure | Notes |
+| --- | --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Public (browser) | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Public (browser) | Supabase anon/publishable key (not service role) |
+| `NEXT_PUBLIC_APP_URL` | Yes for production | Public (browser) | No trailing slash. Also used server-side for `metadataBase`, `sitemap.xml`, and `robots.txt` (Phase 32D) — falls back to `https://court-time.app` if unset |
+| `SUPABASE_SECRET_KEY` | **Yes** — the public pilot inquiry form (`/contact`) does not work without it | **Server-only — never `NEXT_PUBLIC_`** | Phase 32C. Elevated backend key (Supabase's `sb_secret_...` key model). The only caller is `src/lib/supabase/privileged.ts`, used solely to invoke `submit_pilot_inquiry`, an RPC granted to `service_role` only. If unset, pilot-inquiry submissions fail closed with a generic error — no other part of the app is affected |
+| `PILOT_INQUIRY_TO_EMAIL` | No, but recommended | Configuration, not a credential — still keep it server-only (no `NEXT_PUBLIC_` prefix) | Phase 32C. Inbox that receives the "New Court Time pilot inquiry" notification. If unset, inquiries still save to `pilot_inquiries`; only the email notification is skipped |
+| `PILOT_INQUIRY_HASH_SECRET` | No | **Server-only — never `NEXT_PUBLIC_`** | Phase 32C. HMACs the request's client-address header for pilot-inquiry abuse-control throttling. If unset, that specific throttle is skipped; the duplicate-email-plus-club-name safety check still applies, so no submission is ever rejected merely because this is unset |
+| `RESEND_API_KEY` | No | **Server-only — never `NEXT_PUBLIC_`** | Optional — email delivery via Resend; see email note below. Also used for the pilot-inquiry operator notification (Phase 32C) |
+| `TWILIO_ACCOUNT_SID` | No | Server-only | Optional — in-app notifications work without it |
+| `TWILIO_AUTH_TOKEN` | No | Server-only | Optional — see SMS note below |
+| `TWILIO_FROM_NUMBER` | No | Server-only | Optional — e.g. `+1xxxxxxxxxx` |
+
+**Pilot inquiry workflow note (Phase 32C/D):** the public `/contact` form
+persists to `pilot_inquiries` through a `service_role`-only RPC — there is no
+`anon`-callable path. `SUPABASE_SECRET_KEY` is what makes that possible from
+a signed-out visitor's request; without it, `/contact` submissions fail
+closed (visitor sees a generic error, nothing is silently degraded to a
+lower-privilege client). Verify after deploying: submit a real test inquiry
+from an incognito window, confirm a row appears in `pilot_inquiries`, and
+confirm `SUPABASE_SECRET_KEY` never appears in `.next/static/` (it shouldn't
+— it's never imported by client code — but this is worth spot-checking once
+per environment).
 
 **Email note:** The app sends transactional email notifications (event join
 confirmations, waitlist offers, etc.) via [Resend](https://resend.com). If
@@ -113,6 +130,23 @@ production URL:
 
 This value is used only to build the `invite_url` returned by the script. It
 must match the URL where your app is deployed so that the invite link works.
+
+### 7 — Public site SEO (Phase 32D)
+
+- Confirm `NEXT_PUBLIC_APP_URL` is set to your real production domain (no
+  trailing slash) — it drives `metadataBase`, canonical URLs, `/sitemap.xml`,
+  and `/robots.txt`. If unset, these fall back to `https://court-time.app`,
+  which is wrong for any other deployment.
+- Spot-check `/sitemap.xml` and `/robots.txt` after deploying — the sitemap
+  should list only the six public marketing pages (`/`, `/features`,
+  `/pricing`, `/contact`, `/privacy`, `/terms`); robots.txt should disallow
+  every authenticated/transactional path (`/calendar`, `/admin`, `/sign-up`,
+  etc.).
+- There is no Court Time brand/logo asset in this repo yet. The favicon
+  (`src/app/icon.tsx`) is a generated placeholder monogram, and there is no
+  Open Graph share image — social previews fall back to text-only metadata.
+  Replace both with real brand assets in a future phase; this was a
+  deliberate scope decision, not an oversight.
 
 ---
 

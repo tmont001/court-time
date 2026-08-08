@@ -10,6 +10,13 @@ export const metadata = {
   title: 'Court Time — Less chaos. More tennis.',
   description:
     'Club operations software for tennis clubs — court scheduling, events and programs, lesson coordination, member administration, and reporting in one system.',
+  alternates: { canonical: '/' },
+  openGraph: {
+    title: 'Court Time — Less chaos. More tennis.',
+    description:
+      'Club operations software for tennis clubs — court scheduling, events and programs, lesson coordination, member administration, and reporting in one system.',
+    url: '/',
+  },
 };
 
 // ─── Feature data ─────────────────────────────────────────────────────────────

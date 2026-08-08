@@ -67,7 +67,11 @@ export default function PilotInquiryForm() {
 
   if (state.status === "success") {
     return (
-      <div className="rounded-xl border-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-800 px-6 py-8 text-center">
+      <div
+        role="status"
+        aria-live="polite"
+        className="rounded-xl border-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-800 px-6 py-8 text-center"
+      >
         <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
           Your inquiry was received.
         </p>
@@ -112,7 +116,10 @@ export default function PilotInquiryForm() {
       </div>
 
       {errors.form && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 px-4 py-3">
+        <div
+          role="alert"
+          className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 px-4 py-3"
+        >
           <p className="text-sm text-red-700 dark:text-red-400">{errors.form}</p>
         </div>
       )}
@@ -343,6 +350,15 @@ export default function PilotInquiryForm() {
       <p className="text-xs text-gray-400 dark:text-gray-500">
         Submitting is not a commitment — it starts a conversation. No account
         is created and nothing is billed.
+      </p>
+
+      <p className="text-xs text-gray-400 dark:text-gray-500">
+        We&rsquo;ll use this information to respond to your pilot request.
+        See our{" "}
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
+          Privacy Policy
+        </Link>
+        .
       </p>
 
       <button

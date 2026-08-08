@@ -152,7 +152,10 @@ export default function PricingCards() {
         </button>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+          <span
+            aria-live="polite"
+            className="text-xs text-gray-500 dark:text-gray-400 tabular-nums"
+          >
             {activeIndex + 1} of {PLANS.length}
           </span>
           <span className="flex items-center gap-1" aria-hidden="true">

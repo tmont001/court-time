@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Terms of Service — Court Time",
+  description:
+    "The terms governing use of Court Time's club operations software during its early access / pilot phase.",
+  alternates: { canonical: "/terms" },
 };
 
 export default function TermsPage() {

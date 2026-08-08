@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getAuthUser, getAuthProfile, getMyClubMemberships } from "@/lib/supabase/user";
@@ -9,6 +10,13 @@ import StaleActiveClubGuard from "@/components/StaleActiveClubGuard";
 const INVITE_CODE_RE = /^[0-9a-f]{32}$/;
 
 export const dynamic = "force-dynamic";
+
+// The authenticated app is never a public marketing surface — every route
+// under this group requires a session and is club-specific, so none of it
+// belongs in search results.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthUser();
