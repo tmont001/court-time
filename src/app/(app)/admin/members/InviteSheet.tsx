@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createInviteAction } from "./actions";
+import { createRosterInviteAction } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 
 type Role = "member" | "pro" | "admin";
@@ -19,38 +19,49 @@ const EXPIRY_OPTIONS = [
   { label: "30 days", days: 30 },
 ];
 
-interface Props {
-  onClose: () => void;
-  initialEmail?: string;
+// Phase 33B1: this sheet only ever opens for an EXISTING roster identity —
+// its one trigger site is the "Send Invite" button on a roster member row
+// (MembersClient.tsx). The email is no longer a free-form field: an invite
+// is always bound to this specific roster_member_id, matching create_club_
+// invite's roster-first requirement. See 0107's migration header,
+// "ROSTER-FIRST INVITATIONS", for why this was narrowed rather than removed.
+export interface InviteRosterMember {
+  id:         string;
+  firstName:  string;
+  lastName:   string;
+  email:      string; // guaranteed non-null — the "Send Invite" button only
+                       // renders for roster rows that already have one.
+  role:       string;
 }
 
-export default function InviteSheet({ onClose, initialEmail }: Props) {
+interface Props {
+  onClose:      () => void;
+  rosterMember: InviteRosterMember;
+}
+
+export default function InviteSheet({ onClose, rosterMember }: Props) {
   const router = useRouter();
 
-  const [role, setRole]                 = useState<Role>("member");
-  const [email, setEmail]               = useState(initialEmail ?? "");
-  const [expiryDays, setExpiryDays]     = useState(7);
-  const [loading, setLoading]           = useState(false);
-  const [error, setError]               = useState<string | null>(null);
+  const initialRole: Role =
+    rosterMember.role === "pro" || rosterMember.role === "admin" ? rosterMember.role : "member";
+
+  const [role, setRole]                   = useState<Role>(initialRole);
+  const [expiryDays, setExpiryDays]       = useState(7);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
-  const [copied, setCopied]             = useState(false);
+  const [copied, setCopied]               = useState(false);
 
   const origin     = typeof window !== "undefined" ? window.location.origin : "";
   const inviteUrl  = generatedCode ? `${origin}/join/${generatedCode}` : "";
   const isAdmin    = role === "admin";
   const btnLabel   = isAdmin ? "Generate Admin Invite" : "Generate Link";
-
-  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const fullName   = [rosterMember.firstName, rosterMember.lastName].filter(Boolean).join(" ");
 
   async function handleGenerate() {
     setError(null);
-    const trimmedEmail = email.trim();
-    if (trimmedEmail && !EMAIL_RE.test(trimmedEmail)) {
-      setError("Enter a valid email address.");
-      return;
-    }
     setLoading(true);
-    const result = await createInviteAction(role, trimmedEmail || null, expiryDays);
+    const result = await createRosterInviteAction(rosterMember.id, role, expiryDays);
     setLoading(false);
     if (result.error) {
       setError(result.error);
@@ -74,8 +85,7 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
 
   function handleGenerateAnother() {
     setGeneratedCode(null);
-    setRole("member");
-    setEmail("");
+    setRole(initialRole);
     setExpiryDays(7);
     setError(null);
     setCopied(false);
@@ -141,6 +151,15 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
             /* ── Form ── */
             <div className="space-y-5 pt-2">
 
+              {/* Who this invite is for — read-only, roster-bound */}
+              <div className="rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Inviting
+                </label>
+                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{fullName}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{rosterMember.email}</p>
+              </div>
+
               {/* Role selector */}
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -178,27 +197,6 @@ export default function InviteSheet({ onClose, initialEmail }: Props) {
                   </p>
                 </div>
               )}
-
-              {/* Email restriction */}
-              <div>
-                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  Restrict to email{" "}
-                  <span className="normal-case text-gray-400 dark:text-gray-500">
-                    (optional)
-                  </span>
-                </label>
-                <input
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="member@example.com"
-                  className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
-                />
-                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                  If filled, only that email address can accept this invite.
-                </p>
-              </div>
 
               {/* Expiry selector */}
               <div>

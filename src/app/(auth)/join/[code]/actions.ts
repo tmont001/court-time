@@ -20,6 +20,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   already_member:            "You're already a member of this club.",
   membership_state_conflict: "Your account already has a membership at this club that can't be restored this way. Contact your club administrator.",
   not_authenticated: "You must be signed in to accept this invitation.",
+  // Phase 33B1: accept_club_invite now resolves a stable Member identity
+  // before creating a membership and RAISEs rather than succeeding without
+  // one. Both cases require an admin to fix the invite, not the invitee —
+  // retrying the same link cannot help.
+  no_roster_identity: "This invite link isn't linked to a Member record yet. Ask your club administrator to resend it.",
+  roster_identity_conflict: "This invite couldn't be matched to your account safely. Ask your club administrator to check your Member record.",
 };
 
 // Failures that mean the invite is permanently unusable — clear the cookie so
@@ -32,6 +38,8 @@ const DEFINITIVE_ERRORS = new Set([
   "email_mismatch",
   "already_member",
   "membership_state_conflict",
+  "no_roster_identity",
+  "roster_identity_conflict",
 ]);
 
 async function clearInviteCookie(): Promise<void> {

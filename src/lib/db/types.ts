@@ -1012,43 +1012,46 @@ export type Database = {
       };
       club_invites: {
         Row: {
-          id:          string;
-          club_id:     string;
-          code:        string;
-          role:        "member" | "pro" | "admin";
-          email:       string | null;
-          created_by:  string;
-          expires_at:  string;
-          accepted_at: string | null;
-          accepted_by: string | null;
-          revoked_at:  string | null;
-          created_at:  string;
+          id:                string;
+          club_id:           string;
+          code:              string;
+          role:              "member" | "pro" | "admin";
+          email:             string | null;
+          roster_member_id:  string | null;
+          created_by:        string;
+          expires_at:        string;
+          accepted_at:       string | null;
+          accepted_by:       string | null;
+          revoked_at:        string | null;
+          created_at:        string;
         };
         Insert: {
-          id?:         string;
-          club_id:     string;
-          code?:       string;
-          role?:       "member" | "pro" | "admin";
-          email?:      string | null;
-          created_by:  string;
-          expires_at?: string;
-          accepted_at?: string | null;
-          accepted_by?: string | null;
-          revoked_at?:  string | null;
-          created_at?:  string;
+          id?:               string;
+          club_id:           string;
+          code?:              string;
+          role?:             "member" | "pro" | "admin";
+          email?:             string | null;
+          roster_member_id?: string | null;
+          created_by:        string;
+          expires_at?:       string;
+          accepted_at?:      string | null;
+          accepted_by?:      string | null;
+          revoked_at?:       string | null;
+          created_at?:       string;
         };
         Update: {
-          id?:         string;
-          club_id?:    string;
-          code?:       string;
-          role?:       "member" | "pro" | "admin";
-          email?:      string | null;
-          created_by?: string;
-          expires_at?: string;
-          accepted_at?: string | null;
-          accepted_by?: string | null;
-          revoked_at?:  string | null;
-          created_at?:  string;
+          id?:               string;
+          club_id?:          string;
+          code?:             string;
+          role?:             "member" | "pro" | "admin";
+          email?:            string | null;
+          roster_member_id?: string | null;
+          created_by?:       string;
+          expires_at?:       string;
+          accepted_at?:      string | null;
+          accepted_by?:      string | null;
+          revoked_at?:       string | null;
+          created_at?:       string;
         };
         Relationships: [
           {
@@ -1056,6 +1059,13 @@ export type Database = {
             columns: ["club_id"];
             isOneToOne: false;
             referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "club_invites_roster_member_id_fkey";
+            columns: ["roster_member_id"];
+            isOneToOne: false;
+            referencedRelation: "roster_members";
             referencedColumns: ["id"];
           }
         ];
@@ -1918,8 +1928,15 @@ export type Database = {
       };
       create_club_invite: {
         Args: {
-          p_role?:       string;
-          p_email?:      string | null;
+          p_role:              string;
+          p_roster_member_id:  string;
+          p_expires_at?:       string;
+        };
+        Returns: string;
+      };
+      resend_club_invite: {
+        Args: {
+          p_old_code:    string;
           p_expires_at?: string;
         };
         Returns: string;
@@ -1931,15 +1948,15 @@ export type Database = {
       get_club_invites: {
         Args: Record<string, never>;
         Returns: {
-          id:          string;
-          code:        string;
-          role:        string;
-          email:       string | null;
-          expires_at:  string;
-          accepted_at: string | null;
-          accepted_by: string | null;
-          revoked_at:  string | null;
-          created_at:  string;
+          id:               string;
+          code:             string;
+          role:             string;
+          email:            string | null;
+          expires_at:       string;
+          accepted_at:      string | null;
+          accepted_by:      string | null;
+          revoked_at:       string | null;
+          created_at:       string;
         }[];
       };
       set_member_role: {

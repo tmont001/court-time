@@ -26,6 +26,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   email_required:                "Email is required for invite generation.",
   invalid_email_format:          "Please enter a valid email address.",
   invite_already_pending:        "An active invite already exists for this email.",
+  // Phase 33B1 — roster-first invite creation/resend.
+  roster_identity_required:      "No Member record is linked to this invite, so it can't be resent. Recreate it using Add Member + Invite, or Send Invite from an existing roster member.",
+  roster_email_required:         "Add an email to this member's roster record before sending an invite.",
 };
 
 function mapError(message: string): string {
@@ -33,9 +36,13 @@ function mapError(message: string): string {
   return key ? ERROR_MESSAGES[key] : "Something went wrong. Please try again.";
 }
 
-export async function createInviteAction(
+// Phase 33B1: replaces the old free-form createInviteAction. Every invite
+// capable of creating a new membership must be bound to an existing roster
+// identity — this sheet's only caller (InviteSheet, opened from an existing
+// roster member row) already has one.
+export async function createRosterInviteAction(
+  rosterMemberId: string,
   role: string,
-  email: string | null,
   expiryDays: number
 ): Promise<{ code?: string; error?: string }> {
   const supabase = await createClient();
@@ -48,9 +55,9 @@ export async function createInviteAction(
   expiresAt.setDate(expiresAt.getDate() + expiryDays);
 
   const { data, error } = await supabase.rpc("create_club_invite", {
-    p_role:       role,
-    p_email:      email || null,
-    p_expires_at: expiresAt.toISOString(),
+    p_role:              role,
+    p_roster_member_id:  rosterMemberId,
+    p_expires_at:        expiresAt.toISOString(),
   });
 
   if (error) return { error: mapError(error.message) };
@@ -302,26 +309,24 @@ export type ImportResult = {
   errors:   ImportRowError[];
 };
 
+// Phase 33B1: revoke-then-create is now a single server-side transaction
+// (resend_club_invite) instead of two separate RPC calls — closes a latent
+// atomicity gap (a revoke succeeding while create failed used to leave no
+// valid invite at all) and resolves/validates a roster identity before
+// touching anything. role/email are no longer passed from the client; the
+// RPC re-derives them from the invite being resent.
 export async function resendInviteAction(
   oldCode: string,
-  role: string,
-  email: string | null,
 ): Promise<{ code?: string; error?: string }> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
-  // Revoke the old invite so it disappears from the list. Errors are ignored:
-  // the invite may already be expired (which is fine — revoke still works) or
-  // already revoked (shouldn't happen in normal flow but harmless).
-  await supabase.rpc("revoke_club_invite", { p_code: oldCode });
-
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 7);
 
-  const { data, error } = await supabase.rpc("create_club_invite", {
-    p_role:       role,
-    p_email:      email || null,
+  const { data, error } = await supabase.rpc("resend_club_invite", {
+    p_old_code:   oldCode,
     p_expires_at: expiresAt.toISOString(),
   });
 
@@ -417,10 +422,8 @@ export async function importInvitesAction(
   let generated = 0;
   let failed    = 0;
 
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7);
-  const expiresAtIso = expiresAt.toISOString();
-
+  // add_roster_member_and_invite always uses a fixed 7-day expiry
+  // internally — no p_expires_at parameter to compute here.
   for (const row of rows) {
     const name       = [row.firstName, row.lastName].filter(Boolean).join(" ");
     const emailLower = row.email.toLowerCase();
@@ -438,16 +441,27 @@ export async function importInvitesAction(
       continue;
     }
 
-    const { data, error } = await supabase.rpc("create_club_invite", {
-      p_role:       row.role,
+    // Phase 33B1: roster identity first, per row — reuses the same RPC and
+    // duplicate-safety logic as the single-row "Add and Generate Invite"
+    // flow (AddMemberSheet.tsx) instead of creating a bare, unlinked
+    // invite. firstName/lastName were already collected by this form but
+    // previously only used for display (actions.ts pre-33B1) — now they
+    // create the roster identity the invite is bound to. On any error, the
+    // row fails safely and is reported per-row; no partial identity is
+    // ever created (add_roster_member_and_invite itself only writes after
+    // all of its own validation passes).
+    const { data, error } = await supabase.rpc("add_roster_member_and_invite", {
+      p_first_name: row.firstName,
+      p_last_name:  row.lastName,
       p_email:      row.email,
-      p_expires_at: expiresAtIso,
+      p_role:       row.role,
     });
     if (error) {
       results.push({ email: row.email, name, role: row.role, error: mapError(error.message) });
       failed++;
     } else {
-      results.push({ email: row.email, name, role: row.role, code: data ?? undefined });
+      const code = (data as { code?: string } | null)?.code;
+      results.push({ email: row.email, name, role: row.role, code: code ?? undefined });
       generated++;
     }
   }

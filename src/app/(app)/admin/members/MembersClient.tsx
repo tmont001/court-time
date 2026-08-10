@@ -4,6 +4,7 @@ import { useState, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import InviteSheet from "./InviteSheet";
+import type { InviteRosterMember } from "./InviteSheet";
 import AddMemberSheet from "./AddMemberSheet";
 import ImportMembersSheet from "./ImportMembersSheet";
 import type { EditRosterMember } from "./AddMemberSheet";
@@ -178,7 +179,7 @@ export default function MembersClient({
 }: Props) {
   const router = useRouter();
   const [inviteSheetOpen, setInviteSheetOpen]   = useState(false);
-  const [inviteEmail, setInviteEmail]           = useState<string | undefined>();
+  const [inviteRosterMember, setInviteRosterMember] = useState<InviteRosterMember | undefined>();
   const [addSheetOpen, setAddSheetOpen]         = useState(false);
   const [importSheetOpen, setImportSheetOpen]   = useState(false);
   const [editMember, setEditMember]             = useState<EditRosterMember | undefined>();
@@ -349,7 +350,11 @@ export default function MembersClient({
     setGenerateNewLinkCode(null);
     setResendingCode(inv.code);
     startTransition(async () => {
-      const result = await resendInviteAction(inv.code, inv.role, inv.email);
+      // Phase 33B1: resend_club_invite resolves the roster identity to
+      // resend for server-side (reusing the old invite's own
+      // roster_member_id, or healing a legacy email-only invite by exact
+      // match) — role/email are no longer passed from the client.
+      const result = await resendInviteAction(inv.code);
       setResendingCode(null);
       if (result.error) {
         setResendError(result.error);
@@ -458,14 +463,23 @@ export default function MembersClient({
     });
   }
 
-  function openInviteForRoster(email: string) {
-    setInviteEmail(email);
+  function openInviteForRoster(rm: RosterMember) {
+    // Send Invite only ever renders for a roster row with a non-null email
+    // (RosterCard, below) — email is guaranteed here, matching create_club_
+    // invite's roster-first requirement.
+    setInviteRosterMember({
+      id:        rm.id,
+      firstName: rm.first_name,
+      lastName:  rm.last_name,
+      email:     rm.email!,
+      role:      rm.role,
+    });
     setInviteSheetOpen(true);
   }
 
   function closeInviteSheet() {
     setInviteSheetOpen(false);
-    setInviteEmail(undefined);
+    setInviteRosterMember(undefined);
   }
 
   function closeEditSheet() {
@@ -950,8 +964,8 @@ export default function MembersClient({
       )}
 
       {/* Invite sheet */}
-      {inviteSheetOpen && (
-        <InviteSheet onClose={closeInviteSheet} initialEmail={inviteEmail} />
+      {inviteSheetOpen && inviteRosterMember && (
+        <InviteSheet onClose={closeInviteSheet} rosterMember={inviteRosterMember} />
       )}
 
       {/* Add member sheet */}
@@ -1130,7 +1144,7 @@ function RosterCard({
   roster:   RosterMember;
   onEdit:   (rm: RosterMember) => void;
   onDelete: (rm: RosterMember) => void;
-  onInvite: (email: string) => void;
+  onInvite: (rm: RosterMember) => void;
 }) {
   const fullName = [rm.first_name, rm.last_name].filter(Boolean).join(" ");
   const details = [rm.email, rm.phone].filter(Boolean).join(" · ");
@@ -1172,7 +1186,7 @@ function RosterCard({
         </button>
         {rm.email && (
           <button
-            onClick={() => onInvite(rm.email!)}
+            onClick={() => onInvite(rm)}
             className="px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150"
           >
             Send Invite
