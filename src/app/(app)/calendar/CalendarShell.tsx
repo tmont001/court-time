@@ -9,7 +9,7 @@ import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
-import { createReservation, cancelMemberReservation } from "./actions";
+import { createReservation, adminCreateMemberReservation, cancelMemberReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
@@ -44,6 +44,18 @@ interface BookingSlot {
   court:     Court;
   slotStart: Date;
   slotIdx:   number;
+}
+
+// Phase 33C2: one roster identity option for the admin "book for a Member"
+// picker — every club Member, whether or not they have an authenticated
+// account. Sourced directly from roster_members (admin-only RLS, same-club
+// only — see fetchRosterMembers), never from a separate profiles query, so
+// there is exactly one identity space to pick from, matching admin_create_
+// member_reservation's single p_roster_member_id parameter.
+interface RosterMemberOption {
+  id:      string;
+  name:    string;
+  claimed: boolean;
 }
 
 // Raw shape returned by the events query (reservations nested for court_id derivation)
@@ -244,6 +256,20 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
   const [bookingDuration, setBookingDuration] = useState<30 | 60 | 90 | 120>(60);
   const [bookingError, setBookingError]   = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  // Phase 33C2: admin-only "book for a Member" state. isAdmin gates every
+  // one of these both in the picker/fields' rendering below AND in
+  // handleConfirmBooking's branch — a normal member never sees this state
+  // populated and createReservation's call shape below is byte-for-byte
+  // unchanged from before this checkpoint.
+  const isAdmin = userRole === "admin";
+  const [rosterMembers, setRosterMembers]             = useState<RosterMemberOption[]>([]);
+  const [rosterLoading, setRosterLoading]             = useState(false);
+  const [rosterSearch, setRosterSearch]                 = useState("");
+  const [selectedRosterMemberId, setSelectedRosterMemberId] = useState<string | null>(null);
+  const [bookingFormat, setBookingFormat]             = useState<"singles" | "doubles" | null>(null);
+  const [bookingPlayerCount, setBookingPlayerCount]     = useState("");
+  const [bookingGuestNames, setBookingGuestNames]       = useState("");
+  const [bookingNotes, setBookingNotes]                 = useState("");
   // nowMs is 0 during SSR so all slots render as available (no past-slot check).
   // After hydration, useEffect sets the real timestamp, past slots disable without mismatch.
   const [nowMs, setNowMs]                 = useState(0);
@@ -510,6 +536,53 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
     return false;
   }, [bookingSlot, bookingDuration, occupiedSlots]);
 
+  // ── Phase 33C2: admin roster-member picker ────────────────────────────────
+  // roster_members has admin-only, same-club RLS (roster_members_select_
+  // admin, 0056) — this select is scoped by that policy alone, so it is
+  // structurally impossible for it to return another club's roster or to
+  // succeed at all for a non-admin caller, independent of the isAdmin gate
+  // below (which only controls whether the UI ever calls this).
+  const fetchRosterMembers = useCallback(async () => {
+    setRosterLoading(true);
+    const { data } = await supabase
+      .from("roster_members")
+      .select("id, first_name, last_name, claimed_by")
+      .eq("club_id", clubId)
+      .order("last_name", { ascending: true })
+      .order("first_name", { ascending: true });
+    setRosterMembers(
+      (data ?? []).map(r => ({
+        id:      r.id,
+        name:    [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
+        claimed: r.claimed_by !== null,
+      }))
+    );
+    setRosterLoading(false);
+  }, [supabase, clubId]);
+
+  // Fresh fetch + reset every time a NEW slot is opened for booking (admin
+  // only) — bookingSlot is a new object reference on every slot click, so
+  // this never re-fires for the same open sheet, and always starts a new
+  // booking attempt with a clean Member selection and empty optional fields.
+  useEffect(() => {
+    if (bookingSlot && isAdmin) {
+      fetchRosterMembers();
+      setSelectedRosterMemberId(null);
+      setRosterSearch("");
+      setBookingFormat(null);
+      setBookingPlayerCount("");
+      setBookingGuestNames("");
+      setBookingNotes("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookingSlot, isAdmin]);
+
+  const filteredRosterMembers = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    if (!q) return rosterMembers;
+    return rosterMembers.filter(m => m.name.toLowerCase().includes(q));
+  }, [rosterMembers, rosterSearch]);
+
   // ── Reservation fetch ─────────────────────────────────────────────────────
   const fetchReservations = useCallback(async () => {
     if (!clubId) return;
@@ -527,14 +600,33 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
       setResError(true);
     } else {
       const rows = data ?? [];
-      setReservations(rows);
 
+      // Phase 33C2 completion — flicker fix: resolve owner display names
+      // BEFORE swapping in the new reservation list, not after. Previously
+      // setReservations(rows) ran first, so a newly visible block rendered
+      // immediately with the generic "Member" fallback (see the blockLabel
+      // lookup below), then a SECOND render moments later replaced it with
+      // the real name once this profiles fetch resolved — a visible
+      // two-stage flicker on every new/changed booking for admin/pro
+      // viewers (no-account bookings were unaffected — they never had an
+      // entry in ownerNames to begin with). Reordering so both pieces of
+      // state are ready before reservations updates means the grid goes
+      // straight from the OLD fully-resolved state to the NEW
+      // fully-resolved state in one visible step — the existing list stays
+      // on screen unchanged throughout the fetch, exactly as it already
+      // did while loadingRes was true, just now also through this second
+      // lookup.
+      //
       // For admin/pro: fetch display names for other members' court reservations.
       // RLS (profiles_select_same_club) already limits results to the same club.
       if (userRole === "admin" || userRole === "pro") {
+        // Phase 33C2: owner_user_id is null for a staff-created no-account-
+        // Member booking — excluded here (nothing to look up in profiles),
+        // not just filtered by userId/reason as before this checkpoint.
         const otherIds = [...new Set(
           rows
-            .filter(r => r.owner_user_id !== userId && r.reason === "member_booking")
+            .filter((r): r is typeof r & { owner_user_id: string } =>
+              r.owner_user_id !== null && r.owner_user_id !== userId && r.reason === "member_booking")
             .map(r => r.owner_user_id)
         )];
         if (otherIds.length > 0) {
@@ -553,6 +645,8 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
           setOwnerNames(new Map());
         }
       }
+
+      setReservations(rows);
     }
     setLoadingRes(false);
   }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -700,17 +794,46 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
   async function handleConfirmBooking() {
     if (!bookingSlot) return;
+
+    // Phase 33C2: admin must pick a Member before confirming. A normal
+    // member never reaches this branch — isAdmin is derived from the
+    // server-supplied userRole prop, and the picker UI itself only renders
+    // for isAdmin, so this can only trigger for an admin who has not yet
+    // made a selection.
+    if (isAdmin && !selectedRosterMemberId) {
+      setBookingError("Select the Member this reservation is for.");
+      return;
+    }
+
     setBookingLoading(true);
     setBookingError(null);
 
     const endsAt = new Date(bookingSlot.slotStart.getTime() + bookingDuration * 60_000);
 
-    const { error } = await createReservation({
-      p_court_id:  bookingSlot.court.id,
-      p_starts_at: bookingSlot.slotStart.toISOString(),
-      p_ends_at:   endsAt.toISOString(),
-      expectedClubId: clubId,
-    });
+    // Member self-service path is byte-for-byte unchanged from before this
+    // checkpoint: same four params, same createReservation call, no new
+    // fields. Only the admin path (isAdmin === true) gains the Member
+    // picker and optional format/player-count/guest-names/notes fields.
+    const { error } = isAdmin
+      ? await adminCreateMemberReservation({
+          p_court_id:         bookingSlot.court.id,
+          p_starts_at:        bookingSlot.slotStart.toISOString(),
+          p_ends_at:          endsAt.toISOString(),
+          p_roster_member_id: selectedRosterMemberId!,
+          p_format:           bookingFormat,
+          p_player_count:     bookingPlayerCount.trim() ? Number(bookingPlayerCount.trim()) : null,
+          p_guest_names:      bookingGuestNames.trim()
+            ? bookingGuestNames.split(",").map(s => s.trim()).filter(Boolean)
+            : null,
+          p_notes:            bookingNotes.trim() || null,
+          expectedClubId:     clubId,
+        })
+      : await createReservation({
+          p_court_id:  bookingSlot.court.id,
+          p_starts_at: bookingSlot.slotStart.toISOString(),
+          p_ends_at:   endsAt.toISOString(),
+          expectedClubId: clubId,
+        });
 
     if (error) {
       setBookingError(rpcErrorMessage(error.code, error.message));
@@ -720,6 +843,12 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
 
     setBookingSlot(null);
     setBookingDuration(60);
+    setSelectedRosterMemberId(null);
+    setRosterSearch("");
+    setBookingFormat(null);
+    setBookingPlayerCount("");
+    setBookingGuestNames("");
+    setBookingNotes("");
     setRefreshTick(t => t + 1);
     setBookingLoading(false);
   }
@@ -1118,7 +1247,11 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         } else if (isOwn) {
                           blockLabel = "You";
                         } else if (userRole === "admin" || userRole === "pro") {
-                          blockLabel = ownerNames.get(res.owner_user_id) ?? "Member";
+                          // Phase 33C2: owner_user_id is null for a
+                          // staff-created no-account-Member booking — falls
+                          // through to the generic "Member" label below,
+                          // same as any other lookup miss.
+                          blockLabel = (res.owner_user_id ? ownerNames.get(res.owner_user_id) : undefined) ?? "Member";
                         } else {
                           blockLabel = "";
                         }
@@ -1344,6 +1477,50 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               {sheetStartLabel} – {sheetEndLabel}
             </p>
 
+            {/* Phase 33C2: admin-only Member picker. A normal member never
+                sees this — the self-service flow below is unaffected. */}
+            {isAdmin && (
+              <div className="mt-4">
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Member
+                </label>
+                <input
+                  type="text"
+                  value={rosterSearch}
+                  onChange={e => setRosterSearch(e.target.value)}
+                  placeholder="Search members…"
+                  className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+                <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-600 divide-y divide-gray-100 dark:divide-gray-700">
+                  {rosterLoading ? (
+                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Loading members…</p>
+                  ) : filteredRosterMembers.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No members found.</p>
+                  ) : (
+                    filteredRosterMembers.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setSelectedRosterMemberId(m.id)}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm motion-safe:transition-colors motion-safe:duration-150 ${
+                          selectedRosterMemberId === m.id
+                            ? "bg-accent/10 text-accent"
+                            : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                        }`}
+                      >
+                        <span className="truncate">{m.name}</span>
+                        {!m.claimed && (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                            No account yet
+                          </span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 mt-4">
               <span className="text-sm text-gray-600 dark:text-gray-400">Duration</span>
               {([30, 60, 90, 120] as const).map(d => (
@@ -1361,6 +1538,74 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
               ))}
             </div>
 
+            {/* Phase 33C2: admin-only optional fields, matching the existing
+                RPC parameters that create_reservation/admin_create_member_
+                reservation already both accept — not previously exposed in
+                either UI. Self-service booking gains none of these. */}
+            {isAdmin && (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Format <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+                  </label>
+                  <div className="mt-1.5 flex gap-2">
+                    {(["singles", "doubles"] as const).map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setBookingFormat(prev => (prev === f ? null : f))}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          bookingFormat === f
+                            ? "bg-accent text-white dark:text-gray-900"
+                            : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                        }`}
+                      >
+                        {f === "singles" ? "Singles" : "Doubles"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Player count <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={bookingPlayerCount}
+                    onChange={e => setBookingPlayerCount(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Guest names <span className="normal-case text-gray-400 dark:text-gray-500">(optional, comma-separated)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bookingGuestNames}
+                    onChange={e => setBookingGuestNames(e.target.value)}
+                    placeholder="e.g. Jane Doe, John Smith"
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Notes <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bookingNotes}
+                    onChange={e => setBookingNotes(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent"
+                  />
+                </div>
+              </div>
+            )}
+
             {bookingConflict && (
               <p className="mt-3 text-xs text-amber-600">
                 Conflicts with an existing booking. Try a shorter duration or a different slot.
@@ -1371,7 +1616,7 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             )}
 
             <button
-              disabled={bookingConflict || bookingLoading}
+              disabled={bookingConflict || bookingLoading || (isAdmin && !selectedRosterMemberId)}
               onClick={handleConfirmBooking}
               className="mt-5 w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
             >

@@ -14,10 +14,17 @@ import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 // fetches (select("*")) and passes through — status, format, player_count,
 // guest_names, and updated_at were previously present on the object at
 // runtime but inaccessible through this narrower type.
+// Phase 33C2: owner_user_id is now nullable (0108) — a staff-created
+// no-account-Member booking has no authenticated owner. roster_member_id
+// added — the durable Member identity, always set for reason=
+// 'member_booking' (enforced by 0108's reservations_member_booking_
+// identity_guard trigger), used as the display fallback when owner_user_id
+// is null.
 interface ReservationBlock {
   id:                    string;
   court_id:              string;
-  owner_user_id:         string;
+  owner_user_id:         string | null;
+  roster_member_id:      string | null;
   starts_at:             string;
   ends_at:               string;
   status:                string;
@@ -36,10 +43,19 @@ interface Court {
   display_order: number;
 }
 
-interface OwnerProfile {
-  id:         string;
-  first_name: string | null;
-  last_name:  string | null;
+// Phase 33C2: replaces the old OwnerProfile-only shape — the reservation's
+// "who this is for" display now resolves from either profiles
+// (owner_user_id set) or roster_members (owner_user_id null, no-account
+// Member). claimed distinguishes the two for the "No account yet" badge —
+// never labeled as a Guest, per the locked identity model.
+interface MemberDisplay {
+  name:    string;
+  claimed: boolean;
+}
+
+function fullName(p: { first_name: string | null; last_name: string | null }): string {
+  const full = [p.first_name, p.last_name].filter(Boolean).join(" ");
+  return full || "Unknown member";
 }
 
 interface Props {
@@ -62,13 +78,6 @@ interface Props {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function ownerDisplayName(profile: OwnerProfile): string {
-  const first = profile.first_name ?? "";
-  const last  = profile.last_name  ?? "";
-  const full  = [first, last].filter(Boolean).join(" ");
-  return full || "Unknown member";
-}
-
 function mapCancelError(message: string): string {
   if (message === STALE_CLUB_CONTEXT_ERROR)  return STALE_CLUB_MESSAGE;
   if (message === "reservation_not_found") return "This booking has already been cancelled.";
@@ -83,23 +92,53 @@ export default function ReservationDetailSheet({
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
-  const [loading, setLoading]           = useState(false);
-  const [error, setError]               = useState<string | null>(null);
-  const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
-  const [editOpen, setEditOpen]         = useState(false);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState<string | null>(null);
+  const [memberDisplay, setMemberDisplay] = useState<MemberDisplay | null>(null);
+  const [editOpen, setEditOpen]           = useState(false);
 
   useEffect(() => {
-    // Owner-profile fetch is only needed for admin mode (to display "Booked by").
+    // Owner display is only needed for admin mode (to display "Booked by").
     // In member-cancel mode the member is viewing their own booking — skip the fetch.
     if (onMemberCancel) return;
 
-    supabase
-      .from("profiles")
-      .select("id, first_name, last_name")
-      .eq("id", reservation.owner_user_id)
-      .single()
-      .then(({ data }) => { if (data) setOwnerProfile(data); });
-  }, [reservation.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (reservation.owner_user_id) {
+      // Claimed/self-service booking — unchanged from before this checkpoint.
+      supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", reservation.owner_user_id)
+        .single()
+        .then(({ data }) => {
+          setMemberDisplay({ name: data ? fullName(data) : "Unknown member", claimed: true });
+        });
+      return;
+    }
+
+    if (reservation.roster_member_id && isAdmin) {
+      // Phase 33C2: staff-created no-account-Member booking — owner_user_id
+      // is null by design (0108's locked identity model). The Member's name
+      // comes from roster_members via roster_member_id instead. This is a
+      // durable Member identity, never a Guest — never relabeled as one.
+      // roster_members has admin-only RLS (0056), so this fetch is only
+      // attempted in admin mode, matching isAdmin — the same gate used by
+      // the booking-flow Member picker.
+      supabase
+        .from("roster_members")
+        .select("first_name, last_name")
+        .eq("id", reservation.roster_member_id)
+        .single()
+        .then(({ data }) => {
+          setMemberDisplay({ name: data ? fullName(data) : "Unknown member", claimed: false });
+        });
+      return;
+    }
+
+    // No owner_user_id, and either no roster_member_id or the viewer lacks
+    // admin-only roster_members read access — resolve to a neutral, honest
+    // state rather than leaving the sheet stuck on "Loading…" forever.
+    setMemberDisplay({ name: "Club Member", claimed: false });
+  }, [reservation.id, reservation.owner_user_id, reservation.roster_member_id, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived display values ────────────────────────────────────────────────
 
@@ -115,7 +154,7 @@ export default function ReservationDetailSheet({
     timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
   });
 
-  const ownerName = ownerProfile ? ownerDisplayName(ownerProfile) : "Loading…";
+  const ownerName = memberDisplay ? memberDisplay.name : "Loading…";
 
   // Admin may edit only a confirmed member_booking reservation whose start
   // is still in the future. Member and Pro owners never see Edit — the
@@ -188,9 +227,60 @@ export default function ReservationDetailSheet({
         {/* Time */}
         <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
 
-        {/* Owner — admin mode only; member is viewing their own booking */}
-        {!onMemberCancel && (
+        {/* Owner — admin mode only; member is viewing their own booking.
+            member_booking rows get the fuller "Member" row inside the
+            details box below instead of this line, to avoid showing the
+            same person twice. */}
+        {!onMemberCancel && reservation.reason !== "member_booking" && (
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Booked by {ownerName}</p>
+        )}
+
+        {/* Reservation details — admin mode only, member_booking reason
+            only. Phase 33C2 completion: format/player count/guest names/
+            notes were entered at booking/edit time but not previously
+            visible here — the Member row also carries the "No account
+            yet" badge prominently (fixes it not being visibly shown in
+            the compact "Booked by" line this replaces for member_booking
+            rows) — never labeled as a Guest. Empty/unset fields are not
+            rendered at all. */}
+        {!onMemberCancel && reservation.reason === "member_booking" && (
+          <div className="mt-3 rounded-xl border border-gray-200 dark:border-gray-600 divide-y divide-gray-100 dark:divide-gray-700">
+            <div className="px-3 py-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Member</span>
+              <span className="flex items-center gap-1.5 text-sm text-gray-900 dark:text-gray-100">
+                {ownerName}
+                {memberDisplay && !memberDisplay.claimed && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    No account yet
+                  </span>
+                )}
+              </span>
+            </div>
+            {reservation.format && (
+              <div className="px-3 py-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Format</span>
+                <span className="text-sm text-gray-900 dark:text-gray-100 capitalize">{reservation.format}</span>
+              </div>
+            )}
+            {reservation.player_count != null && (
+              <div className="px-3 py-2 flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Player count</span>
+                <span className="text-sm text-gray-900 dark:text-gray-100">{reservation.player_count}</span>
+              </div>
+            )}
+            {reservation.guest_names && reservation.guest_names.length > 0 && (
+              <div className="px-3 py-2">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Guests</span>
+                <p className="text-sm text-gray-900 dark:text-gray-100 mt-0.5">{reservation.guest_names.join(", ")}</p>
+              </div>
+            )}
+            {reservation.notes?.trim() && (
+              <div className="px-3 py-2">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Notes</span>
+                <p className="text-sm text-gray-900 dark:text-gray-100 mt-0.5">{reservation.notes.trim()}</p>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Maintenance notes — only for maintenance/admin_block reason */}

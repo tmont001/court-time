@@ -335,7 +335,8 @@ export type Database = {
           id: string;
           club_id: string;
           court_id: string;
-          owner_user_id: string;
+          owner_user_id: string | null;
+          roster_member_id: string | null;
           starts_at: string;
           ends_at: string;
           status: "pending" | "confirmed" | "cancelled";
@@ -357,7 +358,8 @@ export type Database = {
           id?: string;
           club_id: string;
           court_id: string;
-          owner_user_id: string;
+          owner_user_id?: string | null;
+          roster_member_id?: string | null;
           starts_at: string;
           ends_at: string;
           status?: "pending" | "confirmed" | "cancelled";
@@ -379,7 +381,8 @@ export type Database = {
           id?: string;
           club_id?: string;
           court_id?: string;
-          owner_user_id?: string;
+          owner_user_id?: string | null;
+          roster_member_id?: string | null;
           starts_at?: string;
           ends_at?: string;
           status?: "pending" | "confirmed" | "cancelled";
@@ -417,6 +420,13 @@ export type Database = {
             columns: ["owner_user_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reservations_roster_member_id_fkey";
+            columns: ["roster_member_id"];
+            isOneToOne: false;
+            referencedRelation: "roster_members";
             referencedColumns: ["id"];
           },
           {
@@ -1526,7 +1536,43 @@ export type Database = {
           id: string;
           club_id: string;
           court_id: string;
-          owner_user_id: string;
+          owner_user_id: string | null;
+          roster_member_id: string | null;
+          starts_at: string;
+          ends_at: string;
+          status: string;
+          reason: string;
+          player_count: number | null;
+          format: string | null;
+          guest_names: string[] | null;
+          notes: string | null;
+          event_id: string | null;
+          created_by: string;
+          created_at: string;
+          updated_at: string;
+          cancelled_at: string | null;
+          cancelled_by: string | null;
+          cancellation_kind: string | null;
+        };
+      };
+      admin_create_member_reservation: {
+        Args: {
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_roster_member_id: string;
+          p_expected_club_id: string;
+          p_format?: string | null;
+          p_player_count?: number | null;
+          p_guest_names?: string[] | null;
+          p_notes?: string | null;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          court_id: string;
+          owner_user_id: string | null;
+          roster_member_id: string | null;
           starts_at: string;
           ends_at: string;
           status: string;
@@ -1714,6 +1760,7 @@ export type Database = {
           p_court_id: string;
           p_starts_at: string;
           p_ends_at: string;
+          p_roster_member_id: string;
           p_format?: string | null;
           p_player_count?: number | null;
           p_guest_names?: string[] | null;

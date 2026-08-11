@@ -7,12 +7,17 @@ import { getZonedDayBoundsUTC } from "@/lib/timezone";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+// Phase 33C2: profiles (via owner_user_id) is null for a staff-created
+// no-account-Member booking (0108) — roster_members (via roster_member_id)
+// is the fallback, always present for reason='member_booking' per 0108's
+// identity-guard trigger.
 type Reservation = {
   id:        string;
   starts_at: string;
   ends_at:   string;
-  courts:    { name: string } | null;
-  profiles:  { first_name: string | null; last_name: string | null } | null;
+  courts:         { name: string } | null;
+  profiles:       { first_name: string | null; last_name: string | null } | null;
+  roster_members: { first_name: string | null; last_name: string | null } | null;
 };
 
 type TodayEvent = {
@@ -198,9 +203,12 @@ export default async function AdminOverviewPage() {
     // Today's confirmed member-booking reservations.
     // profiles!owner_user_id disambiguates the three FK relationships on
     // reservations → profiles (owner_user_id, created_by, cancelled_by).
+    // Phase 33C2: roster_members(first_name, last_name) added as the
+    // display fallback for a staff-created no-account-Member booking,
+    // where owner_user_id (and therefore the profiles embed) is null.
     supabase
       .from("reservations")
-      .select("id, starts_at, ends_at, courts(name), profiles!owner_user_id(first_name, last_name)")
+      .select("id, starts_at, ends_at, courts(name), profiles!owner_user_id(first_name, last_name), roster_members(first_name, last_name)")
       .eq("club_id", clubId)
       .eq("status", "confirmed")
       .eq("reason", "member_booking")
@@ -519,7 +527,11 @@ export default async function AdminOverviewPage() {
                 {todayReservations.map(r => (
                   <div key={r.id} className="ct-card px-4 py-2.5">
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {memberName(r.profiles)}
+                      {/* Phase 33C2: r.profiles is null for a staff-created
+                          no-account-Member booking — fall back to
+                          r.roster_members (the durable Member identity,
+                          always present for reason='member_booking'). */}
+                      {memberName(r.profiles ?? r.roster_members)}
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       {r.courts?.name ?? "Court"} · {formatTime(r.starts_at, tz)} – {formatTime(r.ends_at, tz)}

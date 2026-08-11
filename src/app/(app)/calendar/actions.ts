@@ -24,7 +24,7 @@ import {
 // itself is passed straight through to callers as an unknown-shaped record.
 // ---------------------------------------------------------------------------
 interface ReservationMutationResult {
-  reservation: Record<string, unknown> & { owner_user_id: string };
+  reservation: Record<string, unknown> & { owner_user_id: string | null };
   notification_id: string | null;
 }
 
@@ -71,6 +71,45 @@ export async function createReservation(params: {
   } catch {
     // Email dispatch must never block booking success or surface to the user.
   }
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// adminCreateMemberReservation
+// Phase 33C2: staff books a member_booking reservation on behalf of a roster
+// Member — claimed (has an account) or unclaimed (no-account). Wraps
+// admin_create_member_reservation (0108), which independently re-verifies
+// admin authorization and resolves/validates the target roster identity
+// server-side — this action never derives or trusts a client-supplied
+// owner identity, only forwards p_roster_member_id. No SMS/email dispatch:
+// 0108 deliberately writes no notification for this RPC (communications are
+// out of scope for this checkpoint), so none is triggered here either.
+// ---------------------------------------------------------------------------
+export async function adminCreateMemberReservation(params: {
+  p_court_id:         string;
+  p_starts_at:        string;
+  p_ends_at:          string;
+  p_roster_member_id: string;
+  p_format?:          string | null;
+  p_player_count?:    number | null;
+  p_guest_names?:     string[] | null;
+  p_notes?:           string | null;
+  expectedClubId:     string;
+}): Promise<{ error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("admin_create_member_reservation", {
+    ...rpcParams,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/calendar");
 
   return {};
 }
@@ -473,6 +512,11 @@ export async function updateMemberReservationAdmin(params: {
   p_court_id:            string;
   p_starts_at:           string;
   p_ends_at:             string;
+  // Phase 33C2 completion (0109): the Member this reservation is for.
+  // Always sent — the current value when unchanged, a different roster
+  // identity when the admin is reassigning. owner_user_id is derived
+  // server-side from this row's own claimed_by; never sent from here.
+  p_roster_member_id:    string;
   p_format?:             string | null;
   p_player_count?:       number | null;
   p_guest_names?:        string[] | null;

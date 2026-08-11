@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { updateMemberReservationAdmin } from "./actions";
@@ -25,30 +25,39 @@ const START_SLOTS = (() => {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-// Phase 30B1 scope correction: this form edits scheduling fields only
-// (court/date/start time/duration). format/player_count/guest_names/notes
-// are not collected by the current booking flow and are not exposed as
-// editable fields here — but the reservation row may already carry values
-// in those columns (set by other paths, e.g. admin tooling), and this form
-// must never clear or overwrite them. They stay on this type purely so
-// their existing values can be read once and passed straight through to
-// updateMemberReservationAdmin unchanged.
+// Phase 33C2 completion: format/player_count/guest_names/notes and the
+// Member (roster_member_id) are now real editable fields (0109) — the
+// earlier Phase 30B1 scope correction that made these silent pass-through-
+// only fields no longer applies. roster_member_id/owner_user_id read here
+// only to seed the Member picker's initial selection.
 interface EditableReservation {
-  id:            string;
-  court_id:      string;
-  starts_at:     string;
-  ends_at:       string;
-  format:        string | null;
-  player_count:  number | null;
-  guest_names:   string[] | null;
-  notes:         string | null;
-  updated_at:    string;
+  id:                string;
+  court_id:          string;
+  starts_at:         string;
+  ends_at:           string;
+  roster_member_id:  string | null;
+  format:            string | null;
+  player_count:      number | null;
+  guest_names:       string[] | null;
+  notes:             string | null;
+  updated_at:        string;
 }
 
 interface Court {
   id:            string;
   name:          string;
   display_order: number;
+}
+
+// Phase 33C2 completion: one roster identity option for the Member picker —
+// every club Member, whether or not they have an authenticated account.
+// Sourced directly from roster_members (admin-only RLS, same-club only —
+// this sheet only ever renders for isAdmin, matching ReservationDetailSheet's
+// own canEdit gate), mirroring CalendarShell's booking-flow picker exactly.
+interface RosterMemberOption {
+  id:      string;
+  name:    string;
+  claimed: boolean;
 }
 
 interface Props {
@@ -58,14 +67,6 @@ interface Props {
   clubTimezone: string;
   onClose:      () => void;
   onSaved:      () => void;
-}
-
-// Non-editable metadata this form must pass through unchanged.
-interface HiddenFields {
-  format:       string | null;
-  player_count: number | null;
-  guest_names:  string[] | null;
-  notes:        string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -88,7 +89,7 @@ function formatSlotLabel(hour: number, minute: number): string {
   return `${h12}:${minute === 0 ? "00" : "30"} ${ampm}`;
 }
 
-function durationOf(res: EditableReservation): 30 | 60 | 90 | 120 {
+function durationOf(res: { starts_at: string; ends_at: string }): 30 | 60 | 90 | 120 {
   const mins = Math.round((new Date(res.ends_at).getTime() - new Date(res.starts_at).getTime()) / 60_000);
   return (DURATIONS as readonly number[]).includes(mins) ? (mins as 30 | 60 | 90 | 120) : 60;
 }
@@ -105,6 +106,9 @@ function mapEditError(code: string | undefined, message: string): string {
   if (message === "cannot_book_past")             return "You can't move a booking to a time in the past.";
   if (message === "club_closed_this_day")         return "The club is closed on the selected date.";
   if (message === "outside_operating_hours")      return "That time is outside club operating hours.";
+  // Phase 33C2 completion (0109) errors.
+  if (message === "roster_identity_required")     return "Select the Member this reservation is for.";
+  if (message === "roster_member_not_found")      return "That Member could not be found in your club.";
   if (code === "23P01")                           return "That court is already booked for the selected time.";
   return "Something went wrong. Please try again.";
 }
@@ -129,20 +133,63 @@ export default function EditReservationSheet({
   const [startMinute, setStartMinute]   = useState(initialHM.minute);
   const [duration, setDuration]         = useState<30 | 60 | 90 | 120>(() => durationOf(reservation));
 
-  // Not rendered or editable in this form — held only so their current
-  // values can be resubmitted unchanged (see HiddenFields doc comment).
-  const [hiddenFields, setHiddenFields] = useState<HiddenFields>({
-    format:       reservation.format,
-    player_count: reservation.player_count,
-    guest_names:  reservation.guest_names,
-    notes:        reservation.notes,
-  });
+  // Phase 33C2 completion: real editable fields (were silent pass-through
+  // only before 0109).
+  const [selectedRosterMemberId, setSelectedRosterMemberId] = useState(reservation.roster_member_id ?? "");
+  const [rosterMembers, setRosterMembers] = useState<RosterMemberOption[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(true);
+  const [rosterSearch, setRosterSearch]   = useState("");
+  const [format, setFormat]               = useState<"singles" | "doubles" | null>(
+    reservation.format === "singles" || reservation.format === "doubles" ? reservation.format : null
+  );
+  const [playerCount, setPlayerCount]     = useState(reservation.player_count != null ? String(reservation.player_count) : "");
+  const [guestNames, setGuestNames]       = useState((reservation.guest_names ?? []).join(", "));
+  const [notes, setNotes]                 = useState(reservation.notes ?? "");
 
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(reservation.updated_at);
   const [submitting, setSubmitting]     = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [staleConflict, setStaleConflict] = useState(false);
   const [reloading, setReloading]       = useState(false);
+
+  // ── Roster fetch ──────────────────────────────────────────────────────────
+  // roster_members has admin-only, same-club RLS (roster_members_select_
+  // admin, 0056) — this sheet only ever renders for isAdmin (gated by
+  // ReservationDetailSheet's canEdit), so this select is always scoped
+  // correctly and structurally cannot return another club's roster.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setRosterLoading(true);
+      const { data } = await supabase
+        .from("roster_members")
+        .select("id, first_name, last_name, claimed_by")
+        .eq("club_id", clubId)
+        .order("last_name", { ascending: true })
+        .order("first_name", { ascending: true });
+      if (cancelled) return;
+      setRosterMembers(
+        (data ?? []).map(r => ({
+          id:      r.id,
+          name:    [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
+          claimed: r.claimed_by !== null,
+        }))
+      );
+      setRosterLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, clubId]);
+
+  const filteredRosterMembers = useMemo(() => {
+    const q = rosterSearch.trim().toLowerCase();
+    if (!q) return rosterMembers;
+    return rosterMembers.filter(m => m.name.toLowerCase().includes(q));
+  }, [rosterMembers, rosterSearch]);
+
+  const selectedRosterMemberName = useMemo(
+    () => rosterMembers.find(m => m.id === selectedRosterMemberId)?.name ?? null,
+    [rosterMembers, selectedRosterMemberId]
+  );
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
@@ -164,7 +211,7 @@ export default function EditReservationSheet({
     setReloading(true);
     const { data } = await supabase
       .from("reservations")
-      .select("id, court_id, starts_at, ends_at, format, player_count, guest_names, notes, updated_at")
+      .select("id, court_id, starts_at, ends_at, roster_member_id, format, player_count, guest_names, notes, updated_at")
       .eq("id", reservation.id)
       .single();
     setReloading(false);
@@ -179,23 +226,22 @@ export default function EditReservationSheet({
     setDateStr(new Date(data.starts_at).toLocaleDateString("en-CA", { timeZone: clubTimezone }));
     setStartHour(hm.hour);
     setStartMinute(hm.minute);
-    setDuration(durationOf(data as EditableReservation));
-    // Refresh the pass-through values too — a stale conflict means someone
-    // else changed this row, and we must resubmit whatever is current now,
-    // not the values this form was originally opened with.
-    setHiddenFields({
-      format:       data.format,
-      player_count: data.player_count,
-      guest_names:  data.guest_names,
-      notes:        data.notes,
-    });
+    setDuration(durationOf(data));
+    // Refresh every field — a stale conflict means someone else changed
+    // this row (possibly reassigning the Member), and we must resubmit
+    // whatever is current now, not the values this form was opened with.
+    setSelectedRosterMemberId(data.roster_member_id ?? "");
+    setFormat(data.format === "singles" || data.format === "doubles" ? data.format : null);
+    setPlayerCount(data.player_count != null ? String(data.player_count) : "");
+    setGuestNames((data.guest_names ?? []).join(", "));
+    setNotes(data.notes ?? "");
     setExpectedUpdatedAt(data.updated_at);
     setStaleConflict(false);
     setError(null);
   }
 
   async function handleSave() {
-    if (submitting) return;
+    if (submitting || !selectedRosterMemberId) return;
     setSubmitting(true);
     setError(null);
     setStaleConflict(false);
@@ -206,10 +252,13 @@ export default function EditReservationSheet({
       p_court_id:            courtId,
       p_starts_at:           startsAt.toISOString(),
       p_ends_at:             endsAt.toISOString(),
-      p_format:              hiddenFields.format,
-      p_player_count:        hiddenFields.player_count,
-      p_guest_names:         hiddenFields.guest_names,
-      p_notes:               hiddenFields.notes,
+      p_roster_member_id:    selectedRosterMemberId,
+      p_format:              format,
+      p_player_count:        playerCount.trim() ? Number(playerCount.trim()) : null,
+      p_guest_names:         guestNames.trim()
+        ? guestNames.split(",").map(s => s.trim()).filter(Boolean)
+        : null,
+      p_notes:               notes.trim() || null,
       expectedClubId:        clubId,
     });
 
@@ -268,6 +317,49 @@ export default function EditReservationSheet({
             </button>
           </div>
         )}
+
+        {/* Member — Phase 33C2 completion (0109): reassignment. Preserves
+            the reservation row/id; owner_user_id is re-derived server-side
+            from the newly selected roster row's claimed_by. */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Member
+          </label>
+          <input
+            type="text"
+            value={rosterSearch}
+            onChange={e => setRosterSearch(e.target.value)}
+            placeholder={selectedRosterMemberName ?? "Search members…"}
+            className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-gray-200 dark:border-gray-600 divide-y divide-gray-100 dark:divide-gray-700">
+            {rosterLoading ? (
+              <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">Loading members…</p>
+            ) : filteredRosterMembers.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-gray-400 dark:text-gray-500">No members found.</p>
+            ) : (
+              filteredRosterMembers.map(m => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setSelectedRosterMemberId(m.id)}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm motion-safe:transition-colors motion-safe:duration-150 ${
+                    selectedRosterMemberId === m.id
+                      ? "bg-accent/10 text-accent"
+                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                  }`}
+                >
+                  <span className="truncate">{m.name}</span>
+                  {!m.claimed && (
+                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                      No account yet
+                    </span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
 
         {/* Court */}
         <div>
@@ -346,10 +438,74 @@ export default function EditReservationSheet({
           </div>
         </div>
 
+        {/* Format */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Format <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+          </label>
+          <div className="mt-1.5 flex gap-2">
+            {(["singles", "doubles"] as const).map(f => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFormat(prev => (prev === f ? null : f))}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  format === f
+                    ? "bg-accent text-white dark:text-gray-900"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+                }`}
+              >
+                {f === "singles" ? "Singles" : "Doubles"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Player count */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Player count <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+          </label>
+          <input
+            type="number"
+            min={1}
+            value={playerCount}
+            onChange={e => setPlayerCount(e.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+        </div>
+
+        {/* Guest names */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Guest names <span className="normal-case text-gray-400 dark:text-gray-500">(optional, comma-separated)</span>
+          </label>
+          <input
+            type="text"
+            value={guestNames}
+            onChange={e => setGuestNames(e.target.value)}
+            placeholder="e.g. Jane Doe, John Smith"
+            className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Notes <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+        </div>
+
         {error && <p className="text-xs text-red-500">{error}</p>}
 
         <button
-          disabled={submitting || staleConflict}
+          disabled={submitting || staleConflict || !selectedRosterMemberId}
           onClick={handleSave}
           className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
         >
