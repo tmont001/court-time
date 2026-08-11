@@ -1379,6 +1379,10 @@ export type Database = {
         Args: Record<string, never>;
         Returns: string;
       };
+      current_user_roster_member_id: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
       current_user_is_lesson_provider: {
         Args: Record<string, never>;
         Returns: boolean;

@@ -182,6 +182,30 @@ export default async function MySchedulePage({
 
   const now = new Date().toISOString();
 
+  // Phase 33C3: the signed-in user's own durable Member identity for this
+  // club, if claimed — resolved server-side via current_user_roster_
+  // member_id() (0110). Needed before the reservations query below, so
+  // resolved in its own round-trip ahead of the parallel batch rather than
+  // inside it. A claimed Member's pre-claim, staff-created reservation
+  // (owner_user_id null, roster_member_id set to their own identity) can
+  // only be found via this value — owner_user_id alone is not enough.
+  const { data: rosterMemberId } = await supabase.rpc("current_user_roster_member_id");
+
+  let reservationsQuery = supabase
+    .from("reservations")
+    .select("id, court_id, starts_at, ends_at, status, format, created_at")
+    .in("status", ["pending", "confirmed"])
+    .neq("reason", "event")
+    .neq("reason", "pro_lesson")
+    .gte("starts_at", now)
+    .order("starts_at");
+  // A single OR condition on one table cannot return the same row twice,
+  // so no client-side dedup by id is structurally needed — kept anyway
+  // below (reservations Map) as a defensive, explicit guarantee.
+  reservationsQuery = rosterMemberId
+    ? reservationsQuery.or(`owner_user_id.eq.${user.id},roster_member_id.eq.${rosterMemberId}`)
+    : reservationsQuery.eq("owner_user_id", user.id);
+
   const [
     clubResult,
     settingsResult,
@@ -197,15 +221,7 @@ export default async function MySchedulePage({
     clubId
       ? supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
-    supabase
-      .from("reservations")
-      .select("id, court_id, starts_at, ends_at, status, format, created_at")
-      .eq("owner_user_id", user.id)
-      .in("status", ["pending", "confirmed"])
-      .neq("reason", "event")
-      .neq("reason", "pro_lesson")
-      .gte("starts_at", now)
-      .order("starts_at"),
+    reservationsQuery,
     supabase
       .from("event_participants")
       .select(`
@@ -248,7 +264,11 @@ export default async function MySchedulePage({
   const lessonCourts = (lessonCourtsResult.data ?? []) as { id: string; name: string }[];
 
   // ── 1. Member court reservations ────────────────────────────────────────────
-  const reservations = (reservationsResult.data ?? []) as ReservationRow[];
+  // Deduplicated by id defensively — see the reservationsQuery comment above
+  // for why a duplicate is not structurally possible here, kept anyway as an
+  // explicit guarantee rather than an assumption.
+  const rawReservations = (reservationsResult.data ?? []) as ReservationRow[];
+  const reservations = Array.from(new Map(rawReservations.map(r => [r.id, r])).values());
 
   // ── 2. Event signups ─────────────────────────────────────────────────────────
   const { data: signupRows } = signupResult as { data: RawSignupRow[] | null };

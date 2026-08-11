@@ -18,13 +18,14 @@ export default async function CalendarPage({
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role    ?? "member";
 
-  // All four queries only need profile.club_id — run in parallel to save
-  // one sequential round-trip vs. the previous clubs → Promise.all pattern.
+  // All five queries only need profile.club_id (or nothing at all) — run in
+  // parallel to save sequential round-trips.
   const [
     { data: club },
     { data: courts, error: courtsError },
     { data: operatingHours },
     { data: operatingHoursOverrides },
+    { data: userRosterMemberId },
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
@@ -50,6 +51,12 @@ export default async function CalendarPage({
           .eq("club_id", clubId)
           .order("override_date")
       : Promise.resolve({ data: [] }),
+    // Phase 33C3: the caller's own durable Member identity for this club,
+    // if claimed — resolved server-side via current_user_roster_member_id()
+    // (0110), never derived from owner_user_id alone. Lets CalendarShell
+    // recognize a staff-created, pre-claim reservation (owner_user_id null)
+    // as the signed-in Member's own booking.
+    supabase.rpc("current_user_roster_member_id"),
   ]);
 
   const clubTimezone = club?.timezone ?? "America/New_York";
@@ -77,6 +84,7 @@ export default async function CalendarPage({
           courts={courts ?? []}
           hasError={!!courtsError}
           userId={user.id}
+          userRosterMemberId={userRosterMemberId ?? null}
           clubId={clubId}
           clubTimezone={clubTimezone}
           userRole={userRole}

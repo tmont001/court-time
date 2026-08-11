@@ -135,6 +135,12 @@ interface Props {
   courts:                  Court[];
   hasError?:               boolean;
   userId:                  string;
+  // Phase 33C3: the signed-in user's own durable Member identity for this
+  // club, if claimed — resolved server-side (0110's current_user_roster_
+  // member_id()), never derived client-side from owner_user_id. Null for
+  // an account with no claimed roster identity in this club (should not
+  // happen in practice after 33B1's backfill, but handled defensively).
+  userRosterMemberId:      string | null;
   clubId:                  string;
   clubTimezone:            string;
   userRole:                string;
@@ -200,7 +206,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -1176,7 +1182,17 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
                         const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
                         const top       = (startMins / 30) * rowH;
                         const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, 4);
-                        const isOwn     = res.owner_user_id === userId;
+                        // Phase 33C3: also recognize a claimed Member's own
+                        // pre-claim, staff-created reservation (owner_user_id
+                        // null, roster_member_id set to their own identity).
+                        // roster_member_id is only ever populated for
+                        // reason='member_booking' rows (0108's identity
+                        // guard trigger) — pro_lesson/maintenance blocks
+                        // always have it null, so this fallback is inert for
+                        // them and cannot change lesson-privacy or admin-
+                        // block behavior below.
+                        const isOwn     = res.owner_user_id === userId ||
+                          (userRosterMemberId !== null && res.roster_member_id === userRosterMemberId);
                         const isLesson  = res.reason === "pro_lesson";
                         const isBlocked = !isLesson && res.reason !== "member_booking";
                         const isAdmin   = userRole === "admin";
@@ -1444,7 +1460,15 @@ export default function CalendarShell({ courts, hasError, userId, clubId, clubTi
             // via /my-schedule and via the underlying RPC/RLS; this closes
             // the previous /calendar-only UI gap rather than leaving it
             // inconsistent with /my-schedule.
-            selectedReservation.owner_user_id === userId && (userRole === "member" || userRole === "pro")
+            // Phase 33C3: widened to also recognize a claimed Member's own
+            // pre-claim, staff-created reservation via roster_member_id —
+            // see the matching isOwn comment above. cancel_member_
+            // reservation (0110) independently re-derives and enforces this
+            // same ownership match server-side; this is a UI-eligibility
+            // mirror, not the authorization boundary itself.
+            (selectedReservation.owner_user_id === userId ||
+              (userRosterMemberId !== null && selectedReservation.roster_member_id === userRosterMemberId)) &&
+            (userRole === "member" || userRole === "pro")
               ? async () => cancelMemberReservation(selectedReservation.id, clubId)
               : undefined
           }
