@@ -41,9 +41,16 @@ export interface LessonRequestRow {
 }
 
 export interface ProLessonRequestRow extends LessonRequestRow {
-  member_id:         string;
+  // Phase 33D1: member_id is null for a lesson booked (via
+  // admin_create_member_lesson) for a Member with no Court Time account.
+  // roster_member_id is the durable identity — always present.
+  // member_claimed distinguishes the two, for a "No account yet" indicator
+  // — never labeled as a Guest, matching the reservations-domain precedent.
+  member_id:         string | null;
   member_first_name: string | null;
   member_last_name:  string | null;
+  roster_member_id:  string;
+  member_claimed:    boolean;
   last_actor_role:   string | null;
 }
 
@@ -293,7 +300,7 @@ export async function proposeLessonTime(params: {
   p_starts_at:             string;
   p_ends_at:               string;
   p_court_id?:             string | null;
-  member_id:               string;
+  member_id:               string | null;
 }): Promise<{ error?: string }> {
   const supabase = await createClient();
 
@@ -307,9 +314,15 @@ export async function proposeLessonTime(params: {
 
   if (error) return { error: mapLessonError(error.message) };
 
-  try {
-    await dispatchLessonEmail(params.member_id, "lesson_request_proposed", params.p_request_id);
-  } catch { /* non-blocking */ }
+  // Phase 33D1: member_id is null for a no-account Member's lesson — the
+  // RPC itself now rejects this call before reaching here (member_has_no_
+  // account), so this branch is unreachable in practice, but handled
+  // defensively rather than assumed.
+  if (params.member_id) {
+    try {
+      await dispatchLessonEmail(params.member_id, "lesson_request_proposed", params.p_request_id);
+    } catch { /* non-blocking */ }
+  }
 
   revalidatePath("/events");
   revalidatePath("/admin/lessons");
@@ -320,7 +333,7 @@ export async function proposeLessonTime(params: {
 
 export async function declineLessonRequest(
   requestId: string,
-  memberId:  string,
+  memberId:  string | null,
   reason?:   string | null,
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
@@ -332,9 +345,18 @@ export async function declineLessonRequest(
 
   if (error) return { error: mapLessonError(error.message) };
 
-  try {
-    await dispatchLessonEmail(memberId, "lesson_request_declined", requestId);
-  } catch { /* non-blocking */ }
+  // Phase 33D1: memberId is null for a no-account Member's lesson — no
+  // notification of any kind is sent in that case (deferred to Phase 33E,
+  // unchanged from every prior Phase 33 checkpoint). In practice this RPC
+  // is unreachable for such a row at all (decline_lesson_request's own
+  // status guard only permits 'pending'/'proposed'-non-reschedule, which a
+  // staff-created lesson never enters — it starts 'confirmed'), but the
+  // null case is still handled defensively here rather than assumed away.
+  if (memberId) {
+    try {
+      await dispatchLessonEmail(memberId, "lesson_request_declined", requestId);
+    } catch { /* non-blocking */ }
+  }
 
   revalidatePath("/events");
   revalidatePath("/admin/lessons");
@@ -345,7 +367,7 @@ export async function declineLessonRequest(
 
 export async function cancelLesson(params: {
   requestId:  string;
-  memberId:   string;
+  memberId:   string | null;
   proId:      string;
   actorId:    string;
   reason?:    string | null;
@@ -363,8 +385,11 @@ export async function cancelLesson(params: {
 
   if (error) return { error: mapLessonError(error.message) };
 
-  // Notify both parties who are NOT the actor
-  if (params.actorId !== params.memberId) {
+  // Notify both parties who are NOT the actor. Phase 33D1: memberId is
+  // null for a no-account Member's lesson — skipped entirely (no
+  // notification of any kind for a no-account Member, matching every
+  // prior Phase 33 checkpoint).
+  if (params.memberId && params.actorId !== params.memberId) {
     try {
       await dispatchLessonEmail(params.memberId, "lesson_cancelled", params.requestId);
     } catch { /* non-blocking */ }
@@ -405,7 +430,7 @@ export async function getClubProsAction(): Promise<{ pros?: ClubPro[]; error?: s
 export async function reassignLessonProviderAction(
   requestId: string,
   newProId:  string,
-  memberId:  string,
+  memberId:  string | null,
   oldProId:  string,
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
@@ -429,10 +454,16 @@ export async function reassignLessonProviderAction(
     await dispatchLessonEmail(oldProId, "lesson_provider_reassigned", resultId);
   } catch { /* non-blocking */ }
 
-  // Notify member
-  try {
-    await dispatchLessonEmail(memberId, "lesson_provider_reassigned", resultId);
-  } catch { /* non-blocking */ }
+  // Notify member. Phase 33D1: memberId is null for a no-account Member's
+  // lesson — skipped (in practice unreachable here too, same reasoning as
+  // declineLessonRequest above: reassign_lesson_provider only permits
+  // 'pending'/'proposed'-non-reschedule, which a staff-created lesson
+  // never enters).
+  if (memberId) {
+    try {
+      await dispatchLessonEmail(memberId, "lesson_provider_reassigned", resultId);
+    } catch { /* non-blocking */ }
+  }
 
   revalidatePath("/events");
   revalidatePath("/admin/lessons");
@@ -489,6 +520,130 @@ export async function adminCreateLessonRequestAction(
   revalidatePath("/events");
   revalidatePath("/admin/lessons");
   revalidatePath(`/admin/members/${params.memberId}`);
+  return { requestId };
+}
+
+// ─── adminCreateMemberLessonAction ────────────────────────────────────────────
+// Phase 33D1: staff books a CONFIRMED lesson directly for a roster Member —
+// claimed or no-account — via admin_create_member_lesson. No pending/
+// proposed negotiation stage, mirroring adminCreateMemberReservation's
+// directness for court bookings. Distinct from adminCreateLessonRequestAction
+// above, which remains unchanged and still only starts a negotiation for an
+// already-claimed Member (profiles-based, unable to target a no-account
+// roster Member at all — left as-is, not the primary admin flow anymore).
+
+export interface AdminCreateMemberLessonParams {
+  rosterMemberId: string;
+  proId:          string;
+  courtId:        string;
+  startsAt:       string;
+  endsAt:         string;
+  lessonTypeId?:  string | null;
+  memberNote?:    string | null;
+  expectedClubId: string;
+}
+
+export async function adminCreateMemberLessonAction(
+  params: AdminCreateMemberLessonParams,
+): Promise<{ requestId?: string; error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("admin_create_member_lesson", {
+    p_expected_club_id: params.expectedClubId,
+    p_roster_member_id: params.rosterMemberId,
+    p_pro_id:           params.proId,
+    p_court_id:         params.courtId,
+    p_starts_at:        params.startsAt,
+    p_ends_at:           params.endsAt,
+    p_lesson_type_id:   params.lessonTypeId ?? null,
+    p_member_note:      params.memberNote   ?? null,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const result = data as { id: string; member_id: string | null } | null;
+  const requestId = result?.id;
+
+  if (requestId) {
+    try {
+      await dispatchLessonEmail(params.proId, "lesson_request_confirmed", requestId);
+    } catch { /* non-blocking */ }
+    // No-account Members receive no notification of any kind — deferred to
+    // Phase 33E, unchanged from every prior Phase 33 checkpoint.
+    if (result?.member_id) {
+      try {
+        await dispatchLessonEmail(result.member_id, "lesson_request_confirmed", requestId);
+      } catch { /* non-blocking */ }
+    }
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  revalidatePath("/calendar");
+  return { requestId };
+}
+
+// ─── adminUpdateMemberLessonAction ────────────────────────────────────────────
+// Phase 33D1: staff directly edits a confirmed lesson (Member/Pro/court/
+// time/type/note reassignment) via admin_update_member_lesson — no
+// negotiation step, mirroring updateMemberReservationAdmin's directness.
+
+export interface AdminUpdateMemberLessonParams {
+  requestId:            string;
+  expectedClubId:       string;
+  expectedUpdatedAt:    string;
+  rosterMemberId:       string;
+  proId:                string;
+  courtId:              string;
+  startsAt:             string;
+  endsAt:               string;
+  lessonTypeId?:        string | null;
+  memberNote?:          string | null;
+}
+
+export async function adminUpdateMemberLessonAction(
+  params: AdminUpdateMemberLessonParams,
+): Promise<{ requestId?: string; error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("admin_update_member_lesson", {
+    p_request_id:          params.requestId,
+    p_expected_club_id:    params.expectedClubId,
+    p_expected_updated_at: params.expectedUpdatedAt,
+    p_roster_member_id:    params.rosterMemberId,
+    p_pro_id:              params.proId,
+    p_court_id:            params.courtId,
+    p_starts_at:           params.startsAt,
+    p_ends_at:              params.endsAt,
+    p_lesson_type_id:      params.lessonTypeId ?? null,
+    p_member_note:         params.memberNote   ?? null,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const result = data as { id: string; member_id: string | null } | null;
+  const requestId = result?.id;
+
+  if (requestId) {
+    try {
+      await dispatchLessonEmail(params.proId, "lesson_request_confirmed", requestId);
+    } catch { /* non-blocking */ }
+    if (result?.member_id) {
+      try {
+        await dispatchLessonEmail(result.member_id, "lesson_request_confirmed", requestId);
+      } catch { /* non-blocking */ }
+    }
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  revalidatePath("/calendar");
   return { requestId };
 }
 
@@ -561,6 +716,11 @@ function mapLessonError(msg: string): string {
     same_pro:                       "The request is already assigned to this pro.",
     cannot_assign_to_self:          "Cannot assign the lesson to the member themselves.",
     member_not_found:               "Member not found.",
+    // Phase 33D1
+    no_roster_identity:             "Your Member profile could not be found for this club.",
+    roster_member_not_found:        "The selected member could not be found.",
+    member_has_no_account:          "This lesson's Member has no account yet — use Edit Lesson instead.",
+    invalid_status_for_edit:        "Only confirmed lessons can be edited this way.",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

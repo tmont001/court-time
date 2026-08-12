@@ -163,7 +163,13 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   // pending reschedule proposal (status='proposed' with linked_reservation_id
   // set — revise it again before the member responds). Same authorization
   // as canPropose — Admin (any) or the assigned Pro only.
+  // Phase 33D1: also requires member_claimed — propose_lesson_time's
+  // negotiation cycle requires an authenticated Member to respond, and is
+  // now server-guarded (member_has_no_account) against a no-account
+  // Member's lesson. Admin uses "Edit Lesson" (LessonProSheet) for those
+  // instead — a direct edit, not a negotiation.
   const canReschedule = (r: ProLessonRequestRow) =>
+    r.member_claimed &&
     (r.status === "confirmed" || (r.status === "proposed" && r.linked_reservation_id !== null)) &&
     (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
 
@@ -243,7 +249,14 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
             className="ct-card mx-0 mb-3 px-4 py-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 motion-safe:transition-colors motion-safe:duration-100 cursor-pointer"
           >
             <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{memberName}</span>
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {memberName}
+                {!r.member_claimed && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    No account yet
+                  </span>
+                )}
+              </span>
               {statusBadge(r.status)}
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">

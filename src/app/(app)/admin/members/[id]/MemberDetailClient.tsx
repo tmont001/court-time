@@ -83,6 +83,12 @@ interface Props {
   pros:           ClubPro[];
   courts:         Court[];
   lessonTypes:    LessonType[];
+  // Phase 33D1: this Member's roster_member_id — looked up server-side by
+  // claimed_by, since this page is only reachable for a Member with a
+  // profiles row (always claimed). Null only if the roster backfill
+  // somehow missed this account — the "Request Lesson" button is hidden
+  // in that case rather than opening a sheet with no valid target.
+  rosterMemberId: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -152,6 +158,7 @@ export default function MemberDetailClient({
   pros,
   courts,
   lessonTypes,
+  rosterMemberId,
 }: Props) {
   const [tab, setTab] = useState<"upcoming" | "history" | "notes">("upcoming");
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -416,13 +423,13 @@ export default function MemberDetailClient({
           ))}
         </div>
 
-        {/* Admin action: request a lesson for this member */}
-        {pros.length > 0 && (
+        {/* Admin action: book a lesson for this member */}
+        {pros.length > 0 && rosterMemberId && (
           <button
             onClick={() => setRequestSheetOpen(true)}
             className="mt-3 w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
           >
-            Request Lesson
+            Book Lesson
           </button>
         )}
       </div>
@@ -692,20 +699,21 @@ export default function MemberDetailClient({
         </div>
       )}
 
-      {/* Request Lesson sheet */}
-      {requestSheetOpen && (
+      {/* Book Lesson sheet — Phase 33D1: books directly via roster_
+          member_id, replacing the old profiles-keyed request-only flow. */}
+      {requestSheetOpen && rosterMemberId && (
         <AdminRequestLessonSheet
           pros={pros}
-          members={[{
-            id:         member.id,
-            first_name: member.first_name,
-            last_name:  member.last_name,
-            email:      member.email,
+          rosterMembers={[{
+            id:      rosterMemberId,
+            name:    [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member",
+            claimed: true,
           }]}
           courts={courts}
           lessonTypes={lessonTypes}
           clubId={clubId}
-          preselectedMemberId={member.id}
+          clubTimezone={clubTimezone}
+          preselectedMemberId={rosterMemberId}
           onClose={() => setRequestSheetOpen(false)}
         />
       )}

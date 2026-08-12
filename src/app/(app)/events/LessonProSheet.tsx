@@ -9,6 +9,7 @@ import {
   declineLessonRequest,
   cancelLesson,
   reassignLessonProviderAction,
+  adminUpdateMemberLessonAction,
   type ProLessonRequestRow,
   type ClubPro,
 } from "@/app/(app)/lessons/actions";
@@ -30,7 +31,7 @@ interface Props {
   onClose:      () => void;
 }
 
-type ActionMode = "propose" | "decline" | "cancel" | "reassign" | null;
+type ActionMode = "propose" | "decline" | "cancel" | "reassign" | "admin_edit" | null;
 
 const TIME_SLOTS = (() => {
   const slots: { hour: number; minute: number; label: string }[] = [];
@@ -247,6 +248,10 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   const [courtId, setCourtId]     = useState<string>(courts[0]?.id ?? "");
   const [reason, setReason]       = useState("");
   const [newProId, setNewProId]   = useState<string>("");
+  // Phase 33D1: admin direct-edit mode's Pro selection — reuses the
+  // existing courtId/dateStr/slotIdx state above (already generic, shared
+  // with "propose" mode's TimePicker) rather than duplicating them.
+  const [editProId, setEditProId] = useState<string>(request.pro_id);
   const [error, setError]         = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -259,8 +264,16 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // the assigned Pro only.
   const isAssignedProOrAdmin = userRole === "admin" || (userRole === "pro" && request.pro_id === userId);
   const isPendingReschedule  = request.status === "proposed" && request.linked_reservation_id !== null;
-  const isRescheduleEligible = isAssignedProOrAdmin &&
+  // Phase 33D1: propose_lesson_time's negotiation cycle requires an
+  // authenticated Member to respond — now server-guarded against a
+  // no-account Member's lesson (member_has_no_account). Admin uses
+  // "Edit Lesson" (canAdminEditDirectly below) for those instead.
+  const isRescheduleEligible = isAssignedProOrAdmin && request.member_claimed &&
     (request.status === "confirmed" || isPendingReschedule);
+  // Phase 33D1: admin-only direct edit (Member/Pro/court/time/type/note,
+  // no negotiation) for a no-account Member's confirmed lesson — the one
+  // case the existing propose/reschedule cycle structurally cannot serve.
+  const canAdminEditDirectly = userRole === "admin" && !request.member_claimed && request.status === "confirmed";
 
   const startsAt = useMemo(() => {
     const slot = TIME_SLOTS[slotIdx];
@@ -309,9 +322,16 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
           <span className="text-gray-500 dark:text-gray-400">Status</span>
           {statusBadge(request.status)}
         </div>
-        <div className="px-4 py-2.5 flex justify-between text-sm">
+        <div className="px-4 py-2.5 flex justify-between items-center text-sm">
           <span className="text-gray-500 dark:text-gray-400">Member</span>
-          <span className="font-medium text-gray-900 dark:text-gray-100">{memberName}</span>
+          <span className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-gray-100">
+            {memberName}
+            {!request.member_claimed && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                No account yet
+              </span>
+            )}
+          </span>
         </div>
         <div className="px-4 py-2.5 flex justify-between text-sm">
           <span className="text-gray-500 dark:text-gray-400">Duration</span>
@@ -505,6 +525,61 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
         </div>
       )}
 
+      {/* Phase 33D1: admin direct edit for a no-account Member's confirmed
+          lesson — no negotiation step. Reuses the TimePicker component
+          (dateStr/slotIdx/courtId state) plus a Pro selector, submitting
+          directly to admin_update_member_lesson rather than propose_
+          lesson_time. request.roster_member_id is passed through
+          unchanged — this mode never reassigns the Member, only Pro/
+          court/time; a full Member-reassignment UI is left for a future
+          pass, out of this checkpoint's minimal scope. */}
+      {mode === "admin_edit" && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Pro
+            </label>
+            <select
+              value={editProId}
+              onChange={e => setEditProId(e.target.value)}
+              className="w-full ct-input text-base md:text-sm"
+            >
+              {(pros ?? []).map(p => (
+                <option key={p.id} value={p.id}>
+                  {[p.first_name, p.last_name].filter(Boolean).join(" ") || "Pro"}
+                </option>
+              ))}
+            </select>
+          </div>
+          <TimePicker
+          dateStr={dateStr}
+          setDateStr={setDateStr}
+          slotIdx={slotIdx}
+          setSlotIdx={setSlotIdx}
+          courtId={courtId}
+          setCourtId={setCourtId}
+          courts={courts}
+          endLabel={endLabel}
+          durationMins={request.duration_minutes}
+          clubTimezone={clubTimezone}
+          error={error}
+          isPending={isPending}
+          submitLabel="Save Changes"
+          onSubmit={() => doAction(() => adminUpdateMemberLessonAction({
+            requestId:         request.id,
+            expectedClubId:    clubId,
+            expectedUpdatedAt: request.updated_at,
+            rosterMemberId:    request.roster_member_id,
+            proId:             editProId,
+            courtId,
+            startsAt:          startsAt.toISOString(),
+            endsAt:            endsAt.toISOString(),
+          }))}
+          onCancel={() => { setMode(null); setError(""); }}
+          />
+        </div>
+      )}
+
       {/* ── Default action buttons ─────────────────────────────────────────── */}
 
       {mode === null && (
@@ -568,6 +643,17 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
               className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
             >
               {isPendingReschedule ? "Revise Proposed Time" : "Propose New Time"}
+            </button>
+          )}
+
+          {/* Phase 33D1: no-account Member's confirmed lesson — direct
+              admin edit (Pro/court/time), no negotiation. */}
+          {canAdminEditDirectly && (
+            <button
+              onClick={() => { setEditProId(request.pro_id); setError(""); setMode("admin_edit"); }}
+              className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
+            >
+              Edit Lesson
             </button>
           )}
 

@@ -27,7 +27,7 @@ export default async function MemberDetailPage({ params }: Props) {
   const supabase  = await createClient();
   const clubId    = profile.activeClubId ?? "";
 
-  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, prosResult, courtsResult, lessonTypesResult] =
+  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, prosResult, courtsResult, lessonTypesResult, rosterResult] =
     await Promise.all([
       supabase.rpc("get_admin_member_detail", { p_member_id: id }),
       supabase.rpc("get_member_upcoming_activity", { p_member_id: id }),
@@ -46,6 +46,15 @@ export default async function MemberDetailPage({ params }: Props) {
             .order("display_order")
         : Promise.resolve({ data: [] }),
       supabase.rpc("get_lesson_types"),
+      // Phase 33D1: this Member's roster_member_id — AdminRequestLessonSheet
+      // now books via admin_create_member_lesson(p_roster_member_id, ...),
+      // not the old profiles-keyed admin_create_lesson_request. This page
+      // is reached only for a Member with a profiles row (get_admin_member_
+      // detail is profiles-keyed), so this Member is always claimed — the
+      // roster row is looked up by claimed_by, not created here.
+      clubId
+        ? supabase.from("roster_members").select("id").eq("club_id", clubId).eq("claimed_by", id).maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
   if (detailResult.error) {
@@ -72,6 +81,7 @@ export default async function MemberDetailPage({ params }: Props) {
   const lessonTypes = (lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
   }[];
+  const rosterMemberId = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
 
@@ -91,6 +101,7 @@ export default async function MemberDetailPage({ params }: Props) {
             pros={pros}
             courts={courts}
             lessonTypes={lessonTypes}
+            rosterMemberId={rosterMemberId}
           />
         </div>
       </div>

@@ -254,6 +254,14 @@ export default async function MySchedulePage({
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
 
+  // A silently-swallowed error here previously fell back to an empty list
+  // indistinguishable from "genuinely no lessons" — logged now (matching
+  // the existing courtsError pattern in calendar/page.tsx) so a real
+  // get_my_lesson_requests failure leaves a diagnostic trail instead of
+  // presenting as a missing lesson with no trace of why.
+  if (lessonsResult.error) {
+    console.error("[MySchedule] get_my_lesson_requests failed:", lessonsResult.error.message);
+  }
   const allLessons = (lessonsResult.data ?? []) as LessonRequestRow[];
   const confirmedUpcomingLessons = allLessons
     .filter(r => r.status === "confirmed" && r.proposed_starts_at && r.proposed_starts_at >= now)

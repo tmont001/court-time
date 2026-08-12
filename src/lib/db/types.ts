@@ -1084,8 +1084,9 @@ export type Database = {
         Row: {
           id:                    string;
           club_id:               string;
-          member_id:             string;
+          member_id:             string | null;
           pro_id:                string;
+          roster_member_id:      string;
           preferred_court_id:    string | null;
           duration_minutes:      number;
           member_note:           string | null;
@@ -1109,8 +1110,9 @@ export type Database = {
         Insert: {
           id?:                    string;
           club_id:                string;
-          member_id:              string;
+          member_id?:             string | null;
           pro_id:                 string;
+          roster_member_id:       string;
           preferred_court_id?:    string | null;
           duration_minutes:       number;
           member_note?:           string | null;
@@ -1134,8 +1136,9 @@ export type Database = {
         Update: {
           id?:                    string;
           club_id?:               string;
-          member_id?:             string;
+          member_id?:             string | null;
           pro_id?:                string;
+          roster_member_id?:      string;
           preferred_court_id?:    string | null;
           duration_minutes?:      number;
           member_note?:           string | null;
@@ -1183,6 +1186,13 @@ export type Database = {
             columns: ["linked_reservation_id"];
             isOneToOne: false;
             referencedRelation: "reservations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "lesson_requests_roster_member_id_fkey";
+            columns: ["roster_member_id"];
+            isOneToOne: false;
+            referencedRelation: "roster_members";
             referencedColumns: ["id"];
           }
         ];
@@ -2861,6 +2871,84 @@ export type Database = {
           lesson_outcome:        string | null;
         }[];
       };
+      admin_create_member_lesson: {
+        Args: {
+          p_expected_club_id: string;
+          p_roster_member_id: string;
+          p_pro_id:           string;
+          p_court_id:         string;
+          p_starts_at:        string;
+          p_ends_at:          string;
+          p_lesson_type_id?:  string | null;
+          p_member_note?:     string | null;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string | null;
+          pro_id:                string;
+          roster_member_id:      string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+      };
+      admin_update_member_lesson: {
+        Args: {
+          p_request_id:          string;
+          p_expected_club_id:    string;
+          p_expected_updated_at: string;
+          p_roster_member_id:    string;
+          p_pro_id:              string;
+          p_court_id:            string;
+          p_starts_at:           string;
+          p_ends_at:             string;
+          p_lesson_type_id?:     string | null;
+          p_member_note?:        string | null;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string | null;
+          pro_id:                string;
+          roster_member_id:      string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+      };
       get_pro_lesson_requests: {
         Args: {
           p_pro_filter?: string | null;
@@ -2868,9 +2956,11 @@ export type Database = {
         };
         Returns: {
           id:                    string;
-          member_id:             string;
+          member_id:             string | null;
           member_first_name:     string | null;
           member_last_name:      string | null;
+          roster_member_id:      string;
+          member_claimed:        boolean;
           pro_id:                string;
           pro_first_name:        string | null;
           pro_last_name:         string | null;

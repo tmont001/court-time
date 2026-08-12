@@ -1,18 +1,22 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import { localDateTimeToUTC } from "@/lib/timezone";
 import {
-  adminCreateLessonRequestAction,
+  adminCreateMemberLessonAction,
   type ClubPro,
 } from "@/app/(app)/lessons/actions";
 
-interface Member {
-  id:         string;
-  first_name: string | null;
-  last_name:  string | null;
-  email:      string | null;
+// Phase 33D1: sourced from roster_members — includes claimed and
+// no-account Members, mirroring CalendarShell's admin booking picker.
+// Replaces the old profiles-only Member interface, which could never
+// include a Member with no Court Time account.
+interface RosterMemberOption {
+  id:      string;
+  name:    string;
+  claimed: boolean;
 }
 
 interface Court {
@@ -28,17 +32,31 @@ interface LessonType {
 
 interface Props {
   pros:                 ClubPro[];
-  members:              Member[];
+  rosterMembers:        RosterMemberOption[];
   courts:               Court[];
   lessonTypes:          LessonType[];
   clubId:               string;
+  clubTimezone:         string;
   preselectedMemberId?: string;
   onClose:              () => void;
 }
 
 const DEFAULT_DURATIONS = [30, 45, 60, 90];
 
-type Step = "member" | "pro" | "duration" | "details" | "review";
+type Step = "member" | "pro" | "schedule" | "details" | "review";
+
+const TIME_SLOTS = (() => {
+  const slots: { hour: number; minute: number; label: string }[] = [];
+  for (let h = 5; h <= 22; h++) {
+    for (const m of [0, 30]) {
+      if (h === 22 && m === 30) break;
+      const h12  = h % 12 || 12;
+      const ampm = h < 12 ? "AM" : "PM";
+      slots.push({ hour: h, minute: m, label: `${h12}:${m === 0 ? "00" : "30"} ${ampm}` });
+    }
+  }
+  return slots;
+})();
 
 function getName(first: string | null, last: string | null, fallback: string) {
   return [first, last].filter(Boolean).join(" ") || fallback;
@@ -46,21 +64,26 @@ function getName(first: string | null, last: string | null, fallback: string) {
 
 export default function AdminRequestLessonSheet({
   pros,
-  members,
+  rosterMembers,
   courts,
   lessonTypes,
   clubId,
+  clubTimezone,
   preselectedMemberId,
   onClose,
 }: Props) {
   const router = useRouter();
 
-  const [memberId, setMemberId]           = useState(preselectedMemberId ?? "");
+  const [rosterMemberId, setRosterMemberId] = useState(preselectedMemberId ?? "");
+  const [memberSearch, setMemberSearch]   = useState("");
   const [proId, setProId]                 = useState("");
   const [lessonTypeId, setLessonTypeId]   = useState("");
   const [duration, setDuration]           = useState(60);
-  const [preferredCourtId, setPreferredCourtId] = useState("");
-  const [windows, setWindows]             = useState("");
+  const [courtId, setCourtId]             = useState<string>(courts[0]?.id ?? "");
+  const [dateStr, setDateStr]             = useState<string>(() =>
+    new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })
+  );
+  const [slotIdx, setSlotIdx]             = useState(8); // default 9:00 AM
   const [memberNote, setMemberNote]       = useState("");
   const [error, setError]                 = useState("");
   const [step, setStep]                   = useState<Step>(preselectedMemberId ? "pro" : "member");
@@ -68,19 +91,37 @@ export default function AdminRequestLessonSheet({
 
   const skipMemberSelect = !!preselectedMemberId;
 
-  const selectedMember = members.find(m => m.id === memberId);
+  const selectedMember = rosterMembers.find(m => m.id === rosterMemberId);
   const selectedPro    = pros.find(p => p.id === proId);
   const selectedType   = lessonTypes.find(lt => lt.id === lessonTypeId);
-  const selectedCourt  = courts.find(c => c.id === preferredCourtId);
+  const selectedCourt  = courts.find(c => c.id === courtId);
 
-  const memberName = selectedMember ? getName(selectedMember.first_name, selectedMember.last_name, "Member") : "";
-  const proName    = selectedPro    ? getName(selectedPro.first_name, selectedPro.last_name, "Provider")       : "";
+  const memberName = selectedMember ? selectedMember.name : "";
+  const proName    = selectedPro    ? getName(selectedPro.first_name, selectedPro.last_name, "Provider") : "";
+
+  const filteredMembers = memberSearch.trim()
+    ? rosterMembers.filter(m => m.name.toLowerCase().includes(memberSearch.trim().toLowerCase()))
+    : rosterMembers;
 
   // Durations for selected lesson type, or defaults
   const availableDurations: number[] =
     selectedType?.allowed_durations?.length
       ? selectedType.allowed_durations
       : DEFAULT_DURATIONS;
+
+  const startsAt = useMemo(() => {
+    const slot = TIME_SLOTS[slotIdx];
+    return localDateTimeToUTC(dateStr, slot.hour, slot.minute, clubTimezone);
+  }, [dateStr, slotIdx, clubTimezone]);
+
+  const endsAt = useMemo(
+    () => new Date(startsAt.getTime() + duration * 60_000),
+    [startsAt, duration]
+  );
+
+  const endLabel = endsAt.toLocaleTimeString("en-US", {
+    timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+  });
 
   // Reset duration when the available set changes and current value is not in it
   function handleTypeChange(id: string) {
@@ -93,24 +134,22 @@ export default function AdminRequestLessonSheet({
   function handleBack() {
     setError("");
     if (step === "pro")      { if (!skipMemberSelect) setStep("member"); }
-    else if (step === "duration") setStep("pro");
-    else if (step === "details")  setStep("duration");
+    else if (step === "schedule") setStep("pro");
+    else if (step === "details")  setStep("schedule");
     else if (step === "review")   setStep("details");
   }
 
   function handleSubmit() {
     setError("");
     startTransition(async () => {
-      const res = await adminCreateLessonRequestAction({
-        memberId,
+      const res = await adminCreateMemberLessonAction({
+        rosterMemberId,
         proId,
-        durationMinutes:  duration,
-        lessonTypeId:     lessonTypeId || null,
-        preferredCourtId: preferredCourtId || null,
-        memberNote:       memberNote.trim() || null,
-        preferredWindows: windows.trim()
-          ? { freeform: windows.trim() } as Record<string, unknown>
-          : null,
+        courtId,
+        startsAt:      startsAt.toISOString(),
+        endsAt:        endsAt.toISOString(),
+        lessonTypeId:  lessonTypeId || null,
+        memberNote:    memberNote.trim() || null,
         expectedClubId: clubId,
       });
       if (res.error) { setError(res.error); return; }
@@ -127,7 +166,7 @@ export default function AdminRequestLessonSheet({
       variant="modal"
       size="wide"
       mobileInteraction="draggable"
-      label="Create Lesson Request"
+      label="Book Lesson"
       header={
         <div className="relative flex items-center justify-center">
           {showBack && (
@@ -139,7 +178,7 @@ export default function AdminRequestLessonSheet({
             </button>
           )}
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-            Create Lesson Request
+            Book Lesson
           </h2>
           <button onClick={onClose} className="absolute right-0 text-sm text-gray-400 md:hidden" aria-label="Close">✕</button>
         </div>
@@ -151,19 +190,28 @@ export default function AdminRequestLessonSheet({
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
             Select member
           </p>
-          {members.length === 0 ? (
-            <p className="text-sm text-gray-400 py-4 text-center">No active members.</p>
+          <input
+            type="text"
+            value={memberSearch}
+            onChange={e => setMemberSearch(e.target.value)}
+            placeholder="Search members…"
+            className="w-full ct-input text-base md:text-sm mb-2"
+          />
+          {filteredMembers.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">No members found.</p>
           ) : (
-            members.map(m => (
+            filteredMembers.map(m => (
               <button
                 key={m.id}
-                onClick={() => { setMemberId(m.id); setStep("pro"); }}
-                className="w-full text-left ct-card px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 dark:active:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100"
+                onClick={() => { setRosterMemberId(m.id); setStep("pro"); }}
+                className="w-full text-left ct-card px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 dark:active:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 flex items-center justify-between gap-2"
               >
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {getName(m.first_name, m.last_name, "Member")}
-                </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{m.email ?? "—"}</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.name}</p>
+                {!m.claimed && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    No account yet
+                  </span>
+                )}
               </button>
             ))
           )}
@@ -188,7 +236,7 @@ export default function AdminRequestLessonSheet({
             pros.map(p => (
               <button
                 key={p.id}
-                onClick={() => { setProId(p.id); setStep("duration"); }}
+                onClick={() => { setProId(p.id); setStep("schedule"); }}
                 className="w-full text-left ct-card px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 dark:active:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100"
               >
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -201,12 +249,11 @@ export default function AdminRequestLessonSheet({
         </div>
       )}
 
-      {/* Step: duration */}
-      {step === "duration" && (
-        <div>
-          {/* Lesson type (optional) */}
+      {/* Step: schedule — date, time, duration, court */}
+      {step === "schedule" && (
+        <div className="space-y-4">
           {lessonTypes.length > 0 && (
-            <div className="mb-4">
+            <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
                 Lesson type (optional)
               </label>
@@ -223,27 +270,79 @@ export default function AdminRequestLessonSheet({
             </div>
           )}
 
-          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-            Duration
-          </p>
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            {availableDurations.map(d => (
-              <button
-                key={d}
-                onClick={() => setDuration(d)}
-                className={`py-3 rounded-xl text-sm font-semibold border-2 motion-safe:transition-all motion-safe:duration-100 ${
-                  duration === d
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-accent/50"
-                }`}
-              >
-                {d}m
-              </button>
-            ))}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Duration
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {availableDurations.map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDuration(d)}
+                  className={`py-3 rounded-xl text-sm font-semibold border-2 motion-safe:transition-all motion-safe:duration-100 ${
+                    duration === d
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-accent/50"
+                  }`}
+                >
+                  {d}m
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Date
+            </label>
+            <input
+              type="date"
+              value={dateStr}
+              onChange={e => setDateStr(e.target.value)}
+              min={new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })}
+              className="w-full ct-input text-base md:text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Start time
+            </label>
+            <select
+              value={slotIdx}
+              onChange={e => setSlotIdx(Number(e.target.value))}
+              className="w-full ct-input text-base md:text-sm"
+            >
+              {TIME_SLOTS.map((s, i) => (
+                <option key={i} value={i}>{s.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Ends at {endLabel} ({duration} min)
+            </p>
+          </div>
+
+          {courts.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                Court
+              </label>
+              <select
+                value={courtId}
+                onChange={e => setCourtId(e.target.value)}
+                className="w-full ct-input text-base md:text-sm"
+              >
+                {courts.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             onClick={() => setStep("details")}
-            className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold"
+            disabled={!courtId}
+            className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold disabled:opacity-50"
           >
             Continue
           </button>
@@ -253,44 +352,12 @@ export default function AdminRequestLessonSheet({
       {/* Step: details */}
       {step === "details" && (
         <div className="space-y-4">
-          {courts.length > 0 && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Preferred court (optional)
-              </label>
-              <select
-                value={preferredCourtId}
-                onChange={e => setPreferredCourtId(e.target.value)}
-                className="w-full ct-input text-base md:text-sm"
-              >
-                <option value="">No preference</option>
-                {courts.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Preferred times (optional)
-            </label>
-            <textarea
-              value={windows}
-              onChange={e => setWindows(e.target.value)}
-              placeholder="e.g. Mon/Wed mornings, any weekday before noon"
-              rows={2}
-              maxLength={500}
-              className="w-full ct-input text-base md:text-sm resize-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Shared request info for the Pro (optional)
+              Note (optional)
             </label>
             <p className="text-xs text-gray-400 dark:text-gray-500 mb-1.5">
-              Visible to the Pro and member. Do not include internal notes here.
+              Visible to the Pro{selectedMember?.claimed ? " and member" : ""}.
             </p>
             <textarea
               value={memberNote}
@@ -315,12 +382,17 @@ export default function AdminRequestLessonSheet({
       {step === "review" && selectedMember && selectedPro && (
         <div className="space-y-4">
           <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
-            {!skipMemberSelect && (
-              <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Member</span>
-                <span className="font-medium text-gray-900 dark:text-gray-100">{memberName}</span>
-              </div>
-            )}
+            <div className="px-4 py-2.5 flex justify-between items-center text-sm">
+              <span className="text-gray-500 dark:text-gray-400">Member</span>
+              <span className="flex items-center gap-1.5 font-medium text-gray-900 dark:text-gray-100">
+                {memberName}
+                {!selectedMember.claimed && (
+                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                    No account yet
+                  </span>
+                )}
+              </span>
+            </div>
             <div className="px-4 py-2.5 flex justify-between text-sm">
               <span className="text-gray-500 dark:text-gray-400">Pro</span>
               <span className="font-medium text-gray-900 dark:text-gray-100">{proName}</span>
@@ -332,31 +404,30 @@ export default function AdminRequestLessonSheet({
               </div>
             )}
             <div className="px-4 py-2.5 flex justify-between text-sm">
-              <span className="text-gray-500 dark:text-gray-400">Duration</span>
-              <span className="font-medium text-gray-900 dark:text-gray-100">{duration} minutes</span>
+              <span className="text-gray-500 dark:text-gray-400">When</span>
+              <span className="font-medium text-gray-900 dark:text-gray-100">
+                {startsAt.toLocaleString("en-US", {
+                  timeZone: clubTimezone, month: "short", day: "numeric",
+                  hour: "numeric", minute: "2-digit", hour12: true,
+                })} – {endLabel}
+              </span>
             </div>
             {selectedCourt && (
               <div className="px-4 py-2.5 flex justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Preferred court</span>
+                <span className="text-gray-500 dark:text-gray-400">Court</span>
                 <span className="font-medium text-gray-900 dark:text-gray-100">{selectedCourt.name}</span>
-              </div>
-            )}
-            {windows.trim() && (
-              <div className="px-4 py-2.5 text-sm">
-                <p className="text-gray-500 dark:text-gray-400 mb-1">Preferred times</p>
-                <p className="text-gray-900 dark:text-gray-100 text-xs">{windows.trim()}</p>
               </div>
             )}
             {memberNote.trim() && (
               <div className="px-4 py-2.5 text-sm">
-                <p className="text-gray-500 dark:text-gray-400 mb-1">Shared info for provider</p>
+                <p className="text-gray-500 dark:text-gray-400 mb-1">Note</p>
                 <p className="text-gray-900 dark:text-gray-100 text-xs">{memberNote.trim()}</p>
               </div>
             )}
           </div>
 
           <p className="text-xs text-gray-400 dark:text-gray-500">
-            This creates a pending request. The provider will propose a time for the member to accept.
+            This books a confirmed lesson immediately — no negotiation step.
           </p>
 
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
@@ -366,7 +437,7 @@ export default function AdminRequestLessonSheet({
             disabled={isPending}
             className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold disabled:opacity-50 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
           >
-            {isPending ? "Creating…" : "Create Request"}
+            {isPending ? "Booking…" : "Book Lesson"}
           </button>
           <button
             onClick={onClose}

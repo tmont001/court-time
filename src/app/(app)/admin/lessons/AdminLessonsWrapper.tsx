@@ -5,11 +5,12 @@ import LessonsTab from "@/app/(app)/events/LessonsTab";
 import AdminRequestLessonSheet from "./AdminRequestLessonSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
 
-interface Member {
-  id:         string;
-  first_name: string | null;
-  last_name:  string | null;
-  email:      string | null;
+// Phase 33D1: sourced from roster_members, not profiles — includes both
+// claimed and no-account Members. Mirrors CalendarShell's RosterMemberOption.
+interface RosterMemberOption {
+  id:      string;
+  name:    string;
+  claimed: boolean;
 }
 
 interface Court {
@@ -30,7 +31,7 @@ interface Props {
   clubId:       string;
   clubTimezone: string;
   pros:         ClubPro[];
-  members:      Member[];
+  rosterMembers: RosterMemberOption[];
   lessonTypes:  LessonType[];
 }
 
@@ -41,7 +42,7 @@ export default function AdminLessonsWrapper({
   clubId,
   clubTimezone,
   pros,
-  members,
+  rosterMembers,
   lessonTypes,
 }: Props) {
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
@@ -62,10 +63,11 @@ export default function AdminLessonsWrapper({
       {createSheetOpen && (
         <AdminRequestLessonSheet
           pros={pros}
-          members={members}
+          rosterMembers={rosterMembers}
           courts={courts}
           lessonTypes={lessonTypes}
           clubId={clubId}
+          clubTimezone={clubTimezone}
           onClose={() => setCreateSheetOpen(false)}
         />
       )}

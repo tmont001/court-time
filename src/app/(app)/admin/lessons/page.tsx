@@ -31,12 +31,22 @@ export default async function AdminLessonsPage() {
       : Promise.resolve({ data: null }),
   ]);
 
-  // Fetch pros, members, and lesson types only for admins
-  const [prosResult, membersResult, lessonTypesResult] =
+  // Fetch pros, roster Members, and lesson types only for admins.
+  // Phase 33D1: roster_members (admin-only RLS, same-club, includes
+  // no-account Members) replaces get_members() (profiles-only — could
+  // never include a Member with no Court Time account) as the source for
+  // the lesson-booking Member picker, mirroring Calendar's admin booking
+  // flow (fetchRosterMembers in CalendarShell.tsx).
+  const [prosResult, rosterResult, lessonTypesResult] =
     profile.role === "admin" && clubId
       ? await Promise.all([
           supabase.rpc("get_admin_club_pros"),
-          supabase.rpc("get_members"),
+          supabase
+            .from("roster_members")
+            .select("id, first_name, last_name, claimed_by")
+            .eq("club_id", clubId)
+            .order("last_name", { ascending: true })
+            .order("first_name", { ascending: true }),
           supabase.rpc("get_lesson_types"),
         ])
       : [{ data: [] }, { data: [] }, { data: [] }];
@@ -49,9 +59,13 @@ export default async function AdminLessonsPage() {
     id: string; first_name: string | null; last_name: string | null;
     role: string; is_lesson_provider: boolean;
   }[];
-  const members = (membersResult.data ?? []) as {
-    id: string; first_name: string | null; last_name: string | null; email: string | null;
-  }[];
+  const rosterMembers = ((rosterResult.data ?? []) as {
+    id: string; first_name: string | null; last_name: string | null; claimed_by: string | null;
+  }[]).map(r => ({
+    id:      r.id,
+    name:    [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
+    claimed: r.claimed_by !== null,
+  }));
   const lessonTypes = (lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
   }[];
@@ -88,7 +102,7 @@ export default async function AdminLessonsPage() {
             clubId={clubId}
             clubTimezone={clubTimezone}
             pros={pros}
-            members={members}
+            rosterMembers={rosterMembers}
             lessonTypes={lessonTypes}
           />
         </div>
