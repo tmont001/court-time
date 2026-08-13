@@ -829,7 +829,8 @@ export type Database = {
         Row: {
           id: string;
           event_id: string;
-          profile_id: string;
+          profile_id: string | null;
+          roster_member_id: string;  // Phase 33D2a: NOT NULL — durable Member identity
           role: "host" | "participant";
           status: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A: offered
           attendance_status: "attended" | "no_show" | null;
@@ -840,7 +841,8 @@ export type Database = {
         Insert: {
           id?: string;
           event_id: string;
-          profile_id: string;
+          profile_id?: string | null;
+          roster_member_id: string;  // Phase 33D2a: NOT NULL — required on insert
           role?: "host" | "participant";
           status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
           attendance_status?: "attended" | "no_show" | null;
@@ -851,7 +853,8 @@ export type Database = {
         Update: {
           id?: string;
           event_id?: string;
-          profile_id?: string;
+          profile_id?: string | null;
+          roster_member_id?: string;  // Phase 33D2a: NOT NULL
           role?: "host" | "participant";
           status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
           attendance_status?: "attended" | "no_show" | null;
@@ -872,6 +875,13 @@ export type Database = {
             columns: ["profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "event_participants_roster_member_id_fkey";
+            columns: ["roster_member_id"];
+            isOneToOne: false;
+            referencedRelation: "roster_members";
             referencedColumns: ["id"];
           }
         ];
@@ -1637,6 +1647,7 @@ export type Database = {
           id: string;
           event_id: string;
           profile_id: string;
+          roster_member_id: string;  // Phase 33D2a: always the caller's own, resolved identity
           role: string;
           status: string;
           attendance_status: string | null;
@@ -1665,7 +1676,11 @@ export type Database = {
         Returns: {
           id: string;
           event_id: string;
-          profile_id: string;
+          // Phase 33D2a: may be null — accepting a roster-matched (no-account
+          // pre-claim) offered row never backfills profile_id. roster_member_id
+          // is always present (NOT NULL on event_participants).
+          profile_id: string | null;
+          roster_member_id: string;
           role: string;
           status: string;
           attendance_status: string | null;
@@ -1894,20 +1909,36 @@ export type Database = {
       get_event_roster: {
         Args: { p_event_id: string };
         Returns: {
-          profile_id:        string;
+          // Phase 33D2: null for a no-account participant added directly to
+          // event_participants (was previously always a real id, since only
+          // guest rows — always non-null via event_guests.id — could ever
+          // have a null-shaped identity here).
+          profile_id:        string | null;
           display_name:      string;
           role:              string;  // 'host' | 'participant' | 'guest' (Phase 19A)
           status:            string;
           attendance_status: string | null;
           offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted/guest
           waitlist_position: number | null;
-          roster_member_id:  string | null;  // Phase 21I-C: non-null for roster-linked guests
+          roster_member_id:  string | null;  // Phase 21I-C: non-null for roster-linked guests; Phase 33D2: also non-null for a direct no-account/claimed event_participants row
         }[];
       };
       mark_attendance: {
         Args: {
           p_event_id:          string;
           p_profile_id:        string;
+          p_attendance_status: string | null;
+        };
+        Returns: undefined;
+      };
+      // Phase 33D2a: roster-aware equivalent — same rules as mark_attendance,
+      // keyed by roster_member_id so a no-account participant's attendance
+      // can be marked too.
+      mark_attendance_roster_participant: {
+        Args: {
+          p_event_id:          string;
+          p_expected_club_id:  string;
+          p_roster_member_id:  string;
           p_attendance_status: string | null;
         };
         Returns: undefined;
@@ -2444,7 +2475,8 @@ export type Database = {
         Returns: {
           id:                string;
           event_id:          string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           role:              string;
           status:            string;
           attendance_status: string | null;
@@ -2456,6 +2488,37 @@ export type Database = {
       admin_remove_participant: {
         Args: { p_event_id: string; p_profile_id: string };
         Returns: undefined;
+      };
+      // Phase 33D2
+      admin_add_roster_participant: {
+        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: {
+          id:                string;
+          event_id:          string;
+          profile_id:        string | null;
+          roster_member_id:  string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      admin_remove_roster_participant: {
+        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: {
+          id:                string;
+          event_id:          string;
+          profile_id:        string | null;
+          roster_member_id:  string;
+          role:              string;
+          status:            string;
+          attendance_status: string | null;
+          offer_expires_at:  string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
       };
       // Phase 31C: return type changed in migration 0102 from the raw
       // `event_participants` row to a jsonb bundle carrying the exact
@@ -2485,6 +2548,32 @@ export type Database = {
       };
       admin_expire_offer: {
         Args: { p_event_id: string; p_profile_id: string };
+        Returns: undefined;
+      };
+      // Phase 33D2a: roster-aware equivalents of admin_force_confirm /
+      // admin_offer_spot / admin_expire_offer — same rules, keyed by
+      // roster_member_id so a no-account participant supports the same
+      // staff actions as a claimed one.
+      admin_force_confirm_roster_participant: {
+        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: Json;
+        // Runtime shape: {
+        //   participant: { id, event_id, profile_id, roster_member_id, role,
+        //     status, attendance_status, offer_expires_at, created_at, updated_at },
+        //   notification_id: string | null   // null if still unclaimed
+        // }
+      };
+      admin_offer_spot_roster_participant: {
+        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: Json;
+        // Runtime shape: {
+        //   participant: { id, event_id, profile_id, roster_member_id, role,
+        //     status, attendance_status, offer_expires_at, created_at, updated_at },
+        //   notification_id: string | null   // null if still unclaimed
+        // }
+      };
+      admin_expire_offer_roster_participant: {
+        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
         Returns: undefined;
       };
       admin_add_guest: {

@@ -79,7 +79,11 @@ interface RawEventRow {
     color: string;
     shows_participant_names: boolean;
   };
-  event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
+  // Phase 33D2: profile_id is null for a no-account participant added
+  // directly to event_participants; roster_member_id is the durable
+  // identity, used for claim-continuity ownership matching in
+  // EventDetailSheet (see userRosterMemberId).
+  event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
   event_guests: Array<{ id: string }>;
   reservations: Array<{ court_id: string; status: string; reason: string }>;
 }
@@ -104,7 +108,11 @@ interface EventWithDetails {
     color: string;
     shows_participant_names: boolean;
   };
-  event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
+  // Phase 33D2: profile_id is null for a no-account participant added
+  // directly to event_participants; roster_member_id is the durable
+  // identity, used for claim-continuity ownership matching in
+  // EventDetailSheet (see userRosterMemberId).
+  event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
   event_guests: Array<{ id: string }>;
   court_ids: string[];
 }
@@ -666,7 +674,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
         event_type_id, description, updated_at, program_id, is_program_exception,
         event_types(key, label, color, shows_participant_names),
-        event_participants(profile_id, role, status, offer_expires_at),
+        event_participants(profile_id, roster_member_id, role, status, offer_expires_at),
         event_guests(id),
         reservations(court_id, status, reason)
       `)
@@ -1416,6 +1424,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           event={selectedEvent}
           courts={courts}
           userId={userId}
+          userRosterMemberId={userRosterMemberId}
           userRole={userRole}
           clubTimezone={clubTimezone}
           clubId={clubId}

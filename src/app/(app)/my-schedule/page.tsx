@@ -206,6 +206,34 @@ export default async function MySchedulePage({
     ? reservationsQuery.or(`owner_user_id.eq.${user.id},roster_member_id.eq.${rosterMemberId}`)
     : reservationsQuery.eq("owner_user_id", user.id);
 
+  // Phase 33D2: same reasoning as reservationsQuery above — a claimed
+  // Member's pre-claim, staff-added event participation (profile_id null,
+  // roster_member_id set to their own identity) can only be found via the
+  // roster route; profile_id alone is not enough.
+  let eventParticipantsQuery = supabase
+    .from("event_participants")
+    .select(`
+      event_id,
+      role,
+      status,
+      attendance_status,
+      offer_expires_at,
+      events(
+        id,
+        title,
+        starts_at,
+        ends_at,
+        status,
+        archived_at,
+        event_types(label, color),
+        reservations(court_id, reason, status)
+      )
+    `)
+    .in("status", ["confirmed", "waitlisted", "offered"]);
+  eventParticipantsQuery = rosterMemberId
+    ? eventParticipantsQuery.or(`profile_id.eq.${user.id},roster_member_id.eq.${rosterMemberId}`)
+    : eventParticipantsQuery.eq("profile_id", user.id);
+
   const [
     clubResult,
     settingsResult,
@@ -222,27 +250,7 @@ export default async function MySchedulePage({
       ? supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
     reservationsQuery,
-    supabase
-      .from("event_participants")
-      .select(`
-        event_id,
-        role,
-        status,
-        attendance_status,
-        offer_expires_at,
-        events(
-          id,
-          title,
-          starts_at,
-          ends_at,
-          status,
-          archived_at,
-          event_types(label, color),
-          reservations(court_id, reason, status)
-        )
-      `)
-      .eq("profile_id", user.id)
-      .in("status", ["confirmed", "waitlisted", "offered"]),
+    eventParticipantsQuery,
     supabase.rpc("get_my_lesson_requests"),
     supabase.rpc("get_club_pros"),
     clubId

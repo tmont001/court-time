@@ -27,7 +27,7 @@ export interface RawAdminEventRow {
   program_occurrence_date:   string | null;
   is_program_exception:      boolean;
   event_types:               { key: string; label: string; color: string } | null;
-  event_participants:        Array<{ profile_id: string; role: string; status: string }>;
+  event_participants:        Array<{ profile_id: string | null; role: string; status: string }>;
   event_guests:               Array<{ id: string }>;
   reservations:               Array<{ court_id: string; status: string; reason: string }> | null;
 }
@@ -53,7 +53,7 @@ export type AdminEventRow = {
   is_program_exception:      boolean;
   court_ids:                 string[];
   event_types:               { key: string; label: string; color: string } | null;
-  event_participants:        Array<{ profile_id: string; role: string; status: string }>;
+  event_participants:        Array<{ profile_id: string | null; role: string; status: string }>;
   event_guests:               Array<{ id: string }>;
 };
 

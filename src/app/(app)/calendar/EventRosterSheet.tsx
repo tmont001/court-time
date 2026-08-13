@@ -11,8 +11,13 @@ import {
   adminRemoveGuest,
   adminAddMember,
   adminAddGuest,
-  adminAddRosterMemberToEvent,
+  adminAddRosterParticipant,
+  adminRemoveRosterParticipant,
+  adminForceConfirmRosterParticipant,
+  adminOfferSpotRosterParticipant,
+  adminExpireOfferRosterParticipant,
   markAttendance,
+  markAttendanceRosterParticipant,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import {
@@ -25,7 +30,10 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RosterRow {
-  profile_id:        string;
+  // Phase 33D2: null for a no-account roster Member added directly as a
+  // participant (event_participants.profile_id, now nullable) — never
+  // null for a guest row (event_guests.id is always populated here).
+  profile_id:        string | null;
   display_name:      string;
   role:              string;
   status:            string;
@@ -41,8 +49,17 @@ interface MemberOption {
   source:       "profile" | "roster";
 }
 
-// Minimal participant shape needed by parent components to update occupancy counts.
-export type RosterParticipantRow = { profile_id: string; role: string; status: string };
+// Phase 33D2: a stable per-row key/action-target that works whether the
+// row is profile_id-keyed (guest, or a claimed participant) or only
+// roster_member_id-keyed (a no-account participant added directly to
+// event_participants). Every row has at least one of the two.
+function rowKey(row: RosterRow): string {
+  return row.profile_id ?? row.roster_member_id ?? "";
+}
+
+// Minimal participant shape needed by parent components to update occupancy
+// counts (and, for EventDetailSheet, claim-continuity ownership matching).
+export type RosterParticipantRow = { profile_id: string | null; roster_member_id: string | null; role: string; status: string };
 
 interface Props {
   eventId:          string;
@@ -112,6 +129,8 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
       .rpc("get_event_roster", { p_event_id: eventId })
       .then(({ data, error: rpcError }) => {
         if (rpcError) {
+          // eslint-disable-next-line no-console
+          console.error("[EventRosterSheet] get_event_roster failed:", rpcError.message);
           setError("Unable to load roster. Please try again.");
         } else {
           const fetched = (data as RosterRow[]) ?? [];
@@ -120,9 +139,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
           if (onRosterChange) {
             onRosterChange(
               fetched.filter(r => r.role !== "guest").map(r => ({
-                profile_id: r.profile_id,
-                role:       r.role,
-                status:     r.status,
+                profile_id:       r.profile_id,
+                roster_member_id: r.roster_member_id,
+                role:             r.role,
+                status:           r.status,
               })),
               fetched.filter(r => r.role === "guest").length,
             );
@@ -152,17 +172,23 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
 
   // ── Attendance handler ────────────────────────────────────────────────────
 
-  async function handleMark(profileId: string, newStatus: string | null) {
+  // Phase 33D2a: takes the whole row so it can dispatch to the profile_id-
+  // keyed RPC for a claimed participant or the roster_member_id-keyed RPC
+  // for a no-account one — every row has exactly one of the two.
+  async function handleMark(row: RosterRow, newStatus: string | null) {
+    const key = rowKey(row);
     const prevRows = rows;
     setRows(prev => prev.map(r =>
-      r.profile_id === profileId ? { ...r, attendance_status: newStatus } : r
+      rowKey(r) === key ? { ...r, attendance_status: newStatus } : r
     ));
-    setRowUpdating(prev => new Set(prev).add(profileId));
-    setRowErrors(prev => { const next = new Map(prev); next.delete(profileId); return next; });
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
 
-    const result = await markAttendance(eventId, profileId, newStatus, clubId);
+    const result = row.profile_id
+      ? await markAttendance(eventId, row.profile_id, newStatus, clubId)
+      : await markAttendanceRosterParticipant(eventId, row.roster_member_id!, newStatus, clubId);
 
-    setRowUpdating(prev => { const next = new Set(prev); next.delete(profileId); return next; });
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
     if (result.error) {
       setRows(prevRows);
       const code = result.error.trim();
@@ -171,7 +197,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
         : code === "event_archived"
           ? "This event is archived and its roster is read-only."
           : "Failed to update. Please try again.";
-      setRowErrors(prev => new Map(prev).set(profileId, msg));
+      setRowErrors(prev => new Map(prev).set(key, msg));
     }
   }
 
@@ -207,12 +233,15 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
 
     const activeProfileIds = new Set(
       rows
-        .filter(r => r.status !== "cancelled" && r.role !== "guest")
-        .map(r => r.profile_id),
+        .filter(r => r.status !== "cancelled" && r.role !== "guest" && r.profile_id)
+        .map(r => r.profile_id!),
     );
+    // Phase 33D2: excludes a roster identity already on the roster via
+    // EITHER path — a linked event_guests row (unclaimed-only, legacy) or
+    // a direct event_participants row (claimed or no-account, current).
     const activeRosterIds = new Set(
       rows
-        .filter(r => r.role === "guest" && r.roster_member_id)
+        .filter(r => r.roster_member_id && (r.role === "guest" || r.status !== "cancelled"))
         .map(r => r.roster_member_id!),
     );
 
@@ -255,8 +284,12 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
     setAddMemberError(null);
 
     const selected = memberList.find(m => m.id === selectedMemberId);
+    // Phase 33D2: a roster-sourced pick (claimed or no-account) now goes
+    // through admin_add_roster_participant, adding them directly to
+    // event_participants — never event_guests. Replaces the old
+    // adminAddRosterMemberToEvent dispatch for this picker.
     const result = selected?.source === "roster"
-      ? await adminAddRosterMemberToEvent(eventId, selectedMemberId, clubId)
+      ? await adminAddRosterParticipant(eventId, selectedMemberId, clubId)
       : await adminAddMember(eventId, selectedMemberId, clubId);
 
     setAddMemberLoading(false);
@@ -462,17 +495,26 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         Signed-In Members ({confirmed.length})
                       </p>
                       {confirmed.map(row => {
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const key         = rowKey(row);
+                        const isUpdating  = rowUpdating.has(key);
+                        const rowError    = rowErrors.get(key);
+                        // Phase 33D2: a no-account participant added directly
+                        // via admin_add_roster_participant — never a Guest.
+                        const isNoAccount = row.role !== "guest" && !row.profile_id;
                         return (
                           <div
-                            key={row.profile_id}
+                            key={key}
                             className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center">
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {row.display_name}
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                  <span className="truncate">{row.display_name}</span>
+                                  {isNoAccount && (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                      No account yet
+                                    </span>
+                                  )}
                                 </p>
                                 {row.role === "host" && (
                                   <p className="text-xs text-gray-400 mt-0.5">Host</p>
@@ -481,8 +523,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               {isAdmin && !readOnly && row.role !== "host" && (
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveParticipant(eventId, row.profile_id, clubId)
+                                  onClick={() => handleAdminAction(key, () =>
+                                    isNoAccount
+                                      ? adminRemoveRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                      : adminRemoveParticipant(eventId, row.profile_id!, clubId)
                                   )}
                                   className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
@@ -491,7 +535,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               )}
                             </div>
 
-                            {/* Attendance: interactive controls (editable) or status label (read-only) */}
+                            {/* Attendance: interactive controls (editable) or status label
+                                (read-only). Phase 33D2a: roster-aware for both claimed and
+                                no-account rows — handleMark dispatches to the profile_id-
+                                or roster_member_id-keyed RPC based on the row itself. */}
                             {readOnly ? (
                               row.attendance_status && (
                                 <div className="mt-1.5">
@@ -508,7 +555,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               <div className="flex gap-1.5 mt-1.5 flex-wrap">
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleMark(row.profile_id, "attended")}
+                                  onClick={() => handleMark(row, "attended")}
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
                                     row.attendance_status === "attended"
                                       ? "bg-green-100 text-green-700"
@@ -519,7 +566,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 </button>
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleMark(row.profile_id, "no_show")}
+                                  onClick={() => handleMark(row, "no_show")}
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
                                     row.attendance_status === "no_show"
                                       ? "bg-red-100 text-red-600"
@@ -531,7 +578,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 {row.attendance_status && (
                                   <button
                                     disabled={isUpdating}
-                                    onClick={() => handleMark(row.profile_id, null)}
+                                    onClick={() => handleMark(row, null)}
                                     className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
                                   >
                                     Clear
@@ -556,20 +603,30 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         Offered ({offered.length})
                       </p>
                       {offered.map(row => {
-                        const isExpired  = row.offer_expires_at
+                        const isExpired   = row.offer_expires_at
                           ? new Date(row.offer_expires_at) <= new Date()
                           : false;
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const key         = rowKey(row);
+                        const isUpdating  = rowUpdating.has(key);
+                        const rowError    = rowErrors.get(key);
+                        // Phase 33D2a: roster-aware for both claimed and
+                        // no-account rows — dispatches to the profile_id- or
+                        // roster_member_id-keyed RPC based on the row itself.
+                        const isNoAccount = !row.profile_id;
                         return (
                           <div
-                            key={row.profile_id}
+                            key={key}
                             className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-start">
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {row.display_name}
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                  <span className="truncate">{row.display_name}</span>
+                                  {isNoAccount && (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                      No account yet
+                                    </span>
+                                  )}
                                 </p>
                                 {row.offer_expires_at && (
                                   isExpired ? (
@@ -587,8 +644,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 <div className="ml-3 flex gap-2 items-center shrink-0">
                                   <button
                                     disabled={isUpdating}
-                                    onClick={() => handleAdminAction(row.profile_id, () =>
-                                      adminForceConfirm(eventId, row.profile_id, clubId)
+                                    onClick={() => handleAdminAction(key, () =>
+                                      isNoAccount
+                                        ? adminForceConfirmRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                        : adminForceConfirm(eventId, row.profile_id!, clubId)
                                     )}
                                     className={ACTION_BUTTON_POSITIVE_COMPACT}
                                   >
@@ -596,8 +655,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                   </button>
                                   <button
                                     disabled={isUpdating}
-                                    onClick={() => handleAdminAction(row.profile_id, () =>
-                                      adminExpireOffer(eventId, row.profile_id, clubId)
+                                    onClick={() => handleAdminAction(key, () =>
+                                      isNoAccount
+                                        ? adminExpireOfferRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                        : adminExpireOffer(eventId, row.profile_id!, clubId)
                                     )}
                                     className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                                   >
@@ -622,17 +683,26 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         Waitlist ({waitlisted.length})
                       </p>
                       {waitlisted.map(row => {
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const key         = rowKey(row);
+                        const isUpdating  = rowUpdating.has(key);
+                        const rowError    = rowErrors.get(key);
+                        // Phase 33D2a: force-confirm/offer-spot are now
+                        // roster-aware for both claimed and no-account rows.
+                        const isNoAccount = !row.profile_id;
                         return (
                           <div
-                            key={row.profile_id}
+                            key={key}
                             className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center">
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                  {row.display_name}
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                  <span className="truncate">{row.display_name}</span>
+                                  {isNoAccount && (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                      No account yet
+                                    </span>
+                                  )}
                                 </p>
                               </div>
                               <div className="ml-3 flex items-center gap-2 shrink-0">
@@ -645,8 +715,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                   <>
                                     <button
                                       disabled={isUpdating}
-                                      onClick={() => handleAdminAction(row.profile_id, () =>
-                                        adminForceConfirm(eventId, row.profile_id, clubId)
+                                      onClick={() => handleAdminAction(key, () =>
+                                        isNoAccount
+                                          ? adminForceConfirmRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                          : adminForceConfirm(eventId, row.profile_id!, clubId)
                                       )}
                                       className={ACTION_BUTTON_POSITIVE_COMPACT}
                                     >
@@ -654,14 +726,27 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                     </button>
                                     <button
                                       disabled={isUpdating}
-                                      onClick={() => handleAdminAction(row.profile_id, () =>
-                                        adminOfferSpot(eventId, row.profile_id, clubId)
+                                      onClick={() => handleAdminAction(key, () =>
+                                        isNoAccount
+                                          ? adminOfferSpotRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                          : adminOfferSpot(eventId, row.profile_id!, clubId)
                                       )}
                                       className={ACTION_BUTTON_INFO_COMPACT}
                                     >
                                       {isUpdating ? "…" : "Offer Spot"}
                                     </button>
                                   </>
+                                )}
+                                {isAdmin && !readOnly && isNoAccount && (
+                                  <button
+                                    disabled={isUpdating}
+                                    onClick={() => handleAdminAction(key, () =>
+                                      adminRemoveRosterParticipant(eventId, row.roster_member_id!, clubId)
+                                    )}
+                                    className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                                  >
+                                    {isUpdating ? "…" : "Remove"}
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -681,11 +766,12 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         No Account Yet ({rosterGuests.length})
                       </p>
                       {rosterGuests.map(row => {
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const key        = rowKey(row);
+                        const isUpdating = rowUpdating.has(key);
+                        const rowError   = rowErrors.get(key);
                         return (
                           <div
-                            key={row.profile_id}
+                            key={key}
                             className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center">
@@ -697,8 +783,8 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveGuest(eventId, row.profile_id, clubId)
+                                  onClick={() => handleAdminAction(key, () =>
+                                    adminRemoveGuest(eventId, row.profile_id!, clubId)
                                   )}
                                   className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
@@ -722,11 +808,12 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         Guests ({anonGuests.length})
                       </p>
                       {anonGuests.map(row => {
-                        const isUpdating = rowUpdating.has(row.profile_id);
-                        const rowError   = rowErrors.get(row.profile_id);
+                        const key        = rowKey(row);
+                        const isUpdating = rowUpdating.has(key);
+                        const rowError   = rowErrors.get(key);
                         return (
                           <div
-                            key={row.profile_id}
+                            key={key}
                             className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0"
                           >
                             <div className="flex items-center">
@@ -738,8 +825,8 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
-                                  onClick={() => handleAdminAction(row.profile_id, () =>
-                                    adminRemoveGuest(eventId, row.profile_id, clubId)
+                                  onClick={() => handleAdminAction(key, () =>
+                                    adminRemoveGuest(eventId, row.profile_id!, clubId)
                                   )}
                                   className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >

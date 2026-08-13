@@ -321,6 +321,169 @@ export async function adminAddRosterMemberToEvent(
 }
 
 // ---------------------------------------------------------------------------
+// adminAddRosterParticipant
+// Phase 33D2: adds a roster Member — claimed OR no-account — directly to
+// event_participants (never event_guests). This is the new, primary
+// staff-managed path going forward, alongside (not replacing) adminAddMember
+// (profile_id-keyed) and adminAddRosterMemberToEvent (event_guests-keyed,
+// unclaimed-only, superseded but left in place unused).
+// ---------------------------------------------------------------------------
+export async function adminAddRosterParticipant(
+  eventId:        string,
+  rosterMemberId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("admin_add_roster_participant", {
+    p_event_id:         eventId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) return { error: rpcError(error) };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// adminRemoveRosterParticipant
+// Phase 33D2: removes a roster Member's event_participants row — matched by
+// roster_member_id, so this works regardless of claim status.
+// ---------------------------------------------------------------------------
+export async function adminRemoveRosterParticipant(
+  eventId:        string,
+  rosterMemberId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("admin_remove_roster_participant", {
+    p_event_id:         eventId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) return { error: rpcError(error) };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// adminForceConfirmRosterParticipant / adminOfferSpotRosterParticipant /
+// adminExpireOfferRosterParticipant / markAttendanceRosterParticipant
+// Phase 33D2a: roster-aware equivalents of adminForceConfirm / adminOfferSpot
+// / adminExpireOffer / markAttendance — same rules (capacity, FIFO
+// skip-list, offer window, role permissions), keyed by roster_member_id so a
+// no-account participant supports the same operations as a claimed one. The
+// profile_id-keyed originals above are unchanged, kept for deployed
+// compatibility with a still-claimed participant's roster row.
+// ---------------------------------------------------------------------------
+export async function adminForceConfirmRosterParticipant(
+  eventId:        string,
+  rosterMemberId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("admin_force_confirm_roster_participant", {
+    p_event_id:         eventId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) return { error: rpcError(error) };
+
+  const result = data as unknown as { participant: Record<string, unknown>; notification_id: string | null } | null;
+
+  try {
+    await dispatchWaitlistNotification(supabase, result?.notification_id ?? null);
+  } catch {
+    // Email/SMS dispatch must never surface as a user-facing error.
+  }
+
+  return {};
+}
+
+export async function adminOfferSpotRosterParticipant(
+  eventId:        string,
+  rosterMemberId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("admin_offer_spot_roster_participant", {
+    p_event_id:         eventId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) return { error: rpcError(error) };
+
+  const result = data as unknown as { participant: Record<string, unknown>; notification_id: string | null } | null;
+
+  try {
+    await dispatchWaitlistNotification(supabase, result?.notification_id ?? null);
+  } catch {
+    // Email/SMS dispatch must never surface as a user-facing error.
+  }
+
+  return {};
+}
+
+export async function adminExpireOfferRosterParticipant(
+  eventId:        string,
+  rosterMemberId: string,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("admin_expire_offer_roster_participant", {
+    p_event_id:         eventId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+
+  if (error) return { error: rpcError(error) };
+  return {};
+}
+
+export async function markAttendanceRosterParticipant(
+  eventId:          string,
+  rosterMemberId:   string,
+  attendanceStatus: string | null,
+  expectedClubId:   string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("mark_attendance_roster_participant", {
+    p_event_id:          eventId,
+    p_expected_club_id:  expectedClubId,
+    p_roster_member_id:  rosterMemberId,
+    p_attendance_status: attendanceStatus,
+  });
+
+  if (error) return { error: error.message };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
 // adminRemoveGuest
 // Removes a guest from an event. Triggers waitlist advancement if removal
 // frees a slot below capacity.

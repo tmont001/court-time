@@ -11,7 +11,17 @@ import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
 interface EventParticipant {
-  profile_id: string;
+  // Phase 33D2: null for a no-account participant added directly to
+  // event_participants. Known display-only gap (documented, not fixed in
+  // this checkpoint): myPart below still resolves via profile_id ===
+  // userId only, so a claimed Member whose pre-claim participation was
+  // staff-added will not show as "already joined" HERE specifically —
+  // My Schedule (page.tsx) already resolves this correctly via the
+  // roster-aware query fix, and leave_event/accept_waitlist_offer/
+  // decline_waitlist_offer (server-side) already authorize correctly
+  // regardless of what this component displays.
+  profile_id: string | null;
+  roster_member_id: string | null;
   role: string;
   status: string;
   offer_expires_at?: string | null;
@@ -58,6 +68,12 @@ interface Props {
   event: EventWithDetails;
   courts: Court[];
   userId: string;
+  // Phase 33D2: the signed-in user's own durable Member identity for this
+  // club, if claimed — resolved server-side (same source CalendarShell
+  // already uses for reservations/lessons). Lets a claimed Member be
+  // recognized as already participating in an event that was added for
+  // them, by staff, before they had an account.
+  userRosterMemberId: string | null;
   userRole: string;
   clubTimezone: string;
   clubId: string;
@@ -108,7 +124,7 @@ function mapOfferError(message: string): string {
 const MAX_NAMES = 5;
 
 export default function EventDetailSheet({
-  event, courts, userId, userRole, clubTimezone, clubId, onClose, onRefresh,
+  event, courts, userId, userRosterMemberId, userRole, clubTimezone, clubId, onClose, onRefresh,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -116,7 +132,13 @@ export default function EventDetailSheet({
   const [error, setError]                             = useState<string | null>(null);
   const [localParticipants, setLocalParticipants]     = useState<EventParticipant[]>(event.event_participants);
   const [localGuestCount, setLocalGuestCount]         = useState(event.event_guests?.length ?? 0);
-  const [participantProfiles, setParticipantProfiles] = useState<ParticipantProfile[]>([]);
+  // Phase 33D2a fix: null = not yet resolved (show "Loading participants…");
+  // [] = resolved with zero matching profiles — a real, valid end state
+  // once no-account participants exist (see the fetch effect below), not
+  // an in-progress one. Collapsing these into a single [] meant a
+  // confirmed no-account-only roster showed "Loading participants…"
+  // forever, since the effect returned before ever calling setState.
+  const [participantProfiles, setParticipantProfiles] = useState<ParticipantProfile[] | null>(null);
   const [cancelConfirming, setCancelConfirming]       = useState(false);
   const [cancelLoading, setCancelLoading]             = useState(false);
   const [cancelError, setCancelError]                 = useState<string | null>(null);
@@ -132,7 +154,7 @@ export default function EventDetailSheet({
   // Hosts never count toward capacity — matches the backend join_event logic.
   const confirmedParticipants = localParticipants
     .filter(p => p.status === "confirmed" && p.role === "participant")
-    .sort((a, b) => a.profile_id.localeCompare(b.profile_id));
+    .sort((a, b) => (a.profile_id ?? "").localeCompare(b.profile_id ?? ""));
 
   // Phase 18B: offered rows also hold a spot (capacity guard: confirmed+offered).
   const offeredParticipants = localParticipants
@@ -150,8 +172,17 @@ export default function EventDetailSheet({
   const isFull          = (confirmedCount + offeredCount + guestCount) >= event.capacity;
 
   // Exclude cancelled rows — a user who left should be treated as not joined.
+  // Phase 33D2: matches via profile_id OR the caller's own current roster
+  // identity — a claimed Member whose participation was added by staff
+  // before they had an account (profile_id null, roster_member_id set) is
+  // recognized here the same way My Schedule's query already is. Display-
+  // matching only — actual authorization for leave/accept/decline remains
+  // entirely server-side (leave_event/accept_waitlist_offer/decline_
+  // waitlist_offer independently re-resolve ownership, never trusting the
+  // client).
   const myPart       = localParticipants.find(
-    p => p.profile_id === userId && p.status !== "cancelled"
+    p => (p.profile_id === userId || (userRosterMemberId !== null && p.roster_member_id === userRosterMemberId))
+      && p.status !== "cancelled"
   );
   const isHost       = myPart?.role === "host";
   const isWaitlisted = myPart?.status === "waitlisted";
@@ -165,7 +196,9 @@ export default function EventDetailSheet({
   // 1-based position among waitlisted rows (order matches DB created_at order;
   // CalendarShell fetches participants in insertion order as a proxy).
   const myWaitlistPosition = isWaitlisted
-    ? waitlistedParticipants.findIndex(p => p.profile_id === userId) + 1
+    ? waitlistedParticipants.findIndex(
+        p => p.profile_id === userId || (userRosterMemberId !== null && p.roster_member_id === userRosterMemberId)
+      ) + 1
     : null;
 
   // Members should not be able to join or waitlist for events that have already started.
@@ -203,13 +236,31 @@ export default function EventDetailSheet({
 
   useEffect(() => {
     if (!event.event_types.shows_participant_names) return;
-    const ids = confirmedParticipants.map(p => p.profile_id);
-    if (ids.length === 0) return;
+    // Phase 33D2: a no-account participant has no profile_id to resolve a
+    // name for here — filtered out rather than sent to `.in("id", ...)`.
+    const ids = confirmedParticipants
+      .map(p => p.profile_id)
+      .filter((id): id is string => id !== null);
+    // Phase 33D2a fix: zero resolvable ids (e.g. every confirmed
+    // participant is a no-account Member) is itself a resolved state —
+    // must still call setParticipantProfiles([]) so the render below stops
+    // showing "Loading participants…", which it would otherwise do
+    // forever since this effect never runs again for the same event.
+    if (ids.length === 0) {
+      setParticipantProfiles([]);
+      return;
+    }
     supabase
       .from("profiles")
       .select("id, first_name, last_name")
       .in("id", ids)
-      .then(({ data }) => { if (data) setParticipantProfiles(data); });
+      .then(({ data, error }) => {
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.error("[EventDetailSheet] participant profile lookup failed:", error.message);
+        }
+        setParticipantProfiles(data ?? []);
+      });
   }, [event.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -379,7 +430,9 @@ export default function EventDetailSheet({
         {/* Participant names (only when event type opts in) */}
         {event.event_types.shows_participant_names && confirmedCount > 0 && (
           <div className="mt-3">
-            {participantProfiles.length > 0 ? (
+            {participantProfiles === null ? (
+              <p className="text-xs text-gray-400 dark:text-gray-500">Loading participants…</p>
+            ) : participantProfiles.length > 0 ? (
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {shownParticipants
                   .map(p => {
@@ -390,9 +443,7 @@ export default function EventDetailSheet({
                   .join(", ")}
                 {nameRemainder > 0 && `, +${nameRemainder} more`}
               </p>
-            ) : (
-              <p className="text-xs text-gray-400 dark:text-gray-500">Loading participants…</p>
-            )}
+            ) : null}
           </div>
         )}
 
