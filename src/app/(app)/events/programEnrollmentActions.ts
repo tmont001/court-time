@@ -106,9 +106,24 @@ export async function getMemberPrograms(
   // fallback, potentially hiding a program that is genuinely still
   // enrollable (or showing one that has genuinely ended). Treated as a
   // full load failure instead.
-  const { data: club, error: clubErr } = await supabase.from("clubs").select("timezone").eq("id", clubId).single();
+  // Phase 33D2b: resolved here, inside this trusted server-side data
+  // function, rather than accepted as a caller-supplied parameter — mirrors
+  // my-schedule/page.tsx and CalendarShell.tsx's identical resolution of
+  // the caller's own durable roster identity via this same RPC. A failed
+  // resolution fails the whole load (see the rules/enrollment failure
+  // reasoning below) rather than silently degrading to a profile_id-only
+  // enrollment match, which would hide a pre-claim, staff-added enrollment
+  // exactly as incorrectly as a failed enrollment read would.
+  const [{ data: club, error: clubErr }, { data: rosterMemberId, error: rosterErr }] = await Promise.all([
+    supabase.from("clubs").select("timezone").eq("id", clubId).single(),
+    supabase.rpc("current_user_roster_member_id"),
+  ]);
   if (clubErr) {
     console.error("[getMemberPrograms] failed to load club timezone:", clubErr);
+    return { error: PROGRAMS_LOAD_ERROR };
+  }
+  if (rosterErr) {
+    console.error("[getMemberPrograms] failed to resolve current_user_roster_member_id:", rosterErr);
     return { error: PROGRAMS_LOAD_ERROR };
   }
   const clubTimezone = club.timezone;
@@ -139,20 +154,29 @@ export async function getMemberPrograms(
 
   const programIds = rawPrograms.map(p => p.id);
 
+  // Phase 33D2b: own row only — program_enrollments_select (0087, widened
+  // in 0115) restricts a plain member to profile_id = auth.uid() OR
+  // roster_member_id = current_user_roster_member_id() regardless of this
+  // filter, but the explicit filter keeps the query's intent self-
+  // documenting and avoids depending solely on RLS to narrow the result
+  // set. Matches profile_id OR the caller's own current roster identity —
+  // a claimed Member whose enrollment was staff-added before they had an
+  // account (profile_id null) is recognized here too, without ever
+  // rewriting program_enrollments.profile_id itself.
+  let enrollmentQuery = supabase
+    .from("program_enrollments")
+    .select("program_id, status, offer_expires_at")
+    .in("program_id", programIds);
+  enrollmentQuery = rosterMemberId
+    ? enrollmentQuery.or(`profile_id.eq.${userId},roster_member_id.eq.${rosterMemberId}`)
+    : enrollmentQuery.eq("profile_id", userId);
+
   const [rulesResult, enrollmentResult] = await Promise.all([
     supabase
       .from("program_schedule_rules")
       .select("program_id, day_of_week, start_time, duration_minutes")
       .in("program_id", programIds),
-    // Own row only — program_enrollments_select (0087) restricts a plain
-    // member to profile_id = auth.uid() regardless of this .eq(), but the
-    // explicit filter keeps the query's intent self-documenting and avoids
-    // depending solely on RLS to narrow the result set.
-    supabase
-      .from("program_enrollments")
-      .select("program_id, status, offer_expires_at")
-      .in("program_id", programIds)
-      .eq("profile_id", userId),
+    enrollmentQuery,
   ]);
 
   // Neither failure is allowed to silently degrade into a misleading

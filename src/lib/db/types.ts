@@ -691,7 +691,8 @@ export type Database = {
         Row: {
           id: string;
           program_id: string;
-          profile_id: string;
+          profile_id: string | null;
+          roster_member_id: string;  // Phase 33D2b: NOT NULL — durable Member identity
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at: string | null;
           waitlisted_at: string | null;
@@ -701,7 +702,8 @@ export type Database = {
         Insert: {
           id?: string;
           program_id: string;
-          profile_id: string;
+          profile_id?: string | null;
+          roster_member_id: string;  // Phase 33D2b: NOT NULL — required on insert
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
           waitlisted_at?: string | null;
@@ -711,7 +713,8 @@ export type Database = {
         Update: {
           id?: string;
           program_id?: string;
-          profile_id?: string;
+          profile_id?: string | null;
+          roster_member_id?: string;  // Phase 33D2b: NOT NULL
           status?: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
           waitlisted_at?: string | null;
@@ -731,6 +734,13 @@ export type Database = {
             columns: ["profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "program_enrollments_roster_member_id_fkey";
+            columns: ["roster_member_id"];
+            isOneToOne: false;
+            referencedRelation: "roster_members";
             referencedColumns: ["id"];
           }
         ];
@@ -2282,12 +2292,15 @@ export type Database = {
         }[];
       };
       // Phase 27D1: whole-program enrollment state machine
+      // Phase 33D2b: profile_id nullable, roster_member_id (NOT NULL on
+      // the underlying table) added to every Returns shape below.
       join_program: {
         Args: { p_program_id: string };
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2300,7 +2313,8 @@ export type Database = {
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2313,7 +2327,8 @@ export type Database = {
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2326,7 +2341,8 @@ export type Database = {
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2335,12 +2351,14 @@ export type Database = {
         };
       };
       // Phase 27D3A: admin/pro program roster management RPCs
+      // Phase 33D2b: profile_id nullable, roster_member_id added.
       get_program_roster: {
         Args: { p_program_id: string };
         Returns: {
           enrollment_id:     string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           first_name:        string | null;
           last_name:         string | null;
           email:             string | null;
@@ -2356,7 +2374,8 @@ export type Database = {
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2369,7 +2388,56 @@ export type Database = {
         Returns: {
           id:                string;
           program_id:        string;
-          profile_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      // Phase 33D2b: roster-aware equivalents of add_program_member /
+      // remove_program_member, keyed by roster_member_id so a no-account
+      // enrollee supports the same staff actions as a claimed one.
+      add_program_roster_member: {
+        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      remove_program_roster_member: {
+        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
+          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
+          offer_expires_at:  string | null;
+          waitlisted_at:     string | null;
+          created_at:        string;
+          updated_at:        string;
+        };
+      };
+      // Phase 33D2b: staff-managed lifecycle — waitlisted or offered ->
+      // enrolled, for an enrollee (no-account or claimed) who cannot or
+      // has not self-accepted.
+      force_confirm_program_roster_member: {
+        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: {
+          id:                string;
+          program_id:        string;
+          profile_id:        string | null;
+          roster_member_id:  string;
           status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at:  string | null;
           waitlisted_at:     string | null;
@@ -2386,6 +2454,19 @@ export type Database = {
           first_name:    string | null;
           last_name:     string | null;
           display_name:  string;
+        }[];
+      };
+      // Phase 33D2b: Programs-scoped analog of get_roster_members(),
+      // deliberately NOT that function (which is hard admin-only) —
+      // returns only same-club unclaimed roster Members not already
+      // actively enrolled in the target program. Admin or owning Pro.
+      get_program_eligible_roster_members: {
+        Args: { p_program_id: string };
+        Returns: {
+          roster_member_id: string;
+          first_name:       string | null;
+          last_name:        string | null;
+          display_name:     string;
         }[];
       };
       // Phase 27E: program lifecycle RPCs

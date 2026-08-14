@@ -77,3 +77,79 @@ export async function removeProgramMember(params: {
 
   return { data: data ? { status: data.status, offer_expires_at: data.offer_expires_at } : undefined };
 }
+
+// ---------------------------------------------------------------------------
+// Phase 33D2b: roster-aware equivalents of the three actions above, keyed by
+// roster_member_id instead of profile_id — the staff Add/Remove/Force-
+// Confirm path for a roster Member regardless of claim status (claimed or
+// no-account). Same rules, same revalidation, same error-mapping contract.
+// ---------------------------------------------------------------------------
+
+export async function addProgramRosterMember(params: {
+  p_program_id:         string;
+  p_roster_member_id:   string;
+  expectedClubId:       string;
+}): Promise<{ data?: ProgramEnrollmentResult; error?: { code?: string; message: string } }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("add_program_roster_member", {
+    p_program_id:        params.p_program_id,
+    p_expected_club_id:  params.expectedClubId,
+    p_roster_member_id:  params.p_roster_member_id,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: data ? { status: data.status, offer_expires_at: data.offer_expires_at } : undefined };
+}
+
+export async function removeProgramRosterMember(params: {
+  p_program_id:         string;
+  p_roster_member_id:   string;
+  expectedClubId:       string;
+}): Promise<{ data?: ProgramEnrollmentResult; error?: { code?: string; message: string } }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("remove_program_roster_member", {
+    p_program_id:        params.p_program_id,
+    p_expected_club_id:  params.expectedClubId,
+    p_roster_member_id:  params.p_roster_member_id,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: data ? { status: data.status, offer_expires_at: data.offer_expires_at } : undefined };
+}
+
+export async function forceConfirmProgramRosterMember(params: {
+  p_program_id:         string;
+  p_roster_member_id:   string;
+  expectedClubId:       string;
+}): Promise<{ data?: ProgramEnrollmentResult; error?: { code?: string; message: string } }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("force_confirm_program_roster_member", {
+    p_program_id:        params.p_program_id,
+    p_expected_club_id:  params.expectedClubId,
+    p_roster_member_id:  params.p_roster_member_id,
+  });
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+
+  return { data: data ? { status: data.status, offer_expires_at: data.offer_expires_at } : undefined };
+}

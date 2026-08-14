@@ -6,28 +6,49 @@
 // browser-client RPC call (get_program_roster is SECURITY DEFINER and
 // enforces its own authorization regardless of transport — no stale-club
 // guard is needed for a read), writes via "use server" Server Actions
-// (add_program_member/remove_program_member need the stale-active-club
-// preflight guard, which only runs server-side), and the same
-// rowUpdating/rowErrors state shape for per-row loading and inline errors.
+// (add_program_member/remove_program_member/add_program_roster_member/
+// remove_program_roster_member/force_confirm_program_roster_member all need
+// the stale-active-club preflight guard, which only runs server-side), and
+// the same rowUpdating/rowErrors state shape for per-row loading and inline
+// errors.
 //
 // program_enrollments remains the sole roster — this sheet adds no local
 // participant/session/waitlist model of its own; it only renders what
-// get_program_roster returns and calls the two 0092 write RPCs.
+// get_program_roster returns and calls the 0092/0115 write RPCs.
+//
+// Phase 33D2b: profile_id is null for a no-account roster Member enrolled
+// directly (program_enrollments.profile_id, now nullable) — every row
+// always carries a non-null roster_member_id, the durable enrollment/
+// dispatch key regardless of claim status. Mirrors EventRosterSheet.tsx's
+// identical profile/roster duality: rowKey(), a MemberOption.source split
+// in the Add Member picker, "(No account yet)" labeling, and a roster-aware
+// dispatch (profile-based RPC for a claimed row, roster-based RPC for a
+// no-account row) for every mutating action.
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import { addProgramMember, removeProgramMember } from "./programRosterActions";
+import {
+  addProgramMember,
+  removeProgramMember,
+  addProgramRosterMember,
+  removeProgramRosterMember,
+  forceConfirmProgramRosterMember,
+} from "./programRosterActions";
 import { mapProgramError } from "./programErrors";
-import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "./actionButtonStyles";
+import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT, ACTION_BUTTON_POSITIVE_COMPACT } from "./actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ProgramRosterRow {
   enrollment_id:     string;
   program_id:        string;
-  profile_id:        string;
+  // Phase 33D2b: null for a no-account roster Member — never null for the
+  // durable roster_member_id, which every row carries regardless of claim
+  // status.
+  profile_id:        string | null;
+  roster_member_id:  string;
   first_name:        string | null;
   last_name:         string | null;
   email:             string | null;
@@ -41,6 +62,7 @@ interface ProgramRosterRow {
 interface MemberOption {
   id:           string;
   display_name: string;
+  source:       "profile" | "roster";
 }
 
 interface Props {
@@ -67,6 +89,14 @@ function formatExpiryTime(isoString: string, tz?: string): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+// Phase 33D2b: a stable per-row key/action-target that works whether the
+// row is profile_id-keyed (a claimed enrollee) or only roster_member_id-
+// keyed (a no-account enrollee) — every row has at least one of the two,
+// and roster_member_id is always present.
+function rowKey(row: ProgramRosterRow): string {
+  return row.profile_id ?? row.roster_member_id;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -111,6 +141,8 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
       .rpc("get_program_roster", { p_program_id: programId })
       .then(({ data, error: rpcError }) => {
         if (rpcError) {
+          // eslint-disable-next-line no-console
+          console.error("[ProgramRosterSheet] get_program_roster failed:", rpcError.message);
           setError("Unable to load roster. Please try again.");
         } else {
           setRows((data as ProgramRosterRow[]) ?? []);
@@ -140,21 +172,36 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
     // program server-side (a cancelled row or no row at all is a valid
     // re-add candidate, matching add_program_member's own "cancelled ->
     // fresh queue position" support), so no client-side re-filtering
-    // against `rows` is needed here.
-    const { data, error: rpcError } = await supabase.rpc(
-      "get_program_eligible_members",
-      { p_program_id: programId }
-    );
+    // against `rows` is needed for the account-holder half.
+    //
+    // Phase 33D2b: get_program_eligible_roster_members (0115) is the
+    // Programs-scoped analog of EventRosterSheet's own get_roster_members()
+    // call — deliberately a SEPARATE, narrowly-scoped RPC rather than a
+    // broadened get_roster_members() (which is hard admin-only and would
+    // exclude a pro managing their own program's roster). Same exclusion
+    // rule (already-enrolled/offered/waitlisted for this program) applied
+    // server-side, so no client-side re-filtering is needed here either.
+    const [accountResult, rosterResult] = await Promise.all([
+      supabase.rpc("get_program_eligible_members", { p_program_id: programId }),
+      supabase.rpc("get_program_eligible_roster_members", { p_program_id: programId }),
+    ]);
 
-    if (rpcError) {
+    if (accountResult.error || rosterResult.error) {
       setMemberLoadError("Unable to load eligible members. Please try again.");
       setMembersLoading(false);
       return;
     }
 
-    // Already alphabetically ordered server-side (last_name, first_name).
-    const eligible: MemberOption[] = ((data ?? []) as { profile_id: string; display_name: string }[])
-      .map(m => ({ id: m.profile_id, display_name: m.display_name }));
+    const accountOptions: MemberOption[] = (
+      (accountResult.data ?? []) as { profile_id: string; display_name: string }[]
+    ).map(m => ({ id: m.profile_id, display_name: m.display_name, source: "profile" as const }));
+
+    const rosterOptions: MemberOption[] = (
+      (rosterResult.data ?? []) as { roster_member_id: string; display_name: string }[]
+    ).map(m => ({ id: m.roster_member_id, display_name: `${m.display_name} (No account yet)`, source: "roster" as const }));
+
+    const eligible = [...accountOptions, ...rosterOptions]
+      .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
     setMemberList(eligible);
     setSelectedMemberId(eligible[0]?.id ?? "");
@@ -179,11 +226,18 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
     setAddMemberLoading(true);
     setAddMemberError(null);
 
-    const result = await addProgramMember({
-      p_program_id:   programId,
-      p_profile_id:   selectedMemberId,
-      expectedClubId: clubId,
-    });
+    const selected = memberList.find(m => m.id === selectedMemberId);
+    const result = selected?.source === "roster"
+      ? await addProgramRosterMember({
+          p_program_id:       programId,
+          p_roster_member_id: selectedMemberId,
+          expectedClubId:     clubId,
+        })
+      : await addProgramMember({
+          p_program_id:   programId,
+          p_profile_id:   selectedMemberId,
+          expectedClubId: clubId,
+        });
 
     setAddMemberLoading(false);
     if (result.error) {
@@ -200,21 +254,56 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
 
   // ── Remove Member ─────────────────────────────────────────────────────────
 
-  async function handleRemove(profileId: string) {
-    setRowUpdating(prev => new Set(prev).add(profileId));
-    setRowErrors(prev => { const next = new Map(prev); next.delete(profileId); return next; });
+  async function handleRemove(row: ProgramRosterRow) {
+    const key = rowKey(row);
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
 
-    const result = await removeProgramMember({
-      p_program_id:   programId,
-      p_profile_id:   profileId,
-      expectedClubId: clubId,
-    });
+    const result = row.profile_id
+      ? await removeProgramMember({
+          p_program_id:   programId,
+          p_profile_id:   row.profile_id,
+          expectedClubId: clubId,
+        })
+      : await removeProgramRosterMember({
+          p_program_id:       programId,
+          p_roster_member_id: row.roster_member_id,
+          expectedClubId:     clubId,
+        });
 
-    setRowUpdating(prev => { const next = new Set(prev); next.delete(profileId); return next; });
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
     setConfirmingRemoveId(null);
 
     if (result.error) {
-      setRowErrors(prev => new Map(prev).set(profileId, mapProgramError(result.error!.code, result.error!.message)));
+      setRowErrors(prev => new Map(prev).set(key, mapProgramError(result.error!.code, result.error!.message)));
+      return;
+    }
+    loadRoster();
+    router.refresh();
+  }
+
+  // ── Force Confirm (waitlisted or offered -> enrolled) ─────────────────────
+  // Phase 33D2b: closes the staff-managed lifecycle gap for a no-account
+  // enrollee who has no session to call accept_program_waitlist_offer.
+  // Keyed by roster_member_id, so it works for a claimed row too (there is
+  // no prior profile-based force-confirm to preserve compatibility with —
+  // this capability is new for every enrollee, not just no-account ones).
+
+  async function handleForceConfirm(row: ProgramRosterRow) {
+    const key = rowKey(row);
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
+
+    const result = await forceConfirmProgramRosterMember({
+      p_program_id:       programId,
+      p_roster_member_id: row.roster_member_id,
+      expectedClubId:     clubId,
+    });
+
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
+
+    if (result.error) {
+      setRowErrors(prev => new Map(prev).set(key, mapProgramError(result.error!.code, result.error!.message)));
       return;
     }
     loadRoster();
@@ -358,15 +447,24 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                       Enrolled ({enrolled.length})
                     </p>
                     {enrolled.map(row => {
-                      const isUpdating   = rowUpdating.has(row.profile_id);
-                      const rowError     = rowErrors.get(row.profile_id);
-                      const isConfirming = confirmingRemoveId === row.profile_id;
+                      const key          = rowKey(row);
+                      const isUpdating   = rowUpdating.has(key);
+                      const rowError     = rowErrors.get(key);
+                      const isConfirming = confirmingRemoveId === key;
+                      // Phase 33D2b: a no-account enrollee added directly
+                      // via add_program_roster_member — never a Guest.
+                      const isNoAccount  = !row.profile_id;
                       return (
-                        <div key={row.profile_id} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                        <div key={key} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
                           <div className="flex items-center">
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                {displayName(row)}
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                <span className="truncate">{displayName(row)}</span>
+                                {isNoAccount && (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                    No account yet
+                                  </span>
+                                )}
                               </p>
                               {row.email && (
                                 <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{row.email}</p>
@@ -375,7 +473,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                             {!isConfirming && (
                               <button
                                 disabled={isUpdating}
-                                onClick={() => setConfirmingRemoveId(row.profile_id)}
+                                onClick={() => setConfirmingRemoveId(key)}
                                 className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                               >
                                 Remove
@@ -389,7 +487,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </p>
                               <button
                                 disabled={isUpdating}
-                                onClick={() => handleRemove(row.profile_id)}
+                                onClick={() => handleRemove(row)}
                                 className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                               >
                                 {isUpdating ? "Removing…" : "Confirm Remove"}
@@ -420,15 +518,22 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                     </p>
                     {offered.map(row => {
                       const isExpired    = row.offer_expires_at ? new Date(row.offer_expires_at) <= new Date() : false;
-                      const isUpdating   = rowUpdating.has(row.profile_id);
-                      const rowError     = rowErrors.get(row.profile_id);
-                      const isConfirming = confirmingRemoveId === row.profile_id;
+                      const key          = rowKey(row);
+                      const isUpdating   = rowUpdating.has(key);
+                      const rowError     = rowErrors.get(key);
+                      const isConfirming = confirmingRemoveId === key;
+                      const isNoAccount  = !row.profile_id;
                       return (
-                        <div key={row.profile_id} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                        <div key={key} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
                           <div className="flex items-start">
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                {displayName(row)}
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                <span className="truncate">{displayName(row)}</span>
+                                {isNoAccount && (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                    No account yet
+                                  </span>
+                                )}
                               </p>
                               {row.email && (
                                 <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{row.email}</p>
@@ -446,13 +551,25 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               )}
                             </div>
                             {!isConfirming && (
-                              <button
-                                disabled={isUpdating}
-                                onClick={() => setConfirmingRemoveId(row.profile_id)}
-                                className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
-                              >
-                                Remove
-                              </button>
+                              <div className="ml-3 flex items-center gap-2 shrink-0">
+                                {/* Phase 33D2b: staff-managed lifecycle for
+                                    an enrollee (no-account or claimed) who
+                                    cannot/has not self-accepted the offer. */}
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleForceConfirm(row)}
+                                  className={ACTION_BUTTON_POSITIVE_COMPACT}
+                                >
+                                  {isUpdating ? "…" : "Force Confirm"}
+                                </button>
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => setConfirmingRemoveId(key)}
+                                  className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                                >
+                                  Remove
+                                </button>
+                              </div>
                             )}
                           </div>
                           {isConfirming && (
@@ -462,7 +579,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </p>
                               <button
                                 disabled={isUpdating}
-                                onClick={() => handleRemove(row.profile_id)}
+                                onClick={() => handleRemove(row)}
                                 className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                               >
                                 {isUpdating ? "Removing…" : "Confirm Remove"}
@@ -492,15 +609,22 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                       Waitlisted ({waitlisted.length})
                     </p>
                     {waitlisted.map((row, index) => {
-                      const isUpdating   = rowUpdating.has(row.profile_id);
-                      const rowError     = rowErrors.get(row.profile_id);
-                      const isConfirming = confirmingRemoveId === row.profile_id;
+                      const key          = rowKey(row);
+                      const isUpdating   = rowUpdating.has(key);
+                      const rowError     = rowErrors.get(key);
+                      const isConfirming = confirmingRemoveId === key;
+                      const isNoAccount  = !row.profile_id;
                       return (
-                        <div key={row.profile_id} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                        <div key={key} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
                           <div className="flex items-center">
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                                {displayName(row)}
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate flex items-center gap-1.5">
+                                <span className="truncate">{displayName(row)}</span>
+                                {isNoAccount && (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                                    No account yet
+                                  </span>
+                                )}
                               </p>
                               {row.email && (
                                 <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{row.email}</p>
@@ -510,13 +634,25 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               #{index + 1}
                             </span>
                             {!isConfirming && (
-                              <button
-                                disabled={isUpdating}
-                                onClick={() => setConfirmingRemoveId(row.profile_id)}
-                                className={`ml-2 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
-                              >
-                                Remove
-                              </button>
+                              <div className="ml-2 flex items-center gap-2 shrink-0">
+                                {/* Phase 33D2b: staff can seat a waitlisted
+                                    enrollee directly, matching Force Confirm
+                                    parity with the offered section above. */}
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleForceConfirm(row)}
+                                  className={ACTION_BUTTON_POSITIVE_COMPACT}
+                                >
+                                  {isUpdating ? "…" : "Force Confirm"}
+                                </button>
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => setConfirmingRemoveId(key)}
+                                  className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                                >
+                                  Remove
+                                </button>
+                              </div>
                             )}
                           </div>
                           {isConfirming && (
@@ -526,7 +662,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </p>
                               <button
                                 disabled={isUpdating}
-                                onClick={() => handleRemove(row.profile_id)}
+                                onClick={() => handleRemove(row)}
                                 className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                               >
                                 {isUpdating ? "Removing…" : "Confirm Remove"}
@@ -556,7 +692,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                       Cancelled ({cancelled.length})
                     </p>
                     {cancelled.map(row => (
-                      <div key={row.profile_id} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                      <div key={rowKey(row)} className="py-2.5 border-b border-gray-100 dark:border-gray-700 last:border-0">
                         <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                           {displayName(row)}
                         </p>

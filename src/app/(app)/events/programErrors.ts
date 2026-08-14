@@ -26,6 +26,19 @@
 // not_authenticated, insufficient_role, and program_not_found are reused
 // as-is; program_not_cancellable, program_not_completable,
 // program_not_archivable, already_archived, and not_archived are new.
+//
+// Phase 33D2b: extended to also cover the four new roster-identity RPCs
+// (add_program_roster_member, remove_program_roster_member, force_confirm_
+// program_roster_member, get_program_eligible_roster_members — 0115).
+// Every existing code above (program_not_found, program_not_whole_
+// enrollment, program_not_enrollable, enrollment_not_found, insufficient_
+// role, not_authenticated) is reused as-is; only roster_member_not_found is
+// new. phase33d2_unresolved_member_identity and program_enrollment_write_
+// failed are defensive fail-closed guards expected to be unreachable for
+// any legitimate caller (mirroring the identical, intentionally-unmapped
+// event_participant_write_failed precedent in admin/events/actions.ts) —
+// deliberately left to fall through to the default message below, not an
+// oversight.
 
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -95,6 +108,8 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "That member could not be found.";
     case "target_member_inactive":
       return "That member is inactive.";
+    case "roster_member_not_found":
+      return "That member could not be found in your club.";
     case "program_not_editable":
       return "This program can no longer be edited — only draft programs can be changed.";
     case "program_already_generated":
