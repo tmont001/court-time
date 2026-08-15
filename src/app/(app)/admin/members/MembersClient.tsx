@@ -15,7 +15,8 @@ import {
   setMemberStatusAction,
   removeMemberAction,
   restoreMemberAction,
-  deleteRosterMemberAction,
+  removeRosterMemberAction,
+  restoreRosterMemberAction,
 } from "./actions";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -127,6 +128,9 @@ export type RosterMember = {
   notes:      string | null;
   created_by: string;
   created_at: string;
+  // Phase 33E2-correction: durable no-account Member lifecycle.
+  status:     string;
+  removed_at: string | null;
 };
 
 type PendingInvite = {
@@ -224,6 +228,19 @@ export default function MembersClient({
   const visibleMembers = useMemo(() => members.filter((m) => !m.removed_at), [members]);
   const removedMembers = useMemo(() => members.filter((m) => !!m.removed_at), [members]);
 
+  // Phase 33E2-correction: same split for no-account roster Members — an
+  // inactive (removed) one is excluded from the main list/search/sort and
+  // shown in the Removed section instead, mirroring visibleMembers/
+  // removedMembers above.
+  const visibleRosterMembers = useMemo(
+    () => rosterMembers.filter((r) => r.status !== "inactive"),
+    [rosterMembers],
+  );
+  const removedRosterMembers = useMemo(
+    () => rosterMembers.filter((r) => r.status === "inactive"),
+    [rosterMembers],
+  );
+
   // Excludes removed rows explicitly — a removed membership never counts
   // toward "how many active admins does this club have", even if its role/
   // status happen to still read admin/active from before it was removed.
@@ -231,7 +248,7 @@ export default function MembersClient({
     (m) => m.role === "admin" && m.status === "active" && !m.removed_at
   ).length;
 
-  const totalCount = visibleMembers.length + rosterMembers.length;
+  const totalCount = visibleMembers.length + visibleRosterMembers.length;
 
   const hasFilters = search.trim() !== "" || roleFilter !== "" || statusFilter !== "";
 
@@ -248,7 +265,7 @@ export default function MembersClient({
     // 1. Build unified list
     let items: ListItem[] = [
       ...visibleMembers.map((m): ListItem => ({ kind: "profile", data: m })),
-      ...rosterMembers.map((r): ListItem => ({ kind: "roster", data: r })),
+      ...visibleRosterMembers.map((r): ListItem => ({ kind: "roster", data: r })),
     ];
 
     // 2. Apply search
@@ -306,7 +323,7 @@ export default function MembersClient({
     });
 
     return items;
-  }, [visibleMembers, rosterMembers, search, roleFilter, statusFilter, sortField, sortDir]);
+  }, [visibleMembers, visibleRosterMembers, search, roleFilter, statusFilter, sortField, sortDir]);
 
   function handleSortChip(field: SortField) {
     if (field === sortField) {
@@ -436,16 +453,42 @@ export default function MembersClient({
     setDeleteDialog({ id: rm.id, name });
   }
 
+  // Phase 33E2-correction: this is now a soft removal (remove_roster_member)
+  // — the roster identity and its full history are preserved, only marked
+  // inactive. No longer calls delete_roster_member.
   function handleConfirmDelete() {
     if (!deleteDialog) return;
     setDeletingId(deleteDialog.id);
     startTransition(async () => {
-      const result = await deleteRosterMemberAction(deleteDialog.id);
+      const result = await removeRosterMemberAction(deleteDialog.id);
       setDeletingId(null);
       if (result.error) {
         setDeleteDialog((prev) => (prev ? { ...prev, error: result.error } : null));
       } else {
         setDeleteDialog(null);
+        router.refresh();
+      }
+    });
+  }
+
+  // Restore (removed no-account roster Members only) — not destructive, no
+  // confirmation dialog, mirrors handleRestore for club-membership members.
+  // Reuses the same restoringId/restoreErrors state — roster ids and
+  // profile ids are both uuids from disjoint tables, so no collision risk.
+  function handleRestoreRoster(rm: RosterMember) {
+    if (restoringId) return;
+    setRestoreErrors((prev) => {
+      const next = { ...prev };
+      delete next[rm.id];
+      return next;
+    });
+    setRestoringId(rm.id);
+    startTransition(async () => {
+      const result = await restoreRosterMemberAction(rm.id);
+      setRestoringId(null);
+      if (result.error) {
+        setRestoreErrors((prev) => ({ ...prev, [rm.id]: result.error! }));
+      } else {
         router.refresh();
       }
     });
@@ -681,11 +724,14 @@ export default function MembersClient({
         </div>
       )}
 
-      {/* Removed Members section — Phase 26D2. Kept entirely separate from
-          the main roster: not searchable/sortable/filterable, not counted
-          in totalCount. Only ever shows memberships removed from THIS club;
-          restoring never touches any other club the person belongs to. */}
-      {removedMembers.length > 0 && (
+      {/* Removed Members section — Phase 26D2, extended Phase 33E2-
+          correction to also list removed no-account roster Members. Kept
+          entirely separate from the main roster: not searchable/sortable/
+          filterable, not counted in totalCount. Club-membership rows only
+          ever show removal from THIS club; restoring never touches any
+          other club the person belongs to. Roster rows are this club's own
+          durable identity — there is no other club to consider. */}
+      {(removedMembers.length > 0 || removedRosterMembers.length > 0) && (
         <div className="mx-4 mt-4 mb-6">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
             Removed from this club
@@ -714,6 +760,39 @@ export default function MembersClient({
                   <button
                     disabled={isRestoring}
                     onClick={() => handleRestore(m)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50"
+                  >
+                    {isRestoring ? "Restoring…" : "Restore"}
+                  </button>
+                </div>
+              );
+            })}
+            {removedRosterMembers.map((rm) => {
+              const fullName =
+                [rm.first_name, rm.last_name].filter(Boolean).join(" ") || "Unnamed member";
+              const isRestoring = restoringId === rm.id;
+              const restoreError = restoreErrors[rm.id];
+              return (
+                <div key={rm.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate flex items-center gap-1.5">
+                      <span className="truncate">{fullName}</span>
+                      <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                        No account
+                      </span>
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                      Removed {rm.removed_at ? formatJoinDate(rm.removed_at) : ""}
+                    </p>
+                    {restoreError && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                        {restoreError}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    disabled={isRestoring}
+                    onClick={() => handleRestoreRoster(rm)}
                     className="shrink-0 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-600 dark:text-gray-300 hover:border-accent hover:text-accent motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50"
                   >
                     {isRestoring ? "Restoring…" : "Restore"}
@@ -935,7 +1014,10 @@ export default function MembersClient({
                 Remove {deleteDialog.name} from the roster?
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
-                This only removes the roster entry. It does not affect any signed-in account.
+                This member will be marked inactive and won&apos;t appear as a
+                target for new bookings, events, or programs. Their existing
+                reservation, event, and program history stays intact, and they
+                can be restored later.
               </p>
               {deleteDialog.error && (
                 <p className="mt-3 text-sm text-red-600 dark:text-red-400">

@@ -48,7 +48,9 @@ interface EventWithDetails {
     shows_participant_names: boolean;
   };
   event_participants: EventParticipant[];
-  event_guests: Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not).
+  event_guests: Array<{ id: string; status: string }>;
   court_ids: string[];
 }
 
@@ -131,7 +133,9 @@ export default function EventDetailSheet({
   const [loading, setLoading]                         = useState(false);
   const [error, setError]                             = useState<string | null>(null);
   const [localParticipants, setLocalParticipants]     = useState<EventParticipant[]>(event.event_participants);
-  const [localGuestCount, setLocalGuestCount]         = useState(event.event_guests?.length ?? 0);
+  const [localGuestCount, setLocalGuestCount]         = useState(
+    event.event_guests?.filter(g => g.status === "active").length ?? 0
+  );
   // Phase 33D2a fix: null = not yet resolved (show "Loading participants…");
   // [] = resolved with zero matching profiles — a real, valid end state
   // once no-account participants exist (see the fetch effect below), not

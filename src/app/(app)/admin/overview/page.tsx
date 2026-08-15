@@ -27,7 +27,9 @@ type TodayEvent = {
   capacity:           number;
   event_types:        { label: string; color: string } | null;
   event_participants: Array<{ status: string }>;
-  event_guests:       Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not).
+  event_guests:       Array<{ id: string; status: string }>;
 };
 
 type ActiveEvent = {
@@ -219,7 +221,7 @@ export default async function AdminOverviewPage() {
     // Today's scheduled, non-archived events.
     supabase
       .from("events")
-      .select("id, title, starts_at, capacity, event_types(label, color), event_participants(status), event_guests(id)")
+      .select("id, title, starts_at, capacity, event_types(label, color), event_participants(status), event_guests(id, status)")
       .eq("club_id", clubId)
       .eq("status", "scheduled")
       .is("archived_at", null)
@@ -558,7 +560,7 @@ export default async function AdminOverviewPage() {
                   const confirmed  = ev.event_participants.filter(p => p.status === "confirmed").length;
                   const waitlisted = ev.event_participants.filter(p => p.status === "waitlisted").length;
                   const offered    = ev.event_participants.filter(p => p.status === "offered").length;
-                  const guests     = ev.event_guests.length;
+                  const guests     = ev.event_guests.filter(g => g.status === "active").length;
                   const occupied   = confirmed + offered + guests;
                   return (
                     <div key={ev.id} className="ct-card px-4 py-2.5 flex items-center justify-between">

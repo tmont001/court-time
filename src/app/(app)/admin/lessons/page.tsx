@@ -45,6 +45,7 @@ export default async function AdminLessonsPage() {
             .from("roster_members")
             .select("id, first_name, last_name, claimed_by")
             .eq("club_id", clubId)
+            .eq("status", "active")
             .order("last_name", { ascending: true })
             .order("first_name", { ascending: true }),
           supabase.rpc("get_lesson_types"),

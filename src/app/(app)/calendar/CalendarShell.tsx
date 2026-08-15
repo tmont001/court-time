@@ -84,7 +84,9 @@ interface RawEventRow {
   // identity, used for claim-continuity ownership matching in
   // EventDetailSheet (see userRosterMemberId).
   event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
-  event_guests: Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not) — consumers filter accordingly.
+  event_guests: Array<{ id: string; status: string }>;
   reservations: Array<{ court_id: string; status: string; reason: string }>;
 }
 
@@ -113,7 +115,9 @@ interface EventWithDetails {
   // identity, used for claim-continuity ownership matching in
   // EventDetailSheet (see userRosterMemberId).
   event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
-  event_guests: Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not) — consumers filter accordingly.
+  event_guests: Array<{ id: string; status: string }>;
   court_ids: string[];
 }
 
@@ -562,6 +566,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       .from("roster_members")
       .select("id, first_name, last_name, claimed_by")
       .eq("club_id", clubId)
+      .eq("status", "active")
       .order("last_name", { ascending: true })
       .order("first_name", { ascending: true });
     setRosterMembers(
@@ -675,7 +680,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         event_type_id, description, updated_at, program_id, is_program_exception,
         event_types(key, label, color, shows_participant_names),
         event_participants(profile_id, roster_member_id, role, status, offer_expires_at),
-        event_guests(id),
+        event_guests(id, status),
         reservations(court_id, status, reason)
       `)
       .eq("club_id", clubId)

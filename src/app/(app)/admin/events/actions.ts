@@ -484,6 +484,33 @@ export async function markAttendanceRosterParticipant(
 }
 
 // ---------------------------------------------------------------------------
+// markAttendanceGuest
+// Phase 33E2: Guest-attendance parity action, mirrors
+// markAttendanceRosterParticipant's shape exactly, keyed by guest id.
+// ---------------------------------------------------------------------------
+export async function markAttendanceGuest(
+  eventId:          string,
+  guestId:          string,
+  attendanceStatus: string | null,
+  expectedClubId:   string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("mark_attendance_guest", {
+    p_event_id:          eventId,
+    p_expected_club_id:  expectedClubId,
+    p_guest_id:          guestId,
+    p_attendance_status: attendanceStatus,
+  });
+
+  if (error) return { error: error.message };
+  return {};
+}
+
+// ---------------------------------------------------------------------------
 // adminRemoveGuest
 // Removes a guest from an event. Triggers waitlist advancement if removal
 // frees a slot below capacity.

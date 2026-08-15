@@ -105,7 +105,7 @@ export default async function EventsPage({
         id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
         event_types(key, label, color),
         event_participants(profile_id, role, status, offer_expires_at),
-        event_guests(id),
+        event_guests(id, status),
         reservations(court_id, reason, status),
         programs(enrollment_model)
       `)

@@ -26,6 +26,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   // retrying the same link cannot help.
   no_roster_identity: "This invite link isn't linked to a Member record yet. Ask your club administrator to resend it.",
   roster_identity_conflict: "This invite couldn't be matched to your account safely. Ask your club administrator to check your Member record.",
+  // Phase 33E2-correction: the Member record this invite was bound to has
+  // since been removed — acceptance never implicitly reactivates it.
+  roster_member_inactive: "This club membership is no longer active. Please contact the club.",
 };
 
 // Failures that mean the invite is permanently unusable — clear the cookie so
@@ -40,6 +43,7 @@ const DEFINITIVE_ERRORS = new Set([
   "membership_state_conflict",
   "no_roster_identity",
   "roster_identity_conflict",
+  "roster_member_inactive",
 ]);
 
 async function clearInviteCookie(): Promise<void> {

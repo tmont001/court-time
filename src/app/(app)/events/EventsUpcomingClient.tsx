@@ -35,7 +35,9 @@ export interface UpcomingEventData {
   capacity:           number;
   event_types:        { key: string; label: string; color: string } | null;
   event_participants: Array<{ profile_id: string; role: string; status: string; offer_expires_at: string | null }>;
-  event_guests:       Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not).
+  event_guests:       Array<{ id: string; status: string }>;
   reservations:       Array<{ court_id: string; reason: string; status: string }>;
   // Phase 27D2: present only for generated program sessions (null for
   // standalone/per_session/admin_managed events without a parent program).
@@ -284,7 +286,7 @@ export default function EventsUpcomingClient({
                         const offeredCount = ev.event_participants.filter(
                           p => p.status === "offered"
                         ).length;
-                        const guestCount    = ev.event_guests?.length ?? 0;
+                        const guestCount    = ev.event_guests?.filter(g => g.status === "active").length ?? 0;
                         const waitlistCount = ev.event_participants.filter(
                           p => p.status === "waitlisted"
                         ).length;

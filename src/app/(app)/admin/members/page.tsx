@@ -22,7 +22,10 @@ export default async function AdminMembersPage() {
   const [membersResult, invitesResult, rosterResult] = await Promise.all([
     supabase.rpc("get_members"),
     supabase.rpc("get_club_invites"),
-    supabase.rpc("get_roster_members"),
+    // Phase 33E2: this CRM listing wants to see every unclaimed identity,
+    // including inactive ones, so staff can view/manage them — active-only
+    // filtering is for picker use (EventRosterSheet's bare, default call).
+    supabase.rpc("get_roster_members", { p_include_inactive: true }),
   ]);
 
   // Include expired invites so admins can see them and resend. Active invites

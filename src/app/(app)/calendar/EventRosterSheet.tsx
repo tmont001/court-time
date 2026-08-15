@@ -9,7 +9,6 @@ import {
   adminOfferSpot,
   adminExpireOffer,
   adminRemoveGuest,
-  adminAddMember,
   adminAddGuest,
   adminAddRosterParticipant,
   adminRemoveRosterParticipant,
@@ -18,6 +17,7 @@ import {
   adminExpireOfferRosterParticipant,
   markAttendance,
   markAttendanceRosterParticipant,
+  markAttendanceGuest,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import {
@@ -43,10 +43,13 @@ interface RosterRow {
   roster_member_id:  string | null;
 }
 
+// Phase 33E2 (0118): id is always a roster_member_id — get_event_eligible_
+// members is the single source for both claimed and no-account candidates,
+// and admin_add_roster_participant safely handles both identity classes
+// keyed by roster_member_id, so no source discriminant is needed anymore.
 interface MemberOption {
   id:           string;
   display_name: string;
-  source:       "profile" | "roster";
 }
 
 // Phase 33D2: a stable per-row key/action-target that works whether the
@@ -106,7 +109,6 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
 
   // ── Club / member picker state ────────────────────────────────────────────
-  const [eventClubId, setEventClubId]         = useState<string | null>(null);
   const [addMemberOpen, setAddMemberOpen]     = useState(false);
   const [memberList, setMemberList]           = useState<MemberOption[]>([]);
   const [membersLoading, setMembersLoading]   = useState(false);
@@ -154,14 +156,6 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
 
   useEffect(() => {
     loadRoster();
-    if (isAdmin) {
-      supabase
-        .from("events")
-        .select("club_id")
-        .eq("id", eventId)
-        .single()
-        .then(({ data }) => { if (data?.club_id) setEventClubId(data.club_id); });
-    }
   }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reload roster when parent signals a join/leave has occurred.
@@ -201,6 +195,33 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
     }
   }
 
+  // Phase 33E2: true-Guest attendance parity — a guest row's `profile_id`
+  // field is actually event_guests.id (aliased by get_event_roster's
+  // guest_rows CTE), so it doubles as the guest's own row key/target here.
+  async function handleMarkGuest(row: RosterRow, newStatus: string | null) {
+    const key = rowKey(row);
+    const prevRows = rows;
+    setRows(prev => prev.map(r =>
+      rowKey(r) === key ? { ...r, attendance_status: newStatus } : r
+    ));
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
+
+    const result = await markAttendanceGuest(eventId, row.profile_id!, newStatus, clubId);
+
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
+    if (result.error) {
+      setRows(prevRows);
+      const code = result.error.trim();
+      const msg = code === STALE_CLUB_CONTEXT_ERROR
+        ? STALE_CLUB_MESSAGE
+        : code === "event_archived"
+          ? "This event is archived and its roster is read-only."
+          : "Failed to update. Please try again.";
+      setRowErrors(prev => new Map(prev).set(key, msg));
+    }
+  }
+
   // ── Admin per-row action ──────────────────────────────────────────────────
 
   async function handleAdminAction(
@@ -220,57 +241,45 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
 
   // ── Add Member ────────────────────────────────────────────────────────────
 
+  // Phase 33E2 (0118): single admin+pro, club-scoped, roster_members-
+  // sourced eligibility RPC — replaces the old dual profiles/get_members
+  // (claimed) + get_roster_members (no-account) lookup, which either used
+  // profiles.status (a stale legacy projection that never clears on
+  // club_memberships removal — see 0081's trg_project_membership_to_profile)
+  // or left the claimed source empty for a Pro caller (get_members is
+  // admin-only). get_event_eligible_members is authorized identically to
+  // every other Event roster-management RPC (admin OR pro, same club), so
+  // both roles now get a correct, identical candidate list.
   async function openAddMember() {
     setAddMemberOpen(true);
     setAddMemberError(null);
     setMembersLoading(true);
     setMemberList([]);
 
-    if (!eventClubId) {
-      setMembersLoading(false);
-      return;
-    }
-
-    const activeProfileIds = new Set(
-      rows
-        .filter(r => r.status !== "cancelled" && r.role !== "guest" && r.profile_id)
-        .map(r => r.profile_id!),
-    );
-    // Phase 33D2: excludes a roster identity already on the roster via
-    // EITHER path — a linked event_guests row (unclaimed-only, legacy) or
-    // a direct event_participants row (claimed or no-account, current).
+    // Excludes a roster identity already on the roster via EITHER path — a
+    // linked event_guests row (unclaimed-only, legacy) or a direct event_
+    // participants row (claimed or no-account, current). get_event_
+    // eligible_members already excludes active event_participants rows
+    // server-side; this additionally covers the legacy event_guests link,
+    // which that RPC does not check.
     const activeRosterIds = new Set(
       rows
         .filter(r => r.roster_member_id && (r.role === "guest" || r.status !== "cancelled"))
         .map(r => r.roster_member_id!),
     );
 
-    const [profilesResult, rosterResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, first_name, last_name")
-        .eq("club_id", eventClubId)
-        .eq("status", "active"),
-      supabase.rpc("get_roster_members"),
-    ]);
+    const { data, error } = await supabase.rpc("get_event_eligible_members", { p_event_id: eventId });
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("[EventRosterSheet] get_event_eligible_members failed:", error.message);
+    }
 
-    const profileOptions: MemberOption[] = (profilesResult.data ?? [])
-      .filter(p => !activeProfileIds.has(p.id))
-      .map(p => ({
-        id:           p.id,
-        display_name: [p.first_name, p.last_name].filter(Boolean).join(" ") || "Unknown",
-        source:       "profile" as const,
-      }));
-
-    const rosterOptions: MemberOption[] = (rosterResult.data ?? [])
-      .filter(r => !activeRosterIds.has(r.id))
-      .map(r => ({
-        id:           r.id,
-        display_name: `${[r.first_name, r.last_name].filter(Boolean).join(" ")} (No account yet)`,
-        source:       "roster" as const,
-      }));
-
-    const eligible = [...profileOptions, ...rosterOptions]
+    const eligible: MemberOption[] = (data ?? [])
+      .filter(m => !activeRosterIds.has(m.roster_member_id))
+      .map(m => ({
+        id:           m.roster_member_id,
+        display_name: m.has_account ? m.display_name : `${m.display_name} (No account yet)`,
+      }))
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
     setMemberList(eligible);
@@ -283,14 +292,12 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
     setAddMemberLoading(true);
     setAddMemberError(null);
 
-    const selected = memberList.find(m => m.id === selectedMemberId);
-    // Phase 33D2: a roster-sourced pick (claimed or no-account) now goes
-    // through admin_add_roster_participant, adding them directly to
-    // event_participants — never event_guests. Replaces the old
-    // adminAddRosterMemberToEvent dispatch for this picker.
-    const result = selected?.source === "roster"
-      ? await adminAddRosterParticipant(eventId, selectedMemberId, clubId)
-      : await adminAddMember(eventId, selectedMemberId, clubId);
+    // Phase 33E2 (0118): every candidate is now keyed by roster_member_id
+    // (claimed or no-account) — admin_add_roster_participant resolves the
+    // linked account internally (claimed_by, possibly null) and handles
+    // both identity classes safely, so a single dispatch path replaces the
+    // old profile-vs-roster branch.
+    const result = await adminAddRosterParticipant(eventId, selectedMemberId, clubId);
 
     setAddMemberLoading(false);
     if (result.error) {
@@ -792,6 +799,56 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 </button>
                               )}
                             </div>
+
+                            {/* Phase 33E2: Guest attendance — same UX pattern as Member rows. */}
+                            {readOnly ? (
+                              row.attendance_status && (
+                                <div className="mt-1.5">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-red-100 text-red-600"
+                                  }`}>
+                                    {row.attendance_status === "attended" ? "Attended" : "No-show"}
+                                  </span>
+                                </div>
+                              )
+                            ) : (
+                              <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleMarkGuest(row, "attended")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  Attended
+                                </button>
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleMarkGuest(row, "no_show")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "no_show"
+                                      ? "bg-red-100 text-red-600"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  No-show
+                                </button>
+                                {row.attendance_status && (
+                                  <button
+                                    disabled={isUpdating}
+                                    onClick={() => handleMarkGuest(row, null)}
+                                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             {rowError && (
                               <p className="text-xs text-red-500 mt-1">{rowError}</p>
                             )}
@@ -834,6 +891,56 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 </button>
                               )}
                             </div>
+
+                            {/* Phase 33E2: Guest attendance — same UX pattern as Member rows. */}
+                            {readOnly ? (
+                              row.attendance_status && (
+                                <div className="mt-1.5">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-red-100 text-red-600"
+                                  }`}>
+                                    {row.attendance_status === "attended" ? "Attended" : "No-show"}
+                                  </span>
+                                </div>
+                              )
+                            ) : (
+                              <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleMarkGuest(row, "attended")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "attended"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  Attended
+                                </button>
+                                <button
+                                  disabled={isUpdating}
+                                  onClick={() => handleMarkGuest(row, "no_show")}
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold disabled:opacity-40 ${
+                                    row.attendance_status === "no_show"
+                                      ? "bg-red-100 text-red-600"
+                                      : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
+                                  }`}
+                                >
+                                  No-show
+                                </button>
+                                {row.attendance_status && (
+                                  <button
+                                    disabled={isUpdating}
+                                    onClick={() => handleMarkGuest(row, null)}
+                                    className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             {rowError && (
                               <p className="text-xs text-red-500 mt-1">{rowError}</p>
                             )}

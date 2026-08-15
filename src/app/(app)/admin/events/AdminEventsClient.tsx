@@ -126,8 +126,13 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
       return {
         ...ev,
         event_participants: participantRows,
-        // Preserve only the count; individual ids are not used by this component.
-        event_guests: Array.from({ length: guestCount }, () => ({ id: "" })),
+        // Preserve only the count; individual ids are not used by this
+        // component. onRosterChange's guestCount is already active-only
+        // (EventRosterSheet's role === "guest" filter over get_event_roster,
+        // which itself now returns active guests only), so every
+        // placeholder row is marked active to keep the count consistent
+        // with the status-filtered .length read above.
+        event_guests: Array.from({ length: guestCount }, () => ({ id: "", status: "active" })),
       };
     }));
   }
@@ -420,7 +425,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
         ) : (
           visibleEvents.map(ev => {
             const type           = ev.event_types;
-            const guestCount     = ev.event_guests.length;
+            const guestCount     = ev.event_guests.filter(g => g.status === "active").length;
             const confirmedCount = ev.event_participants.filter(
               p => p.role === "participant" && p.status === "confirmed"
             ).length;

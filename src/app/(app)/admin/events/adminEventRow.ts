@@ -28,7 +28,9 @@ export interface RawAdminEventRow {
   is_program_exception:      boolean;
   event_types:               { key: string; label: string; color: string } | null;
   event_participants:        Array<{ profile_id: string | null; role: string; status: string }>;
-  event_guests:               Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not).
+  event_guests:               Array<{ id: string; status: string }>;
   reservations:               Array<{ court_id: string; status: string; reason: string }> | null;
 }
 
@@ -54,7 +56,9 @@ export type AdminEventRow = {
   court_ids:                 string[];
   event_types:               { key: string; label: string; color: string } | null;
   event_participants:        Array<{ profile_id: string | null; role: string; status: string }>;
-  event_guests:               Array<{ id: string }>;
+  // Phase 33E2: status distinguishes an active guest (occupies capacity)
+  // from a soft-cancelled one (does not).
+  event_guests:               Array<{ id: string; status: string }>;
 };
 
 // Phase 30C2 fix: the exact set of columns every AdminEventRow consumer
@@ -70,7 +74,7 @@ export const ADMIN_EVENT_SELECT = `
   program_id, program_schedule_rule_id, program_occurrence_date, is_program_exception,
   event_types(key, label, color),
   event_participants(profile_id, role, status),
-  event_guests(id),
+  event_guests(id, status),
   reservations(court_id, status, reason)
 `;
 

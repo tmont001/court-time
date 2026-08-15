@@ -23,6 +23,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   email_already_a_member:        "This email already belongs to a member.",
   roster_member_not_found:       "Roster member not found.",
   roster_member_already_claimed: "This member has already created an account.",
+  roster_member_claimed:         "This member has already created an account. Use the account's membership controls instead.",
+  roster_member_already_inactive: "This member is already removed.",
+  roster_member_not_removed:      "This member is not currently removed.",
+  roster_member_update_failed:    "Something changed before this could be saved. Please try again.",
+  // Phase 33E2-correction: create_club_invite/resend_club_invite now reject
+  // an inactive roster target — restore the Member first, then invite.
+  roster_member_inactive:        "This member is currently removed. Restore them first, then send a new invite.",
   email_required:                "Email is required for invite generation.",
   invalid_email_format:          "Please enter a valid email address.",
   invite_already_pending:        "An active invite already exists for this email.",
@@ -273,6 +280,10 @@ export async function updateRosterMemberAction(
   return {};
 }
 
+// Phase 33E2-correction: kept as an unused cleanup primitive only — no
+// normal UI path calls this anymore (see removeRosterMemberAction below).
+// A future explicit "delete mistaken pristine record" workflow may still
+// reach for it; normal membership lifecycle must not.
 export async function deleteRosterMemberAction(
   id: string
 ): Promise<{ error?: string }> {
@@ -281,6 +292,40 @@ export async function deleteRosterMemberAction(
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
   const { error } = await supabase.rpc("delete_roster_member", { p_id: id });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
+}
+
+// Phase 33E2-correction: soft removal for a no-account (unclaimed) roster
+// Member — preserves the roster identity and its full history, only marks
+// it inactive. This is now the normal-lifecycle "Remove" action for a
+// no-account Member; delete_roster_member above is no longer used for it.
+export async function removeRosterMemberAction(
+  id: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("remove_roster_member", { p_roster_member_id: id });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
+}
+
+// Phase 33E2-correction: restores the same roster identity a no-account
+// Member had before removal — never a new row.
+export async function restoreRosterMemberAction(
+  id: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("restore_roster_member", { p_roster_member_id: id });
   if (error) return { error: mapError(error.message) };
 
   revalidatePath("/admin/members");

@@ -801,6 +801,10 @@ export type Database = {
           added_by:          string;
           roster_member_id:  string | null;
           created_at:        string;
+          status:            "active" | "cancelled";
+          attendance_status: "attended" | "no_show" | null;
+          cancelled_at:      string | null;
+          cancelled_by:      string | null;
         };
         Insert: {
           id?:               string;
@@ -809,6 +813,10 @@ export type Database = {
           added_by:          string;
           roster_member_id?: string | null;
           created_at?:       string;
+          status?:            "active" | "cancelled";
+          attendance_status?: "attended" | "no_show" | null;
+          cancelled_at?:      string | null;
+          cancelled_by?:      string | null;
         };
         Update: {
           id?:               string;
@@ -817,6 +825,10 @@ export type Database = {
           added_by?:         string;
           roster_member_id?: string | null;
           created_at?:       string;
+          status?:            "active" | "cancelled";
+          attendance_status?: "attended" | "no_show" | null;
+          cancelled_at?:      string | null;
+          cancelled_by?:      string | null;
         };
         Relationships: [
           {
@@ -1231,6 +1243,9 @@ export type Database = {
           created_by: string;
           created_at: string;
           updated_at: string;
+          status:     "active" | "inactive";
+          removed_at: string | null;
+          removed_by: string | null;
         };
         Insert: {
           id?:         string;
@@ -1245,6 +1260,9 @@ export type Database = {
           created_by:  string;
           created_at?: string;
           updated_at?: string;
+          status?:     "active" | "inactive";
+          removed_at?: string | null;
+          removed_by?: string | null;
         };
         Update: {
           id?:         string;
@@ -1259,6 +1277,9 @@ export type Database = {
           created_by?: string;
           created_at?: string;
           updated_at?: string;
+          status?:     "active" | "inactive";
+          removed_at?: string | null;
+          removed_by?: string | null;
         };
         Relationships: [
           {
@@ -1953,6 +1974,17 @@ export type Database = {
         };
         Returns: undefined;
       };
+      // Phase 33E2: Guest-attendance parity RPC, mirrors
+      // mark_attendance_roster_participant's shape keyed by guest id.
+      mark_attendance_guest: {
+        Args: {
+          p_event_id:          string;
+          p_expected_club_id:  string;
+          p_guest_id:          string;
+          p_attendance_status: string | null;
+        };
+        Returns: undefined;
+      };
       update_sms_preference: {
         Args: {
           p_sms_opt_in: boolean;
@@ -2570,6 +2602,19 @@ export type Database = {
         Args: { p_event_id: string; p_profile_id: string };
         Returns: undefined;
       };
+      // Phase 33E2 (0118): single admin+pro Event eligible-Member source,
+      // replacing EventRosterSheet's old dual profiles/get_roster_members
+      // lookup. Claim state never determines eligibility — only
+      // role='member' and status='active' do.
+      get_event_eligible_members: {
+        Args: { p_event_id: string };
+        Returns: {
+          roster_member_id: string;
+          profile_id:        string | null;
+          display_name:      string;
+          has_account:       boolean;
+        }[];
+      };
       // Phase 33D2
       admin_add_roster_participant: {
         Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
@@ -2672,8 +2717,11 @@ export type Database = {
         Returns: undefined;
       };
       // Phase 21I-A: roster member RPCs
+      // Phase 33E2: p_include_inactive added (default false) — active-only
+      // by default for picker use; the Admin Members CRM listing passes
+      // true to also see inactive unclaimed identities.
       get_roster_members: {
-        Args: Record<string, never>;
+        Args: { p_include_inactive?: boolean };
         Returns: {
           id:         string;
           first_name: string;
@@ -2684,6 +2732,8 @@ export type Database = {
           notes:      string | null;
           created_by: string;
           created_at: string;
+          status:     string;
+          removed_at: string | null;
         }[];
       };
       add_roster_member: {
@@ -2711,6 +2761,17 @@ export type Database = {
       };
       delete_roster_member: {
         Args: { p_id: string };
+        Returns: undefined;
+      };
+      // Phase 33E2-correction: durable no-account Member lifecycle —
+      // normal-lifecycle soft removal/restore, scoped to claimed_by IS
+      // NULL. Preserves roster_members.id and all historical relations.
+      remove_roster_member: {
+        Args: { p_roster_member_id: string };
+        Returns: undefined;
+      };
+      restore_roster_member: {
+        Args: { p_roster_member_id: string };
         Returns: undefined;
       };
       // Phase 21I-C-A: member notes + roster members in events
