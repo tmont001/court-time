@@ -1812,6 +1812,22 @@ export type Database = {
         //   notification_id: string | null
         // }
       };
+      // Phase 33E3: no-account operational-email foundation (0119).
+      get_roster_member_email_for_notification: {
+        Args: { p_roster_member_id: string; p_expected_club_id: string };
+        Returns: string | null;
+      };
+      record_roster_operational_email: {
+        Args: {
+          p_roster_member_id:    string;
+          p_expected_club_id:    string;
+          p_kind:                string;
+          p_status:               string;
+          p_provider_message_id?: string | null;
+          p_error?:               string | null;
+        };
+        Returns: undefined;
+      };
       update_member_reservation: {
         Args: {
           p_reservation_id: string;
@@ -3072,6 +3088,16 @@ export type Database = {
         };
         Returns: {
           id: string; status: string; cancellation_reason: string | null; cancelled_at: string | null; updated_at: string;
+          // Phase 33E3: the RPC actually returns the full lesson_requests
+          // row (0111's `returns public.lesson_requests`) — these fields
+          // were previously omitted from this narrower type but are used
+          // to resolve the no-account cancellation email's Pro/court/time
+          // details server-side, from this same trusted return value.
+          roster_member_id:  string;
+          pro_id:             string;
+          proposed_starts_at: string | null;
+          proposed_ends_at:   string | null;
+          proposed_court_id:  string | null;
         };
       };
       get_my_lesson_requests: {

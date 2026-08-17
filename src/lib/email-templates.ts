@@ -172,3 +172,32 @@ export function lessonAdminRequestedTemplate(
   const { html, text } = layout(clubName, body, "View My Bookings", `${APP_URL}/lessons`);
   return { subject: `Lesson request submitted for you — ${clubName}`, html, text };
 }
+
+// Phase 33E3: operational email for a no-account roster Member
+// (roster_members.claimed_by IS NULL). Every other template above links its
+// CTA into the authenticated app (/calendar, /lessons) — meaningless for a
+// recipient who has no Court Time account to sign into, so this uses a
+// plain, no-CTA layout instead of reusing layout()/its mandatory ctaUrl.
+// subject is passed explicitly (no single default fits every operational
+// kind this serves — reservation confirmation, cancellation, reschedule,
+// lesson confirmation, lesson cancellation). body may contain \n line
+// breaks (e.g. a date/time/court block) — white-space: pre-line preserves
+// them in the HTML version; the plain-text version respects them natively.
+export function rosterOperationalEmailTemplate(
+  clubName: string,
+  subject:  string,
+  body:     string,
+): { subject: string; html: string; text: string } {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px;border:1px solid #e5e7eb">
+  <p style="margin:0 0 16px;font-size:11px;font-weight:600;letter-spacing:.06em;color:#9ca3af;text-transform:uppercase">${esc(clubName)}</p>
+  <p style="margin:0;font-size:15px;color:#111827;line-height:1.6;white-space:pre-line">${esc(body)}</p>
+</div>
+</body>
+</html>`;
+  const text = `${clubName}\n\n${body}`;
+  return { subject, html, text };
+}

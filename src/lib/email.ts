@@ -136,3 +136,56 @@ export async function sendEmailNotification(
     });
   }
 }
+
+// sendRosterOperationalEmail — Phase 33E3. Operational (transactional)
+// email for a no-account roster Member (roster_members.claimed_by IS
+// NULL). Deliberately NOT a variant of sendEmailNotification: there is no
+// notifications row (no user_id exists to attach one to), no
+// notification_preferences row can exist for an unclaimed identity either,
+// so this is unconditional/always-on — the same posture "mandatory" kinds
+// already have for account-backed Members — and must NEVER be used for
+// announcement/marketing kinds (those stay account/preferences-based only,
+// per product scope). Recipient identity is always roster_member_id, never
+// a fabricated or guessed email.
+//
+// Guards (in order):
+//   1. RESEND_API_KEY absent → return.
+//   2. Email resolution via get_roster_member_email_for_notification
+//      (SECURITY DEFINER, admin/pro same-club, returns null for a claimed
+//      identity, a missing email, or any authorization failure) → return if
+//      null. Never crashes, never fabricates a recipient.
+// Delivery outcome is recorded via record_roster_operational_email
+// (audit_log-backed — see migration 0119) rather than notification_
+// deliveries, which is notification_id-keyed and cannot represent this
+// recipient. Never throws.
+export async function sendRosterOperationalEmail(
+  supabase:        SupabaseClient<Database>,
+  rosterMemberId:  string,
+  expectedClubId:  string,
+  kind:            string,
+  buildTemplate:   (clubName: string) => { subject: string; html: string; text: string },
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const { data: email } = await supabase.rpc("get_roster_member_email_for_notification", {
+    p_roster_member_id: rosterMemberId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (!email) return;
+
+  let clubName = "Court Time";
+  const { data: club } = await supabase.from("clubs").select("name").eq("id", expectedClubId).single();
+  if (club?.name) clubName = club.name;
+
+  const { subject, html, text } = buildTemplate(clubName);
+  const { messageId, error: emailError } = await sendEmail(email, subject, html, text);
+
+  await supabase.rpc("record_roster_operational_email", {
+    p_roster_member_id:    rosterMemberId,
+    p_expected_club_id:    expectedClubId,
+    p_kind:                kind,
+    p_status:              messageId ? "sent" : "failed",
+    p_provider_message_id: messageId,
+    p_error:               messageId ? null : (emailError ?? "Unknown error"),
+  });
+}

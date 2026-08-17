@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, sendRosterOperationalEmail } from "@/lib/email";
 import {
   lessonRequestReceivedTemplate,
   lessonRequestProposedTemplate,
@@ -13,7 +13,52 @@ import {
   lessonCancelledTemplate,
   lessonProviderReassignedTemplate,
   lessonAdminRequestedTemplate,
+  rosterOperationalEmailTemplate,
 } from "@/lib/email-templates";
+
+// Phase 33E3: shared date/time formatter for no-account lesson operational
+// email bodies — resolves the club's IANA timezone (clubs.timezone,
+// RLS-readable) rather than assuming the server/browser timezone, mirroring
+// calendar/actions.ts's own formatClubDateTime helper.
+async function formatLessonWhen(
+  supabase:    Awaited<ReturnType<typeof createClient>>,
+  clubId:      string,
+  startsAtIso: string,
+  endsAtIso:   string,
+): Promise<{ day: string; timeRange: string }> {
+  const { data: club } = await supabase.from("clubs").select("timezone").eq("id", clubId).single();
+  const timeZone = club?.timezone || "America/New_York";
+  const start = new Date(startsAtIso);
+  const end   = new Date(endsAtIso);
+  const day = start.toLocaleDateString("en-US", { timeZone, weekday: "short", month: "short", day: "numeric" });
+  const fmtTime = (d: Date) => d.toLocaleTimeString("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
+  return { day, timeRange: `${fmtTime(start)}–${fmtTime(end)}` };
+}
+
+// Phase 33E3 correction: resolves the Pro's display name and the court's
+// name server-side from their trusted, already-validated IDs (the same
+// p_pro_id/p_court_id the RPC itself just used), rather than relying on a
+// client-supplied display string for the no-account operational email —
+// runtime QA found the client-supplied proName/courtName arriving blank
+// despite the caller computing them correctly, an unresolved transmission
+// gap not worth chasing further when the server already holds the
+// authoritative source. Never throws; falls back to a generic label so a
+// lookup failure never blocks the (already-non-blocking) email attempt.
+async function resolveLessonDisplayNames(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  clubId:   string,
+  proId:    string,
+  courtId:  string | null,
+): Promise<{ proName: string; courtName: string | null }> {
+  const [{ data: pro }, courtResult] = await Promise.all([
+    supabase.from("profiles").select("first_name, last_name").eq("id", proId).eq("club_id", clubId).single(),
+    courtId
+      ? supabase.from("courts").select("name").eq("id", courtId).eq("club_id", clubId).single()
+      : Promise.resolve({ data: null }),
+  ]);
+  const proName = pro ? [pro.first_name, pro.last_name].filter(Boolean).join(" ") : "";
+  return { proName: proName || "your pro", courtName: courtResult.data?.name ?? null };
+}
 
 // ─── Type shared across pages ─────────────────────────────────────────────────
 
@@ -378,7 +423,7 @@ export async function cancelLesson(params: {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("cancel_lesson", {
+  const { data, error } = await supabase.rpc("cancel_lesson", {
     p_request_id: params.requestId,
     p_reason:     params.reason ?? null,
   });
@@ -386,12 +431,48 @@ export async function cancelLesson(params: {
   if (error) return { error: mapLessonError(error.message) };
 
   // Notify both parties who are NOT the actor. Phase 33D1: memberId is
-  // null for a no-account Member's lesson — skipped entirely (no
-  // notification of any kind for a no-account Member, matching every
-  // prior Phase 33 checkpoint).
+  // null for a no-account Member's lesson — no in-app notification exists
+  // for that case, matching every prior Phase 33 checkpoint. Phase 33E3:
+  // now sends an operational cancellation email directly to
+  // roster_members.email instead of skipping entirely.
   if (params.memberId && params.actorId !== params.memberId) {
     try {
       await dispatchLessonEmail(params.memberId, "lesson_cancelled", params.requestId);
+    } catch { /* non-blocking */ }
+  } else if (!params.memberId && data?.roster_member_id) {
+    // A no-account Member can never be the actor (they have no account to
+    // act with), so no self-notification check is needed here. Phase
+    // 33E3 correction: every detail is resolved server-side from cancel_
+    // lesson's own returned row (data) and its trusted pro_id/proposed_
+    // court_id — never a client-supplied display string. data is the
+    // just-cancelled lesson_requests row itself, so this reads the exact
+    // lesson that was cancelled, not a potentially-stale client value.
+    try {
+      const { proName, courtName } = await resolveLessonDisplayNames(
+        supabase, params.expectedClubId, data.pro_id, data.proposed_court_id,
+      );
+      const lines = [`Your lesson with ${proName} has been cancelled.`, ""];
+      if (data.proposed_starts_at && data.proposed_ends_at) {
+        const { day, timeRange } = await formatLessonWhen(
+          supabase, params.expectedClubId, data.proposed_starts_at, data.proposed_ends_at,
+        );
+        lines.push(day, timeRange);
+        if (courtName) lines.push(courtName);
+      }
+      if (params.reason?.trim()) {
+        lines.push("", `Reason: ${params.reason.trim()}`);
+      }
+      await sendRosterOperationalEmail(
+        supabase,
+        data.roster_member_id,
+        params.expectedClubId,
+        "lesson_cancelled",
+        (clubName) => rosterOperationalEmailTemplate(
+          clubName,
+          `Lesson cancelled — ${clubName}`,
+          lines.join("\n"),
+        ),
+      );
     } catch { /* non-blocking */ }
   }
   if (params.actorId !== params.proId) {
@@ -571,11 +652,37 @@ export async function adminCreateMemberLessonAction(
     try {
       await dispatchLessonEmail(params.proId, "lesson_request_confirmed", requestId);
     } catch { /* non-blocking */ }
-    // No-account Members receive no notification of any kind — deferred to
-    // Phase 33E, unchanged from every prior Phase 33 checkpoint.
     if (result?.member_id) {
       try {
         await dispatchLessonEmail(result.member_id, "lesson_request_confirmed", requestId);
+      } catch { /* non-blocking */ }
+    } else {
+      // Phase 33E3: no-account Member — no in-app notification exists, but
+      // an operational confirmation email now goes to roster_members.email
+      // directly. sendRosterOperationalEmail is a safe no-op if this
+      // identity turns out to be claimed (defensive; result.member_id
+      // already told us it isn't). Pro/court names are resolved server-side
+      // from the same trusted p_pro_id/p_court_id the RPC itself just
+      // validated — never a client-supplied display string (see
+      // resolveLessonDisplayNames).
+      try {
+        const { proName, courtName } = await resolveLessonDisplayNames(
+          supabase, params.expectedClubId, params.proId, params.courtId,
+        );
+        const { day, timeRange } = await formatLessonWhen(supabase, params.expectedClubId, params.startsAt, params.endsAt);
+        const lines = [`Your lesson with ${proName} is confirmed.`, "", day, timeRange];
+        if (courtName) lines.push(courtName);
+        await sendRosterOperationalEmail(
+          supabase,
+          params.rosterMemberId,
+          params.expectedClubId,
+          "lesson_request_confirmed",
+          (clubName) => rosterOperationalEmailTemplate(
+            clubName,
+            `Your lesson is confirmed — ${clubName}`,
+            [...lines, "", `If you need to make a change, contact ${clubName}.`].join("\n"),
+          ),
+        );
       } catch { /* non-blocking */ }
     }
   }

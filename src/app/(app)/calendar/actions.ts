@@ -4,12 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import { sendSms } from "@/lib/sms";
-import { sendEmailNotification } from "@/lib/email";
+import { sendEmailNotification, sendRosterOperationalEmail } from "@/lib/email";
 import {
   reservationConfirmedTemplate,
   reservationCancelledByMemberTemplate,
   eventJoinedTemplate,
   waitlistPromotedTemplate,
+  rosterOperationalEmailTemplate,
 } from "@/lib/email-templates";
 import {
   dispatchReservationNotification,
@@ -24,12 +25,39 @@ import {
 // itself is passed straight through to callers as an unknown-shaped record.
 // ---------------------------------------------------------------------------
 interface ReservationMutationResult {
-  reservation: Record<string, unknown> & { owner_user_id: string | null };
+  reservation: Record<string, unknown> & {
+    owner_user_id:     string | null;
+    roster_member_id:  string | null;
+    starts_at:         string;
+  };
   notification_id: string | null;
 }
 
 interface UpdateMemberReservationResult extends ReservationMutationResult {
   changed_fields: string[];
+}
+
+// Phase 33E3: shared date formatter for no-account operational email body
+// text — mirrors the exact `to_char(x at time zone tz, 'Mon DD "at" HH12:MI
+// AM')` format the SQL layer already uses for account-based notification
+// bodies, so a no-account Member's email reads identically to a claimed
+// Member's. Fetches the club's IANA timezone (clubs.timezone, RLS-readable)
+// rather than assuming the server/browser timezone.
+async function formatClubDateTime(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  clubId:   string,
+  iso:      string,
+): Promise<string> {
+  const { data: club } = await supabase.from("clubs").select("timezone").eq("id", clubId).single();
+  const timeZone = club?.timezone || "America/New_York";
+  return new Date(iso).toLocaleString("en-US", {
+    timeZone,
+    month:  "short",
+    day:    "2-digit",
+    hour:   "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).replace(",", " at");
 }
 
 // ---------------------------------------------------------------------------
@@ -82,9 +110,15 @@ export async function createReservation(params: {
 // admin_create_member_reservation (0108), which independently re-verifies
 // admin authorization and resolves/validates the target roster identity
 // server-side — this action never derives or trusts a client-supplied
-// owner identity, only forwards p_roster_member_id. No SMS/email dispatch:
-// 0108 deliberately writes no notification for this RPC (communications are
-// out of scope for this checkpoint), so none is triggered here either.
+// owner identity, only forwards p_roster_member_id.
+//
+// Phase 33E3: sends a no-account operational confirmation email after the
+// mutation has already committed. sendRosterOperationalEmail resolves the
+// recipient's email itself (get_roster_member_email_for_notification
+// returns null for a claimed identity, so this is always a safe no-op for
+// an account-backed Member — no dual-send risk, no need to branch on claim
+// status here). Never blocks or fails the booking: any error is caught and
+// swallowed, matching every other non-blocking dispatch in this file.
 // ---------------------------------------------------------------------------
 export async function adminCreateMemberReservation(params: {
   p_court_id:         string;
@@ -108,6 +142,23 @@ export async function adminCreateMemberReservation(params: {
     p_expected_club_id: expectedClubId,
   });
   if (error) return { error: { code: error.code, message: error.message } };
+
+  try {
+    const when = await formatClubDateTime(supabase, expectedClubId, params.p_starts_at);
+    await sendRosterOperationalEmail(
+      supabase,
+      params.p_roster_member_id,
+      expectedClubId,
+      "reservation_confirmed",
+      (clubName) => rosterOperationalEmailTemplate(
+        clubName,
+        `Court booked — ${clubName}`,
+        `Your court reservation was booked for ${when}.`,
+      ),
+    );
+  } catch {
+    // Email dispatch must never block booking success or surface to the user.
+  }
 
   revalidatePath("/calendar");
 
@@ -455,15 +506,24 @@ async function dispatchEventJoinEmail(
 
 // ---------------------------------------------------------------------------
 // adminCancelReservation
-// Phase 31C: calls admin_cancel_reservation_v2 (migration 0102), which
-// returns the exact notification_id it created alongside the reservation —
-// replacing admin_cancel_reservation, whose reservation-only return gave the
-// caller no safe way to look up its notification (the previous raw
-// `notifications` SELECT by user_id/kind was blocked by RLS for this
-// cross-user admin-initiated case; see Phase 31A/31B). Dispatch runs through
-// dispatchReservationNotification, which resolves body/authorization via
-// get_reservation_delivery_context instead of any client-side notifications
-// query.
+// Phase 31C: calls admin_cancel_reservation_v2 (migration 0102, bug-fixed in
+// 0119 — see below), which returns the exact notification_id it created
+// alongside the reservation — replacing admin_cancel_reservation, whose
+// reservation-only return gave the caller no safe way to look up its
+// notification (the previous raw `notifications` SELECT by user_id/kind was
+// blocked by RLS for this cross-user admin-initiated case; see Phase
+// 31A/31B). Dispatch runs through dispatchReservationNotification, which
+// resolves body/authorization via get_reservation_delivery_context instead
+// of any client-side notifications query.
+//
+// Phase 33E3: 0119 fixed a latent crash in admin_cancel_reservation_v2 —
+// its notification insert was unconditional even though reservations.
+// owner_user_id has been nullable since 0108 (a no-account Member's staff-
+// created reservation), so cancelling one previously raised a NOT NULL
+// violation and rolled back the entire cancellation. Now notification_id is
+// null (not a crash) for that case, and the no-account operational email
+// path below covers it — no in-app notification exists for a no-account
+// Member, matching the reservation-confirmation path above.
 // ---------------------------------------------------------------------------
 export async function adminCancelReservation(
   reservationId: string,
@@ -489,6 +549,23 @@ export async function adminCancelReservation(
       await dispatchReservationNotification(supabase, result.notification_id);
     } catch {
       // Email/SMS dispatch must never surface as a user-facing error.
+    }
+  } else if (!result.reservation.owner_user_id && result.reservation.roster_member_id) {
+    try {
+      const when = await formatClubDateTime(supabase, expectedClubId, result.reservation.starts_at);
+      await sendRosterOperationalEmail(
+        supabase,
+        result.reservation.roster_member_id,
+        expectedClubId,
+        "reservation_cancelled_by_admin",
+        (clubName) => rosterOperationalEmailTemplate(
+          clubName,
+          `Your booking was cancelled — ${clubName}`,
+          `Your reservation on ${when} was cancelled by the club.`,
+        ),
+      );
+    } catch {
+      // Email dispatch must never surface as a user-facing error.
     }
   }
 
@@ -549,6 +626,33 @@ export async function updateMemberReservationAdmin(params: {
       await dispatchReservationNotification(supabase, notificationId);
     } catch {
       // Email/SMS dispatch must never block edit success or surface to the user.
+    }
+  } else if (
+    !result?.reservation.owner_user_id
+    && result?.reservation.roster_member_id
+    && changedFields.some(f => f === "court_id" || f === "starts_at" || f === "ends_at")
+  ) {
+    // Phase 33E3: update_member_reservation (0109) only creates a
+    // notification when the owner is claimed AND a scheduling field
+    // changed — for a no-account owner it silently skips (matching 0109's
+    // own documented, deliberate deferral). changed_fields is already
+    // returned regardless of claim status, so the material-change signal
+    // is detected here purely from existing data — no SQL change needed.
+    try {
+      const when = await formatClubDateTime(supabase, expectedClubId, result.reservation.starts_at);
+      await sendRosterOperationalEmail(
+        supabase,
+        result.reservation.roster_member_id,
+        expectedClubId,
+        "reservation_rescheduled",
+        (clubName) => rosterOperationalEmailTemplate(
+          clubName,
+          `Booking rescheduled — ${clubName}`,
+          `Your reservation was rescheduled to ${when}.`,
+        ),
+      );
+    } catch {
+      // Email dispatch must never block edit success or surface to the user.
     }
   }
 
