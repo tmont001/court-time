@@ -130,6 +130,8 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "This program isn't archived.";
     case "capability_not_available":
       return "This feature isn't available at your club right now. Contact the office for help.";
+    case "member_schedule_conflict":
+      return "The member already has another confirmed commitment at that time.";
     default:
       return "Something went wrong. Please try again.";
   }

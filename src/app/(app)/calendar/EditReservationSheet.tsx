@@ -109,6 +109,7 @@ function mapEditError(code: string | undefined, message: string): string {
   // Phase 33C2 completion (0109) errors.
   if (message === "roster_identity_required")     return "Select the Member this reservation is for.";
   if (message === "roster_member_not_found")      return "That Member could not be found in your club.";
+  if (message === "member_schedule_conflict")     return "The member already has another confirmed commitment at that time.";
   if (code === "23P01")                           return "That court is already booked for the selected time.";
   return "Something went wrong. Please try again.";
 }

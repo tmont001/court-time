@@ -214,6 +214,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
   if (message === "club_closed_this_day")   return "The club is closed on that day.";
   if (message === "invalid_duration")       return "Reservations must be 30, 60, 90, or 120 minutes.";
   if (message === "capability_not_available") return "This feature isn't available at your club right now. Contact the office for help.";
+  if (message === "member_schedule_conflict") return "You already have another confirmed commitment at that time.";
   return "Something went wrong. Please try again.";
 }
 

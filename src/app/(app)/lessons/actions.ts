@@ -830,6 +830,8 @@ function mapLessonError(msg: string): string {
     invalid_status_for_edit:        "Only confirmed lessons can be edited this way.",
     // Phase 33F3B
     capability_not_available:       "This feature isn't available at your club right now. Contact the office for help.",
+    // Phase 33G1C
+    member_schedule_conflict:       "The member already has another confirmed commitment at that time.",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

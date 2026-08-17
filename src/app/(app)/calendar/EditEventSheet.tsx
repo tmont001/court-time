@@ -112,6 +112,7 @@ function mapEditError(code: string | undefined, message: string): string {
   if (message === "invalid_capacity")                     return "Enter a capacity of at least 1.";
   if (message === "capacity_below_participants")          return "Capacity can't be lower than the confirmed, offered, and guest spots already filled.";
   if (message === "invalid_court")                        return "One or more selected courts are inactive or unavailable.";
+  if (message === "member_schedule_conflict")             return "One or more confirmed participants already has another commitment at that time.";
   if (code === "23P01")                                   return "One or more selected courts are already booked at that time.";
   return "Something went wrong. Please try again.";
 }

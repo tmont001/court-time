@@ -102,6 +102,7 @@ function mapJoinError(message: string): string {
   if (message === "event_not_joinable")     return "This event is admin-managed. Contact the office to be added to the roster.";
   if (message === "event_archived")         return "This event is archived and no longer available.";
   if (message === "capability_not_available") return "This feature isn't available at your club right now. Contact the office for help.";
+  if (message === "member_schedule_conflict") return "The member already has another confirmed commitment at that time.";
   return "Something went wrong. Please try again.";
 }
 
@@ -119,6 +120,7 @@ function mapOfferError(message: string): string {
   if (message === "offer_expired")     return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
   if (message === "not_authenticated") return "Please sign in to continue.";
   if (message === "event_archived")    return "This event is archived and no longer available.";
+  if (message === "member_schedule_conflict") return "You already have another confirmed commitment at that time.";
   return "Something went wrong. Please try again.";
 }
 
