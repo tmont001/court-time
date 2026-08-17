@@ -55,6 +55,12 @@ interface Props {
   // Programs section directly, rather than relying only on `programs` being
   // empty for admins/pros.
   isMember:                    boolean;
+  /** Phase 33F3B: false at a Staff-Managed club — a Member may still see
+   * (and exit/resolve) an Event or Program they already have history with,
+   * but must never be offered a NEW-entry or RE-entry control (Join,
+   * Rejoin, Join Waitlist). Ignored for admin/pro, who never render this
+   * member-only Programs section or these member action branches at all. */
+  memberSelfService:           boolean;
   programs:                    MemberProgramCard[];
   programsError?:              string;
   userId:                      string;
@@ -71,6 +77,7 @@ interface Props {
 export default function EventsUpcomingClient({
   events,
   isMember,
+  memberSelfService,
   programs,
   programsError,
   userId,
@@ -245,6 +252,7 @@ export default function EventsUpcomingClient({
                     program={p}
                     clubId={clubId}
                     clubTimezone={clubTimezone}
+                    memberSelfService={memberSelfService}
                   />
                 ))}
               </div>
@@ -336,12 +344,17 @@ export default function EventsUpcomingClient({
                                 </span>
                               ) : isHost ? null : isOffered ? (
                                 offerExpiredServerSide ? (
-                                  <form action={joinEventAction}>
-                                    <input type="hidden" name="event_id" value={ev.id} />
-                                    <button type="submit" className={ACTION_BUTTON_PRIMARY}>
-                                      Rejoin
-                                    </button>
-                                  </form>
+                                  // Phase 33F3B: rejoining after an expired
+                                  // offer is a re-entry action — hidden at a
+                                  // Staff-Managed club, same as a fresh Join.
+                                  memberSelfService ? (
+                                    <form action={joinEventAction}>
+                                      <input type="hidden" name="event_id" value={ev.id} />
+                                      <button type="submit" className={ACTION_BUTTON_PRIMARY}>
+                                        Rejoin
+                                      </button>
+                                    </form>
+                                  ) : null
                                 ) : (
                                   <div className="flex items-center gap-2">
                                     <form action={declineWaitlistOfferAction}>
@@ -369,15 +382,20 @@ export default function EventsUpcomingClient({
                                   </button>
                                 </form>
                               ) : (
-                                <form action={joinEventAction}>
-                                  <input type="hidden" name="event_id" value={ev.id} />
-                                  <button
-                                    type="submit"
-                                    className={ACTION_BUTTON_PRIMARY}
-                                  >
-                                    {isFull ? "Join Waitlist" : "Join Event"}
-                                  </button>
-                                </form>
+                                // Phase 33F3B: a brand-new Join is the
+                                // clearest new-entry action — hidden at a
+                                // Staff-Managed club.
+                                memberSelfService ? (
+                                  <form action={joinEventAction}>
+                                    <input type="hidden" name="event_id" value={ev.id} />
+                                    <button
+                                      type="submit"
+                                      className={ACTION_BUTTON_PRIMARY}
+                                    >
+                                      {isFull ? "Join Waitlist" : "Join Event"}
+                                    </button>
+                                  </form>
+                                ) : null
                               )
                             }
                           >

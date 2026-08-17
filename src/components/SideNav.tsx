@@ -196,9 +196,13 @@ interface Props {
    * common case) preserves the plain static club-name text below. Two or
    * more render it as a switcher trigger instead. */
   memberships?: ClubMembershipOption[];
+  /** Phase 33F3B: false at a Staff-Managed club — hides the Calendar
+   * destination for a Member (no club-wide reservation availability, no
+   * new-booking ability left). Never affects the admin/pro nav branches. */
+  memberSelfService?: boolean;
 }
 
-export default function SideNav({ userRole = "member", clubName, memberships = [] }: Props) {
+export default function SideNav({ userRole = "member", clubName, memberships = [], memberSelfService = true }: Props) {
   const pathname = usePathname();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const canSwitch = memberships.length > 1;
@@ -281,7 +285,9 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
           </>
         ) : (
           <>
-            <NavLink href="/calendar"    label="Calendar" Icon={CalendarIcon} pathname={pathname} />
+            {memberSelfService && (
+              <NavLink href="/calendar" label="Calendar" Icon={CalendarIcon} pathname={pathname} />
+            )}
             <NavLink href="/events"      label="Events"   Icon={EventsIcon}   pathname={pathname} />
             <NavLink href="/my-schedule" label="Bookings" Icon={ScheduleIcon} pathname={pathname} />
             <NavLink href="/profile"     label="Profile"  Icon={ProfileIcon}  pathname={pathname} />

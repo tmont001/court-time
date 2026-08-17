@@ -78,18 +78,22 @@ interface Props {
    * same contract. Two or more exposes a "Switch club" control inside the
    * existing More sheet rather than crowding the fixed tab bar. */
   memberships?: ClubMembershipOption[];
+  /** Phase 33F3B: false at a Staff-Managed club — hides the Calendar tab
+   * for a Member. Never affects the admin/pro tab set. */
+  memberSelfService?: boolean;
 }
 
-export default function BottomNav({ userRole = "member", clubName, memberships = [] }: Props) {
+export default function BottomNav({ userRole = "member", clubName, memberships = [], memberSelfService = true }: Props) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const canSwitch = memberships.length > 1;
 
   const isAdminOrPro = userRole === "admin" || userRole === "pro";
+  const showCalendarTab = isAdminOrPro || memberSelfService;
 
   const mainTabs: Array<{ label: string; href: string; Icon: () => React.ReactElement }> = [
-    { label: "Calendar", href: "/calendar",      Icon: CalendarIcon },
+    ...(showCalendarTab ? [{ label: "Calendar", href: "/calendar", Icon: CalendarIcon }] : []),
     { label: "Events",   href: "/events",         Icon: EventsIcon   },
     ...(isAdminOrPro ? [{ label: "Lessons", href: "/admin/lessons", Icon: LessonsIcon }] : []),
     { label: "Bookings", href: "/my-schedule",   Icon: ScheduleIcon },

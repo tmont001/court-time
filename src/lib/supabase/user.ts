@@ -48,12 +48,36 @@ export const getAuthUser = cache(async () => {
 // UPDATE protections for such a user (migration 0082's
 // profiles_select_same_club/profiles_update_own_row corrections) are
 // already in place independent of this application-layer gate.
+// Phase 33F3B: memberSelfService reflects the caller's ACTIVE club's
+// member_self_service capability (current_club_has_capability, migration
+// 0122) — true for a Connected club, false for a Staff-Managed club. Only
+// meaningful for role='member' callers; Admin/Pro behavior must never be
+// gated by it, so call sites only ever branch on this value after already
+// confirming role === "member". Resolved via a second RPC call rather than
+// widening get_current_account_context() itself, so this historical RPC
+// (and every other, unrelated call site of it) is left unmodified. Fails
+// closed (false) for a signed-out user or a user with no active club — safe
+// because such a user never reaches a role==='member' branch in the first
+// place (get_current_account_context returns role=null for them).
 export const getAuthProfile = cache(async () => {
   const user = await getAuthUser();
   if (!user) return null;
   const supabase = await createClient();
-  const { data } = await supabase.rpc("get_current_account_context").single();
+  const [{ data }, { data: memberSelfServiceRaw }] = await Promise.all([
+    supabase.rpc("get_current_account_context").single(),
+    supabase.rpc("current_club_has_capability", { p_capability: "member_self_service" }),
+  ]);
   if (!data) return null;
+
+  // See the module comment above for why this is a second RPC call rather
+  // than widening get_current_account_context() itself. Explicitly typed
+  // here (rather than relying on inference through the Promise.all tuple)
+  // because this client's generic Database typing (see the @supabase/ssr
+  // cast workaround this project already carries for createBrowserClient/
+  // createServerClient) does not always narrow .rpc()'s return past the
+  // broad Functions union — this keeps that narrowing local to this one
+  // call site instead of leaking an untyped value into every caller.
+  const memberSelfService = (memberSelfServiceRaw as boolean | null) ?? false;
 
   return {
     id: data.id,
@@ -70,6 +94,7 @@ export const getAuthProfile = cache(async () => {
     clubName: data.club_name,
     clubSlug: data.club_slug,
     themeKey: data.theme_key,
+    memberSelfService,
   };
 });
 

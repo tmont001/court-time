@@ -213,6 +213,7 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
   if (message === "outside_operating_hours") return "That time is outside operating hours.";
   if (message === "club_closed_this_day")   return "The club is closed on that day.";
   if (message === "invalid_duration")       return "Reservations must be 30, 60, 90, or 120 minutes.";
+  if (message === "capability_not_available") return "This feature isn't available at your club right now. Contact the office for help.";
   return "Something went wrong. Please try again.";
 }
 

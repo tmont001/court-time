@@ -59,6 +59,14 @@ interface Props {
   program:      MemberProgramCard;
   clubId:       string;
   clubTimezone: string;
+  /** Phase 33F3B: false at a Staff-Managed club — hides Join Program and
+   * Rejoin Waitlist (new/re-entry). Leave, Leave Waitlist, Pass, and
+   * Accept Spot (existing-commitment continuity) are unaffected. A
+   * program can still appear here for a Staff-Managed Member with a
+   * cancelled enrollment history (my_enrollment maps that to status===null,
+   * same as never-enrolled) — this flag is what stops that state from
+   * offering a new Join button. */
+  memberSelfService: boolean;
 }
 
 type PendingKind = "join" | "leave" | "accept" | "decline" | "rejoin" | null;
@@ -71,7 +79,7 @@ const PENDING_LABEL: Record<Exclude<PendingKind, null>, string> = {
   rejoin:  "Rejoining…",
 };
 
-export default function ProgramEnrollmentCard({ program, clubId, clubTimezone }: Props) {
+export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, memberSelfService }: Props) {
   const router = useRouter();
   // Single-transition protection, unchanged: one useTransition guards every
   // action on this card, so only one can ever be in flight at a time.
@@ -188,7 +196,8 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone }:
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2 mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
-        {status === null && (
+        {/* Phase 33F3B: new-entry — hidden at a Staff-Managed club. */}
+        {status === null && memberSelfService && (
           <button onClick={handleJoin} disabled={isPending} className={ACTION_BUTTON_PRIMARY}>
             {isPending && pendingKind === "join" ? PENDING_LABEL.join : "Join Program"}
           </button>
@@ -213,7 +222,8 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone }:
             </button>
           </>
         )}
-        {status === "offered" && offerExpired && (
+        {/* Phase 33F3B: re-entry — hidden at a Staff-Managed club. */}
+        {status === "offered" && offerExpired && memberSelfService && (
           <button onClick={handleRejoin} disabled={isPending} className={ACTION_BUTTON_PRIMARY}>
             {isPending && pendingKind === "rejoin" ? PENDING_LABEL.rejoin : "Rejoin Waitlist"}
           </button>

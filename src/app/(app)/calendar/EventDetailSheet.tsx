@@ -101,6 +101,7 @@ function mapJoinError(message: string): string {
   if (message === "event_not_available")    return "This event is no longer available.";
   if (message === "event_not_joinable")     return "This event is admin-managed. Contact the office to be added to the roster.";
   if (message === "event_archived")         return "This event is archived and no longer available.";
+  if (message === "capability_not_available") return "This feature isn't available at your club right now. Contact the office for help.";
   return "Something went wrong. Please try again.";
 }
 

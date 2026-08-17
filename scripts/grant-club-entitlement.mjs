@@ -17,11 +17,14 @@
 // never disagree because a second network request failed after the first
 // succeeded.
 //
-// Scope (33F3A only): sets the CURRENT commercial/entitlement state for a
-// club. It does NOT revoke outstanding Member invitations on a downgrade
-// (that bulk-revoke behavior is 33F3B enforcement, performed alongside
-// route/RPC/RLS gating — not here) and does NOT touch any existing
-// Reservation/Event/Program/lesson data.
+// Scope: sets the CURRENT commercial/entitlement state for a club. As of
+// 33F3B (migration 0123), transitioning a club to staff_managed also
+// atomically revokes every outstanding (unaccepted, unrevoked) Member-role
+// invitation for that club — performed inside set_club_tier_for_operator
+// itself, in the same transaction as the tier/entitlement write, not as a
+// separate step by this script. Admin/Pro invitations, already-accepted
+// invitations, and any existing Reservation/Event/Program/lesson data are
+// never touched, by this script or by the RPC it calls.
 //
 // Usage:
 //   node --env-file=.env.local scripts/grant-club-entitlement.mjs <club-id-or-slug> <staff_managed|connected>
@@ -95,7 +98,7 @@ async function main() {
   console.log(`\n✔ ${club.name} is now ${result.tier} (status=${result.status}).`);
   if (tierArg === "staff_managed") {
     console.log(
-      "Note: outstanding Member invitations were NOT revoked — that is 33F3B enforcement behavior, not performed by this script.",
+      "Note: any outstanding (unaccepted) Member-role invitations for this club were revoked as part of this same call. Admin/Pro invitations and already-accepted invitations were left untouched.",
     );
   }
   console.log("");

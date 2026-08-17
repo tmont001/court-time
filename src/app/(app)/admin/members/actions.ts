@@ -36,6 +36,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Phase 33B1 — roster-first invite creation/resend.
   roster_identity_required:      "No Member record is linked to this invite, so it can't be resent. Recreate it using Add Member + Invite, or Send Invite from an existing roster member.",
   roster_email_required:         "Add an email to this member's roster record before sending an invite.",
+  // Phase 33F3B — a Staff-Managed club cannot invite a new Member account.
+  capability_not_available:      "This club is on the Staff-Managed plan, which doesn't include Member self-service accounts. Contact support to enable it.",
 };
 
 function mapError(message: string): string {

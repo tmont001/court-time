@@ -1438,6 +1438,10 @@ export type Database = {
         Args: Record<string, never>;
         Returns: boolean;
       };
+      current_club_has_capability: {
+        Args: { p_capability: string };
+        Returns: boolean;
+      };
       get_reporting_overview: {
         Args: { p_start_date: string; p_end_date: string };
         Returns: {

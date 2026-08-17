@@ -29,6 +29,10 @@ interface Props {
   prosError:       boolean;
   /** True when ?request=1 was present and providers are available — opens sheet on mount. */
   autoOpen:        boolean;
+  /** Phase 33F3B: false at a Staff-Managed club — hides the ability to
+   * start a NEW lesson request. Resolving an existing request/proposal
+   * (RequestCard -> LessonRequestDetail) is unaffected. */
+  canRequestNew:   boolean;
 }
 
 function statusBadge(status: string) {
@@ -64,6 +68,7 @@ export default function LessonsClient({
   clubTimezone,
   prosError,
   autoOpen,
+  canRequestNew,
 }: Props) {
   const router = useRouter();
   const [showRequest, setShowRequest] = useState(autoOpen);
@@ -121,7 +126,7 @@ export default function LessonsClient({
     );
   }
 
-  const canRequest = !prosError && pros.length > 0;
+  const canRequest = !prosError && pros.length > 0 && canRequestNew;
 
   return (
     <div className="px-4 pb-8">
@@ -162,7 +167,7 @@ export default function LessonsClient({
       {initialRequests.length === 0 && !prosError && (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-center">
           <p className="text-sm text-gray-400 dark:text-gray-500">No lesson requests yet.</p>
-          {pros.length > 0 ? (
+          {canRequest ? (
             <button
               onClick={() => setShowRequest(true)}
               className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold px-4 py-2 rounded-xl"

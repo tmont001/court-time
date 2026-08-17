@@ -618,7 +618,8 @@ export default async function MySchedulePage({
               clubId={clubId}
               clubTimezone={clubTimezone}
               prosError={prosError}
-              autoOpen={autoOpen && !prosError && pros.length > 0}
+              autoOpen={autoOpen && !prosError && pros.length > 0 && profile?.memberSelfService !== false}
+              canRequestNew={profile?.memberSelfService !== false}
             />
           )}
 

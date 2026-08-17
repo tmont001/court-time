@@ -128,6 +128,8 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "This program is already archived.";
     case "not_archived":
       return "This program isn't archived.";
+    case "capability_not_available":
+      return "This feature isn't available at your club right now. Contact the office for help.";
     default:
       return "Something went wrong. Please try again.";
   }

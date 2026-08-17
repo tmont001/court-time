@@ -13,6 +13,16 @@ export default async function CalendarPage({
   if (!user) redirect("/sign-in");
 
   const profile  = await getAuthProfile();
+
+  // Phase 33F3B: a Staff-Managed Member has no calendar-level functionality
+  // left — no club-wide reservation availability, no new-booking ability
+  // (create_reservation itself rejects it) — their own reservations remain
+  // fully visible on /my-schedule. Admin/Pro are never redirected here,
+  // regardless of tier.
+  if (profile?.role === "member" && profile.memberSelfService === false) {
+    redirect("/my-schedule");
+  }
+
   const supabase = await createClient();
 
   const clubId   = profile?.club_id ?? "";

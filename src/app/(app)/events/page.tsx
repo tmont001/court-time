@@ -194,6 +194,7 @@ export default async function EventsPage({
     <EventsUpcomingClient
       events={events}
       isMember={isMember}
+      memberSelfService={profile?.memberSelfService ?? true}
       programs={memberPrograms}
       programsError={memberProgramsError}
       userId={user.id}

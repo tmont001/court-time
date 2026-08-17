@@ -828,6 +828,8 @@ function mapLessonError(msg: string): string {
     roster_member_not_found:        "The selected member could not be found.",
     member_has_no_account:          "This lesson's Member has no account yet — use Edit Lesson instead.",
     invalid_status_for_edit:        "Only confirmed lessons can be edited this way.",
+    // Phase 33F3B
+    capability_not_available:       "This feature isn't available at your club right now. Contact the office for help.",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }
