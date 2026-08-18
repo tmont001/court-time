@@ -95,7 +95,7 @@ export type Database = {
           first_name: string | null;
           last_name: string | null;
           phone: string | null;
-          role: "member" | "pro" | "admin";
+          role: "member" | "pro" | "staff" | "admin";
           status: "active" | "inactive" | "suspended";
           is_lesson_provider: boolean;
           sms_opt_in: boolean;
@@ -111,7 +111,7 @@ export type Database = {
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;
-          role?: "member" | "pro" | "admin";
+          role?: "member" | "pro" | "staff" | "admin";
           status?: "active" | "inactive" | "suspended";
           is_lesson_provider?: boolean;
           sms_opt_in?: boolean;
@@ -127,7 +127,7 @@ export type Database = {
           first_name?: string | null;
           last_name?: string | null;
           phone?: string | null;
-          role?: "member" | "pro" | "admin";
+          role?: "member" | "pro" | "staff" | "admin";
           status?: "active" | "inactive" | "suspended";
           is_lesson_provider?: boolean;
           sms_opt_in?: boolean;
@@ -1057,7 +1057,7 @@ export type Database = {
           id:                string;
           club_id:           string;
           code:              string;
-          role:              "member" | "pro" | "admin";
+          role:              "member" | "pro" | "staff" | "admin";
           email:             string | null;
           roster_member_id:  string | null;
           created_by:        string;
@@ -1071,7 +1071,7 @@ export type Database = {
           id?:               string;
           club_id:           string;
           code?:              string;
-          role?:             "member" | "pro" | "admin";
+          role?:             "member" | "pro" | "staff" | "admin";
           email?:             string | null;
           roster_member_id?: string | null;
           created_by:        string;
@@ -1085,7 +1085,7 @@ export type Database = {
           id?:               string;
           club_id?:          string;
           code?:             string;
-          role?:             "member" | "pro" | "admin";
+          role?:             "member" | "pro" | "staff" | "admin";
           email?:            string | null;
           roster_member_id?: string | null;
           created_by?:       string;
@@ -1130,7 +1130,7 @@ export type Database = {
           decline_reason:        string | null;
           cancellation_reason:   string | null;
           last_actor_id:         string | null;
-          last_actor_role:       "member" | "pro" | "admin" | null;
+          last_actor_role:       "member" | "pro" | "staff" | "admin" | null;
           linked_reservation_id: string | null;
           created_at:            string;
           updated_at:            string;
@@ -1156,7 +1156,7 @@ export type Database = {
           decline_reason?:        string | null;
           cancellation_reason?:   string | null;
           last_actor_id?:         string | null;
-          last_actor_role?:       "member" | "pro" | "admin" | null;
+          last_actor_role?:       "member" | "pro" | "staff" | "admin" | null;
           linked_reservation_id?: string | null;
           created_at?:            string;
           updated_at?:            string;
@@ -1182,7 +1182,7 @@ export type Database = {
           decline_reason?:        string | null;
           cancellation_reason?:   string | null;
           last_actor_id?:         string | null;
-          last_actor_role?:       "member" | "pro" | "admin" | null;
+          last_actor_role?:       "member" | "pro" | "staff" | "admin" | null;
           linked_reservation_id?: string | null;
           created_at?:            string;
           updated_at?:            string;
@@ -1237,7 +1237,7 @@ export type Database = {
           last_name:  string;
           email:      string | null;
           phone:      string | null;
-          role:       "member" | "pro" | "admin";  // display/intent only — does not grant permissions
+          role:       "member" | "pro" | "staff" | "admin";  // display/intent only — does not grant permissions
           notes:      string | null;
           claimed_by: string | null;
           created_by: string;
@@ -1254,7 +1254,7 @@ export type Database = {
           last_name:   string;
           email?:      string | null;
           phone?:      string | null;
-          role?:       "member" | "pro" | "admin";
+          role?:       "member" | "pro" | "staff" | "admin";
           notes?:      string | null;
           claimed_by?: string | null;
           created_by:  string;
@@ -1271,7 +1271,7 @@ export type Database = {
           last_name?:  string;
           email?:      string | null;
           phone?:      string | null;
-          role?:       "member" | "pro" | "admin";
+          role?:       "member" | "pro" | "staff" | "admin";
           notes?:      string | null;
           claimed_by?: string | null;
           created_by?: string;
