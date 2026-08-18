@@ -760,8 +760,28 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       .maybeSingle();
 
     if (data?.id) {
-      router.push(`/events?tab=lessons&lessonId=${data.id}`);
+      // Phase 33G2: /admin/lessons is the canonical staff Lesson-management
+      // surface (nav already points here for both Admin and Pro) — this
+      // previously navigated to /events?tab=lessons instead, a separate,
+      // duplicate rendering of the identical LessonsTab component.
+      router.push(`/admin/lessons?lessonId=${data.id}`);
     }
+  }
+
+  // Phase 33G2: Admin/Pro → Lesson creation from a selected Calendar
+  // court/time slot, reusing the existing staff Lesson-booking flow at
+  // /admin/lessons (AdminRequestLessonSheet) rather than building a second
+  // form. startsAt is passed as a single absolute instant — see
+  // AdminLessonsWrapper's own comment for why a Calendar-relative slot
+  // index can't be shared directly with that page.
+  function openLessonFromSlot() {
+    if (!pendingSlotAction) return;
+    const params = new URLSearchParams({
+      book:     "1",
+      courtId:  pendingSlotAction.court.id,
+      startsAt: pendingSlotAction.slotStart.toISOString(),
+    });
+    router.push(`/admin/lessons?${params.toString()}`);
   }
 
   function openBookingFromSlot() {
@@ -1362,6 +1382,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             userRole={userRole}
             onCreateEvent={() => setCreatingEvent(true)}
             onCreateBlock={() => setCreatingBlock(true)}
+            onBookLesson={() => router.push("/admin/lessons?book=1")}
           />
         )}
       </div>
@@ -1396,6 +1417,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
               className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
             >
               Create Event
+            </button>
+            <button
+              onClick={openLessonFromSlot}
+              className="w-full py-3 rounded-xl border border-gray-200 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm font-medium hover:border-accent hover:text-accent active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150"
+            >
+              Book Lesson
             </button>
             {userRole === "admin" && (
               <button

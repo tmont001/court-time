@@ -39,9 +39,13 @@ interface Props {
   userRole: "admin" | "pro";
   onCreateEvent: () => void;
   onCreateBlock: () => void;
+  // Phase 33G2: parity fix — Book Lesson is already a first-class staff
+  // Calendar workflow via the empty-slot action menu; this gives the
+  // global "+" menu the same entry point when no slot is selected.
+  onBookLesson: () => void;
 }
 
-export default function CalendarFab({ userRole, onCreateEvent, onCreateBlock }: Props) {
+export default function CalendarFab({ userRole, onCreateEvent, onCreateBlock, onBookLesson }: Props) {
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const itemRefs  = useRef<Array<HTMLButtonElement | null>>([]);
@@ -49,10 +53,12 @@ export default function CalendarFab({ userRole, onCreateEvent, onCreateBlock }: 
   const options: Array<{ label: string; onSelect: () => void }> =
     userRole === "admin"
       ? [
+          { label: "Book Lesson", onSelect: onBookLesson },
           { label: "Create Event", onSelect: onCreateEvent },
           { label: "Maintenance Block", onSelect: onCreateBlock },
         ]
       : [
+          { label: "Book Lesson", onSelect: onBookLesson },
           { label: "Create Event", onSelect: onCreateEvent },
         ];
 

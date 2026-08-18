@@ -102,6 +102,7 @@ export default async function MemberDetailPage({ params }: Props) {
             courts={courts}
             lessonTypes={lessonTypes}
             rosterMemberId={rosterMemberId}
+            adminId={user.id}
           />
         </div>
       </div>

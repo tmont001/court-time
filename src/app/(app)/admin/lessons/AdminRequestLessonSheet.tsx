@@ -38,6 +38,25 @@ interface Props {
   clubId:               string;
   clubTimezone:         string;
   preselectedMemberId?: string;
+  // Phase 33G2: this sheet is now reused for both Admin (any Pro) and Pro
+  // (self only) staff booking. A Pro caller never sees the "Choose a Pro"
+  // step — the underlying admin_create_member_lesson RPC (0128) requires
+  // p_pro_id = auth.uid() for a Pro caller, so proId is fixed to viewerId
+  // and viewerName stands in for the pro-list lookup a Pro cannot make
+  // (get_admin_club_pros/roster pro list remain admin-only).
+  viewerRole:           "admin" | "pro";
+  viewerId:             string;
+  viewerName?:          string;
+  // Phase 33G2: Calendar → Lesson prefill — when staff pick a court/time
+  // slot on the Calendar, those values seed the schedule step instead of
+  // defaulting to "today, 9:00 AM, first court". Still editable — this is
+  // a prefill, not a lock. prefillStartsAt is an ISO instant (Calendar's
+  // own slot grid is indexed relative to that day's dynamic operating
+  // hours, not this sheet's fixed 5am–10pm TIME_SLOTS — an absolute
+  // timestamp is the only representation both sides agree on; see
+  // resolvePrefillSlot below for the conversion into this sheet's index).
+  prefillCourtId?:      string;
+  prefillStartsAt?:     string;
   onClose:              () => void;
 }
 
@@ -62,6 +81,28 @@ function getName(first: string | null, last: string | null, fallback: string) {
   return [first, last].filter(Boolean).join(" ") || fallback;
 }
 
+// Converts an absolute Calendar-selected instant into this sheet's own
+// date string + TIME_SLOTS index (5:00 AM–10:00 PM, 30-min granularity),
+// clamping into range and snapping to the nearer half-hour so an
+// off-grid instant still lands on a valid, close TIME_SLOTS entry.
+function resolvePrefillSlot(iso: string, timeZone: string): { dateStr: string; slotIdx: number } | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const dateStr = d.toLocaleDateString("en-CA", { timeZone });
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d);
+  const rawHour = Number(parts.find(p => p.type === "hour")?.value ?? "0") % 24;
+  const minute  = Number(parts.find(p => p.type === "minute")?.value ?? "0");
+
+  const hour       = Math.min(22, Math.max(5, rawHour));
+  const snappedMin = hour === 22 ? 0 : (minute < 30 ? 0 : 30);
+  const idx        = (hour - 5) * 2 + (snappedMin === 30 ? 1 : 0);
+
+  return { dateStr, slotIdx: Math.max(0, Math.min(TIME_SLOTS.length - 1, idx)) };
+}
+
 export default function AdminRequestLessonSheet({
   pros,
   rosterMembers,
@@ -70,26 +111,35 @@ export default function AdminRequestLessonSheet({
   clubId,
   clubTimezone,
   preselectedMemberId,
+  viewerRole,
+  viewerId,
+  viewerName,
+  prefillCourtId,
+  prefillStartsAt,
   onClose,
 }: Props) {
   const router = useRouter();
 
+  const skipMemberSelect = !!preselectedMemberId;
+  // A Pro always books themselves — the "Choose a Pro" step never applies.
+  const skipProSelect    = viewerRole === "pro";
+  const firstStep: Step  = skipMemberSelect ? (skipProSelect ? "schedule" : "pro") : "member";
+  const prefillSlot      = prefillStartsAt ? resolvePrefillSlot(prefillStartsAt, clubTimezone) : null;
+
   const [rosterMemberId, setRosterMemberId] = useState(preselectedMemberId ?? "");
   const [memberSearch, setMemberSearch]   = useState("");
-  const [proId, setProId]                 = useState("");
+  const [proId, setProId]                 = useState(skipProSelect ? viewerId : "");
   const [lessonTypeId, setLessonTypeId]   = useState("");
   const [duration, setDuration]           = useState(60);
-  const [courtId, setCourtId]             = useState<string>(courts[0]?.id ?? "");
+  const [courtId, setCourtId]             = useState<string>(prefillCourtId ?? courts[0]?.id ?? "");
   const [dateStr, setDateStr]             = useState<string>(() =>
-    new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })
+    prefillSlot?.dateStr ?? new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })
   );
-  const [slotIdx, setSlotIdx]             = useState(8); // default 9:00 AM
+  const [slotIdx, setSlotIdx]             = useState(prefillSlot?.slotIdx ?? 8); // default 9:00 AM
   const [memberNote, setMemberNote]       = useState("");
   const [error, setError]                 = useState("");
-  const [step, setStep]                   = useState<Step>(preselectedMemberId ? "pro" : "member");
+  const [step, setStep]                   = useState<Step>(firstStep);
   const [isPending, startTransition]      = useTransition();
-
-  const skipMemberSelect = !!preselectedMemberId;
 
   const selectedMember = rosterMembers.find(m => m.id === rosterMemberId);
   const selectedPro    = pros.find(p => p.id === proId);
@@ -97,7 +147,9 @@ export default function AdminRequestLessonSheet({
   const selectedCourt  = courts.find(c => c.id === courtId);
 
   const memberName = selectedMember ? selectedMember.name : "";
-  const proName    = selectedPro    ? getName(selectedPro.first_name, selectedPro.last_name, "Provider") : "";
+  const proName    = skipProSelect
+    ? (viewerName ?? "You")
+    : (selectedPro ? getName(selectedPro.first_name, selectedPro.last_name, "Provider") : "");
 
   const filteredMembers = memberSearch.trim()
     ? rosterMembers.filter(m => m.name.toLowerCase().includes(memberSearch.trim().toLowerCase()))
@@ -133,8 +185,8 @@ export default function AdminRequestLessonSheet({
 
   function handleBack() {
     setError("");
-    if (step === "pro")      { if (!skipMemberSelect) setStep("member"); }
-    else if (step === "schedule") setStep("pro");
+    if (step === "pro")           { if (!skipMemberSelect) setStep("member"); }
+    else if (step === "schedule") { if (!skipProSelect) setStep("pro"); else if (!skipMemberSelect) setStep("member"); }
     else if (step === "details")  setStep("schedule");
     else if (step === "review")   setStep("details");
   }
@@ -158,7 +210,7 @@ export default function AdminRequestLessonSheet({
     });
   }
 
-  const showBack = !(step === "member" && !skipMemberSelect) && !(step === "pro" && skipMemberSelect);
+  const showBack = step !== firstStep;
 
   return (
     <ResponsiveSheet
@@ -203,7 +255,7 @@ export default function AdminRequestLessonSheet({
             filteredMembers.map(m => (
               <button
                 key={m.id}
-                onClick={() => { setRosterMemberId(m.id); setStep("pro"); }}
+                onClick={() => { setRosterMemberId(m.id); setStep(skipProSelect ? "schedule" : "pro"); }}
                 className="w-full text-left ct-card px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 dark:active:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 flex items-center justify-between gap-2"
               >
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{m.name}</p>
@@ -219,7 +271,7 @@ export default function AdminRequestLessonSheet({
       )}
 
       {/* Step: pro */}
-      {step === "pro" && (
+      {step === "pro" && !skipProSelect && (
         <div className="space-y-2">
           {skipMemberSelect && memberName && (
             <div className="ct-card px-4 py-2.5 mb-3">
@@ -339,6 +391,18 @@ export default function AdminRequestLessonSheet({
             </div>
           )}
 
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            Check the court schedule before booking.{" "}
+            <a
+              href={`/calendar?date=${dateStr}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-blue-400 underline"
+            >
+              View court availability ↗
+            </a>
+          </p>
+
           <button
             onClick={() => setStep("details")}
             disabled={!courtId}
@@ -379,7 +443,7 @@ export default function AdminRequestLessonSheet({
       )}
 
       {/* Step: review */}
-      {step === "review" && selectedMember && selectedPro && (
+      {step === "review" && selectedMember && (selectedPro || skipProSelect) && (
         <div className="space-y-4">
           <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
             <div className="px-4 py-2.5 flex justify-between items-center text-sm">

@@ -89,6 +89,11 @@ interface Props {
   // somehow missed this account — the "Request Lesson" button is hidden
   // in that case rather than opening a sheet with no valid target.
   rosterMemberId: string | null;
+  // Phase 33G2: this route is admin-only (page.tsx redirects any non-admin
+  // away), so AdminRequestLessonSheet is always used in viewerRole="admin"
+  // mode here — adminId is only needed to satisfy that prop, never used
+  // as a Pro-self-booking identity on this page.
+  adminId: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -159,6 +164,7 @@ export default function MemberDetailClient({
   courts,
   lessonTypes,
   rosterMemberId,
+  adminId,
 }: Props) {
   const [tab, setTab] = useState<"upcoming" | "history" | "notes">("upcoming");
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -714,6 +720,8 @@ export default function MemberDetailClient({
           clubId={clubId}
           clubTimezone={clubTimezone}
           preselectedMemberId={rosterMemberId}
+          viewerRole="admin"
+          viewerId={adminId}
           onClose={() => setRequestSheetOpen(false)}
         />
       )}

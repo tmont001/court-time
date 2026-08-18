@@ -2843,6 +2843,17 @@ export type Database = {
           is_lesson_provider: boolean;
         }[];
       };
+      // Phase 33G2 (0128): admin+pro roster read for the Lesson-booking
+      // Member picker — roster_members itself stays admin-only RLS.
+      get_lesson_roster_members: {
+        Args: Record<string, never>;
+        Returns: {
+          id:         string;
+          first_name: string | null;
+          last_name:  string | null;
+          claimed_by: string | null;
+        }[];
+      };
       // Phase 24A: member CRM RPCs
       add_member_note: {
         Args: { p_member_id: string; p_content: string };

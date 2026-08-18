@@ -108,9 +108,14 @@ export default function LessonsClient({
           {r.proposed_court_name ? ` · ${r.proposed_court_name}` : ""}
           {" · "}Submitted {fmt(r.created_at, clubTimezone)}
         </p>
+        {r.status === "pending" && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+            Awaiting {proName}&rsquo;s response
+          </p>
+        )}
         {hasProposal && r.proposed_starts_at && (
           <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 font-medium">
-            Time proposed — tap to review
+            {r.linked_reservation_id ? "Reschedule proposed" : "Time proposed"} — tap to review
           </p>
         )}
         {r.status === "confirmed" && r.proposed_starts_at && (

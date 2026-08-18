@@ -256,6 +256,7 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   const [isPending, startTransition] = useTransition();
 
   const memberName = [request.member_first_name, request.member_last_name].filter(Boolean).join(" ") || "Member";
+  const proName     = [request.pro_first_name, request.pro_last_name].filter(Boolean).join(" ") || "Pro";
 
   // Phase 30E: an eligible confirmed lesson, or an already-pending
   // reschedule proposal (status='proposed' with linked_reservation_id set)
@@ -332,6 +333,10 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
               </span>
             )}
           </span>
+        </div>
+        <div className="px-4 py-2.5 flex justify-between text-sm">
+          <span className="text-gray-500 dark:text-gray-400">Pro</span>
+          <span className="font-medium text-gray-900 dark:text-gray-100">{proName}</span>
         </div>
         <div className="px-4 py-2.5 flex justify-between text-sm">
           <span className="text-gray-500 dark:text-gray-400">Duration</span>

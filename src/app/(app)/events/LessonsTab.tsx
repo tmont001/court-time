@@ -175,14 +175,14 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
 
   return (
     <div className="px-4 pb-8 pt-2">
-      {/* Admin: create request button */}
-      {userRole === "admin" && onCreateRequest && (
+      {/* Staff (Admin or Pro): book a lesson directly */}
+      {(userRole === "admin" || userRole === "pro") && onCreateRequest && (
         <div className="mb-3">
           <button
             onClick={onCreateRequest}
             className="w-full py-2.5 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold hover:brightness-110 hover:shadow-sm motion-safe:hover:-translate-y-0.5 active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800"
           >
-            + Create Lesson Request
+            + Book Lesson
           </button>
         </div>
       )}
@@ -237,6 +237,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
       {/* Request cards */}
       {visible.map(r => {
         const memberName = [r.member_first_name, r.member_last_name].filter(Boolean).join(" ") || "Member";
+        const proName    = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
         const isActive   = ACTIVE_STATUSES.includes(r.status);
 
         return (
@@ -259,6 +260,9 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
               </span>
               {statusBadge(r.status)}
             </div>
+            {userRole === "admin" && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">with {proName}</p>
+            )}
             <p className="text-xs text-gray-500 dark:text-gray-400">
               {r.duration_minutes} min
               {r.preferred_court_name ? ` · ${r.preferred_court_name}` : ""}
@@ -272,10 +276,10 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
             )}
             {r.status === "proposed" && r.proposed_starts_at && (
               <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 font-medium">
-                Proposed {new Date(r.proposed_starts_at).toLocaleString("en-US", {
+                {r.linked_reservation_id ? "Reschedule proposed" : "Proposed"} for {new Date(r.proposed_starts_at).toLocaleString("en-US", {
                   timeZone: clubTimezone, month: "short", day: "numeric",
                   hour: "numeric", minute: "2-digit", hour12: true,
-                })}
+                })} — awaiting member
               </p>
             )}
             {r.status === "confirmed" && r.proposed_starts_at && (

@@ -176,6 +176,17 @@ export default async function MySchedulePage({
   const clubId   = profile?.club_id ?? "";
   const userRole = profile?.role ?? "member";
 
+  // Phase 33G2: /admin/lessons is the canonical staff Lesson-management
+  // surface — an Admin/Pro landing on this Member-style "Lesson Requests"
+  // tab (a stale link, an old bookmark, or a manually-typed URL; nothing
+  // here was previously role-gated) got the same submit-a-request flow a
+  // Member sees, which duplicates /admin/lessons and lets staff request a
+  // lesson FROM themselves rather than confirm one. Redirect keeps every
+  // other /my-schedule tab, and Member behavior, unchanged.
+  if (tab === "lessons" && (userRole === "admin" || userRole === "pro")) {
+    redirect("/admin/lessons");
+  }
+
   let clubTimezone             = "America/New_York";
   let cancellationWindowHours  = 24;
   let cancellationGraceMinutes = 5;
@@ -388,10 +399,12 @@ export default async function MySchedulePage({
       >
         <div className="md:max-w-2xl md:mx-auto">
 
-          {/* Tab bar */}
+          {/* Tab bar — Lesson Requests is Member-only; Admin/Pro use /admin/lessons */}
           <div className="flex gap-1 px-4 pt-4 pb-3">
             <Link href="/my-schedule"             className={tabCls("upcoming")}>Upcoming</Link>
-            <Link href="/my-schedule?tab=lessons" className={tabCls("lessons")}>Lesson Requests</Link>
+            {userRole === "member" && (
+              <Link href="/my-schedule?tab=lessons" className={tabCls("lessons")}>Lesson Requests</Link>
+            )}
             <Link href="/my-schedule?tab=past"    className={tabCls("past")}>Past</Link>
           </div>
 
