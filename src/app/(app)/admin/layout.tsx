@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await getAuthUser();
@@ -10,7 +11,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // active membership has role === null here and is redirected exactly as
   // a non-admin/non-pro member would be — no broadening of admin access.
   const profile = await getAuthProfile();
-  if (profile?.role !== "admin" && profile?.role !== "pro") redirect("/calendar");
+  if (!canAccessOperationsWorkspace(profile?.role)) redirect("/calendar");
 
   return <>{children}</>;
 }

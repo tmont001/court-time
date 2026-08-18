@@ -532,7 +532,7 @@ export default function EventDetailSheet({
             <div className="mt-5">
               <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-3 text-center">
                 <p className="text-sm text-amber-800 dark:text-amber-300">
-                  This offer has expired. Rejoin the waitlist if you're still interested.
+                  This offer has expired. Rejoin the waitlist if you&apos;re still interested.
                 </p>
               </div>
               {offerError && <p className="mt-2 text-xs text-red-500">{offerError}</p>}

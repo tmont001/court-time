@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { hasAdminAuthority } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import CourtManagementList from "./CourtManagementList";
 
@@ -10,7 +11,7 @@ export default async function AdminCourtsPage() {
   if (!user) redirect("/sign-in");
 
   const profile  = await getAuthProfile();
-  if (profile?.role !== "admin") redirect("/calendar");
+  if (!hasAdminAuthority(profile?.role)) redirect("/calendar");
 
   const supabase = await createClient();
   const { data: courts, error } = await supabase

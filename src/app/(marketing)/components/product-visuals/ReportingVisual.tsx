@@ -50,7 +50,7 @@ export default function ReportingVisual() {
         <div className="min-w-0">
           <p className="text-[11px] font-medium text-gray-800 dark:text-gray-200">Announcement sent</p>
           <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
-            "Courts closed Saturday" · Email + in-app
+            &quot;Courts closed Saturday&quot; · Email + in-app
           </p>
         </div>
       </div>

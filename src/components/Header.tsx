@@ -19,7 +19,7 @@ export default async function Header({ screenTitle }: HeaderProps) {
 
   let userInitials = "";
   let userName     = "";
-  let userEmail    = user?.email ?? "";
+  const userEmail  = user?.email ?? "";
 
   if (user) {
     const { data: profile } = await supabase

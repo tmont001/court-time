@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import AdminLessonsWrapper from "./AdminLessonsWrapper";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
@@ -10,7 +11,7 @@ export default async function AdminLessonsPage() {
   if (!user) redirect("/sign-in");
 
   const profile = await getAuthProfile();
-  if (profile?.role !== "admin" && profile?.role !== "pro") redirect("/calendar");
+  if (!profile || !canAccessOperationsWorkspace(profile.role)) redirect("/calendar");
   // Narrows profile.role (typed string) to the literal union AdminLessonsWrapper
   // expects — the redirect above already guarantees one of these two values.
   const userRole: "admin" | "pro" = profile.role === "pro" ? "pro" : "admin";

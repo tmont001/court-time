@@ -575,7 +575,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                           {isConfirming && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2">
                               <p className="text-xs text-red-700 dark:text-red-400 flex-1 min-w-0">
-                                Remove {displayName(row)}'s offer for this program?
+                                Remove {displayName(row)}&apos;s offer for this program?
                               </p>
                               <button
                                 disabled={isUpdating}

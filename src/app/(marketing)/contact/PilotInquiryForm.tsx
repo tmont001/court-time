@@ -77,8 +77,8 @@ export default function PilotInquiryForm() {
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed max-w-md mx-auto mb-1">
           We personally review every pilot request. If it looks like a fit,
-          we'll follow up by email to set up a conversation — reaching out
-          isn't a commitment on either side.
+          we&apos;ll follow up by email to set up a conversation — reaching out
+          isn&apos;t a commitment on either side.
         </p>
         <p className="text-xs text-gray-400 dark:text-gray-500 mb-6">
           Prefer email? Reach us anytime at{" "}
@@ -252,7 +252,7 @@ export default function PilotInquiryForm() {
             className="ct-input"
           />
           <p id="memberCount-hint" className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-            0 is fine if your facility doesn't have formal membership.
+            0 is fine if your facility doesn&apos;t have formal membership.
           </p>
           <FieldError id="memberCount-error" message={errors.memberCount} />
         </div>
@@ -287,7 +287,7 @@ export default function PilotInquiryForm() {
 
       <div>
         <label htmlFor="operationalChallenge" className={labelCls}>
-          What's your biggest operational challenge right now?
+          What&apos;s your biggest operational challenge right now?
         </label>
         <textarea
           id="operationalChallenge" name="operationalChallenge" rows={3} required maxLength={2000}

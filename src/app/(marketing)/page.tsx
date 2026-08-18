@@ -279,7 +279,7 @@ export default async function MarketingHomePage() {
             Currently onboarding founding clubs.
           </h2>
           <p className="text-sm text-gray-400 leading-relaxed mb-2 max-w-lg mx-auto">
-            We're working with a small number of clubs to shape the product.
+            We&apos;re working with a small number of clubs to shape the product.
             Founding clubs get protected pricing and direct access to the
             team while we build alongside real pilot use.
           </p>
