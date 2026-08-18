@@ -132,6 +132,10 @@ export function mapProgramError(code: string | undefined, message: string): stri
       return "This feature isn't available at your club right now. Contact the office for help.";
     case "member_schedule_conflict":
       return "The member already has another confirmed commitment at that time.";
+    case "event_capacity_exceeded":
+      return "That session is at capacity.";
+    case "capacity_override_below_program_capacity":
+      return "One or more session times can't hold this program's full capacity. Adjust the schedule and try again.";
     default:
       return "Something went wrong. Please try again.";
   }

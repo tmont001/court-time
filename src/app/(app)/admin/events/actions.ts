@@ -105,6 +105,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_guest_name:             "Enter a guest name.",
   roster_member_not_found:        "That roster member could not be found.",
   roster_member_already_claimed:  "This member already has an account. Add them as a signed-in member instead.",
+  // Phase 33G1D
+  event_capacity_exceeded:        "This session is at capacity.",
 };
 
 function rpcError(error: { message?: string } | null): string {
