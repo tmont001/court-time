@@ -107,6 +107,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   roster_member_already_claimed:  "This member already has an account. Add them as a signed-in member instead.",
   // Phase 33G1D
   event_capacity_exceeded:        "This session is at capacity.",
+  // Phase 33G3: raised by the 0126 Member schedule guard trigger on
+  // event_participants — previously unmapped here, so it fell through to
+  // the generic "An unexpected error occurred" fallback below.
+  member_schedule_conflict:       "That member already has another confirmed commitment at that time.",
 };
 
 function rpcError(error: { message?: string } | null): string {

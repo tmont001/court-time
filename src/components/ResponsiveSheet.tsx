@@ -603,7 +603,15 @@ export default function ResponsiveSheet(props: Props) {
     if (variant === "panel") {
       return (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={active ? closeOnce : undefined} />
+          {/* Phase 33G3 fix: inert when inactive — a suspended (active=false)
+              sheet nested beneath another open sheet must not go on
+              intercepting backdrop clicks meant for the sheet layered above
+              it. Previously only the panel itself (ref={panelRef}) got
+              inert; this full-viewport backdrop div did not, so — for a
+              modal-variant parent suspending a panel-variant child, or vice
+              versa — whichever one sits at the higher z-index while inactive
+              silently absorbed clicks meant for the other. */}
+          <div className="fixed inset-0 bg-black/30 z-40" inert={!active} onClick={active ? closeOnce : undefined} />
           <div
             ref={panelRef}
             {...dialogA11y}
@@ -628,9 +636,18 @@ export default function ResponsiveSheet(props: Props) {
     const maxWidthClass = size === "wide" ? "max-w-2xl" : "max-w-lg";
     return (
       <>
-        <div className="fixed inset-0 bg-black/30 z-40" />
+        <div className="fixed inset-0 bg-black/30 z-40" inert={!active} />
+        {/* Phase 33G3 fix: this full-viewport z-50 wrapper is the actual
+            backdrop-click target for the modal variant (it catches clicks
+            outside the panel box via the inner box's stopPropagation) —
+            previously it had no `inert`, so while suspended (active=false,
+            e.g. EventDetailSheet with EventRosterSheet open on top of it on
+            desktop) it kept absorbing clicks meant for whatever sheet was
+            actually layered above it, since z-50 here beats that other
+            sheet's own z-40 backdrop regardless of DOM order. */}
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          inert={!active}
           onClick={active ? closeOnce : undefined}
         >
           <div

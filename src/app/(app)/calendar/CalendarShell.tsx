@@ -1464,6 +1464,17 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           clubId={clubId}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
+          onEventUpdated={(eventId, patch) => {
+            // Phase 33G3 fix: authoritative in-place patch of the Calendar's
+            // own events state after a confirmed mutation — no refetch, no
+            // sheet close. Patches the source `events` array (so a later
+            // reopen of this same Event remounts from the fresh value) and
+            // `selectedEvent` itself (so anything else in this still-open
+            // sheet reading `event.*` directly, not just local state, stays
+            // consistent too).
+            setEvents(prev => prev.map(e => e.id === eventId ? { ...e, ...patch } : e));
+            setSelectedEvent(prev => prev && prev.id === eventId ? { ...prev, ...patch } : prev);
+          }}
         />
       )}
 

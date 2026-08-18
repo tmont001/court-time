@@ -32,6 +32,15 @@ const SEEDED_DEFAULTS: Record<string, { label: string; color: string }> = {
 
 const SEEDED_KEYS = new Set(Object.keys(SEEDED_DEFAULTS));
 
+// Phase 33G3: 'lesson' ("Private Lesson") is retired at the database
+// boundary (0129's event_types_lesson_retirement_guard trigger) — Book
+// Lesson is now the canonical Lesson workflow. Hardcoded here the same way
+// SEEDED_KEYS/SEEDED_DEFAULTS already special-case individual keys; no new
+// schema column. Omitting the Reactivate control for this one row is a UX
+// nicety — the trigger is what actually enforces this regardless of what
+// this component does or doesn't render.
+const RETIRED_KEYS = new Set(["lesson"]);
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface EventType {
@@ -543,6 +552,7 @@ function EventTypeRow({
     : true;
   const canRestore  = isSeeded && !matchesDef;
   const canDelete   = !et.is_active && !isSeeded;
+  const isRetired   = RETIRED_KEYS.has(et.key);
 
   return (
     <div
@@ -716,6 +726,13 @@ function EventTypeRow({
                 >
                   Deactivate
                 </button>
+              ) : isRetired ? (
+                <span
+                  className="text-xs text-gray-400 dark:text-gray-500 italic"
+                  title="Book Lesson is now the canonical Lesson workflow — this type can't be reactivated."
+                >
+                  Retired
+                </span>
               ) : (
                 <>
                   <button

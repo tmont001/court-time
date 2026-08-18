@@ -784,8 +784,12 @@ function mapLessonError(msg: string): string {
     operating_hours_not_configured: "Operating hours are not set up for this club.",
     club_closed_this_day:           "That time falls outside the club's operating hours.",
     outside_operating_hours:        "That time falls outside the club's operating hours.",
-    pro_has_conflict:               "You already have another booking, event, or lesson at that time.",
-    pro_has_event_conflict:         "You already have another booking, event, or lesson at that time.",
+    // Phase 33G3: was "You already have..." — correct only when a Pro
+    // books themselves, but misleading when Admin books on behalf of a
+    // different Pro (the conflict belongs to the selected Pro, not the
+    // Admin reading the message).
+    pro_has_conflict:               "The selected pro already has another booking, event, or lesson at that time.",
+    pro_has_event_conflict:         "The selected pro already has another booking, event, or lesson at that time.",
     proposed_time_missing:          "No time has been proposed yet.",
     proposed_time_in_past:          "The proposed time has already passed.",
     proposed_court_missing:         "No court was proposed. Ask the pro to update their proposal.",

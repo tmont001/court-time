@@ -209,16 +209,6 @@ export default function ProgramsManageClient({
     setEditing(program);
   }
 
-  function viewSessions(title: string) {
-    // Close any open Programs sheet/state first — View Sessions is a full
-    // subview switch (Programs -> Events), so nothing from Programs should
-    // still be open underneath it afterwards.
-    setCreating(false);
-    setEditing(null);
-    setPreviewing(null);
-    router.push(`/events?tab=manage&manageView=events&q=${encodeURIComponent(title)}`);
-  }
-
   const createButton = (
     <button
       onClick={() => setCreating(true)}
@@ -326,9 +316,6 @@ export default function ProgramsManageClient({
                   <div className="flex flex-wrap gap-2 mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700">
                     {isArchived ? (
                       <>
-                        <button onClick={() => viewSessions(p.title)} className={ACTION_BUTTON_SECONDARY}>
-                          View Sessions
-                        </button>
                         <button
                           disabled={isUpdating}
                           onClick={() => handleUnarchive(p.id)}
@@ -357,9 +344,6 @@ export default function ProgramsManageClient({
                       </>
                     ) : p.status === "active" ? (
                       <>
-                        <button onClick={() => viewSessions(p.title)} className={ACTION_BUTTON_SECONDARY}>
-                          View Sessions
-                        </button>
                         {/* Phase 27D3B: whole-program roster management —
                             per_session/admin_managed have no
                             program_enrollments rows to manage here. */}
@@ -396,9 +380,6 @@ export default function ProgramsManageClient({
                     ) : (
                       // status is 'cancelled' or 'completed', not yet archived
                       <>
-                        <button onClick={() => viewSessions(p.title)} className={ACTION_BUTTON_SECONDARY}>
-                          View Sessions
-                        </button>
                         {!confirmingArchive && (
                           <button
                             disabled={isUpdating}

@@ -23,6 +23,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   protected_event_type:        "Built-in event types cannot be deleted.",
   event_type_active:           "Deactivate this type before deleting it.",
   event_type_in_use:           "This type has been used by existing events, including cancelled or archived events, so it cannot be permanently deleted. Keep it inactive instead.",
+  // Phase 33G3: raised by event_types' retirement trigger (0129) — Book
+  // Lesson is now the canonical Lesson workflow, so this one legacy type
+  // can never be reactivated.
+  event_type_retired:          "This event type has been retired and can't be reactivated. Book Lesson is now the canonical Lesson workflow.",
 };
 
 export async function updateClubTimezone(
@@ -99,7 +103,7 @@ export async function setEventTypeActive(
     p_is_active: isActive,
   });
   if (error) {
-    const key = error.message.match(/not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    const key = error.message.match(/not_found|not_authenticated|insufficient_role|event_type_retired/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to update event type." };
   }
 

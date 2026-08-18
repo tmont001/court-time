@@ -6,6 +6,8 @@ import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet"
 import EditEventSheet from "./EditEventSheet";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
+import { setEventMemberJoinableAction } from "@/app/(app)/admin/events/actions";
+import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
@@ -81,6 +83,21 @@ interface Props {
   clubId: string;
   onClose: () => void;
   onRefresh: () => void;
+  // Phase 33G3: lets a successful, non-lifecycle mutation (currently just
+  // the member-joinable toggle) patch CalendarShell's own authoritative
+  // `events` state in place — without this, CalendarShell's array (and any
+  // later reopen of this same Event, which remounts from a fresh `event`
+  // prop) kept showing the pre-mutation value until a full page reload,
+  // even though the DB write had already succeeded. Deliberately narrower
+  // than onRefresh: no refetch, no sheet close, called only after the RPC
+  // confirms success — never as an optimistic pre-mutation guess. Typed to
+  // exactly the one field this actually patches today (not
+  // Partial<EventWithDetails>) — CalendarShell's own EventWithDetails is a
+  // separately-declared, structurally-similar-but-not-identical type (see
+  // this file's own top-of-file note on why), so a broad Partial<> here
+  // would invite a cross-type mismatch for fields neither side actually
+  // exchanges through this callback.
+  onEventUpdated: (eventId: string, patch: { member_joinable?: boolean }) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -129,7 +146,7 @@ function mapOfferError(message: string): string {
 const MAX_NAMES = 5;
 
 export default function EventDetailSheet({
-  event, courts, userId, userRosterMemberId, userRole, clubTimezone, clubId, onClose, onRefresh,
+  event, courts, userId, userRosterMemberId, userRole, clubTimezone, clubId, onClose, onRefresh, onEventUpdated,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -154,6 +171,20 @@ export default function EventDetailSheet({
   const [offerLoading, setOfferLoading]               = useState<"accept" | "pass" | null>(null);
   const [offerError, setOfferError]                   = useState<string | null>(null);
   const [editOpen, setEditOpen]                       = useState(false);
+  // Phase 33G3: reuses the exact same set_event_member_joinable RPC (via
+  // setEventMemberJoinableAction) already wired up on /admin/events'
+  // "Manage Events" list — closing the parity gap where an Event created
+  // from Calendar could only have its joinability changed by navigating
+  // away to that separate page. No new RPC/migration.
+  const [localMemberJoinable, setLocalMemberJoinable] = useState(event.member_joinable);
+  const [joinableSaving, setJoinableSaving]           = useState(false);
+  const [joinableError, setJoinableError]             = useState<string | null>(null);
+  // Phase 33G3 runtime QA: parity with AdminEventsClient's confirmation —
+  // an Open-to-Members event with existing active participants requires
+  // explicit confirmation before becoming admin-managed (set_event_member_
+  // joinable itself has no participant-count guard; this is a client-side
+  // UX gate only, same as /admin/events).
+  const [confirmingMakeAdminManaged, setConfirmingMakeAdminManaged] = useState(false);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
@@ -177,6 +208,12 @@ export default function EventDetailSheet({
   const waitlistCount   = waitlistedParticipants.length;
   // Full when confirmed + offered + guests reach capacity (Phase 19A).
   const isFull          = (confirmedCount + offeredCount + guestCount) >= event.capacity;
+  // Phase 33G3: identical formula to AdminEventsClient's activeParticipantCount
+  // (confirmed/offered/waitlisted, role-agnostic — no participant "counts as
+  // a stake" filter here, matching that surface exactly).
+  const activeParticipantCount = localParticipants.filter(
+    p => p.status === "confirmed" || p.status === "offered" || p.status === "waitlisted"
+  ).length;
 
   // Exclude cancelled rows — a user who left should be treated as not joined.
   // Phase 33D2: matches via profile_id OR the caller's own current roster
@@ -219,6 +256,9 @@ export default function EventDetailSheet({
   // Edit is Admin-only in Phase 30C — no Pro exception, unlike cancellation.
   const canEdit         = userRole === "admin" && event.status === "scheduled" && !isPastEvent;
   const canViewRoster  = userRole === "admin" || userRole === "pro";
+  // Phase 33G3: same admin-or-own-Pro-event authorization as canCancelEvent
+  // (mirrors AdminEventsClient's canActOnEvent gating for this identical toggle).
+  const canToggleMemberJoinable = canCancelEvent && event.status === "scheduled" && !isPastEvent;
 
   // Total active participants shown in the roster button label (confirmed + offered + waitlisted + guests).
   const rosterCount = localParticipants.filter(
@@ -318,6 +358,29 @@ export default function EventDetailSheet({
     onClose();
   }
 
+  async function handleToggleMemberJoinable() {
+    const next = !localMemberJoinable;
+    setJoinableError(null);
+    setJoinableSaving(true);
+    setLocalMemberJoinable(next); // optimistic — matches AdminEventsClient's pattern
+    const result = await setEventMemberJoinableAction(event.id, next, clubId);
+    setJoinableSaving(false);
+    if (result.error) {
+      setLocalMemberJoinable(!next); // revert
+      setJoinableError(result.error);
+      return;
+    }
+    // Phase 33G3 fix: patch CalendarShell's own authoritative state now
+    // that the RPC has actually confirmed success — only then, never
+    // before, so this is not optimistic phantom state. This is what makes
+    // closing and reopening this same Event (a fresh mount, re-reading
+    // CalendarShell's `events` array) show the persisted value without a
+    // full page reload.
+    onEventUpdated(event.id, { member_joinable: next });
+    // Still no onRefresh() here — unlike Cancel/Join/Leave, this toggle
+    // doesn't warrant closing the sheet or a full events refetch.
+  }
+
   async function handleAcceptOffer() {
     setOfferLoading("accept");
     setOfferError(null);
@@ -395,10 +458,18 @@ export default function EventDetailSheet({
           >
             {event.event_types.label}
           </span>
-          {!event.member_joinable && (
+          {!localMemberJoinable && (
             <span className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">
               Admin-managed
             </span>
+          )}
+          {event.program_id && (userRole === "admin" || userRole === "pro") && (
+            <a
+              href="/events?tab=programs"
+              className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+            >
+              Part of a Program →
+            </a>
           )}
         </div>
 
@@ -428,7 +499,7 @@ export default function EventDetailSheet({
         {canViewRoster && (
           <button
             onClick={() => setRosterOpen(true)}
-            className="mt-2 text-xs font-medium text-blue-600 underline-offset-2 underline"
+            className={`mt-2 ${ACTION_BUTTON_SECONDARY}`}
           >
             View Roster ({rosterCount})
           </button>
@@ -511,7 +582,7 @@ export default function EventDetailSheet({
               </div>
             </div>
           )
-        ) : !event.member_joinable && !myPart && !isHost ? (
+        ) : !localMemberJoinable && !myPart && !isHost ? (
           /* Admin-managed event — member not on roster, hide join/waitlist */
           <div className="mt-5 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 px-4 py-3 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-400">
@@ -540,6 +611,77 @@ export default function EventDetailSheet({
           >
             Edit Event
           </button>
+        )}
+
+        {/* Members can join toggle — admin, or the Pro who created this event */}
+        {canToggleMemberJoinable && (
+          confirmingMakeAdminManaged ? (
+            /* ── Make Admin-managed confirmation — parity with AdminEventsClient ── */
+            <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3 space-y-1.5">
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                Make this event admin-managed?
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {activeParticipantCount}{" "}
+                {activeParticipantCount === 1 ? "participant is" : "participants are"}{" "}
+                on this event. They will remain on the roster, but new members
+                won&rsquo;t be able to self-join from the calendar.
+              </p>
+              {joinableError && <p className="text-xs text-red-500">{joinableError}</p>}
+              <div className="flex items-center gap-2 pt-0.5">
+                <button
+                  onClick={() => { setConfirmingMakeAdminManaged(false); setJoinableError(null); }}
+                  className={ACTION_BUTTON_SECONDARY}
+                >
+                  Keep open
+                </button>
+                <button
+                  onClick={() => { setConfirmingMakeAdminManaged(false); handleToggleMemberJoinable(); }}
+                  disabled={joinableSaving}
+                  className={ACTION_BUTTON_DESTRUCTIVE}
+                >
+                  {joinableSaving ? "Saving…" : "Make admin-managed"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Members can join this event</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {localMemberJoinable
+                    ? "Members can sign up from the calendar."
+                    : "Admin-managed — only staff can add members to the roster."}
+                </p>
+                {joinableError && <p className="text-xs text-red-500 mt-1">{joinableError}</p>}
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={localMemberJoinable}
+                disabled={joinableSaving}
+                onClick={() => {
+                  if (localMemberJoinable && activeParticipantCount > 0) {
+                    // Open → Admin-managed with active participants: confirm first.
+                    setJoinableError(null);
+                    setConfirmingMakeAdminManaged(true);
+                  } else {
+                    // Admin-managed → Open, or Open → Admin-managed with no participants: proceed directly.
+                    handleToggleMemberJoinable();
+                  }
+                }}
+                className={`shrink-0 relative inline-flex h-6 w-11 items-center rounded-full border-2 border-transparent transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 ${
+                  localMemberJoinable ? "bg-accent" : "bg-gray-200 dark:bg-gray-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    localMemberJoinable ? "translate-x-5" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+          )
         )}
 
         {/* Cancel Event — admin, or the Pro who created this event */}
