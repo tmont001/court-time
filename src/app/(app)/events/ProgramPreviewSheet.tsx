@@ -100,6 +100,15 @@ export default function ProgramPreviewSheet({
   const canManage = userRole === "admin" || (userRole === "pro" && programCreatedBy === userId);
   const isDraft   = programStatus === "draft";
   const showEditDraft = isDraft && canManage;
+  // Phase 33G4: this sheet only ever previews schedule-rule occurrences and
+  // (optionally) generates new ones — it never lets staff cancel/edit/
+  // operate on an individual already-generated session (that's Manage →
+  // Events). "Preview & Generate" stays accurate for a draft program (nothing
+  // generated yet, this IS the initial generation step); for a non-draft
+  // program calling this "Manage Sessions" overstated what it does, so it's
+  // labeled "Session Schedule" instead — a program-schedule surface, not an
+  // individual-session management one.
+  const sheetTitle = isDraft ? "Preview & Generate" : "Session Schedule";
 
   const [loading, setLoading]   = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -184,7 +193,7 @@ export default function ProgramPreviewSheet({
       variant="modal"
       size="wide"
       mobileInteraction="draggable"
-      label={`Preview & Generate — ${programTitle}`}
+      label={`${sheetTitle} — ${programTitle}`}
       header={
         <>
           <div className="flex items-center justify-between gap-3">
@@ -204,7 +213,7 @@ export default function ProgramPreviewSheet({
             )}
           </div>
           <p className="text-base font-semibold text-gray-900 dark:text-gray-100 truncate mt-2">
-            Preview &amp; Generate — {programTitle}
+            {sheetTitle} — {programTitle}
           </p>
         </>
       }

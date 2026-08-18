@@ -524,6 +524,27 @@
   }
 }
 
+/* ── Calendar item settle-in (Phase 33G4) ──────────────────────────────── */
+/* Applied only to a Calendar reservation/event block that a mutation-
+   triggered refetch (Create/Cancel/Edit) just added or changed — never to
+   ordinary day navigation or the initial page load. Opacity-only: no
+   transform/positional movement, no blur, no scale, no layout shift (the
+   block is already absolutely positioned at its final coordinates before
+   this runs). Deliberately the shortest/simplest entrance treatment in
+   this file — a calendar grid block is small and appears inline among many
+   already-stable siblings, unlike a full sheet/modal taking over the
+   screen. */
+@keyframes ct-calendar-item-settle-keyframes {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-calendar-item-settle {
+    animation: ct-calendar-item-settle-keyframes 180ms ease-out both;
+  }
+}
+
 /* ── Popover entrance animation ────────────────────────────────────────── */
 /* Applied to the desktop notification dropdown: drops from above the bell,
    combining opacity + translate-y + a subtle scale.

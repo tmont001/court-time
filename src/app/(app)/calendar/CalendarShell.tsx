@@ -218,6 +218,35 @@ function rpcErrorMessage(code: string | undefined, message: string): string {
   return "Something went wrong. Please try again.";
 }
 
+// Phase 33G4: reconciles a fresh server fetch into existing state without
+// discarding object identity for rows whose content is unchanged. Every
+// full-day refetch (fetchReservations/fetchEvents) previously called
+// setReservations(rows)/setEvents(mapped) directly — a wholesale array
+// swap that gives every single row a brand-new object reference even when
+// nothing about it changed, on every mutation. React's key-based
+// reconciliation already prevents this from unmounting/remounting DOM
+// nodes (reservation/event blocks are correctly keyed by id), but the
+// reference churn still meant there was no reliable way to tell "this row
+// is actually new/changed" from "this row is identical, just a new object"
+// — which is exactly what a targeted settle-in animation needs to avoid
+// firing on every row on every refetch. This returns the previous row
+// object for any row whose serialized content didn't change, and reports
+// exactly which ids are genuinely new or changed.
+function mergeRowsById<T extends { id: string }>(
+  prev: T[],
+  fresh: T[],
+): { merged: T[]; changedIds: Set<string> } {
+  const prevMap = new Map(prev.map(row => [row.id, row]));
+  const changedIds = new Set<string>();
+  const merged = fresh.map(row => {
+    const old = prevMap.get(row.id);
+    if (old && JSON.stringify(old) === JSON.stringify(row)) return old;
+    changedIds.add(row.id);
+    return row;
+  });
+  return { merged, changedIds };
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
@@ -235,6 +264,40 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [reservations, setReservations]         = useState<Reservation[]>([]);
   const [loadingRes, setLoadingRes]             = useState(false);
   const [refreshTick, setRefreshTick]           = useState(0);
+  // Phase 33G4: distinguishes a mutation-triggered refetch (refreshTick
+  // bumped after Create/Cancel/Edit) from a day-navigation or initial-mount
+  // refetch (dayBounds changed) — only the former should mark rows for the
+  // settle-in treatment below; day navigation is ordinary navigation, not a
+  // mutation, and must never animate. Captured as a snapshot at the moment
+  // each fetch is actually invoked (not read later inside the async
+  // function), so a later ref mutation can't retroactively change what an
+  // in-flight fetch decided.
+  const prevRefreshTickRef = useRef(refreshTick);
+  const isMutationRefreshRef = useRef(false);
+  useEffect(() => {
+    if (refreshTick !== prevRefreshTickRef.current) {
+      prevRefreshTickRef.current = refreshTick;
+      isMutationRefreshRef.current = true;
+    }
+  }, [refreshTick]);
+  // Row ids that just changed/were added by the most recent mutation-
+  // triggered refetch — drives the settle-in animation only, cleared
+  // shortly after so it never re-fires on a later unrelated render.
+  const [justChangedIds, setJustChangedIds] = useState<Set<string>>(new Set());
+  const settleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Merges rather than replaces — fetchReservations and fetchEvents both
+  // fire from the same refreshTick bump and may each report their own ids
+  // within the same short window.
+  const markJustChanged = useCallback((ids: Set<string>) => {
+    if (ids.size === 0) return;
+    setJustChangedIds(prev => new Set([...prev, ...ids]));
+    if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current);
+    settleTimeoutRef.current = setTimeout(() => {
+      setJustChangedIds(new Set());
+      settleTimeoutRef.current = null;
+    }, 220);
+  }, []);
+  useEffect(() => () => { if (settleTimeoutRef.current) clearTimeout(settleTimeoutRef.current); }, []);
   const [selectedCourtIds, setSelectedCourtIds] = useState<Set<string>>(
     () => new Set(courts.map(c => c.id))
   );
@@ -607,6 +670,9 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // ── Reservation fetch ─────────────────────────────────────────────────────
   const fetchReservations = useCallback(async () => {
     if (!clubId) return;
+    // Captured now, before any await — see the ref's own comment for why
+    // this must be a snapshot, not a later read of the mutable ref.
+    const isMutationRefresh = isMutationRefreshRef.current;
     setLoadingRes(true);
     setResError(false);
     const { data, error } = await supabase
@@ -667,14 +733,21 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         }
       }
 
-      setReservations(rows);
+      setReservations(prev => {
+        const { merged, changedIds } = mergeRowsById(prev, rows);
+        // Only a mutation-triggered refetch marks rows for the settle-in
+        // animation — day navigation/initial mount reconciles silently.
+        if (isMutationRefresh) markJustChanged(changedIds);
+        return merged;
+      });
     }
     setLoadingRes(false);
-  }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supabase, clubId, dayBounds, refreshTick, markJustChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Event fetch ───────────────────────────────────────────────────────────
   const fetchEvents = useCallback(async () => {
     if (!clubId) return;
+    const isMutationRefresh = isMutationRefreshRef.current;
     const { data, error } = await supabase
       .from("events")
       .select(`
@@ -716,13 +789,21 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             .map(res => res.court_id),
         };
       });
-      setEvents(mapped);
+      setEvents(prev => {
+        const { merged, changedIds } = mergeRowsById(prev, mapped);
+        if (isMutationRefresh) markJustChanged(changedIds);
+        return merged;
+      });
     }
-  }, [supabase, clubId, dayBounds, refreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supabase, clubId, dayBounds, refreshTick, markJustChanged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    // Both calls synchronously read isMutationRefreshRef.current (before
+    // their own first await) during this same tick, so resetting it
+    // immediately afterward is safe — it can't affect either snapshot.
     fetchReservations();
     fetchEvents();
+    isMutationRefreshRef.current = false;
   }, [fetchReservations, fetchEvents]);
   useEffect(() => { setNowMs(Date.now()); }, []);
 
@@ -1261,7 +1342,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                               } : undefined}
                               className={`absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 bg-violet-50 border border-violet-300 text-violet-800 dark:bg-violet-950/40 dark:border-violet-700 dark:text-violet-200 ${
                                 canManageLesson ? "cursor-pointer" : "pointer-events-none"
-                              }`}
+                              } ${justChangedIds.has(res.id) ? "ct-calendar-item-settle" : ""}`}
                               style={blockPos}
                             >
                               {lessonLabel}
@@ -1278,7 +1359,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                             : isBlocked
                             ? "text-gray-400"
                             : "bg-gray-400 text-white"
-                        }`;
+                        } ${justChangedIds.has(res.id) ? "ct-calendar-item-settle" : ""}`;
                         const blockStyle = {
                           ...blockPos,
                           ...(isBlocked ? {
@@ -1337,7 +1418,9 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                             <button
                               key={ev.id}
                               onClick={() => setSelectedEvent(ev)}
-                              className="absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 text-white"
+                              className={`absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 text-white ${
+                                justChangedIds.has(ev.id) ? "ct-calendar-item-settle" : ""
+                              }`}
                               style={{
                                 top: top + 1,
                                 height,
@@ -1580,13 +1663,17 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                         key={m.id}
                         type="button"
                         onClick={() => setSelectedRosterMemberId(m.id)}
+                        aria-pressed={selectedRosterMemberId === m.id}
                         className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-sm motion-safe:transition-colors motion-safe:duration-150 ${
                           selectedRosterMemberId === m.id
-                            ? "bg-accent/10 text-accent"
+                            ? "bg-accent/10 text-accent font-semibold"
                             : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/40"
                         }`}
                       >
-                        <span className="truncate">{m.name}</span>
+                        <span className="truncate flex items-center gap-1.5">
+                          {selectedRosterMemberId === m.id && <span aria-hidden="true">✓</span>}
+                          {m.name}
+                        </span>
                         {!m.claimed && (
                           <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
                             No account yet

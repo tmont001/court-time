@@ -370,11 +370,17 @@ export default function ProgramsManageClient({
                             Cancel
                           </button>
                         )}
+                        {/* Phase 33G4: renamed from "Manage Sessions" — this
+                            opens ProgramPreviewSheet, which only previews
+                            schedule-rule occurrences and generates new ones;
+                            it never lets staff cancel/edit an individual
+                            already-generated session (that's Manage → Events).
+                            "Manage Sessions" overstated that capability. */}
                         <button
                           onClick={() => setPreviewing({ id: p.id, title: p.title, status: p.status, createdBy: p.created_by })}
                           className={ACTION_BUTTON_PRIMARY}
                         >
-                          Manage Sessions
+                          Session Schedule
                         </button>
                       </>
                     ) : (

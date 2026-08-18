@@ -16,6 +16,11 @@ import { assertActiveClub } from "@/lib/supabase/staleClub";
 import PastEventsSection from "./PastEventsSection";
 import LessonsClient from "@/app/(app)/lessons/LessonsClient";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
+// Phase 33G4: normalizes Accept/Pass/Leave/Leave Waitlist/Rejoin to the
+// same shared action-button system already used across /events and (since
+// 33G3) Calendar's own EventDetailSheet — plain exported class strings, no
+// "use client" needed here since this file is a Server Component.
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -533,12 +538,9 @@ export default async function MySchedulePage({
                                 <span className="text-xs text-gray-400 ml-4 shrink-0">Host</span>
                               ) : isOffered ? (
                                 offerExpiredServerSide ? (
-                                  <form action={rejoinEventAction.bind(null, clubId)}>
+                                  <form action={rejoinEventAction.bind(null, clubId)} className="ml-4 shrink-0">
                                     <input type="hidden" name="event_id" value={ev.id} />
-                                    <button
-                                      type="submit"
-                                      className="text-xs font-medium text-blue-600 ml-4 shrink-0 hover:text-blue-800 dark:hover:text-blue-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                    >
+                                    <button type="submit" className={ACTION_BUTTON_PRIMARY}>
                                       Rejoin
                                     </button>
                                   </form>
@@ -546,31 +548,22 @@ export default async function MySchedulePage({
                                   <div className="flex flex-col items-end gap-1.5 ml-4 shrink-0">
                                     <form action={acceptWaitlistOfferAction.bind(null, clubId)}>
                                       <input type="hidden" name="event_id" value={ev.id} />
-                                      <button
-                                        type="submit"
-                                        className="text-xs font-semibold text-green-600 hover:text-green-800 dark:hover:text-green-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                      >
+                                      <button type="submit" className={ACTION_BUTTON_PRIMARY}>
                                         Accept
                                       </button>
                                     </form>
                                     <form action={declineWaitlistOfferAction.bind(null, clubId)}>
                                       <input type="hidden" name="event_id" value={ev.id} />
-                                      <button
-                                        type="submit"
-                                        className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                      >
+                                      <button type="submit" className={ACTION_BUTTON_DESTRUCTIVE}>
                                         Pass
                                       </button>
                                     </form>
                                   </div>
                                 )
                               ) : (
-                                <form action={leaveEvent.bind(null, clubId)}>
+                                <form action={leaveEvent.bind(null, clubId)} className="ml-4 shrink-0">
                                   <input type="hidden" name="event_id" value={ev.id} />
-                                  <button
-                                    type="submit"
-                                    className="text-xs font-medium text-red-500 ml-4 shrink-0 hover:text-red-700 dark:hover:text-red-400 active:scale-95 motion-safe:transition-colors motion-safe:duration-100"
-                                  >
+                                  <button type="submit" className={ACTION_BUTTON_DESTRUCTIVE}>
                                     {isWaitlisted ? "Leave Waitlist" : "Leave"}
                                   </button>
                                 </form>
