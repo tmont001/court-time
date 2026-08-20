@@ -1,4 +1,4 @@
-// Central role/authorization vocabulary — Phase 34A2.
+// Central role/authorization vocabulary — Phase 34A2, widened in 34A4.
 //
 // Framework-independent on purpose: no Next.js, React, or Supabase imports.
 // This module answers exactly one question — "given a role string, what can
@@ -7,25 +7,20 @@
 // request/response or database concerns.
 //
 // ─────────────────────────────────────────────────────────────────────────
-// WHY `Role` INCLUDES "staff" WHILE THE DATABASE DOES NOT (YET)
+// `Role` vs THE DATABASE-FACING TYPES
 // ─────────────────────────────────────────────────────────────────────────
-// The live database's role check constraint (profiles.role /
-// club_memberships.role) only accepts 'member' | 'pro' | 'admin' as of this
-// checkpoint — see the Phase 34A audit. Migration 0131 (a later checkpoint)
-// will widen that constraint to add 'staff'. This module's `Role` type is
-// intentionally ahead of the database: it models the LOCKED target shape
-// (member/pro/staff/admin) so the predicates below never need to change
-// shape when 0131 lands — only `canAccessOperationsWorkspace`'s body changes
-// to admit `isStaff`.
+// Migration 0131 (Phase 34A3, applied) widened the live database's role
+// check constraint (profiles.role/club_memberships.role) to accept 'staff'.
+// This module's `Role` type models that same four-value shape. Migration
+// 0132 (Phase 34A4, drafted, not yet applied as of this comment) is what
+// gives 'staff' actual operational authority at the RLS/RPC layer —
+// `canAccessOperationsWorkspace`/`isOperator` below reflect the INTENDED
+// post-0132 state; see the Phase 34A4 report for the full RPC/RLS mapping.
 //
-// Nothing in src/lib/db/types.ts (the database-facing types) is widened by
-// this file. A value read from the database is always a plain `string` at
-// this module's boundary (see e.g. get_current_account_context's `role:
-// string | null` return shape) — never cast to `Role` as if the database
-// could truthfully produce "staff" today. All predicates below therefore
-// accept `string | null | undefined`, not `Role | null | undefined`: that
-// is what real callers actually have, and it avoids asserting a lie about
-// what the database can return before 0131 ships.
+// A value read from the database is always a plain `string` at this
+// module's boundary (see e.g. get_current_account_context's `role: string |
+// null` return shape) — predicates below accept `string | null | undefined`,
+// not `Role | null | undefined`, matching what real callers actually have.
 //
 // ─────────────────────────────────────────────────────────────────────────
 // LESSON-PROVIDER IDENTITY IS A SEPARATE AXIS — NOT MODELED HERE
@@ -44,18 +39,23 @@
 // never conflate "is a provider" with "has operational/admin authority".
 //
 // ─────────────────────────────────────────────────────────────────────────
-// CURRENT RUNTIME BEHAVIOR — MUST NOT CHANGE IN 34A2
+// CURRENT RUNTIME BEHAVIOR — Phase 34A4
 // ─────────────────────────────────────────────────────────────────────────
-//   admin  -> operations workspace: true,  admin authority: true
-//   pro    -> operations workspace: true,  admin authority: false
-//   member -> operations workspace: false, admin authority: false
-//   staff  -> operations workspace: false, admin authority: false  (LOCKED OFF)
-// Staff is a legal value of the `Role` type so this module's shape is
-// future-proof, but it carries ZERO runtime authority in this checkpoint —
-// `canAccessOperationsWorkspace("staff")` returns false, exactly like
-// `"member"`, until a later checkpoint deliberately flips it on alongside
-// migration 0131 and its own RLS/RPC enforcement. Do not change this file to
-// grant staff any access as a side effect of unrelated work.
+//   admin  -> operations workspace: true,  admin authority: true,  operator: true
+//   staff  -> operations workspace: true,  admin authority: false, operator: true
+//   pro    -> operations workspace: true,  admin authority: false, operator: false
+//   member -> operations workspace: false, admin authority: false, operator: false
+// Staff gained workspace entry and operator status in Phase 34A4, alongside
+// migration 0132's matching RLS/RPC widenings (get_members,
+// admin_create_member_reservation, admin_create_member_lesson,
+// create_club_invite restricted to Member-role invites, etc. — see the
+// Phase 34A4 report for the complete list). Every genuinely admin-only
+// page/RPC (Settings, Courts, Event Types, commercial tier, Audit Log,
+// Reports, role/employee-authority changes, broad announcements) keeps its
+// own separate, positive admin-only check — `canAccessOperationsWorkspace`
+// was NEVER the sole gate for any of those, so widening it here does not
+// change their behavior. See src/app/(app)/admin/*/page.tsx for the
+// per-page enforcement this predicate does not replace.
 
 /** The locked target role set. Not yet fully legal in the database — see
  * the module comment above. */
@@ -80,9 +80,6 @@ export function isPro(role: string | null | undefined): boolean {
   return role === "pro";
 }
 
-/** Not yet reachable in production — no live account can have this role
- * until migration 0131 lands. Exists so callers can be written once and
- * start working the moment staff becomes a legal database value. */
 export function isStaff(role: string | null | undefined): boolean {
   return role === "staff";
 }
@@ -94,25 +91,49 @@ export function isAdmin(role: string | null | undefined): boolean {
 /**
  * May this role enter the shared operational/admin workspace shell (the
  * `/admin/*` route tree and equivalent nav) at all? This is a WORKSPACE
- * ENTRY check only — the "admin+pro" grouping already used throughout the
- * pre-34A codebase (e.g. the shared /admin route gate). It does NOT imply
+ * ENTRY check only — admin+pro+staff as of Phase 34A4. It does NOT imply
  * authorization for any specific mutation: Roster/Event/Program/Lesson/etc.
  * actions remain individually gated by their own domain-specific checks
- * (RLS/RPC), which this predicate must never be used as a substitute for.
- * Staff is intentionally excluded here today: this predicate returns false
- * for "staff" until a later checkpoint's enforcement work turns it on
- * alongside the corresponding RLS/RPC changes. Do not add "staff" to this
- * check without also doing that work — see the Phase 34A audit, section 8.
+ * (RLS/RPC) — most of which are narrower than this predicate (e.g. Members/
+ * Roster is admin+staff only, never pro; see `isOperator` below) — which
+ * this predicate must never be used as a substitute for. Every Admin-only
+ * page under /admin/* enforces its own separate, positive admin-only check
+ * independent of this one (verified per-page in the Phase 34A4 report) —
+ * widening this function does not, by itself, grant Staff (or Pro) access
+ * to any of those pages.
  */
 export function canAccessOperationsWorkspace(role: string | null | undefined): boolean {
-  return isAdmin(role) || isPro(role);
+  return isAdmin(role) || isPro(role) || isStaff(role);
+}
+
+/**
+ * Generic club OPERATOR authority: Admin or Staff, and — deliberately —
+ * never Pro. Pro's operational access is either provider-scoped (acting as
+ * themselves) or a separate, narrower case handled individually per
+ * domain (see the Phase 34A4 report's Lessons section for the concrete
+ * example: a Pro may create a lesson only where they are the assigned
+ * provider, while Admin/Staff may assign any eligible provider) — Pro must
+ * never be granted this broader, generic operator check as a shortcut.
+ * Mirrors the SQL current_user_is_operator() helper introduced in
+ * migration 0132; used for route/page gating that needs the SAME
+ * admin-or-staff (not admin-or-pro-or-staff) boundary as the underlying
+ * RPC it calls — e.g. the Members/Roster pages, which call get_members()/
+ * get_admin_member_detail() (admin+staff only, migration 0132) and would
+ * be a broken experience for a Pro who passed a broader page gate only to
+ * have the RPC underneath reject them.
+ */
+export function isOperator(role: string | null | undefined): boolean {
+  return isAdmin(role) || isStaff(role);
 }
 
 /**
  * Club configuration / commercial / sensitive authority (Settings, Courts,
- * Members role management, Audit Log, Reports, Communications, future
- * pricing/payments). Admin-only, today and for the foreseeable future —
- * Staff does not receive this by default per the locked Phase 34A intent.
+ * Event Type configuration, commercial tier/entitlement, Audit Log,
+ * Reports, employee/role-authority changes, broadcast Communications,
+ * future pricing/payments). Admin-only, today and for the foreseeable
+ * future — Staff does not receive this, per the locked Phase 34A intent
+ * reaffirmed in 34A4: Staff gets OPERATIONAL authority, never
+ * CONTROL-PLANE authority.
  */
 export function hasAdminAuthority(role: string | null | undefined): boolean {
   return isAdmin(role);

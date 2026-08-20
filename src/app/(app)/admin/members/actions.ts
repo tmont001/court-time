@@ -45,6 +45,23 @@ function mapError(message: string): string {
   return key ? ERROR_MESSAGES[key] : "Something went wrong. Please try again.";
 }
 
+// Phase 34A4A: insufficient_role is shared across every admin-only action
+// in this file (invite revocation, role/status changes, etc.) — the
+// generic "Only admins can manage members." fallback stays correct for
+// those. add_roster_member/update_roster_member (0132) and
+// add_roster_member_and_invite (0134) reject this specific case only when
+// a Staff caller targets a non-member role, so this override is scoped to
+// exactly the three roster add/edit/invite actions below, never the
+// shared ERROR_MESSAGES entry itself.
+function mapRosterRoleError(message: string, verb: "add" | "manage"): string {
+  if (message.includes("insufficient_role")) {
+    return verb === "add"
+      ? "Staff can only add Members."
+      : "Staff can only manage ordinary Members.";
+  }
+  return mapError(message);
+}
+
 // Phase 33B1: replaces the old free-form createInviteAction. Every invite
 // capable of creating a new membership must be bound to an existing roster
 // identity — this sheet's only caller (InviteSheet, opened from an existing
@@ -218,7 +235,10 @@ export async function addRosterMemberAndInviteAction(
     p_notes:      input.notes ?? null,
   });
 
-  if (error) return { error: mapError(error.message) };
+  // Phase 34A4A: add_roster_member_and_invite (0134) admits Staff for
+  // p_role='member' only — the UI hides the Role picker for Staff
+  // (AddMemberSheet) so this mapping only fires as defense-in-depth.
+  if (error) return { error: mapRosterRoleError(error.message, "add") };
 
   const result = data as { roster_member_id: string; code: string } | null;
   revalidatePath("/admin/members");
@@ -248,7 +268,7 @@ export async function addRosterMemberAction(
     p_role:       role,
     p_notes:      notes || null,
   });
-  if (error) return { error: mapError(error.message) };
+  if (error) return { error: mapRosterRoleError(error.message, "add") };
 
   revalidatePath("/admin/members");
   return { id: data ?? undefined };
@@ -276,7 +296,7 @@ export async function updateRosterMemberAction(
     p_role:       role,
     p_notes:      notes || null,
   });
-  if (error) return { error: mapError(error.message) };
+  if (error) return { error: mapRosterRoleError(error.message, "manage") };
 
   revalidatePath("/admin/members");
   return {};

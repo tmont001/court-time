@@ -171,6 +171,10 @@ interface Props {
   currentUserId:  string;
   membersError?:  string | null;
   invitesError?:  string | null;
+  // Phase 34A4A: the caller's real role — threaded down to AddMemberSheet
+  // so it can hide Pro/Admin/invite choices for a Staff caller rather than
+  // letting them pick an elevated role and then fail server-side.
+  userRole:       string;
 }
 
 export default function MembersClient({
@@ -180,6 +184,7 @@ export default function MembersClient({
   currentUserId,
   membersError,
   invitesError,
+  userRole,
 }: Props) {
   const router = useRouter();
   const [inviteSheetOpen, setInviteSheetOpen]   = useState(false);
@@ -1052,12 +1057,12 @@ export default function MembersClient({
 
       {/* Add member sheet */}
       {addSheetOpen && (
-        <AddMemberSheet onClose={() => setAddSheetOpen(false)} />
+        <AddMemberSheet onClose={() => setAddSheetOpen(false)} userRole={userRole} />
       )}
 
       {/* Edit member sheet */}
       {editMember && (
-        <AddMemberSheet onClose={closeEditSheet} editMember={editMember} />
+        <AddMemberSheet onClose={closeEditSheet} editMember={editMember} userRole={userRole} />
       )}
 
       {/* Import members sheet */}

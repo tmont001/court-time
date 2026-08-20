@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
-import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import AdminLessonsWrapper from "./AdminLessonsWrapper";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
@@ -13,8 +13,17 @@ export default async function AdminLessonsPage() {
   const profile = await getAuthProfile();
   if (!profile || !canAccessOperationsWorkspace(profile.role)) redirect("/calendar");
   // Narrows profile.role (typed string) to the literal union AdminLessonsWrapper
-  // expects — the redirect above already guarantees one of these two values.
-  const userRole: "admin" | "pro" = profile.role === "pro" ? "pro" : "admin";
+  // expects — the redirect above already guarantees one of these three values.
+  // Phase 34A4A correction: previously coerced Staff into the literal
+  // "admin" string ("admin" | "pro" only) for downstream UI convenience.
+  // That coercion made it impossible for any component in this tree to
+  // tell a real Admin from Staff riding along as "admin", which is exactly
+  // the kind of fragile indirection that caused repeated confusion while
+  // debugging Staff lesson-reassignment — every component below now
+  // receives the caller's real role and applies its own centralized
+  // predicate for the specific capability it's gating.
+  const userRole: "admin" | "pro" | "staff" =
+    profile.role === "pro" ? "pro" : profile.role === "staff" ? "staff" : "admin";
 
   const supabase = await createClient();
   const clubId   = profile.club_id ?? "";
@@ -37,12 +46,12 @@ export default async function AdminLessonsPage() {
   // Phase 33G2: roster Members and lesson types are now fetched for BOTH
   // Admin and Pro — both roles can book a Lesson directly (0128's
   // get_lesson_roster_members, admin+pro; roster_members itself stays
-  // admin-only RLS, unchanged). Pros stay admin-only (get_admin_club_pros)
-  // — a Pro never picks a Pro, they book themselves (see
-  // AdminRequestLessonSheet's viewerRole handling).
+  // admin-only RLS, unchanged). Pros stay operator-only (get_admin_club_pros,
+  // widened admin+staff by 0132) — a Pro never picks a Pro, they book
+  // themselves (see AdminRequestLessonSheet's viewerRole handling).
   const [prosResult, rosterResult, lessonTypesResult] = clubId
     ? await Promise.all([
-        userRole === "admin"
+        isOperator(userRole)
           ? supabase.rpc("get_admin_club_pros")
           : Promise.resolve({ data: [] }),
         supabase.rpc("get_lesson_roster_members"),

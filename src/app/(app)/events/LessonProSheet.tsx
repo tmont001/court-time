@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import { isOperator } from "@/lib/auth/roles";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import {
   proposeLessonTime,
@@ -589,13 +590,15 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
 
       {mode === null && (
         <div className="space-y-2">
-          {/* Admin: reassign provider on pending/proposed, first-time
+          {/* Admin or Staff (isOperator) — 0132 widened reassign_lesson_
+              provider and get_admin_club_pros the same way; Pro never had
+              this. Reassign provider on pending/proposed, first-time
               requests only. Hidden for a pending reschedule
               (linked_reservation_id set) — the RPC now rejects that case
               server-side too, since it would otherwise leave
               linked_reservation_id pointing at a reservation still owned
               by the old pro. */}
-          {userRole === "admin" && (pros?.length ?? 0) > 0 &&
+          {isOperator(userRole) && (pros?.length ?? 0) > 0 &&
             (request.status === "pending" || request.status === "proposed") &&
             !request.linked_reservation_id && (
             <button

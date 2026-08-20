@@ -4,16 +4,17 @@ import {
   hasAdminAuthority,
   isAdmin,
   isMember,
+  isOperator,
   isPro,
   isStaff,
   parseRole,
 } from "./roles";
 
-// Phase 34A2: proves the CURRENT locked authorization boundary. Staff is a
-// legal `Role` value but must carry zero runtime authority until a later
-// checkpoint's migration/enforcement work — see the module comment in
-// roles.ts. Do not add a passing "staff -> operational access" case here
-// without that work landing first.
+// Phase 34A2 established the pure-predicate baseline; Phase 34A4 gave
+// Staff workspace entry and generic operator authority, proven below.
+// Pro must never gain operator authority via isOperator — its access
+// stays provider-scoped/narrower, handled per-domain at the RPC layer,
+// not through this predicate.
 
 describe("role identity predicates", () => {
   it("identifies each role exactly, including null/undefined/unknown", () => {
@@ -29,8 +30,6 @@ describe("role identity predicates", () => {
     expect(isMember("member")).toBe(true);
     expect(isMember("admin")).toBe(false);
 
-    // Not yet a live database value — the predicate still recognizes the
-    // string today so it is ready the moment migration 0131 lands.
     expect(isStaff("staff")).toBe(true);
     expect(isStaff("admin")).toBe(false);
   });
@@ -49,21 +48,21 @@ describe("parseRole", () => {
   });
 });
 
-describe("canAccessOperationsWorkspace — locked Phase 33 behavior", () => {
+describe("canAccessOperationsWorkspace — Phase 34A4 behavior", () => {
   it("admin can access the operations workspace", () => {
     expect(canAccessOperationsWorkspace("admin")).toBe(true);
   });
 
-  it("pro can access the operations workspace", () => {
+  it("staff can access the operations workspace (34A4)", () => {
+    expect(canAccessOperationsWorkspace("staff")).toBe(true);
+  });
+
+  it("pro can access the operations workspace (existing behavior preserved)", () => {
     expect(canAccessOperationsWorkspace("pro")).toBe(true);
   });
 
   it("member cannot access the operations workspace", () => {
     expect(canAccessOperationsWorkspace("member")).toBe(false);
-  });
-
-  it("staff cannot access the operations workspace yet (locked off in 34A2)", () => {
-    expect(canAccessOperationsWorkspace("staff")).toBe(false);
   });
 
   it("fails closed for null, undefined, and unrecognized values", () => {
@@ -74,7 +73,32 @@ describe("canAccessOperationsWorkspace — locked Phase 33 behavior", () => {
   });
 });
 
-describe("hasAdminAuthority — locked Phase 33 behavior", () => {
+describe("isOperator — Phase 34A4: Admin or Staff, never Pro", () => {
+  it("admin is an operator", () => {
+    expect(isOperator("admin")).toBe(true);
+  });
+
+  it("staff is an operator", () => {
+    expect(isOperator("staff")).toBe(true);
+  });
+
+  it("pro is NOT an operator — provider access stays narrower/domain-specific", () => {
+    expect(isOperator("pro")).toBe(false);
+  });
+
+  it("member is not an operator", () => {
+    expect(isOperator("member")).toBe(false);
+  });
+
+  it("fails closed for null, undefined, and unrecognized values", () => {
+    expect(isOperator(null)).toBe(false);
+    expect(isOperator(undefined)).toBe(false);
+    expect(isOperator("")).toBe(false);
+    expect(isOperator("owner")).toBe(false);
+  });
+});
+
+describe("hasAdminAuthority — locked behavior, unchanged by 34A4", () => {
   it("only admin has admin authority", () => {
     expect(hasAdminAuthority("admin")).toBe(true);
     expect(hasAdminAuthority("pro")).toBe(false);

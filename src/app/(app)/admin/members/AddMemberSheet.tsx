@@ -8,6 +8,7 @@ import {
   addRosterMemberAndInviteAction,
 } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import { isStaff } from "@/lib/auth/roles";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,6 +32,12 @@ export type EditRosterMember = {
 interface Props {
   onClose:     () => void;
   editMember?: EditRosterMember;
+  // Phase 34A4A: a Staff caller may only add/edit/invite ordinary Members
+  // (add_roster_member/update_roster_member, 0132, and now
+  // add_roster_member_and_invite, 0134, all enforce this server-side) —
+  // the Role picker is hidden/fixed to Member for Staff in every mode so
+  // the UI never offers a choice the server would then reject.
+  userRole:    string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -43,9 +50,13 @@ function isValidEmail(value: string): boolean {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function AddMemberSheet({ onClose, editMember }: Props) {
+export default function AddMemberSheet({ onClose, editMember, userRole }: Props) {
   const router = useRouter();
   const isEdit = !!editMember;
+  // Phase 34A4A: add_roster_member_and_invite (0134) now admits Staff for
+  // p_role='member' only — the invite-generation mode is available to
+  // Staff; only the Role picker is hidden/fixed to Member in every mode.
+  const isStaffCaller = isStaff(userRole);
 
   // For edit, skip mode selection and go straight to the roster form.
   const [addMode,  setAddMode]  = useState<AddMode>(isEdit ? "roster" : "select");
@@ -198,6 +209,9 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
                 Add the member to the roster. Email is optional. No invite link is created.
               </p>
             </button>
+            {/* Phase 34A4A: add_roster_member_and_invite (0134) now admits
+                Staff for p_role='member' only — available in every mode;
+                the Role picker inside is what stays hidden/fixed for Staff. */}
             <button
               onClick={() => selectMode("invite")}
               className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-600 px-4 py-4 hover:border-accent hover:bg-gray-50 dark:hover:bg-gray-700/30 motion-safe:transition-all motion-safe:duration-150"
@@ -355,32 +369,48 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               />
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Role
-              </label>
-              <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
-                {(["member", "pro", "admin"] as RosterRole[]).map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    role="radio"
-                    aria-checked={role === r}
-                    onClick={() => setRole(r)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                      role === r
-                        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                        : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600"
-                    }`}
-                  >
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
-                  </button>
-                ))}
+            {/* Phase 34A4A: Staff may only add/edit ordinary Members
+                (add_roster_member/update_roster_member, 0132, reject
+                anything else server-side) — the picker is hidden rather
+                than shown-and-then-rejected; role stays fixed at "member". */}
+            {isStaffCaller ? (
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Role
+                </label>
+                <p className="mt-1.5 text-sm text-gray-700 dark:text-gray-300">Member</p>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Staff can only add Members. An Admin can promote this member later.
+                </p>
               </div>
-              <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
-                For your reference. App access requires signing up.
-              </p>
-            </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Role
+                </label>
+                <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
+                  {(["member", "pro", "admin"] as RosterRole[]).map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      role="radio"
+                      aria-checked={role === r}
+                      onClick={() => setRole(r)}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                        role === r
+                          ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
+                          : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600"
+                      }`}
+                    >
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  For your reference. App access requires signing up.
+                </p>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -479,29 +509,44 @@ export default function AddMemberSheet({ onClose, editMember }: Props) {
               />
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Role
-              </label>
-              <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
-                {(["member", "pro"] as InviteRole[]).map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    role="radio"
-                    aria-checked={role === r}
-                    onClick={() => setRole(r)}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
-                      role === r
-                        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
-                        : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600"
-                    }`}
-                  >
-                    {r.charAt(0).toUpperCase() + r.slice(1)}
-                  </button>
-                ))}
+            {/* Phase 34A4A: add_roster_member_and_invite (0134) rejects a
+                Staff caller requesting anything but 'member' — picker
+                hidden/fixed the same way as the roster-form Role field. */}
+            {isStaffCaller ? (
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Role
+                </label>
+                <p className="mt-1.5 text-sm text-gray-700 dark:text-gray-300">Member</p>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+                  Staff can only add Members. An Admin can promote this member later.
+                </p>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Role
+                </label>
+                <div className="mt-1.5 flex gap-2" role="radiogroup" aria-label="Role">
+                  {(["member", "pro"] as InviteRole[]).map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      role="radio"
+                      aria-checked={role === r}
+                      onClick={() => setRole(r)}
+                      className={`flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                        role === r
+                          ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-900 dark:border-gray-100"
+                          : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600"
+                      }`}
+                    >
+                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">

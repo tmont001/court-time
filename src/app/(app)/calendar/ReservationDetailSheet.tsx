@@ -68,6 +68,17 @@ interface Props {
   // display-mode signal, not an authorization source, and must never be
   // used to derive it.
   isAdmin:        boolean;
+  // Phase 34A4A: admin+staff (isOperator) — matches roster_members RLS
+  // (roster_members_select_admin, 0132). Deliberately separate from
+  // isAdmin: this gates only the no-account Member name lookup below, not
+  // canEditMaintenance, which remains admin-only exactly as before.
+  canSeeRosterIdentity: boolean;
+  // Phase 34A4A: admin+staff (isOperator) — matches update_member_
+  // reservation's own role check (0132: v_role in ('admin','staff')).
+  // Gates canEdit for reason='member_booking' only. Deliberately separate
+  // from isAdmin: canEditMaintenance (maintenance/admin blocks) stays
+  // isAdmin-only, unchanged.
+  canManageMemberReservation: boolean;
   onClose:        () => void;
   onCancelled:    () => void;
   // Phase 30B1: fired after a successful admin edit.
@@ -88,7 +99,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, isAdmin, onClose, onCancelled, onUpdated, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -115,14 +126,15 @@ export default function ReservationDetailSheet({
       return;
     }
 
-    if (reservation.roster_member_id && isAdmin) {
+    if (reservation.roster_member_id && canSeeRosterIdentity) {
       // Phase 33C2: staff-created no-account-Member booking — owner_user_id
       // is null by design (0108's locked identity model). The Member's name
       // comes from roster_members via roster_member_id instead. This is a
       // durable Member identity, never a Guest — never relabeled as one.
-      // roster_members has admin-only RLS (0056), so this fetch is only
-      // attempted in admin mode, matching isAdmin — the same gate used by
-      // the booking-flow Member picker.
+      // roster_members has operator-only RLS (roster_members_select_admin,
+      // widened admin+staff by 0132), so this fetch is only attempted when
+      // canSeeRosterIdentity (isOperator) holds — the same gate used by the
+      // booking-flow Member picker.
       supabase
         .from("roster_members")
         .select("first_name, last_name")
@@ -138,7 +150,7 @@ export default function ReservationDetailSheet({
     // admin-only roster_members read access — resolve to a neutral, honest
     // state rather than leaving the sheet stuck on "Loading…" forever.
     setMemberDisplay({ name: "Club Member", claimed: false });
-  }, [reservation.id, reservation.owner_user_id, reservation.roster_member_id, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [reservation.id, reservation.owner_user_id, reservation.roster_member_id, canSeeRosterIdentity]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived display values ────────────────────────────────────────────────
 
@@ -156,15 +168,15 @@ export default function ReservationDetailSheet({
 
   const ownerName = memberDisplay ? memberDisplay.name : "Loading…";
 
-  // Admin may edit only a confirmed member_booking reservation whose start
-  // is still in the future. Member and Pro owners never see Edit — the
-  // first reservation-edit release is admin-only. Authorization comes
-  // exclusively from the explicit isAdmin prop, never from whether
+  // Admin or Staff (canManageMemberReservation) may edit only a confirmed
+  // member_booking reservation whose start is still in the future. Member
+  // and Pro owners never see Edit. Authorization comes exclusively from
+  // the explicit canManageMemberReservation prop, never from whether
   // onMemberCancel happens to be supplied — callback presence is a
-  // display-mode signal (member-cancel mode vs. admin mode), not proof of
-  // role, and must never substitute for a real authorization check.
+  // display-mode signal (member-cancel mode vs. operator mode), not proof
+  // of role, and must never substitute for a real authorization check.
   const canEdit =
-    isAdmin &&
+    canManageMemberReservation &&
     reservation.reason === "member_booking" &&
     reservation.status === "confirmed" &&
     new Date(reservation.starts_at) > new Date();

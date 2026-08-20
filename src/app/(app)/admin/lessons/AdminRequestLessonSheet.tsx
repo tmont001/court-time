@@ -44,7 +44,7 @@ interface Props {
   // p_pro_id = auth.uid() for a Pro caller, so proId is fixed to viewerId
   // and viewerName stands in for the pro-list lookup a Pro cannot make
   // (get_admin_club_pros/roster pro list remain admin-only).
-  viewerRole:           "admin" | "pro";
+  viewerRole:           "admin" | "pro" | "staff";
   viewerId:             string;
   viewerName?:          string;
   // Phase 33G2: Calendar → Lesson prefill — when staff pick a court/time

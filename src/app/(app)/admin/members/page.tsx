@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { isOperator } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import MembersClient from "./MembersClient";
 
@@ -14,8 +15,11 @@ export default async function AdminMembersPage() {
   // Phase 26C1: profile.role reflects the caller's role in their ACTIVE
   // club_memberships row; get_members()/get_roster_members()/
   // get_club_invites() below are similarly scoped to that active club.
+  // Phase 34A4: admin+staff (isOperator), matching migration 0132's
+  // widening of those same three RPCs — never Pro, which has no access
+  // to any of them.
   const profile  = await getAuthProfile();
-  if (profile?.role !== "admin") redirect("/calendar");
+  if (!isOperator(profile?.role)) redirect("/calendar");
 
   const supabase = await createClient();
 
@@ -55,6 +59,7 @@ export default async function AdminMembersPage() {
             currentUserId={user.id}
             membersError={membersResult.error?.message ?? null}
             invitesError={invitesResult.error?.message ?? null}
+            userRole={profile?.role ?? "member"}
           />
         </div>
       </div>

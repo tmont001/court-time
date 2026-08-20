@@ -51,9 +51,10 @@ interface Court {
 
 // Phase 33C2 completion: one roster identity option for the Member picker —
 // every club Member, whether or not they have an authenticated account.
-// Sourced directly from roster_members (admin-only RLS, same-club only —
-// this sheet only ever renders for isAdmin, matching ReservationDetailSheet's
-// own canEdit gate), mirroring CalendarShell's booking-flow picker exactly.
+// Sourced directly from roster_members (operator-only RLS, same-club only —
+// this sheet only ever renders for canManageMemberReservation, matching
+// ReservationDetailSheet's own canEdit gate), mirroring CalendarShell's
+// booking-flow picker exactly.
 interface RosterMemberOption {
   id:      string;
   name:    string;
@@ -154,10 +155,11 @@ export default function EditReservationSheet({
   const [reloading, setReloading]       = useState(false);
 
   // ── Roster fetch ──────────────────────────────────────────────────────────
-  // roster_members has admin-only, same-club RLS (roster_members_select_
-  // admin, 0056) — this sheet only ever renders for isAdmin (gated by
-  // ReservationDetailSheet's canEdit), so this select is always scoped
-  // correctly and structurally cannot return another club's roster.
+  // roster_members has operator-only, same-club RLS (roster_members_select_
+  // admin, widened admin+staff by 0132) — this sheet only ever renders for
+  // canManageMemberReservation (gated by ReservationDetailSheet's canEdit),
+  // so this select is always scoped correctly and structurally cannot
+  // return another club's roster.
   useEffect(() => {
     let cancelled = false;
     (async () => {

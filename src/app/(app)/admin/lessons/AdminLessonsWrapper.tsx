@@ -5,6 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import LessonsTab from "@/app/(app)/events/LessonsTab";
 import AdminRequestLessonSheet from "./AdminRequestLessonSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
+import { isOperator } from "@/lib/auth/roles";
 
 // Phase 33D1: sourced from roster_members, not profiles — includes both
 // claimed and no-account Members. Mirrors CalendarShell's RosterMemberOption.
@@ -30,7 +31,7 @@ interface Props {
   courts:        Court[];
   userId:        string;
   userName:      string;
-  userRole:      "admin" | "pro";
+  userRole:      "admin" | "pro" | "staff";
   clubId:        string;
   clubTimezone:  string;
   pros:          ClubPro[];
@@ -104,7 +105,7 @@ export default function AdminLessonsWrapper({
         userRole={userRole}
         clubId={clubId}
         clubTimezone={clubTimezone}
-        pros={userRole === "admin" ? pros : undefined}
+        pros={isOperator(userRole) ? pros : undefined}
         onCreateRequest={() => setCreateSheetOpen(true)}
       />
 
