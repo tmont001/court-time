@@ -20,6 +20,7 @@ import {
   markAttendanceGuest,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 import {
   ACTION_BUTTON_SECONDARY,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
@@ -99,7 +100,13 @@ function formatExpiryTime(isoString: string, tz?: string): string {
 
 export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezone, userRole, readOnly = false, refreshTick, onRosterChange }: Props) {
   const supabase = useMemo(() => createClient(), []);
-  const isAdmin  = userRole === "admin" || userRole === "pro";
+  // Phase 34A: admin+pro+staff (canAccessOperationsWorkspace) — every RPC
+  // this flag gates (admin_add_roster_participant, admin_remove_*,
+  // admin_force_confirm*, admin_offer_spot*, admin_expire_offer*,
+  // mark_attendance*) was widened to the same three roles with no
+  // ownership restriction (0136), so this single choke point widens
+  // identically for all of them.
+  const isAdmin  = canAccessOperationsWorkspace(userRole);
 
   // ── Roster state ──────────────────────────────────────────────────────────
   const [rows, setRows]               = useState<RosterRow[]>([]);
@@ -248,8 +255,9 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   // club_memberships removal — see 0081's trg_project_membership_to_profile)
   // or left the claimed source empty for a Pro caller (get_members is
   // admin-only). get_event_eligible_members is authorized identically to
-  // every other Event roster-management RPC (admin OR pro, same club), so
-  // both roles now get a correct, identical candidate list.
+  // every other Event roster-management RPC (admin, pro, or staff — same
+  // club; 0136), so every operator role gets a correct, identical
+  // candidate list.
   async function openAddMember() {
     setAddMemberOpen(true);
     setAddMemberError(null);

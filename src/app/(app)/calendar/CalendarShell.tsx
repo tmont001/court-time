@@ -13,6 +13,7 @@ import { createReservation, adminCreateMemberReservation, cancelMemberReservatio
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -339,12 +340,17 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [bookingDuration, setBookingDuration] = useState<30 | 60 | 90 | 120>(60);
   const [bookingError, setBookingError]   = useState<string | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
-  // Phase 33C2: admin-only "book for a Member" state. isAdmin gates every
-  // one of these both in the picker/fields' rendering below AND in
+  // Phase 33C2/34A4A: "book for a Member" state. canBookForMember gates
+  // every one of these both in the picker/fields' rendering below AND in
   // handleConfirmBooking's branch — a normal member never sees this state
   // populated and createReservation's call shape below is byte-for-byte
-  // unchanged from before this checkpoint.
-  const isAdmin = userRole === "admin";
+  // unchanged from before this checkpoint. Admin + Staff (isOperator),
+  // never Pro — Pro's calendar behavior is unchanged; Pro has no
+  // book-for-Member authority before or after this fix. The DB side
+  // (admin_create_member_reservation and roster_members_select_admin's
+  // RLS) was already widened to admin+staff in 0132 — this flag is what
+  // was still gating the FRONTEND path to it.
+  const canBookForMember = isOperator(userRole);
   const [rosterMembers, setRosterMembers]             = useState<RosterMemberOption[]>([]);
   const [rosterLoading, setRosterLoading]             = useState(false);
   const [rosterSearch, setRosterSearch]                 = useState("");
@@ -373,8 +379,15 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [creatingBlock, setCreatingBlock]             = useState(false);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
-  // Admin/pro only: maps owner_user_id → display name for non-own member bookings.
+  // Operator (admin/pro/staff): maps owner_user_id → display name for
+  // non-own, claimed-Member bookings.
   const [ownerNames, setOwnerNames]                   = useState<Map<string, string>>(new Map());
+  // Phase 34A4A: maps roster_member_id → display name for no-account
+  // Members (owner_user_id null) — the only identity these rows carry.
+  // Operator (admin/staff) only, matching roster_members RLS; Pro never
+  // resolved these before this checkpoint either, so this is not a
+  // behavior change for Pro.
+  const [rosterNames, setRosterNames]                 = useState<Map<string, string>>(new Map());
 
   // ── Date pills ────────────────────────────────────────────────────────────
   // Re-centered on selectedDate: shows 6 days before and 6 after (13 total).
@@ -619,11 +632,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     return false;
   }, [bookingSlot, bookingDuration, occupiedSlots]);
 
-  // ── Phase 33C2: admin roster-member picker ────────────────────────────────
-  // roster_members has admin-only, same-club RLS (roster_members_select_
-  // admin, 0056) — this select is scoped by that policy alone, so it is
-  // structurally impossible for it to return another club's roster or to
-  // succeed at all for a non-admin caller, independent of the isAdmin gate
+  // ── Phase 33C2: operator roster-member picker ─────────────────────────────
+  // roster_members has same-club RLS scoped to current_user_is_operator()
+  // (roster_members_select_admin, widened admin+staff by 0132) — this
+  // select is scoped by that policy alone, so it is structurally
+  // impossible for it to return another club's roster or to succeed at all
+  // for a non-operator caller, independent of the canBookForMember gate
   // below (which only controls whether the UI ever calls this).
   const fetchRosterMembers = useCallback(async () => {
     setRosterLoading(true);
@@ -644,12 +658,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     setRosterLoading(false);
   }, [supabase, clubId]);
 
-  // Fresh fetch + reset every time a NEW slot is opened for booking (admin
-  // only) — bookingSlot is a new object reference on every slot click, so
-  // this never re-fires for the same open sheet, and always starts a new
-  // booking attempt with a clean Member selection and empty optional fields.
+  // Fresh fetch + reset every time a NEW slot is opened for booking
+  // (Admin/Staff operators only) — bookingSlot is a new object reference on
+  // every slot click, so this never re-fires for the same open sheet, and
+  // always starts a new booking attempt with a clean Member selection and
+  // empty optional fields.
   useEffect(() => {
-    if (bookingSlot && isAdmin) {
+    if (bookingSlot && canBookForMember) {
       fetchRosterMembers();
       setSelectedRosterMemberId(null);
       setRosterSearch("");
@@ -659,7 +674,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       setBookingNotes("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingSlot, isAdmin]);
+  }, [bookingSlot, canBookForMember]);
 
   const filteredRosterMembers = useMemo(() => {
     const q = rosterSearch.trim().toLowerCase();
@@ -704,9 +719,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       // did while loadingRes was true, just now also through this second
       // lookup.
       //
-      // For admin/pro: fetch display names for other members' court reservations.
-      // RLS (profiles_select_same_club) already limits results to the same club.
-      if (userRole === "admin" || userRole === "pro") {
+      // For admin/pro/staff (canAccessOperationsWorkspace): fetch display
+      // names for other members' court reservations. RLS (profiles_select_
+      // same_club) already limits results to the same club — that policy
+      // has no role restriction of its own, so widening this gate from
+      // admin/pro to also include Staff changes nothing at the data layer.
+      if (canAccessOperationsWorkspace(userRole)) {
         // Phase 33C2: owner_user_id is null for a staff-created no-account-
         // Member booking — excluded here (nothing to look up in profiles),
         // not just filtered by userId/reason as before this checkpoint.
@@ -730,6 +748,36 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           setOwnerNames(map);
         } else {
           setOwnerNames(new Map());
+        }
+
+        // Phase 34A4A: a no-account Member booking (owner_user_id null) has
+        // no profiles row at all — its only durable identity is
+        // roster_member_id → roster_members. roster_members RLS
+        // (roster_members_select_admin, 0132) is operator-only
+        // (admin+staff) — Pro gets an empty result here, unchanged from
+        // its pre-existing behavior (it never resolved these names either).
+        if (isOperator(userRole)) {
+          const rosterIds = [...new Set(
+            rows
+              .filter((r): r is typeof r & { roster_member_id: string } =>
+                r.owner_user_id === null && r.roster_member_id !== null && r.reason === "member_booking")
+              .map(r => r.roster_member_id)
+          )];
+          if (rosterIds.length > 0) {
+            const { data: rosterRows } = await supabase
+              .from("roster_members")
+              .select("id, first_name, last_name")
+              .in("id", rosterIds);
+            const rMap = new Map<string, string>();
+            for (const rm of rosterRows ?? []) {
+              const f = rm.first_name ?? "";
+              const l = rm.last_name  ?? "";
+              rMap.set(rm.id, l ? `${f} ${l[0]}.` : f || "Member");
+            }
+            setRosterNames(rMap);
+          } else {
+            setRosterNames(new Map());
+          }
         }
       }
 
@@ -810,7 +858,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleSlotTap(court: Court, slotIdx: number) {
     const slotStart = new Date(dayStartMs + (startHour * 60 + slotIdx * 30) * 60_000);
-    if (userRole === "pro" || userRole === "admin") {
+    // Phase 34A: admin+pro+staff (canAccessOperationsWorkspace) — Staff now
+    // reaches the same "Book Court / Create Event / Book Lesson" menu Pro
+    // already has (the Maintenance Block option inside stays admin-only,
+    // unchanged). Previously Staff fell through to the plain-Member
+    // self-booking branch below, unable to reach Create Event/Book Lesson
+    // from this entry point at all.
+    if (canAccessOperationsWorkspace(userRole)) {
       // Show the role-based action menu.
       setPendingSlotAction({ court, slotStart, slotIdx });
     } else {
@@ -917,12 +971,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   async function handleConfirmBooking() {
     if (!bookingSlot) return;
 
-    // Phase 33C2: admin must pick a Member before confirming. A normal
-    // member never reaches this branch — isAdmin is derived from the
-    // server-supplied userRole prop, and the picker UI itself only renders
-    // for isAdmin, so this can only trigger for an admin who has not yet
-    // made a selection.
-    if (isAdmin && !selectedRosterMemberId) {
+    // Phase 33C2/34A4A: an operator (Admin or Staff) must pick a Member
+    // before confirming. A normal member never reaches this branch —
+    // canBookForMember is derived from the server-supplied userRole prop,
+    // and the picker UI itself only renders for canBookForMember, so this
+    // can only trigger for an operator who has not yet made a selection.
+    if (canBookForMember && !selectedRosterMemberId) {
       setBookingError("Select the Member this reservation is for.");
       return;
     }
@@ -934,9 +988,10 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
 
     // Member self-service path is byte-for-byte unchanged from before this
     // checkpoint: same four params, same createReservation call, no new
-    // fields. Only the admin path (isAdmin === true) gains the Member
-    // picker and optional format/player-count/guest-names/notes fields.
-    const { error } = isAdmin
+    // fields. Only the operator path (canBookForMember === true) gains the
+    // Member picker and optional format/player-count/guest-names/notes
+    // fields.
+    const { error } = canBookForMember
       ? await adminCreateMemberReservation({
           p_court_id:         bookingSlot.court.id,
           p_starts_at:        bookingSlot.slotStart.toISOString(),
@@ -1312,17 +1367,25 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                         const isLesson  = res.reason === "pro_lesson";
                         const isBlocked = !isLesson && res.reason !== "member_booking";
                         const isAdmin   = userRole === "admin";
+                        // Phase 34A4A: Staff is a generic operator (like Admin — never
+                        // scoped to "their own" bookings the way Pro is) for the purposes
+                        // of seeing WHO a booking belongs to. Deliberately isOperator
+                        // (admin+staff), not canAccessOperationsWorkspace (admin+pro+
+                        // staff) — Pro's visibility into another Pro's lesson note stays
+                        // exactly as restrictive as before (isOwn-only), unchanged.
+                        const canSeeLessonIdentity = isOwn || isOperator(userRole);
                         const blockPos  = { top: top + 1, height, left: 2, right: 2 };
 
                         // Lesson blocks are managed via /lessons or /events, not the calendar —
                         // except that, for an eligible viewer, clicking navigates into that
                         // existing surface (Phase 30G) rather than opening any in-calendar form.
                         // Render with the same event-card structure: items-start pt-1 px-1.5 font-semibold.
-                        // Privacy: the pro who owns the reservation (isOwn) or an admin may see the
-                        // note ("Pro lesson with [member name]"). All other viewers see "Private Lesson".
+                        // Privacy: the pro who owns the reservation (isOwn), an admin, or (Phase
+                        // 34A4A) Staff may see the note ("Pro lesson with [member name]"). All
+                        // other viewers see "Private Lesson".
                         if (isLesson) {
                           const note = (res.notes ?? "").trim();
-                          const lessonLabel = (isOwn || isAdmin) ? (note || "Private Lesson") : "Private Lesson";
+                          const lessonLabel = canSeeLessonIdentity ? (note || "Private Lesson") : "Private Lesson";
                           // Admin (any), or the assigned Pro (owner) only — never another Pro,
                           // never a Member. Matches only a future, still-confirmed reservation;
                           // the destination page independently re-derives this from its own
@@ -1350,7 +1413,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                           );
                         }
 
-                        const isClickable = isAdmin || (isOwn && !isBlocked);
+                        // Phase 34A4A: a maintenance/admin block stays admin-only to open
+                        // (preserving existing behavior exactly — Staff gets no maintenance
+                        // access at all); a member_booking reservation is openable by any
+                        // operator (Admin or Staff, isOperator) or its own owner, matching
+                        // update_member_reservation/admin_cancel_reservation_v2's own
+                        // already-widened (0132) admin+staff role check.
+                        const isClickable = isBlocked ? isAdmin : (isOperator(userRole) || isOwn);
                         const blockCls = `absolute rounded text-[10px] font-medium px-1 overflow-hidden flex items-center ${
                           isClickable ? "cursor-pointer" : "pointer-events-none"
                         } ${
@@ -1367,23 +1436,36 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                           } : {}),
                         };
                         const note = (res.notes ?? "").trim();
+                        // Phase 34A4A: this pair was already Pro-unrestricted (any Pro, not
+                        // just an owning one, per the existing comments below) — widened to
+                        // canAccessOperationsWorkspace (admin+pro+staff) so Staff gets the
+                        // same front-desk operational visibility Pro already has, without
+                        // changing Admin or Pro's existing behavior at all.
+                        const canSeeOperationalIdentity = canAccessOperationsWorkspace(userRole);
                         let blockLabel: string;
                         if (isBlocked) {
                           // Maintenance/admin blocks: check visibility before isOwn so an admin
                           // who created the block never sees "You" instead of the reason.
-                          if (userRole === "admin" || userRole === "pro") {
+                          if (canSeeOperationalIdentity) {
                             blockLabel = note || "Blocked";
                           } else {
                             blockLabel = (res.show_notes_to_members && note) ? note : "Blocked";
                           }
                         } else if (isOwn) {
                           blockLabel = "You";
-                        } else if (userRole === "admin" || userRole === "pro") {
-                          // Phase 33C2: owner_user_id is null for a
-                          // staff-created no-account-Member booking — falls
-                          // through to the generic "Member" label below,
-                          // same as any other lookup miss.
-                          blockLabel = (res.owner_user_id ? ownerNames.get(res.owner_user_id) : undefined) ?? "Member";
+                        } else if (canSeeOperationalIdentity) {
+                          // Phase 34A4A: owner_user_id (claimed Members, via
+                          // ownerNames) and roster_member_id (no-account
+                          // Members, via rosterNames) are two disjoint
+                          // identity sources for the same "who is this
+                          // booking for" question — try both; "Member" only
+                          // if neither resolves (e.g. a genuinely malformed/
+                          // legacy row, or a viewer without roster_members
+                          // access such as Pro).
+                          blockLabel =
+                            (res.owner_user_id ? ownerNames.get(res.owner_user_id) : undefined) ??
+                            (res.roster_member_id ? rosterNames.get(res.roster_member_id) : undefined) ??
+                            "Member";
                         } else {
                           blockLabel = "";
                         }
@@ -1459,8 +1541,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           </div>
         </div>
 
-        {/* ── FAB — pro/admin only, anchored to the calendar content area ─ */}
-        {(userRole === "pro" || userRole === "admin") && (
+        {/* ── FAB — admin/pro/staff, anchored to the calendar content area ─ */}
+        {canAccessOperationsWorkspace(userRole) && (
           <CalendarFab
             userRole={userRole}
             onCreateEvent={() => setCreatingEvent(true)}
@@ -1588,6 +1670,15 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           // Edit Block/Edit eligibility — never inferred from whether
           // onMemberCancel happens to be supplied below.
           isAdmin={userRole === "admin"}
+          // Phase 34A4A: separate from isAdmin — admin+staff (isOperator),
+          // matching roster_members RLS, gates only the no-account Member
+          // name lookup inside the sheet.
+          canSeeRosterIdentity={isOperator(userRole)}
+          // Phase 34A4A: admin+staff (isOperator) — matches update_member_
+          // reservation/admin_cancel_reservation_v2's own already-widened
+          // (0132) role check. Gates canEdit (member_booking only);
+          // canEditMaintenance stays on isAdmin, unchanged.
+          canManageMemberReservation={isOperator(userRole)}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onUpdated={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
@@ -1638,9 +1729,10 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
               {sheetStartLabel} – {sheetEndLabel}
             </p>
 
-            {/* Phase 33C2: admin-only Member picker. A normal member never
-                sees this — the self-service flow below is unaffected. */}
-            {isAdmin && (
+            {/* Phase 33C2/34A4A: operator (Admin/Staff) Member picker. A
+                normal member never sees this — the self-service flow below
+                is unaffected. */}
+            {canBookForMember && (
               <div className="mt-4">
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                   Member
@@ -1703,11 +1795,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
               ))}
             </div>
 
-            {/* Phase 33C2: admin-only optional fields, matching the existing
-                RPC parameters that create_reservation/admin_create_member_
-                reservation already both accept — not previously exposed in
-                either UI. Self-service booking gains none of these. */}
-            {isAdmin && (
+            {/* Phase 33C2/34A4A: operator-only (Admin/Staff) optional fields,
+                matching the existing RPC parameters that create_reservation/
+                admin_create_member_reservation already both accept — not
+                previously exposed in either UI. Self-service booking gains
+                none of these. */}
+            {canBookForMember && (
               <div className="mt-4 space-y-3">
                 <div>
                   <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
@@ -1781,7 +1874,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             )}
 
             <button
-              disabled={bookingConflict || bookingLoading || (isAdmin && !selectedRosterMemberId)}
+              disabled={bookingConflict || bookingLoading || (canBookForMember && !selectedRosterMemberId)}
               onClick={handleConfirmBooking}
               className="mt-5 w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40"
             >

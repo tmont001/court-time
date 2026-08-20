@@ -15,6 +15,7 @@ import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
 import { generateProgramSessions, type GenerateResult } from "./programsActions";
 import { mapProgramError } from "./programErrors";
+import { isOperator } from "@/lib/auth/roles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,7 +98,9 @@ export default function ProgramPreviewSheet({
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
-  const canManage = userRole === "admin" || (userRole === "pro" && programCreatedBy === userId);
+  // Phase 34A: widened admin -> isOperator (admin+staff); Pro's existing
+  // owner-scoped access is unchanged.
+  const canManage = isOperator(userRole) || (userRole === "pro" && programCreatedBy === userId);
   const isDraft   = programStatus === "draft";
   const showEditDraft = isDraft && canManage;
   // Phase 33G4: this sheet only ever previews schedule-rule occurrences and

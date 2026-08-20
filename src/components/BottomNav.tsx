@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 import ClubMembershipList from "./ClubMembershipList";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -89,13 +90,16 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const canSwitch = memberships.length > 1;
 
-  const isAdminOrPro = userRole === "admin" || userRole === "pro";
-  const showCalendarTab = isAdminOrPro || memberSelfService;
+  // Phase 34A: admin+pro+staff — the same "workspace" breadth Pro's tab set
+  // already had; Staff now gets the identical Calendar/Lessons tabs Pro
+  // has, without changing Pro's own behavior at all.
+  const isWorkspaceRole = canAccessOperationsWorkspace(userRole);
+  const showCalendarTab = isWorkspaceRole || memberSelfService;
 
   const mainTabs: Array<{ label: string; href: string; Icon: () => React.ReactElement }> = [
     ...(showCalendarTab ? [{ label: "Calendar", href: "/calendar", Icon: CalendarIcon }] : []),
     { label: "Events",   href: "/events",         Icon: EventsIcon   },
-    ...(isAdminOrPro ? [{ label: "Lessons", href: "/admin/lessons", Icon: LessonsIcon }] : []),
+    ...(isWorkspaceRole ? [{ label: "Lessons", href: "/admin/lessons", Icon: LessonsIcon }] : []),
     { label: "Bookings", href: "/my-schedule",   Icon: ScheduleIcon },
   ];
 
@@ -107,6 +111,15 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
         { label: "Club Settings", href: "/admin/settings",        exact: false },
         { label: "Audit Log",     href: "/admin/audit-log",       exact: false },
         { label: "Reports",       href: "/admin/reports",         exact: false },
+        { label: "Profile",       href: "/profile",               exact: true  },
+        { label: "Notifications", href: "/profile/notifications", exact: true  },
+        { label: "Security",      href: "/profile/security",      exact: true  },
+      ]
+    // Phase 34A: admin+staff (isOperator), never Pro — Members/roster
+    // management has always been an operator (not provider) capability.
+    : isOperator(userRole)
+    ? [
+        { label: "Members",       href: "/admin/members",         exact: false },
         { label: "Profile",       href: "/profile",               exact: true  },
         { label: "Notifications", href: "/profile/notifications", exact: true  },
         { label: "Security",      href: "/profile/security",      exact: true  },

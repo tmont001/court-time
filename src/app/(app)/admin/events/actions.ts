@@ -7,6 +7,7 @@ import { dispatchEventNotification, dispatchWaitlistNotification } from "@/lib/n
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { ADMIN_EVENT_SELECT, mapAdminEventRow } from "./adminEventRow";
 import type { RawAdminEventRow, AdminEventRow } from "./adminEventRow";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,12 @@ export async function fetchMoreAdminEvents(
     .single();
 
   if (!profile?.club_id) return { events: [], error: "Profile not found." };
-  if (profile.role !== "admin" && profile.role !== "pro") {
+  // Phase 34A: predates the isOperator/canAccessOperationsWorkspace
+  // refactor — this inline check was never widened alongside the RPCs it
+  // gates access to (get_admin_club_events-equivalent select below), which
+  // is why Staff could archive/unarchive an Event (0136) but couldn't load
+  // the Archived view or Load More at all.
+  if (!canAccessOperationsWorkspace(profile.role)) {
     return { events: [], error: "Access denied." };
   }
 

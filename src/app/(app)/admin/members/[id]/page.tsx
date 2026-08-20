@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { isOperator } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import MemberDetailClient, {
@@ -21,8 +22,10 @@ export default async function MemberDetailPage({ params }: Props) {
 
   // Phase 26C1: profile.role/activeClubId reflect the caller's ACTIVE
   // club_memberships row, not legacy profiles.role/club_id.
+  // Phase 34A4: admin+staff (isOperator), matching migration 0132's
+  // widening of get_admin_member_detail — never Pro.
   const profile = await getAuthProfile();
-  if (profile?.role !== "admin") redirect("/calendar");
+  if (!profile || !isOperator(profile.role)) redirect("/calendar");
 
   const supabase  = await createClient();
   const clubId    = profile.activeClubId ?? "";

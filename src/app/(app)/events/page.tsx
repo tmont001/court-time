@@ -20,6 +20,7 @@ import { getMemberPrograms, type MemberProgramCard } from "./programEnrollmentAc
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
 import { ADMIN_EVENT_SELECT, mapAdminEventRow, type RawAdminEventRow } from "@/app/(app)/admin/events/adminEventRow";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -83,14 +84,17 @@ export default async function EventsPage({
   const supabase     = await createClient();
 
   const clubId         = profile?.club_id ?? "";
-  const isAdminOrPro   = profile?.role === "admin" || profile?.role === "pro";
+  // Phase 34A: admin+pro+staff (canAccessOperationsWorkspace) — Staff now
+  // reaches the same Manage-tab operational shell Admin/Pro already have.
+  const isAdminOrPro   = canAccessOperationsWorkspace(profile?.role);
   // Phase 27D2 correction: whole-program enrollment (Join/Leave/Accept/Pass)
-  // is a member-only surface — admins and pros keep their existing Upcoming
-  // experience unchanged. current_user_role()'s three-value vocabulary
-  // ('member' | 'pro' | 'admin', see 0081) means this is the exact
-  // complement of isAdminOrPro, but is spelled out explicitly (rather than
-  // reusing !isAdminOrPro) so both the fetch guard below and the render
-  // guard passed to EventsUpcomingClient say plainly what they're gating on.
+  // is a member-only surface — admins, pros, and staff keep their existing
+  // Upcoming experience unchanged. current_user_role()'s four-value
+  // vocabulary ('member' | 'pro' | 'staff' | 'admin', see 0131) means this
+  // is still the exact complement of isAdminOrPro, but is spelled out
+  // explicitly (rather than reusing !isAdminOrPro) so both the fetch guard
+  // below and the render guard passed to EventsUpcomingClient say plainly
+  // what they're gating on.
   const isMember       = profile?.role === "member";
   const now            = new Date().toISOString();
 

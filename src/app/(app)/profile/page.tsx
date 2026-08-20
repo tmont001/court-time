@@ -9,6 +9,7 @@ import ProfileEditForm from "./ProfileEditForm";
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
   pro:    "Pro",
+  staff:  "Staff",
   admin:  "Admin",
 };
 

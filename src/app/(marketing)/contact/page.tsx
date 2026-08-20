@@ -24,7 +24,7 @@ export default function ContactPage() {
           Request a pilot.
         </h1>
         <p className="text-base text-gray-600 dark:text-gray-300 leading-relaxed mb-2">
-          We're personally reviewing each pilot request. Submitting starts a
+          We&apos;re personally reviewing each pilot request. Submitting starts a
           conversation and is not a commitment. Tell us about your club and
           how you would like Court Time to fit into its day-to-day
           operations.

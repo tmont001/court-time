@@ -36,7 +36,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 
 interface Props {
-  userRole: "admin" | "pro";
+  // Phase 34A: widened from "admin" | "pro" to a generic string so a real
+  // "staff" value can be passed without a type error — the options
+  // ternary below already treats anything non-"admin" (Pro today, Staff
+  // now too) identically: Book Lesson + Create Event, no Maintenance
+  // Block. No logic change was needed here, only the type.
+  userRole: string;
   onCreateEvent: () => void;
   onCreateBlock: () => void;
   // Phase 33G2: parity fix — Book Lesson is already a first-class staff

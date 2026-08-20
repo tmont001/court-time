@@ -367,13 +367,18 @@ export default function MemberDetailClient({
                 Lesson Pro: Enabled automatically (Pro role)
               </p>
             )}
-            {member.role === "admin" && (
+            {/* Phase 34A: Staff's provider status is optional, unlike Pro's
+                automatic grant — same toggle as Admin's block below, just
+                labeled "Staff · Pro" to distinguish the combination from a
+                plain Lesson Pro. set_lesson_provider_status (0131) already
+                accepts role in ('admin','staff') as a valid toggle target. */}
+            {(member.role === "admin" || member.role === "staff") && (
               <div className="mt-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   {lessonProviderStatus ? (
                     <>
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent">
-                        Lesson Pro
+                        {member.role === "staff" ? "Staff · Pro" : "Lesson Pro"}
                       </span>
                       <button
                         disabled={lessonProviderLoading}
@@ -401,7 +406,7 @@ export default function MemberDetailClient({
                   </p>
                 )}
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  Enables this admin to receive and manage lesson assignments.
+                  Enables this {member.role} to receive and manage lesson assignments.
                 </p>
                 {member.status !== "active" && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">

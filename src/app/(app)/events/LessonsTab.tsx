@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import LessonProSheet from "./LessonProSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
 import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 
 interface Court {
   id:   string;
@@ -142,8 +143,8 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
     return () => { cancelled = true; };
   }, [lessonIdParam, requests]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Derive unique pro options from request data (for admin filter)
-  const proOptions = userRole === "admin"
+  // Derive unique pro options from request data (operator filter — admin/staff)
+  const proOptions = isOperator(userRole)
     ? Array.from(
         new Map(requests.map(r => [r.pro_id, r])).values()
       ).map(r => ({ id: r.pro_id, name: [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro" }))
@@ -157,26 +158,30 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
 
   const canPropose = (r: ProLessonRequestRow) =>
     r.status === "pending" &&
-    (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
+    (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId));
 
   // Phase 30E: a confirmed lesson (start a reschedule), or an already-
   // pending reschedule proposal (status='proposed' with linked_reservation_id
   // set — revise it again before the member responds). Same authorization
-  // as canPropose — Admin (any) or the assigned Pro only.
+  // as canPropose — Admin/Staff (isOperator) or the assigned Pro only.
   // Phase 33D1: also requires member_claimed — propose_lesson_time's
   // negotiation cycle requires an authenticated Member to respond, and is
   // now server-guarded (member_has_no_account) against a no-account
   // Member's lesson. Admin uses "Edit Lesson" (LessonProSheet) for those
   // instead — a direct edit, not a negotiation.
+  // Phase 34A: widened to isOperator — 0135 lifted propose_lesson_time's
+  // Staff reschedule block, matching this. admin_update_member_lesson
+  // (the no-account-Member direct-edit path, unrelated to this button)
+  // remains admin-only and deferred.
   const canReschedule = (r: ProLessonRequestRow) =>
     r.member_claimed &&
     (r.status === "confirmed" || (r.status === "proposed" && r.linked_reservation_id !== null)) &&
-    (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
+    (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId));
 
   return (
     <div className="px-4 pb-8 pt-2">
-      {/* Staff (Admin or Pro): book a lesson directly */}
-      {(userRole === "admin" || userRole === "pro") && onCreateRequest && (
+      {/* Operator (Admin/Staff) or Pro: book a lesson directly */}
+      {(canAccessOperationsWorkspace(userRole)) && onCreateRequest && (
         <div className="mb-3">
           <button
             onClick={onCreateRequest}
@@ -211,7 +216,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
             All
           </button>
         </div>
-        {userRole === "admin" && proOptions.length > 1 && (
+        {isOperator(userRole) && proOptions.length > 1 && (
           <select
             value={proFilter}
             onChange={e => setProFilter(e.target.value)}
@@ -260,7 +265,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
               </span>
               {statusBadge(r.status)}
             </div>
-            {userRole === "admin" && (
+            {isOperator(userRole) && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mb-0.5">with {proName}</p>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400">

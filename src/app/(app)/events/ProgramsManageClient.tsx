@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import CreateProgramSheet from "./CreateProgramSheet";
 import ProgramPreviewSheet from "./ProgramPreviewSheet";
 import ProgramRosterSheet from "./ProgramRosterSheet";
+import { isOperator } from "@/lib/auth/roles";
 import {
   getPrograms,
   cancelProgram,
@@ -258,7 +259,9 @@ export default function ProgramsManageClient({
         </div>
       ) : (
         programs.map(p => {
-          const canManage = userRole === "admin" || (userRole === "pro" && p.created_by === userId);
+          // Phase 34A: widened admin -> isOperator (admin+staff); Pro's
+          // existing owner-scoped access is unchanged.
+          const canManage = isOperator(userRole) || (userRole === "pro" && p.created_by === userId);
           const isDraft    = p.status === "draft";
           const isArchived = p.archived_at !== null;
 

@@ -93,7 +93,7 @@ export default function TermsPage() {
             policies remains the responsibility of the club.
           </p>
           <p className="mt-2">
-            To the fullest extent permitted by applicable law, Court Time's
+            To the fullest extent permitted by applicable law, Court Time&apos;s
             liability for any claim arising out of or related to the Service is
             limited to the amount paid by the club in the three months preceding
             the claim.

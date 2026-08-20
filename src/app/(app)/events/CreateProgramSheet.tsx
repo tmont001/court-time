@@ -408,7 +408,7 @@ export default function CreateProgramSheet({
                 ))}
               </div>
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                {enrollmentModel === "program" && "Members enroll once for the whole series (Phase 27D)."}
+                {enrollmentModel === "program" && "Members enroll once for the whole series."}
                 {enrollmentModel === "per_session" && "Members join each generated session individually, same as a normal event."}
                 {enrollmentModel === "admin_managed" && "Members cannot self-join — staff manage the roster for every session."}
               </p>
