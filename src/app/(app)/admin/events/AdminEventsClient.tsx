@@ -11,6 +11,7 @@ import { fetchMoreAdminEvents, archiveEventAction, unarchiveEventAction, setEven
 import type { AdminEventRow, ArchiveView } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
+import { isOperator } from "@/lib/auth/roles";
 
 type Court        = { id: string; name: string; display_order: number };
 type StatusFilter = "scheduled" | "cancelled" | "all";
@@ -441,8 +442,9 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             const isArchived     = ev.archived_at !== null;
             const isFuture       = new Date(ev.starts_at).getTime() >= nowMs;
 
-            // Permission: admin can act on any event; pro only on their own.
-            const canActOnEvent = userRole === "admin" ||
+            // Permission: admin/staff (operator) can act on any event; pro
+            // only on their own. Phase 34A: widened admin -> isOperator.
+            const canActOnEvent = isOperator(userRole) ||
               (userRole === "pro" && !!userId && ev.created_by === userId);
 
             // Archive eligibility: past scheduled events or any cancelled event.
@@ -455,8 +457,10 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
             // Cancel eligibility: future scheduled non-archived events only.
             const canCancel = !isArchived && ev.status === "scheduled" && isFuture && canActOnEvent;
 
-            // Edit eligibility: Admin-only in Phase 30C — no Pro exception, unlike cancellation.
-            const canEdit = userRole === "admin" && !isArchived && ev.status === "scheduled" && isFuture;
+            // Edit eligibility: was Admin-only in Phase 30C — no Pro exception,
+            // unlike cancellation. Phase 34A: widened admin -> isOperator; Pro
+            // is still never admitted (update_event, 0136, never gained a Pro path).
+            const canEdit = isOperator(userRole) && !isArchived && ev.status === "scheduled" && isFuture;
 
             // Toggle eligibility: future scheduled non-archived events only.
             const canToggleMemberJoinable = !isArchived && !isCancelled && isFuture && canActOnEvent;

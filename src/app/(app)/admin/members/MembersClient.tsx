@@ -22,12 +22,14 @@ import {
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
   pro:    "Pro",
+  staff:  "Staff",
   admin:  "Admin",
 };
 
 const ROLE_OPTIONS = [
   { value: "member", label: "Member" },
   { value: "pro",    label: "Pro"    },
+  { value: "staff",  label: "Staff"  },
   { value: "admin",  label: "Admin"  },
 ];
 
@@ -43,7 +45,7 @@ const SORT_OPTIONS: { field: SortField; label: string }[] = [
   { field: "status",     label: "Status"     },
 ];
 
-const ROLE_ORDER:   Record<string, number> = { admin: 0, pro: 1, member: 2 };
+const ROLE_ORDER:   Record<string, number> = { admin: 0, staff: 1, pro: 2, member: 3 };
 const STATUS_ORDER: Record<string, number> = { active: 0, suspended: 1, inactive: 2, no_account: 3 };
 
 function cmp(a: string | null, b: string | null): number {
@@ -621,6 +623,7 @@ export default function MembersClient({
               <option value="">All roles</option>
               <option value="member">Member</option>
               <option value="pro">Pro</option>
+              <option value="staff">Staff</option>
               <option value="admin">Admin</option>
             </select>
             <select
@@ -1170,7 +1173,7 @@ function ProfileCard({
           )}
           {m.is_lesson_provider && (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent w-fit">
-              Lesson Pro
+              {m.role === "staff" ? "Staff · Pro" : "Lesson Pro"}
             </span>
           )}
         </div>

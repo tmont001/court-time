@@ -163,21 +163,20 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   // Phase 30E: a confirmed lesson (start a reschedule), or an already-
   // pending reschedule proposal (status='proposed' with linked_reservation_id
   // set — revise it again before the member responds). Same authorization
-  // as canPropose was originally — Admin (any) or the assigned Pro only.
+  // as canPropose — Admin/Staff (isOperator) or the assigned Pro only.
   // Phase 33D1: also requires member_claimed — propose_lesson_time's
   // negotiation cycle requires an authenticated Member to respond, and is
   // now server-guarded (member_has_no_account) against a no-account
   // Member's lesson. Admin uses "Edit Lesson" (LessonProSheet) for those
   // instead — a direct edit, not a negotiation.
-  // Phase 34A4A: deliberately stays literal "admin", NOT isOperator —
-  // confirmed/pending-reschedule Lesson editing remains admin-only until
-  // 34A4B (propose_lesson_time itself, 0133, rejects Staff on this exact
-  // path — v_is_reschedule — so this also keeps the UI from offering an
-  // action the RPC would then reject).
+  // Phase 34A: widened to isOperator — 0135 lifted propose_lesson_time's
+  // Staff reschedule block, matching this. admin_update_member_lesson
+  // (the no-account-Member direct-edit path, unrelated to this button)
+  // remains admin-only and deferred.
   const canReschedule = (r: ProLessonRequestRow) =>
     r.member_claimed &&
     (r.status === "confirmed" || (r.status === "proposed" && r.linked_reservation_id !== null)) &&
-    (userRole === "admin" || (userRole === "pro" && r.pro_id === userId));
+    (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId));
 
   return (
     <div className="px-4 pb-8 pt-2">

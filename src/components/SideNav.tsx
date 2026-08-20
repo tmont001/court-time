@@ -283,6 +283,21 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
             <NavLink href="/my-schedule"   label="Bookings" Icon={ScheduleIcon} pathname={pathname} />
             <NavLink href="/profile"       label="Profile"  Icon={ProfileIcon}  pathname={pathname} />
           </>
+        ) : userRole === "staff" ? (
+          // Phase 34A: Staff's operational surfaces — Calendar (book/manage
+          // Member reservations), Members (roster/CRM), Lessons (propose/
+          // reassign/cancel), Events (Manage tab access pending the Events/
+          // Programs operator-authority migration — read-only until then,
+          // same as a plain Member sees today). No Overview/Courts/Settings/
+          // Audit Log/Reports — those stay admin-only control-plane surfaces.
+          <>
+            <NavLink href="/calendar"      label="Calendar" Icon={CalendarIcon} pathname={pathname} />
+            <NavLink href="/events"        label="Events"   Icon={EventsIcon}   pathname={pathname} />
+            <NavLink href="/admin/lessons" label="Lessons"  Icon={LessonsIcon}  pathname={pathname} />
+            <NavLink href="/admin/members" label="Members"  Icon={MembersIcon}  pathname={pathname} />
+            <NavLink href="/my-schedule"   label="Bookings" Icon={ScheduleIcon} pathname={pathname} />
+            <NavLink href="/profile"       label="Profile"  Icon={ProfileIcon}  pathname={pathname} />
+          </>
         ) : (
           <>
             {memberSelfService && (

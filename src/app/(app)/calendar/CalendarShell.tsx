@@ -858,7 +858,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleSlotTap(court: Court, slotIdx: number) {
     const slotStart = new Date(dayStartMs + (startHour * 60 + slotIdx * 30) * 60_000);
-    if (userRole === "pro" || userRole === "admin") {
+    // Phase 34A: admin+pro+staff (canAccessOperationsWorkspace) — Staff now
+    // reaches the same "Book Court / Create Event / Book Lesson" menu Pro
+    // already has (the Maintenance Block option inside stays admin-only,
+    // unchanged). Previously Staff fell through to the plain-Member
+    // self-booking branch below, unable to reach Create Event/Book Lesson
+    // from this entry point at all.
+    if (canAccessOperationsWorkspace(userRole)) {
       // Show the role-based action menu.
       setPendingSlotAction({ court, slotStart, slotIdx });
     } else {
@@ -1535,8 +1541,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           </div>
         </div>
 
-        {/* ── FAB — pro/admin only, anchored to the calendar content area ─ */}
-        {(userRole === "pro" || userRole === "admin") && (
+        {/* ── FAB — admin/pro/staff, anchored to the calendar content area ─ */}
+        {canAccessOperationsWorkspace(userRole) && (
           <CalendarFab
             userRole={userRole}
             onCreateEvent={() => setCreatingEvent(true)}

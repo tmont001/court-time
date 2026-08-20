@@ -3,6 +3,7 @@
 import { useState } from "react";
 import EventRosterSheet from "@/app/(app)/calendar/EventRosterSheet";
 import { ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
+import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 
 interface Props {
   eventId:      string;
@@ -26,7 +27,9 @@ export default function EventCardClient({
   actionArea,
 }: Props) {
   const [rosterOpen, setRosterOpen] = useState(false);
-  const isAdminOrPro = userRole === "admin" || userRole === "pro";
+  // Phase 34A: admin+pro+staff (canAccessOperationsWorkspace) — matches
+  // EventRosterSheet's own widened capability gate.
+  const isAdminOrPro = canAccessOperationsWorkspace(userRole);
 
   return (
     <>

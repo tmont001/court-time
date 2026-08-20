@@ -262,9 +262,10 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // Phase 30E: an eligible confirmed lesson, or an already-pending
   // reschedule proposal (status='proposed' with linked_reservation_id set)
   // that may be revised again before the member responds. Same
-  // authorization as the original "Propose a Time" action — Admin (any) or
-  // the assigned Pro only.
-  const isAssignedProOrAdmin = userRole === "admin" || (userRole === "pro" && request.pro_id === userId);
+  // authorization as the original "Propose a Time" action — Admin/Staff
+  // (isOperator, 0135 lifted the Staff reschedule block) or the assigned
+  // Pro only.
+  const isAssignedProOrAdmin = isOperator(userRole) || (userRole === "pro" && request.pro_id === userId);
   const isPendingReschedule  = request.status === "proposed" && request.linked_reservation_id !== null;
   // Phase 33D1: propose_lesson_time's negotiation cycle requires an
   // authenticated Member to respond — now server-guarded against a
@@ -272,10 +273,13 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // "Edit Lesson" (canAdminEditDirectly below) for those instead.
   const isRescheduleEligible = isAssignedProOrAdmin && request.member_claimed &&
     (request.status === "confirmed" || isPendingReschedule);
-  // Phase 33D1: admin-only direct edit (Member/Pro/court/time/type/note,
-  // no negotiation) for a no-account Member's confirmed lesson — the one
+  // Phase 33D1: direct edit (Member/Pro/court/time/type/note, no
+  // negotiation) for a no-account Member's confirmed lesson — the one
   // case the existing propose/reschedule cycle structurally cannot serve.
-  const canAdminEditDirectly = userRole === "admin" && !request.member_claimed && request.status === "confirmed";
+  // Phase 34A: widened admin -> isOperator (admin+staff) — matches
+  // admin_update_member_lesson's own widening (0138). Pro is still never
+  // admitted here; this function has never had a Pro path.
+  const canAdminEditDirectly = isOperator(userRole) && !request.member_claimed && request.status === "confirmed";
 
   const startsAt = useMemo(() => {
     const slot = TIME_SLOTS[slotIdx];

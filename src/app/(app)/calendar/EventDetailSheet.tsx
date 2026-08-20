@@ -9,6 +9,7 @@ import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlis
 import { setEventMemberJoinableAction } from "@/app/(app)/admin/events/actions";
 import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -252,10 +253,14 @@ export default function EventDetailSheet({
   // RPC contract exactly — never by roster Host status. create_event has
   // not auto-inserted a host participant row since migration 0058, so a
   // Pro's own events would otherwise never satisfy an isHost-based check.
-  const canCancelEvent = userRole === "admin" || (userRole === "pro" && event.created_by === userId);
-  // Edit is Admin-only in Phase 30C — no Pro exception, unlike cancellation.
-  const canEdit         = userRole === "admin" && event.status === "scheduled" && !isPastEvent;
-  const canViewRoster  = userRole === "admin" || userRole === "pro";
+  // Phase 34A: widened admin -> isOperator (admin+staff) — Pro's existing
+  // owner-scoped behavior is unchanged.
+  const canCancelEvent = isOperator(userRole) || (userRole === "pro" && event.created_by === userId);
+  // Edit was Admin-only in Phase 30C — no Pro exception, unlike
+  // cancellation. Phase 34A: widened admin -> isOperator; Pro is still
+  // never admitted here (update_event, 0136, never gained a Pro path).
+  const canEdit         = isOperator(userRole) && event.status === "scheduled" && !isPastEvent;
+  const canViewRoster  = canAccessOperationsWorkspace(userRole);
   // Phase 33G3: same admin-or-own-Pro-event authorization as canCancelEvent
   // (mirrors AdminEventsClient's canActOnEvent gating for this identical toggle).
   const canToggleMemberJoinable = canCancelEvent && event.status === "scheduled" && !isPastEvent;
@@ -463,7 +468,7 @@ export default function EventDetailSheet({
               Admin-managed
             </span>
           )}
-          {event.program_id && (userRole === "admin" || userRole === "pro") && (
+          {event.program_id && canAccessOperationsWorkspace(userRole) && (
             <a
               href="/events?tab=programs"
               className="inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50"
