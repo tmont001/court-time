@@ -32,6 +32,8 @@ export interface RawAdminEventRow {
   // from a soft-cancelled one (does not).
   event_guests:               Array<{ id: string; status: string }>;
   reservations:               Array<{ court_id: string; status: string; reason: string }> | null;
+  // Phase 34C: required by EditEventSheet's now-folded-in Event Price field.
+  price_amount_cents:        number | null;
 }
 
 export type AdminEventRow = {
@@ -59,6 +61,8 @@ export type AdminEventRow = {
   // Phase 33E2: status distinguishes an active guest (occupies capacity)
   // from a soft-cancelled one (does not).
   event_guests:               Array<{ id: string; status: string }>;
+  // Phase 34C: required by EditEventSheet's now-folded-in Event Price field.
+  price_amount_cents:        number | null;
 };
 
 // Phase 30C2 fix: the exact set of columns every AdminEventRow consumer
@@ -70,7 +74,7 @@ export type AdminEventRow = {
 // event with court_ids undefined and crashed).
 export const ADMIN_EVENT_SELECT = `
   id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
-  archived_at, archived_by, event_type_id, description, updated_at,
+  archived_at, archived_by, event_type_id, description, updated_at, price_amount_cents,
   program_id, program_schedule_rule_id, program_occurrence_date, is_program_exception,
   event_types(key, label, color),
   event_participants(profile_id, role, status),

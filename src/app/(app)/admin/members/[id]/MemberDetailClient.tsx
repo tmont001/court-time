@@ -14,6 +14,8 @@ import {
   type HistoryItem,
 } from "./actions";
 import type { ClubPro } from "@/app/(app)/lessons/actions";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import type { PaymentStateRow } from "@/lib/payments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,13 @@ interface Props {
   // mode here — adminId is only needed to satisfy that prop, never used
   // as a Pro-self-booking identity on this page.
   adminId: string;
+  // Phase 34C — lightweight, read-only financial summary. Keyed by
+  // `${activity_type}:${activity_id}`, matching UpcomingItem's own fields,
+  // so each row can look its own state up directly. This route is
+  // admin-only (isOperator, never Pro) — Record Payment lives on the
+  // domain's own detail sheet (Reservation/Lesson/Event roster), not
+  // duplicated here; this is a summary view, not a management surface.
+  paymentStateByActivityKey: Record<string, PaymentStateRow>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -169,6 +178,7 @@ export default function MemberDetailClient({
   lessonTypes,
   rosterMemberId,
   adminId,
+  paymentStateByActivityKey,
 }: Props) {
   const [tab, setTab] = useState<"upcoming" | "history" | "notes">("upcoming");
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -530,6 +540,13 @@ export default function MemberDetailClient({
                       </p>
                     </>
                   )}
+
+                  {/* Payment state — Phase 34C. Renders nothing when there
+                      is no payment row for this item. */}
+                  <PaymentStateBadge
+                    state={paymentStateByActivityKey[`${item.activity_type}:${item.activity_id}`] ?? null}
+                    className="mt-1.5"
+                  />
                 </div>
               ))}
             </div>

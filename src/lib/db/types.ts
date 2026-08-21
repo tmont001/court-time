@@ -57,6 +57,7 @@ export type Database = {
           waitlist_offer_window_hours: number;  // Phase 18A
           currency: string;  // Phase 34B
           default_court_hourly_rate_cents: number | null;  // Phase 34B
+          payment_mode: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at: string;
           updated_at: string;
         };
@@ -69,6 +70,7 @@ export type Database = {
           waitlist_offer_window_hours?: number;  // Phase 18A
           currency?: string;  // Phase 34B
           default_court_hourly_rate_cents?: number | null;  // Phase 34B
+          payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at?: string;
           updated_at?: string;
         };
@@ -81,6 +83,7 @@ export type Database = {
           waitlist_offer_window_hours?: number;  // Phase 18A
           currency?: string;  // Phase 34B
           default_court_hourly_rate_cents?: number | null;  // Phase 34B
+          payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at?: string;
           updated_at?: string;
         };
@@ -90,6 +93,96 @@ export type Database = {
             columns: ["club_id"];
             isOneToOne: true;
             referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      payments: {
+        // Phase 34C — current-state rollup row per obligation cycle. No
+        // money-movement fields here (those live in payment_events); UI
+        // code should treat this as read-only except through the RPCs.
+        Row: {
+          id: string;
+          club_id: string;
+          domain_type:
+            | "reservation"
+            | "lesson_request"
+            | "event_participant"
+            | "event_guest"
+            | "program_enrollment";
+          domain_id: string;
+          obligation_cycle: number;
+          roster_member_id: string | null;
+          amount_due_cents: number;
+          amount_paid_cents: number;
+          currency: string;
+          status:
+            | "unpaid"
+            | "partially_paid"
+            | "paid"
+            | "overpaid"
+            | "partially_refunded"
+            | "refunded"
+            | "waived"
+            | "void";
+          payment_mode_at_creation: "manual" | "court_time_payments";
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "payments_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      payment_events: {
+        // Phase 34C — append-only canonical ledger. UI code should never
+        // write here directly; always via record_manual_payment /
+        // record_refund / reverse_payment_event / waive_payment /
+        // void_payment_obligation.
+        Row: {
+          id: string;
+          payment_id: string;
+          club_id: string;
+          event_type:
+            | "obligation_created"
+            | "obligation_amount_adjusted"
+            | "manual_payment_recorded"
+            | "refund_recorded"
+            | "reverse_payment_event"
+            | "void_payment_obligation"
+            | "waived";
+          amount_cents: number | null;
+          method:
+            | "cash"
+            | "check"
+            | "card_terminal"
+            | "bank_transfer"
+            | "digital_wallet"
+            | "other"
+            | null;
+          external_reference: string | null;
+          notes: string | null;
+          reverses_event_id: string | null;
+          actor_id: string | null;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "payment_events_payment_id_fkey";
+            columns: ["payment_id"];
+            isOneToOne: false;
+            referencedRelation: "payments";
             referencedColumns: ["id"];
           }
         ];
@@ -3325,6 +3418,56 @@ export type Database = {
           unit_price_amount_cents:  number | null;
           rate_notes:               string | null;
           is_active:                boolean;
+        }[];
+      };
+      update_club_payment_mode: {
+        // Phase 34C. Admin only.
+        Args: { p_payment_mode: "none" | "manual" | "court_time_payments" };
+        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
+      };
+      record_manual_payment: {
+        // Phase 34C. Admin + Staff.
+        Args: {
+          p_payment_id:         string;
+          p_amount_cents:       number;
+          p_method:             "cash" | "check" | "card_terminal" | "bank_transfer" | "digital_wallet" | "other";
+          p_occurred_at?:       string;
+          p_external_reference?: string | null;
+          p_notes?:             string | null;
+        };
+        Returns: Database["public"]["Tables"]["payments"]["Row"];
+      };
+      get_payment_states_for_domains: {
+        // Phase 34C. Sanitized, batched, role-gated read boundary — the
+        // only sanctioned way Member/Pro consume payment state.
+        Args: {
+          p_domain_type: "reservation" | "lesson_request" | "event_participant" | "event_guest" | "program_enrollment";
+          p_domain_ids:  string[];
+        };
+        Returns: {
+          domain_id:                  string;
+          current_payment_id:         string;
+          current_obligation_cycle:   number;
+          current_amount_due_cents:   number;
+          current_amount_paid_cents:  number;
+          current_status:
+            | "unpaid"
+            | "partially_paid"
+            | "paid"
+            | "overpaid"
+            | "partially_refunded"
+            | "refunded"
+            | "waived"
+            | "void";
+          current_currency: string;
+          unresolved_prior: {
+            payment_id: string;
+            obligation_cycle: number;
+            amount_due_cents: number;
+            amount_paid_cents: number;
+            currency: string;
+            status: string;
+          }[];
         }[];
       };
       upsert_lesson_type: {

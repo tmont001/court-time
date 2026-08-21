@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { generateProgramSessions, type GenerateResult } from "./programsActions";
 import { mapProgramError } from "./programErrors";
 import { isOperator } from "@/lib/auth/roles";
+import { ACTION_BUTTON_SECONDARY_COMPACT } from "./actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,14 +203,14 @@ export default function ProgramPreviewSheet({
           <div className="flex items-center justify-between gap-3">
             <button
               onClick={onClose}
-              className="shrink-0 text-sm text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+              className={`shrink-0 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
             >
               ← Back to Programs
             </button>
             {showEditDraft && (
               <button
                 onClick={onEdit}
-                className="shrink-0 text-xs font-medium text-accent hover:brightness-110"
+                className={`shrink-0 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
               >
                 Edit Draft
               </button>

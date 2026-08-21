@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
 import {
   withdrawLessonRequest,
   acceptLessonProposal,
@@ -10,6 +11,8 @@ import {
   cancelLesson,
   type LessonRequestRow,
 } from "./actions";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import type { PaymentStateRow } from "@/lib/payments";
 
 interface Props {
   request:    LessonRequestRow;
@@ -55,6 +58,19 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
   const [cancelReason,    setCancelReason]    = useState("");
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
+
+  // Phase 34C — own read-only payment state via the sanitized batched read
+  // boundary. No Record Payment here — Member never mutates payments.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  useEffect(() => {
+    if (request.status !== "confirmed") return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await fetchPaymentStates("lesson_request", [request.id]);
+      if (!cancelled) setPaymentState(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [request.id, request.status]);
 
   const proName = [request.pro_first_name, request.pro_last_name].filter(Boolean).join(" ") || "Pro";
 
@@ -163,6 +179,11 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
             </p>
           )}
         </div>
+      )}
+
+      {/* Payment state — Phase 34C, own state only, read-only. */}
+      {request.status === "confirmed" && paymentState && (
+        <PaymentStateBadge state={paymentState} className="mb-4" />
       )}
 
       {/* Decline reason */}

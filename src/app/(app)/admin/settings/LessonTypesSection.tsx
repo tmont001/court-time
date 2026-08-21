@@ -344,7 +344,7 @@ function LessonTypeForm({
                   : "bg-white text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 hover:border-accent hover:text-accent"
               }`}
             >
-              {basis === "flat" ? "Flat per lesson" : "Hourly"}
+              {basis === "flat" ? "Total price per lesson" : "Total hourly lesson rate"}
             </button>
           ))}
         </div>
@@ -365,8 +365,8 @@ function LessonTypeForm({
           style={{ width: "8rem" }}
         />
         <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-          Set the total price for this Lesson Type. For semi-private or group Lessons, use Pricing
-          Notes to explain any per-player breakdown.
+          Price is for the entire lesson, not per player. For semi-private or group Lessons, use
+          Pricing Notes to explain any per-player breakdown.
         </p>
       </div>
 

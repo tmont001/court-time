@@ -8,6 +8,7 @@ import SideNav from "@/components/SideNav";
 import MemberWelcomeCard from "@/components/MemberWelcomeCard";
 import StaleActiveClubGuard from "@/components/StaleActiveClubGuard";
 import WaitlistOfferModal, { type WaitlistOfferData } from "@/components/WaitlistOfferModal";
+import ProgramOfferModal, { type ProgramOfferData } from "@/components/ProgramOfferModal";
 
 const INVITE_CODE_RE = /^[0-9a-f]{32}$/;
 
@@ -85,6 +86,74 @@ async function getActiveWaitlistOffer(
   };
 }
 
+// Phase 34C — Program equivalent of getActiveWaitlistOffer above. Whole
+// Program enrollment only (program_enrollments/programs) — Per Session and
+// Admin Managed programs use event_participants offers instead, already
+// covered by getActiveWaitlistOffer.
+async function getActiveProgramOffer(
+  userId: string,
+): Promise<ProgramOfferData | null> {
+  const supabase = await createClient();
+  const { data: rosterMemberId } = await supabase.rpc("current_user_roster_member_id");
+
+  let query = supabase
+    .from("program_enrollments")
+    .select(`
+      program_id,
+      offer_expires_at,
+      programs(
+        id, title, starts_on, ends_on, status, archived_at, club_id,
+        event_types(label, color)
+      )
+    `)
+    .eq("status", "offered")
+    .order("offer_expires_at", { ascending: true })
+    .limit(5);
+  query = rosterMemberId
+    ? query.or(`profile_id.eq.${userId},roster_member_id.eq.${rosterMemberId}`)
+    : query.eq("profile_id", userId);
+
+  const { data } = await query;
+  const now = Date.now();
+
+  type Row = {
+    program_id: string;
+    offer_expires_at: string | null;
+    programs: {
+      id: string; title: string; starts_on: string; ends_on: string;
+      status: string; archived_at: string | null; club_id: string;
+      event_types: { label: string; color: string } | null;
+    } | null;
+  };
+
+  const candidate = ((data ?? []) as unknown as Row[]).find(row =>
+    row.programs &&
+    row.programs.status === "active" &&
+    !row.programs.archived_at &&
+    row.offer_expires_at &&
+    new Date(row.offer_expires_at).getTime() > now
+  );
+  if (!candidate || !candidate.programs) return null;
+
+  const { data: clubRow } = await supabase
+    .from("clubs")
+    .select("timezone")
+    .eq("id", candidate.programs.club_id)
+    .single();
+
+  return {
+    programId:      candidate.programs.id,
+    programTitle:   candidate.programs.title,
+    eventTypeLabel: candidate.programs.event_types?.label ?? "Program",
+    eventTypeColor: candidate.programs.event_types?.color ?? "#6b7280",
+    startsOn:       candidate.programs.starts_on,
+    endsOn:         candidate.programs.ends_on,
+    offerExpiresAt: candidate.offer_expires_at!,
+    clubId:         candidate.programs.club_id,
+    clubTimezone:   clubRow?.timezone ?? "America/New_York",
+  };
+}
+
 export const dynamic = "force-dynamic";
 
 // The authenticated app is never a public marketing surface — every route
@@ -140,6 +209,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const activeWaitlistOffer = profile?.role === "member"
     ? await getActiveWaitlistOffer(user.id)
     : null;
+  const activeProgramOffer = profile?.role === "member"
+    ? await getActiveProgramOffer(user.id)
+    : null;
 
   return (
     <div className={`theme-${themeKey} min-h-screen`}>
@@ -163,6 +235,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           removed — and blocks interaction until reloaded. */}
       <StaleActiveClubGuard activeClubId={activeClubId} />
       {profile?.role === "member" && <WaitlistOfferModal offer={activeWaitlistOffer} />}
+      {profile?.role === "member" && <ProgramOfferModal offer={activeProgramOffer} />}
     </div>
   );
 }

@@ -784,6 +784,8 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
+          isAdmin={userRole === "admin"}
           onClose={() => setEditingEvent(null)}
           onSaved={async () => { setEditingEvent(null); await reloadFromStart(); }}
         />

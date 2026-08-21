@@ -38,6 +38,11 @@ import {
 } from "./programRosterActions";
 import { mapProgramError } from "./programErrors";
 import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT, ACTION_BUTTON_POSITIVE_COMPACT } from "./actionButtonStyles";
+import { isOperator } from "@/lib/auth/roles";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import RecordPaymentSheet from "@/components/RecordPaymentSheet";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,10 @@ interface Props {
   // stale-club preflight guard (Phase 26F1 pattern).
   clubId:        string;
   clubTimezone?: string;
+  // Phase 34C — Record Payment is Admin+Staff only, never Pro (Pro can
+  // reach this sheet for a program they created — see ProgramsManageClient's
+  // own canManage gate — but must not gain financial authority from that).
+  userRole?:     string;
   onClose:       () => void;
 }
 
@@ -101,9 +110,10 @@ function rowKey(row: ProgramRosterRow): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ProgramRosterSheet({ programId, programTitle, clubId, clubTimezone, onClose }: Props) {
+export default function ProgramRosterSheet({ programId, programTitle, clubId, clubTimezone, userRole, onClose }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
+  const canRecordPayment = isOperator(userRole);
 
   // ── Roster state ──────────────────────────────────────────────────────────
   const [rows, setRows]               = useState<ProgramRosterRow[]>([]);
@@ -111,6 +121,30 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
   const [error, setError]             = useState<string | null>(null);
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
+
+  // ── Payment state — Phase 34C ─────────────────────────────────────────────
+  // get_program_roster already returns enrollment_id directly (=
+  // program_enrollments.id = payments.domain_id) — no extra lookup needed,
+  // unlike the Event roster case.
+  const [paymentStateByRowKey, setPaymentStateByRowKey] = useState<Map<string, PaymentStateRow>>(new Map());
+  const [recordPaymentTarget, setRecordPaymentTarget] = useState<{ rowKey: string; title: string } | null>(null);
+
+  async function loadPaymentStates(currentRows: ProgramRosterRow[]) {
+    const enrolledRows = currentRows.filter(r => r.status === "enrolled");
+    const enrollmentIds = enrolledRows.map(r => r.enrollment_id);
+    if (enrollmentIds.length === 0) {
+      setPaymentStateByRowKey(new Map());
+      return;
+    }
+    const { data } = await fetchPaymentStates("program_enrollment", enrollmentIds);
+    const idToRowKey = new Map(enrolledRows.map(r => [r.enrollment_id, rowKey(r)]));
+    const byRowKey = new Map<string, PaymentStateRow>();
+    for (const p of data ?? []) {
+      const rk = idToRowKey.get(p.domain_id);
+      if (rk) byRowKey.set(rk, p);
+    }
+    setPaymentStateByRowKey(byRowKey);
+  }
 
   // ── Remove confirmation state — destructive action requires an explicit
   // second click naming the action, matching the requirement that Remove
@@ -145,7 +179,9 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
           console.error("[ProgramRosterSheet] get_program_roster failed:", rpcError.message);
           setError("Unable to load roster. Please try again.");
         } else {
-          setRows((data as ProgramRosterRow[]) ?? []);
+          const fetched = (data as ProgramRosterRow[]) ?? [];
+          setRows(fetched);
+          loadPaymentStates(fetched);
         }
         setLoading(false);
       });
@@ -327,6 +363,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <ResponsiveSheet
       onClose={onClose}
       variant="panel"
@@ -501,6 +538,25 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </button>
                             </div>
                           )}
+
+                          {/* Payment state — Phase 34C. Whole Program
+                              enrollment obligation only. Admin/Staff only
+                              for Record Payment (never Pro). Renders
+                              nothing when there is no payment row. */}
+                          {paymentStateByRowKey.get(key) && (
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
+                              {canRecordPayment && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
+                                <button
+                                  onClick={() => setRecordPaymentTarget({ rowKey: key, title: displayName(row) })}
+                                  className="text-xs font-semibold text-accent hover:underline"
+                                >
+                                  Record Payment
+                                </button>
+                              )}
+                            </div>
+                          )}
+
                           {rowError && (
                             <p className="text-xs text-red-500 mt-1">{rowError}</p>
                           )}
@@ -708,5 +764,23 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
           </>
         )}
     </ResponsiveSheet>
+
+    {recordPaymentTarget && (() => {
+      const state = paymentStateByRowKey.get(recordPaymentTarget.rowKey);
+      if (!state) return null;
+      return (
+        <RecordPaymentSheet
+          paymentId={state.current_payment_id}
+          clubId={clubId}
+          amountDueCents={state.current_amount_due_cents}
+          amountPaidCents={state.current_amount_paid_cents}
+          currency={state.current_currency}
+          title={recordPaymentTarget.title}
+          onClose={() => setRecordPaymentTarget(null)}
+          onRecorded={() => { setRecordPaymentTarget(null); loadPaymentStates(rows); }}
+        />
+      );
+    })()}
+    </>
   );
 }

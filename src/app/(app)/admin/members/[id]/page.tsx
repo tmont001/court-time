@@ -9,6 +9,7 @@ import MemberDetailClient, {
   type ClientNote,
 } from "./MemberDetailClient";
 import type { HistoryItem } from "./actions";
+import type { PaymentStateRow } from "@/lib/payments";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -75,6 +76,51 @@ export default async function MemberDetailPage({ params }: Props) {
 
   const member       = (detailResult.data as MemberDetail[])[0];
   const upcoming     = (upcomingResult.data ?? []) as UpcomingItem[];
+
+  // Phase 34C — lightweight, read-only financial summary on this Member's
+  // upcoming activity. reservation/lesson activity_id already IS
+  // reservations.id/lesson_requests.id (= payments.domain_id directly);
+  // "event" activity_id is events.id, not event_participants.id, so it
+  // needs one extra resolving read (get_member_upcoming_activity cannot be
+  // widened here — no new migration in this checkpoint).
+  const reservationIds = upcoming.filter(u => u.activity_type === "reservation").map(u => u.activity_id);
+  const lessonIds      = upcoming.filter(u => u.activity_type === "lesson").map(u => u.activity_id);
+  const eventIds       = upcoming.filter(u => u.activity_type === "event").map(u => u.activity_id);
+
+  let eventParticipantIdByEventId = new Map<string, string>();
+  if (eventIds.length > 0 && clubId) {
+    const { data } = await supabase
+      .from("event_participants")
+      .select("id, event_id")
+      .eq("profile_id", id)
+      .eq("status", "confirmed")
+      .in("event_id", eventIds);
+    eventParticipantIdByEventId = new Map((data ?? []).map(p => [p.event_id, p.id]));
+  }
+
+  const [resPayments, lessonPayments, eventPayments] = await Promise.all([
+    reservationIds.length > 0
+      ? supabase.rpc("get_payment_states_for_domains", { p_domain_type: "reservation", p_domain_ids: reservationIds })
+      : Promise.resolve({ data: [] as PaymentStateRow[] }),
+    lessonIds.length > 0
+      ? supabase.rpc("get_payment_states_for_domains", { p_domain_type: "lesson_request", p_domain_ids: lessonIds })
+      : Promise.resolve({ data: [] as PaymentStateRow[] }),
+    eventParticipantIdByEventId.size > 0
+      ? supabase.rpc("get_payment_states_for_domains", { p_domain_type: "event_participant", p_domain_ids: [...eventParticipantIdByEventId.values()] })
+      : Promise.resolve({ data: [] as PaymentStateRow[] }),
+  ]);
+
+  // Keyed by `${activity_type}:${activity_id}` so MemberDetailClient can
+  // look a row's own payment state up directly without knowing about the
+  // event_participants indirection above.
+  const paymentStateByActivityKey = new Map<string, PaymentStateRow>();
+  for (const p of (resPayments.data ?? []) as PaymentStateRow[]) paymentStateByActivityKey.set(`reservation:${p.domain_id}`, p);
+  for (const p of (lessonPayments.data ?? []) as PaymentStateRow[]) paymentStateByActivityKey.set(`lesson:${p.domain_id}`, p);
+  const eventIdByParticipantId = new Map([...eventParticipantIdByEventId.entries()].map(([evId, pId]) => [pId, evId]));
+  for (const p of (eventPayments.data ?? []) as PaymentStateRow[]) {
+    const evId = eventIdByParticipantId.get(p.domain_id);
+    if (evId) paymentStateByActivityKey.set(`event:${evId}`, p);
+  }
   const historyItems = (historyResult.data ?? []) as HistoryItem[];
   const notes        = (notesResult.data ?? []) as ClientNote[];
   const timezone     = (clubResult as { data: { timezone: string } | null })?.data?.timezone
@@ -112,6 +158,7 @@ export default async function MemberDetailPage({ params }: Props) {
             currency={currency}
             rosterMemberId={rosterMemberId}
             adminId={user.id}
+            paymentStateByActivityKey={Object.fromEntries(paymentStateByActivityKey)}
           />
         </div>
       </div>

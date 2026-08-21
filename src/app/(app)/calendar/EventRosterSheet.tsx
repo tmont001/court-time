@@ -20,13 +20,17 @@ import {
   markAttendanceGuest,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
-import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
+import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import {
   ACTION_BUTTON_SECONDARY,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
   ACTION_BUTTON_INFO_COMPACT,
 } from "@/app/(app)/events/actionButtonStyles";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import RecordPaymentSheet from "@/components/RecordPaymentSheet";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,6 +111,11 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   // ownership restriction (0136), so this single choke point widens
   // identically for all of them.
   const isAdmin  = canAccessOperationsWorkspace(userRole);
+  // Phase 34C — Record Payment is strictly Admin+Staff, never Pro. Distinct
+  // from `isAdmin` above (which, despite its name, means "operations
+  // workspace access" = admin+pro+staff) — using that for payments would
+  // incorrectly grant Pro a financial action.
+  const canRecordPayment = isOperator(userRole);
 
   // ── Roster state ──────────────────────────────────────────────────────────
   const [rows, setRows]               = useState<RosterRow[]>([]);
@@ -114,6 +123,63 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   const [error, setError]             = useState<string | null>(null);
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
+
+  // ── Payment state — Phase 34C ─────────────────────────────────────────────
+  // get_event_roster does not expose the underlying event_participants.id
+  // (only profile_id/roster_member_id), which is required as
+  // payments.domain_id — resolved via a small direct table read (RLS-
+  // permitted, same-club) rather than widening that RPC. Guests need no
+  // such lookup: a guest row's `profile_id` field IS event_guests.id
+  // already (see handleMarkGuest's own comment on this same aliasing).
+  const [paymentStateByRowKey, setPaymentStateByRowKey] = useState<Map<string, PaymentStateRow>>(new Map());
+  const [recordPaymentTarget, setRecordPaymentTarget] = useState<{
+    rowKey: string; domainType: "event_participant" | "event_guest"; domainId: string; title: string;
+  } | null>(null);
+
+  async function loadPaymentStates(currentRows: RosterRow[]) {
+    const confirmedRows = currentRows.filter(r => r.status === "confirmed" && r.role !== "guest" && r.role !== "host");
+    const guestRows     = currentRows.filter(r => r.role === "guest");
+
+    const idByKey: Map<string, string> = new Map();
+    const keyById: Map<string, string> = new Map();
+    if (confirmedRows.length > 0) {
+      const { data } = await supabase
+        .from("event_participants")
+        .select("id, profile_id, roster_member_id")
+        .eq("event_id", eventId)
+        .eq("status", "confirmed");
+      for (const p of data ?? []) {
+        const k = p.profile_id ?? p.roster_member_id ?? "";
+        if (!k) continue;
+        idByKey.set(k, p.id);
+        keyById.set(p.id, k);
+      }
+    }
+
+    const participantDomainIds = confirmedRows
+      .map(r => idByKey.get(rowKey(r)))
+      .filter((id): id is string => !!id);
+    const guestDomainIds = guestRows.map(r => rowKey(r)).filter(Boolean);
+
+    const [pResult, gResult] = await Promise.all([
+      participantDomainIds.length > 0
+        ? fetchPaymentStates("event_participant", participantDomainIds)
+        : Promise.resolve({ data: [] as PaymentStateRow[] }),
+      guestDomainIds.length > 0
+        ? fetchPaymentStates("event_guest", guestDomainIds)
+        : Promise.resolve({ data: [] as PaymentStateRow[] }),
+    ]);
+
+    const byRowKey = new Map<string, PaymentStateRow>();
+    for (const p of pResult.data ?? []) {
+      const rk = keyById.get(p.domain_id);
+      if (rk) byRowKey.set(rk, p);
+    }
+    for (const g of gResult.data ?? []) {
+      byRowKey.set(g.domain_id, g); // guest rowKey === domain_id directly
+    }
+    setPaymentStateByRowKey(byRowKey);
+  }
 
   // ── Club / member picker state ────────────────────────────────────────────
   const [addMemberOpen, setAddMemberOpen]     = useState(false);
@@ -144,6 +210,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
         } else {
           const fetched = (data as RosterRow[]) ?? [];
           setRows(fetched);
+          loadPaymentStates(fetched);
           // Notify parent so it can update occupancy counts without a page reload.
           if (onRosterChange) {
             onRosterChange(
@@ -354,11 +421,12 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    // On mobile: z-60 backdrop / z-70 panel to layer above EventDetailSheet.
-    // On desktop: ResponsiveSheet uses default z-40/z-50 (EventDetailSheet not visible).
-    // This sheet is always the topmost overlay when open (nothing nests above
-    // it), so it never needs `active={false}` itself — it owns its own real
-    // drag/Escape/focus-trap/backdrop now instead of deferring to Phase 29B2.
+    <>
+    {/* On mobile: z-60 backdrop / z-70 panel to layer above EventDetailSheet.
+        On desktop: ResponsiveSheet uses default z-40/z-50 (EventDetailSheet not visible).
+        This sheet is always the topmost overlay when open (nothing nests above
+        it), so it never needs `active={false}` itself — it owns its own real
+        drag/Escape/focus-trap/backdrop now instead of deferring to Phase 29B2. */}
     <ResponsiveSheet
       onClose={onClose}
       variant="panel"
@@ -597,6 +665,29 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                     className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 disabled:opacity-40"
                                   >
                                     Clear
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Payment state — Phase 34C. Admin/Staff only
+                                (never Pro — see canRecordPayment's own
+                                comment above). Renders nothing when there
+                                is no payment row. */}
+                            {paymentStateByRowKey.get(key) && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
+                                {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
+                                  <button
+                                    onClick={() => setRecordPaymentTarget({
+                                      rowKey: key,
+                                      domainType: "event_participant",
+                                      domainId: paymentStateByRowKey.get(key)!.current_payment_id,
+                                      title: row.display_name,
+                                    })}
+                                    className="text-xs font-semibold text-accent hover:underline"
+                                  >
+                                    Record Payment
                                   </button>
                                 )}
                               </div>
@@ -857,6 +948,30 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               </div>
                             )}
 
+                            {/* Payment state — Phase 34C. Guest obligations
+                                are operator-only (guest payer identity is
+                                intentionally unresolved) — never shown to
+                                Members, and this whole sheet is already
+                                operator-scoped. */}
+                            {paymentStateByRowKey.get(key) && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
+                                {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
+                                  <button
+                                    onClick={() => setRecordPaymentTarget({
+                                      rowKey: key,
+                                      domainType: "event_guest",
+                                      domainId: paymentStateByRowKey.get(key)!.current_payment_id,
+                                      title: row.display_name,
+                                    })}
+                                    className="text-xs font-semibold text-accent hover:underline"
+                                  >
+                                    Record Payment
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             {rowError && (
                               <p className="text-xs text-red-500 mt-1">{rowError}</p>
                             )}
@@ -949,6 +1064,30 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               </div>
                             )}
 
+                            {/* Payment state — Phase 34C. Guest obligations
+                                are operator-only (guest payer identity is
+                                intentionally unresolved) — never shown to
+                                Members, and this whole sheet is already
+                                operator-scoped. */}
+                            {paymentStateByRowKey.get(key) && (
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
+                                {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
+                                  <button
+                                    onClick={() => setRecordPaymentTarget({
+                                      rowKey: key,
+                                      domainType: "event_guest",
+                                      domainId: paymentStateByRowKey.get(key)!.current_payment_id,
+                                      title: row.display_name,
+                                    })}
+                                    className="text-xs font-semibold text-accent hover:underline"
+                                  >
+                                    Record Payment
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
                             {rowError && (
                               <p className="text-xs text-red-500 mt-1">{rowError}</p>
                             )}
@@ -963,5 +1102,23 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
           )}
 
     </ResponsiveSheet>
+
+    {recordPaymentTarget && (() => {
+      const state = paymentStateByRowKey.get(recordPaymentTarget.rowKey);
+      if (!state) return null;
+      return (
+        <RecordPaymentSheet
+          paymentId={state.current_payment_id}
+          clubId={clubId}
+          amountDueCents={state.current_amount_due_cents}
+          amountPaidCents={state.current_amount_paid_cents}
+          currency={state.current_currency}
+          title={recordPaymentTarget.title}
+          onClose={() => setRecordPaymentTarget(null)}
+          onRecorded={() => { setRecordPaymentTarget(null); loadPaymentStates(rows); }}
+        />
+      );
+    })()}
+    </>
   );
 }

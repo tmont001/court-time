@@ -7,7 +7,7 @@
 // matrix here operates on the caller's single program_enrollments row,
 // never on any individual generated event.
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   joinProgram,
@@ -20,6 +20,9 @@ import {
 import { mapProgramError } from "./programErrors";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 import PriceSummary from "@/components/PriceSummary";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import type { PaymentStateRow } from "@/lib/payments";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -94,6 +97,20 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
 
   const enrollment = program.my_enrollment;
   const status     = enrollment?.status ?? null;
+
+  // Phase 34C — own read-only Whole Program payment state. No mutation
+  // here — Member never records/resolves payments.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  useEffect(() => {
+    if (status !== "enrolled" || !enrollment) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await fetchPaymentStates("program_enrollment", [enrollment.id]);
+      if (!cancelled) setPaymentState(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, enrollment?.id]);
 
   const offerExpiresAt = status === "offered" ? enrollment!.offer_expires_at : null;
   // Point-in-time check at render/interaction time — matches the existing
@@ -186,6 +203,7 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
         breakdown={program.price_amount_cents !== null ? "for the full program" : null}
         className="mt-0.5"
       />
+      {status === "enrolled" && <PaymentStateBadge state={paymentState} className="mt-1" />}
 
       {/* Offer deadline */}
       {status === "offered" && !offerExpired && offerExpiresAt && (

@@ -4,10 +4,14 @@ import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import PriceSummary from "@/components/PriceSummary";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import { createClient } from "@/lib/supabase/client";
 import { isOperator } from "@/lib/auth/roles";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { formatLessonUnitPrice, calculateLessonTotalCents } from "@/lib/money";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 import {
   proposeLessonTime,
   declineLessonRequest,
@@ -326,6 +330,24 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   const [error, setError]         = useState("");
   const [isPending, startTransition] = useTransition();
 
+  // Phase 34C — payment state via the sanitized batched read boundary.
+  // Only confirmed lessons can ever have an obligation (see
+  // accept_lesson_proposal/admin_create_member_lesson wiring), so this is
+  // skipped entirely otherwise — no fetch, no badge.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+
+  async function loadPaymentState() {
+    if (request.status !== "confirmed") return;
+    const { data } = await fetchPaymentStates("lesson_request", [request.id]);
+    setPaymentState(data?.[0] ?? null);
+  }
+
+  useEffect(() => {
+    loadPaymentState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request.id, request.status]);
+
   // Phase 34B: fetch this Lesson's price snapshot + (if it has a Lesson
   // Type) that type's allowed_durations once, on mount — see
   // LessonPriceSnapshot's own comment for why this is a plain read rather
@@ -469,6 +491,7 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <ResponsiveSheet
       onClose={onClose}
       variant="modal"
@@ -566,6 +589,25 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
               Court: {request.proposed_court_name}
             </p>
+          )}
+        </div>
+      )}
+
+      {/* Payment state — Phase 34C. Renders nothing when there is no
+          payment row. Pro sees current state only, read-only, no prior
+          financial cycles (get_payment_states_for_domains itself already
+          enforces this — the UI just never shows a Record Payment action
+          to Pro on top of that). */}
+      {request.status === "confirmed" && paymentState && (
+        <div className="ct-card px-4 py-3 mb-4 flex items-center justify-between gap-2">
+          <PaymentStateBadge state={paymentState} />
+          {isOperator(userRole) && isPaymentOpenForRecording(paymentState) && (
+            <button
+              onClick={() => setRecordPaymentOpen(true)}
+              className="text-xs font-semibold text-accent hover:underline shrink-0"
+            >
+              Record Payment
+            </button>
           )}
         </div>
       )}
@@ -891,5 +933,19 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
         </div>
       )}
     </ResponsiveSheet>
+
+    {recordPaymentOpen && paymentState && (
+      <RecordPaymentSheet
+        paymentId={paymentState.current_payment_id}
+        clubId={clubId}
+        amountDueCents={paymentState.current_amount_due_cents}
+        amountPaidCents={paymentState.current_amount_paid_cents}
+        currency={paymentState.current_currency}
+        title={`Lesson with ${memberName}`}
+        onClose={() => setRecordPaymentOpen(false)}
+        onRecorded={() => { setRecordPaymentOpen(false); loadPaymentState(); }}
+      />
+    )}
+    </>
   );
 }

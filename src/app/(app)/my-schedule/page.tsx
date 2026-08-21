@@ -21,6 +21,7 @@ import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 // 33G3) Calendar's own EventDetailSheet — plain exported class strings, no
 // "use client" needed here since this file is a Server Component.
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ interface EventItem {
 }
 
 interface RawSignupRow {
+  id:                string;
   event_id:          string;
   role:              string;
   status:            string;
@@ -56,7 +58,7 @@ interface RawSignupRow {
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event"; ev: EventItem; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
+  | { kind: "event"; ev: EventItem; participantId: string; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -229,6 +231,7 @@ export default async function MySchedulePage({
   let eventParticipantsQuery = supabase
     .from("event_participants")
     .select(`
+      id,
       event_id,
       role,
       status,
@@ -280,10 +283,11 @@ export default async function MySchedulePage({
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
   const currency = settingsResult.data?.currency ?? "USD";
-  const lessonTypes = (lessonTypesResult.data ?? []) as {
+  const lessonTypes = ((lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
     pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
-  }[];
+    max_participants: number; is_active: boolean;
+  }[]).filter(lt => lt.is_active);
 
   // A silently-swallowed error here previously fell back to an empty list
   // indistinguishable from "genuinely no lessons" — logged now (matching
@@ -308,6 +312,22 @@ export default async function MySchedulePage({
   // explicit guarantee rather than an assumption.
   const rawReservations = (reservationsResult.data ?? []) as ReservationRow[];
   const reservations = Array.from(new Map(rawReservations.map(r => [r.id, r])).values());
+
+  // Phase 34C — the Member's own read-only payment state, via the
+  // sanitized batched read boundary (get_payment_states_for_domains
+  // itself scopes to rows whose snapshotted roster_member_id is the
+  // caller's own — never derived from live reservation ownership). A
+  // second round-trip, sequenced after `reservations` is known, since the
+  // domain ids aren't available until the parallel batch above resolves.
+  const { data: reservationPaymentStates } = reservations.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "reservation",
+        p_domain_ids: reservations.map(r => r.id),
+      })
+    : { data: [] };
+  const paymentStateByReservationId = new Map(
+    (reservationPaymentStates ?? []).map(p => [p.domain_id, p]),
+  );
 
   // ── 2. Event signups ─────────────────────────────────────────────────────────
   const { data: signupRows } = signupResult as { data: RawSignupRow[] | null };
@@ -361,6 +381,7 @@ export default async function MySchedulePage({
     ...validSignups.map(s => ({
       kind:           "event" as const,
       ev:             s.events!,
+      participantId:  s.id,
       myRole:         s.role,
       myStatus:       s.status,
       myAttendance:   s.attendance_status,
@@ -368,6 +389,21 @@ export default async function MySchedulePage({
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
+
+  // Phase 34C — the Member's own read-only Event payment state. Only
+  // confirmed participation can ever have an obligation.
+  const confirmedParticipantIds = validSignups
+    .filter(s => s.status === "confirmed")
+    .map(s => s.id);
+  const { data: eventPaymentStates } = confirmedParticipantIds.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "event_participant",
+        p_domain_ids: confirmedParticipantIds,
+      })
+    : { data: [] };
+  const paymentStateByParticipantId = new Map(
+    (eventPaymentStates ?? []).map(p => [p.domain_id, p]),
+  );
 
   const pastItems = pastSignups
     .map(s => ({
@@ -463,6 +499,10 @@ export default async function MySchedulePage({
                                     {start} – {end} · {durationMin} min
                                     {formatLabel ? ` · ${formatLabel}` : ""}
                                   </p>
+                                  <PaymentStateBadge
+                                    state={paymentStateByReservationId.get(res.id) ?? null}
+                                    className="mt-1"
+                                  />
                                 </div>
                                 {item.isCancellable ? (
                                   <form action={cancelReservation.bind(null, clubId)}>
@@ -487,7 +527,7 @@ export default async function MySchedulePage({
                           }
 
                           // ── Upcoming event signup card ──────────────────────
-                          const { ev, myRole, myStatus, offerExpiresAt } = item;
+                          const { ev, participantId, myRole, myStatus, offerExpiresAt } = item;
                           const start = formatTime(ev.starts_at, clubTimezone);
                           const end   = formatTime(ev.ends_at,   clubTimezone);
                           const evCourtNames = ev.reservations
@@ -539,6 +579,12 @@ export default async function MySchedulePage({
                                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
                                     Accept by {formatTime(offerExpiresAt, clubTimezone)}
                                   </p>
+                                )}
+                                {myStatus === "confirmed" && (
+                                  <PaymentStateBadge
+                                    state={paymentStateByParticipantId.get(participantId) ?? null}
+                                    className="mt-1"
+                                  />
                                 )}
                               </div>
                               {myRole === "host" ? (
