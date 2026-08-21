@@ -36,13 +36,14 @@ export default async function CalendarPage({
     { data: operatingHours },
     { data: operatingHoursOverrides },
     { data: userRosterMemberId },
+    { data: settings },
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
     supabase
       .from("courts")
-      .select("id, name, display_order")
+      .select("id, name, display_order, hourly_rate_cents")
       .eq("is_active", true)
       .order("display_order", { ascending: true }),
     clubId
@@ -67,6 +68,9 @@ export default async function CalendarPage({
     // recognize a staff-created, pre-claim reservation (owner_user_id null)
     // as the signed-in Member's own booking.
     supabase.rpc("current_user_roster_member_id"),
+    clubId
+      ? supabase.from("club_settings").select("currency, default_court_hourly_rate_cents").eq("club_id", clubId).single()
+      : Promise.resolve({ data: null }),
   ]);
 
   const clubTimezone = club?.timezone ?? "America/New_York";
@@ -102,6 +106,8 @@ export default async function CalendarPage({
           initialDateISO={initialDateISO}
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}
+          currency={settings?.currency ?? "USD"}
+          defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
         />
       </div>
     </>

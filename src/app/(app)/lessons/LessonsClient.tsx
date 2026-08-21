@@ -18,10 +18,20 @@ interface Court {
   name: string;
 }
 
+interface LessonType {
+  id:                       string;
+  name:                     string;
+  allowed_durations:        number[] | null;
+  pricing_basis:            "flat" | "hourly";
+  unit_price_amount_cents:  number | null;
+}
+
 interface Props {
   initialRequests: LessonRequestRow[];
   pros:            Pro[];
   courts:          Court[];
+  lessonTypes:     LessonType[];
+  currency:        string;
   userId:          string;
   clubId:          string;
   clubTimezone:    string;
@@ -63,6 +73,8 @@ export default function LessonsClient({
   initialRequests,
   pros,
   courts,
+  lessonTypes,
+  currency,
   userId,
   clubId,
   clubTimezone,
@@ -209,6 +221,8 @@ export default function LessonsClient({
         <RequestLessonSheet
           pros={pros}
           courts={courts}
+          lessonTypes={lessonTypes}
+          currency={currency}
           clubId={clubId}
           onClose={() => setShowRequest(false)}
           onDone={handleDone}

@@ -6,6 +6,8 @@ import EventCardClient from "./EventCardClient";
 import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
 import type { MemberProgramCard } from "./programEnrollmentActions";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
+import PriceSummary from "@/components/PriceSummary";
+import { isOperator } from "@/lib/auth/roles";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -39,6 +41,7 @@ export interface UpcomingEventData {
   // from a soft-cancelled one (does not).
   event_guests:       Array<{ id: string; status: string }>;
   reservations:       Array<{ court_id: string; reason: string; status: string }>;
+  price_amount_cents: number | null;
   // Phase 27D2: present only for generated program sessions (null for
   // standalone/per_session/admin_managed events without a parent program).
   // Used solely to suppress per-session Join/Leave controls for
@@ -67,6 +70,7 @@ interface Props {
   userRole:                    string | null | undefined;
   clubId:                      string;
   clubTimezone:                string;
+  currency:                    string;
   courtNames:                  Array<{ id: string; name: string }>;
   joinEventAction:             (formData: FormData) => Promise<void>;
   leaveEventAction:            (formData: FormData) => Promise<void>;
@@ -84,6 +88,7 @@ export default function EventsUpcomingClient({
   userRole,
   clubId,
   clubTimezone,
+  currency,
   courtNames,
   joinEventAction,
   leaveEventAction,
@@ -252,6 +257,7 @@ export default function EventsUpcomingClient({
                     program={p}
                     clubId={clubId}
                     clubTimezone={clubTimezone}
+                    currency={currency}
                     memberSelfService={memberSelfService}
                   />
                 ))}
@@ -444,6 +450,17 @@ export default function EventsUpcomingClient({
                               {startLabel} – {endLabel}
                               {evCourtNames ? ` · ${evCourtNames}` : ""}
                             </p>
+
+                            {/* Phase 34B: price — operators see the resolved
+                                price always; Members only when configured. */}
+                            <PriceSummary
+                              label="Event price"
+                              amountCents={ev.price_amount_cents}
+                              currency={currency}
+                              viewer={isOperator(userRole) ? "operator" : "member"}
+                              breakdown={ev.price_amount_cents !== null ? "per participant" : null}
+                              className="mt-0.5"
+                            />
 
                             {/* Offer deadline */}
                             {isOffered && !offerExpiredServerSide && offerExpiresAt && (

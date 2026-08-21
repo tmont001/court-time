@@ -14,6 +14,8 @@ import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
+import { formatMoney } from "@/lib/money";
+import PriceSummary from "@/components/PriceSummary";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -36,9 +38,10 @@ const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 type Reservation = Database["public"]["Tables"]["reservations"]["Row"];
 
 interface Court {
-  id:            string;
-  name:          string;
-  display_order: number;
+  id:                string;
+  name:              string;
+  display_order:     number;
+  hourly_rate_cents: number | null;
 }
 
 interface BookingSlot {
@@ -74,6 +77,7 @@ interface RawEventRow {
   updated_at: string;
   program_id: string | null;
   is_program_exception: boolean;
+  price_amount_cents: number | null;
   event_types: {
     key: string;
     label: string;
@@ -105,6 +109,7 @@ interface EventWithDetails {
   updated_at: string;
   program_id: string | null;
   is_program_exception: boolean;
+  price_amount_cents: number | null;
   event_types: {
     key: string;
     label: string;
@@ -161,6 +166,8 @@ interface Props {
   initialDateISO?:         string | null; // optional ?date= override from URL
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
+  currency:                     string; // Phase 34B
+  defaultCourtHourlyRateCents:  number | null; // Phase 34B: club default, court.hourly_rate_cents overrides it
 }
 
 // Returns minutes elapsed since viewStartHour for a given UTC date in tz.
@@ -250,7 +257,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -800,7 +807,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       .from("events")
       .select(`
         id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
-        event_type_id, description, updated_at, program_id, is_program_exception,
+        event_type_id, description, updated_at, program_id, is_program_exception, price_amount_cents,
         event_types(key, label, color, shows_participant_names),
         event_participants(profile_id, roster_member_id, role, status, offer_expires_at),
         event_guests(id, status),
@@ -829,6 +836,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           updated_at:         r.updated_at,
           program_id:         r.program_id,
           is_program_exception: r.is_program_exception,
+          price_amount_cents: r.price_amount_cents,
           event_types:        r.event_types,
           event_participants: r.event_participants,
           event_guests:       r.event_guests,
@@ -1607,6 +1615,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           onClose={closeSlotFlow}
           onCreated={() => { setRefreshTick(t => t + 1); closeSlotFlow(); }}
           onBack={slotPreFill ? backToSlotMenu : undefined}
@@ -1627,6 +1636,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           userRole={userRole}
           clubTimezone={clubTimezone}
           clubId={clubId}
+          currency={currency}
           onClose={() => setSelectedEvent(null)}
           onRefresh={() => { setRefreshTick(t => t + 1); setSelectedEvent(null); }}
           onEventUpdated={(eventId, patch) => {
@@ -1679,6 +1689,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           // (0132) role check. Gates canEdit (member_booking only);
           // canEditMaintenance stays on isAdmin, unchanged.
           canManageMemberReservation={isOperator(userRole)}
+          currency={currency}
+          defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onUpdated={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
@@ -1863,6 +1875,32 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                 </div>
               </div>
             )}
+
+            {(() => {
+              const resolvedRateCents = bookingSlot.court.hourly_rate_cents ?? defaultCourtHourlyRateCents;
+              if (resolvedRateCents === null) {
+                return canBookForMember ? (
+                  <PriceSummary
+                    label="Price"
+                    amountCents={null}
+                    currency={currency}
+                    viewer="operator"
+                    className="mt-3"
+                  />
+                ) : null;
+              }
+              const priceCents = Math.round(resolvedRateCents * bookingDuration / 60);
+              return (
+                <PriceSummary
+                  label="Price"
+                  amountCents={priceCents}
+                  currency={currency}
+                  viewer={canBookForMember ? "operator" : "member"}
+                  breakdown={`${formatMoney(resolvedRateCents, currency)}/hour × ${bookingDuration} min`}
+                  className="mt-3"
+                />
+              );
+            })()}
 
             {bookingConflict && (
               <p className="mt-3 text-xs text-amber-600">

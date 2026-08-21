@@ -2,11 +2,19 @@
 
 import { useState, useTransition, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { formatOperatorPrice } from "@/lib/money";
+import {
+  ACTION_BUTTON_SECONDARY_COMPACT,
+  ACTION_BUTTON_DESTRUCTIVE_COMPACT,
+  ACTION_BUTTON_WARNING_COMPACT,
+  ACTION_BUTTON_POSITIVE_COMPACT,
+} from "@/lib/actionButtonStyles";
 import {
   createEventType,
   updateEventType,
   setEventTypeActive,
   deleteEventType,
+  setEventTypePrice,
 } from "./actions";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -49,16 +57,28 @@ interface EventType {
   label:     string;
   color:     string;
   is_active: boolean;
+  default_price_amount_cents: number | null;
 }
 
 interface Props {
   clubId:       string;
+  currency:     string;
   initialTypes: EventType[];
 }
 
-type EditState   = { id: string; label: string; color: string } | null;
+type EditState   = { id: string; label: string; color: string; priceDollars: string } | null;
 type UndoState   = { id: string; label: string; color: string } | null;
-type CreateState = { label: string; color: string };
+type CreateState = { label: string; color: string; priceDollars: string };
+
+function priceToDollars(cents: number | null): string {
+  return cents !== null ? (cents / 100).toFixed(2) : "";
+}
+
+function dollarsToPriceCents(dollars: string): number | null {
+  const trimmed = dollars.trim();
+  if (!trimmed) return null;
+  return Math.round(parseFloat(trimmed) * 100);
+}
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -142,11 +162,11 @@ function BadgePreview({ label, color }: { label: string; color: string }) {
 
 // ── EventTypesSection ─────────────────────────────────────────────────────────
 
-export default function EventTypesSection({ clubId, initialTypes }: Props) {
+export default function EventTypesSection({ clubId, currency, initialTypes }: Props) {
   const [types,           setTypes]           = useState<EventType[]>(initialTypes);
   const [edit,            setEdit]            = useState<EditState>(null);
   const [creating,        setCreating]        = useState(false);
-  const [newType,         setNewType]         = useState<CreateState>({ label: "", color: "#3B7DD8" });
+  const [newType,         setNewType]         = useState<CreateState>({ label: "", color: "#3B7DD8", priceDollars: "" });
   const [isPending,       startTransition]    = useTransition();
   const [rowError,        setRowError]        = useState<Record<string, string>>({});
   const [globalError,     setGlobalError]     = useState<string | null>(null);
@@ -162,7 +182,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("event_types")
-      .select("id, key, label, color, is_active")
+      .select("id, key, label, color, is_active, default_price_amount_cents")
       .eq("club_id", clubId)
       .order("is_active", { ascending: false })
       .order("label");
@@ -174,7 +194,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
   // ── Edit ───────────────────────────────────────────────────────────────────
 
   function startEdit(et: EventType) {
-    setEdit({ id: et.id, label: et.label, color: et.color });
+    setEdit({ id: et.id, label: et.label, color: et.color, priceDollars: priceToDollars(et.default_price_amount_cents) });
     setPendingDeactivate(null);
     setConfirmingRestore(null);
     setConfirmingDelete(null);
@@ -197,12 +217,24 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
     const currentType = types.find(t => t.id === edit.id);
     const prevLabel   = currentType?.label ?? "";
     const prevColor   = currentType?.color ?? "#3B7DD8";
+    const priceCents  = dollarsToPriceCents(edit.priceDollars);
 
     startTransition(async () => {
       const result = await updateEventType(edit.id, label, edit.color);
       if (result.error) {
         setRowError(prev => ({ ...prev, [edit.id]: result.error! }));
         return;
+      }
+      // Phase 34B: price is set through its own Admin-only RPC, separate
+      // from label/color — surface a price-save failure distinctly rather
+      // than silently pretending the price was saved.
+      if (priceCents !== currentType?.default_price_amount_cents) {
+        const priceResult = await setEventTypePrice(edit.id, priceCents);
+        if (priceResult.error) {
+          setRowError(prev => ({ ...prev, [edit.id]: priceResult.error! }));
+          await reload();
+          return;
+        }
       }
       const savedId = edit.id;
       setEdit(null);
@@ -350,16 +382,51 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
     const label = newType.label.trim();
     if (!label) { setGlobalError("Label cannot be blank."); return; }
     setGlobalError(null);
+    const priceCents = dollarsToPriceCents(newType.priceDollars);
     startTransition(async () => {
       const result = await createEventType(label, newType.color);
       if (result.error) { setGlobalError(result.error); return; }
+      // Phase 34B: create the type first, then set its price — if the
+      // price save fails, surface that failure clearly rather than
+      // silently pretending the price was saved.
+      if (priceCents !== null) {
+        const createdId = await lookupCreatedTypeId(label);
+        if (createdId) {
+          const priceResult = await setEventTypePrice(createdId, priceCents);
+          if (priceResult.error) {
+            setGlobalError(`Event type created, but price could not be saved: ${priceResult.error}`);
+            setCreating(false);
+            setNewType({ label: "", color: "#3B7DD8", priceDollars: "" });
+            await reload();
+            return;
+          }
+        }
+      }
       setCreating(false);
-      setNewType({ label: "", color: "#3B7DD8" });
+      setNewType({ label: "", color: "#3B7DD8", priceDollars: "" });
       const ok = await reload();
       if (!ok) {
         setGlobalError("Created, but the list could not refresh. Please reload the page.");
       }
     });
+  }
+
+  // Phase 34B: create_event_type doesn't return the new row's id, and
+  // threading a price param through its shared signature is out of scope
+  // (Staff/Pro don't create event types, but the RPC itself stays
+  // price-blind to match the rest of the pricing model). Re-query by the
+  // just-created label to resolve the id needed for set_event_type_price.
+  async function lookupCreatedTypeId(label: string): Promise<string | null> {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("event_types")
+      .select("id")
+      .eq("club_id", clubId)
+      .eq("label", label)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.id ?? null;
   }
 
   const active   = types.filter(t => t.is_active);
@@ -377,6 +444,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
           <EventTypeRow
             key={et.id}
             et={et}
+            currency={currency}
             edit={edit?.id === et.id ? edit : null}
             error={rowError[et.id]}
             undoState={undoState?.id === et.id ? undoState : null}
@@ -417,6 +485,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
             <EventTypeRow
               key={et.id}
               et={et}
+              currency={currency}
               edit={edit?.id === et.id ? edit : null}
               error={rowError[et.id]}
               undoState={undoState?.id === et.id ? undoState : null}
@@ -468,6 +537,21 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
             color={newType.color}
             onChange={hex => setNewType(prev => ({ ...prev, color: hex }))}
           />
+          <div>
+            <label className="block text-[11px] text-gray-400 dark:text-gray-500 mb-0.5">
+              Default price (blank = no price set)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="0.00"
+              value={newType.priceDollars}
+              onChange={e => setNewType(prev => ({ ...prev, priceDollars: e.target.value }))}
+              className="ct-input"
+              style={{ width: "8rem" }}
+            />
+          </div>
           <div className="flex gap-2 items-center">
             <button
               type="button"
@@ -480,7 +564,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
             <button
               type="button"
               onClick={() => { setCreating(false); setGlobalError(null); }}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               Cancel
             </button>
@@ -496,7 +580,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
             setConfirmingRestore(null);
             setConfirmingDelete(null);
           }}
-          className="text-xs font-medium text-accent hover:underline motion-safe:transition-colors"
+          className={ACTION_BUTTON_SECONDARY_COMPACT}
         >
           + Add event type
         </button>
@@ -509,6 +593,7 @@ export default function EventTypesSection({ clubId, initialTypes }: Props) {
 
 interface RowProps {
   et:                   EventType;
+  currency:             string;
   edit:                 EditState;
   error:                string | undefined;
   undoState:            { label: string; color: string } | null;
@@ -520,7 +605,7 @@ interface RowProps {
   onStartEdit:          () => void;
   onCancelEdit:         () => void;
   onSaveEdit:           () => void;
-  onEditChange:         (patch: Partial<{ label: string; color: string }>) => void;
+  onEditChange:         (patch: Partial<{ label: string; color: string; priceDollars: string }>) => void;
   onUndo:               () => void;
   onRequestDeactivate:  () => void;
   onCancelDeactivate:   () => void;
@@ -535,7 +620,7 @@ interface RowProps {
 }
 
 function EventTypeRow({
-  et, edit, error, undoState, undoError,
+  et, currency, edit, error, undoState, undoError,
   isPendingDeactivate, isConfirmingRestore, isConfirmingDelete,
   isPending,
   onStartEdit, onCancelEdit, onSaveEdit, onEditChange, onUndo,
@@ -581,6 +666,21 @@ function EventTypeRow({
             color={edit!.color}
             onChange={hex => onEditChange({ color: hex })}
           />
+          <div>
+            <label className="block text-[11px] text-gray-400 dark:text-gray-500 mb-0.5">
+              Default price (blank = no price set)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              placeholder="0.00"
+              value={edit!.priceDollars}
+              onChange={e => onEditChange({ priceDollars: e.target.value })}
+              className="ct-input"
+              style={{ width: "8rem" }}
+            />
+          </div>
           {error && <p className="text-xs text-red-500">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -594,7 +694,7 @@ function EventTypeRow({
             <button
               type="button"
               onClick={onCancelEdit}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               Cancel
             </button>
@@ -613,7 +713,7 @@ function EventTypeRow({
             <button
               type="button"
               onClick={onCancelDeactivate}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               Keep active
             </button>
@@ -621,7 +721,7 @@ function EventTypeRow({
               type="button"
               onClick={onConfirmDeactivate}
               disabled={isPending}
-              className="text-xs font-semibold text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_WARNING_COMPACT}
             >
               {isPending ? "Deactivating…" : "Deactivate"}
             </button>
@@ -646,7 +746,7 @@ function EventTypeRow({
             <button
               type="button"
               onClick={onCancelRestore}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               Keep current
             </button>
@@ -654,7 +754,7 @@ function EventTypeRow({
               type="button"
               onClick={onConfirmRestore}
               disabled={isPending}
-              className="text-xs font-semibold text-accent hover:underline disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               {isPending ? "Restoring…" : "Restore default"}
             </button>
@@ -673,7 +773,7 @@ function EventTypeRow({
             <button
               type="button"
               onClick={onCancelDelete}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
             >
               Keep
             </button>
@@ -681,7 +781,7 @@ function EventTypeRow({
               type="button"
               onClick={onConfirmDelete}
               disabled={isPending}
-              className="text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 disabled:opacity-40 motion-safe:transition-colors motion-safe:duration-100"
+              className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
             >
               {isPending ? "Deleting…" : "Delete permanently"}
             </button>
@@ -699,11 +799,14 @@ function EventTypeRow({
               {et.label}
             </p>
             <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                {formatOperatorPrice(et.default_price_amount_cents, currency)}
+              </span>
               <button
                 type="button"
                 onClick={onStartEdit}
                 disabled={isPending}
-                className="text-xs text-gray-500 dark:text-gray-400 hover:text-accent disabled:opacity-40 motion-safe:transition-colors"
+                className={ACTION_BUTTON_SECONDARY_COMPACT}
               >
                 Edit
               </button>
@@ -712,7 +815,7 @@ function EventTypeRow({
                   type="button"
                   onClick={onRequestRestore}
                   disabled={isPending}
-                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40 motion-safe:transition-colors"
+                  className={ACTION_BUTTON_SECONDARY_COMPACT}
                 >
                   Restore default
                 </button>
@@ -722,7 +825,7 @@ function EventTypeRow({
                   type="button"
                   onClick={onRequestDeactivate}
                   disabled={isPending}
-                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-amber-600 dark:hover:text-amber-400 disabled:opacity-40 motion-safe:transition-colors"
+                  className={ACTION_BUTTON_WARNING_COMPACT}
                 >
                   Deactivate
                 </button>
@@ -739,7 +842,7 @@ function EventTypeRow({
                     type="button"
                     onClick={onReactivate}
                     disabled={isPending}
-                    className="text-xs text-accent hover:underline disabled:opacity-40 motion-safe:transition-colors"
+                    className={ACTION_BUTTON_POSITIVE_COMPACT}
                   >
                     Reactivate
                   </button>
@@ -748,7 +851,7 @@ function EventTypeRow({
                       type="button"
                       onClick={onRequestDelete}
                       disabled={isPending}
-                      className="text-xs text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 disabled:opacity-40 motion-safe:transition-colors"
+                      className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                     >
                       Delete
                     </button>

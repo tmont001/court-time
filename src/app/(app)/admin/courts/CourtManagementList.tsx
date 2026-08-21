@@ -2,13 +2,21 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { addCourt, renameCourt, reorderCourts, setCourtActive, deleteCourt } from "./actions";
+import { addCourt, renameCourt, reorderCourts, setCourtActive, deleteCourt, setCourtHourlyRate } from "./actions";
+import { formatOperatorPrice } from "@/lib/money";
+import {
+  ACTION_BUTTON_SECONDARY_COMPACT,
+  ACTION_BUTTON_POSITIVE_COMPACT,
+  ACTION_BUTTON_WARNING_COMPACT,
+  ACTION_BUTTON_DESTRUCTIVE_COMPACT,
+} from "@/lib/actionButtonStyles";
 
 type Court = {
   id: string;
   name: string;
   display_order: number;
   is_active: boolean;
+  hourly_rate_cents: number | null;
 };
 
 type Status = {
@@ -17,17 +25,21 @@ type Status = {
 };
 
 interface Props {
-  initialCourts: Court[];
-  clubId:        string;
+  initialCourts:          Court[];
+  clubId:                 string;
+  currency:               string;
+  defaultHourlyRateCents: number | null;
 }
 
-export default function CourtManagementList({ initialCourts, clubId }: Props) {
+export default function CourtManagementList({ initialCourts, clubId, currency, defaultHourlyRateCents }: Props) {
   const router = useRouter();
   const [courts, setCourts] = useState<Court[]>(initialCourts);
   const [isPending, startTransition] = useTransition();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [editingRateId, setEditingRateId] = useState<string | null>(null);
+  const [rateValue, setRateValue] = useState("");
   const [isAddingCourt, setIsAddingCourt] = useState(false);
   const [addValue, setAddValue] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -70,6 +82,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
   function handleRenameStart(court: Court) {
     setStatus(null);
     setDeletingId(null);
+    setEditingRateId(null);
     setRenamingId(court.id);
     setRenameValue(court.name);
   }
@@ -92,6 +105,41 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
       } else {
         setRenamingId(null);
         showStatus({ type: "success", message: "Court renamed." });
+        router.refresh();
+      }
+    });
+  }
+
+  // ── Hourly rate override ──────────────────────────────────────────────────
+  // Phase 34B: optional per-court override. Blank clears it, falling back
+  // to the club default rate (or unpriced, if that's also blank).
+
+  function handleRateStart(court: Court) {
+    setStatus(null);
+    setDeletingId(null);
+    setRenamingId(null);
+    setEditingRateId(court.id);
+    setRateValue(court.hourly_rate_cents !== null ? (court.hourly_rate_cents / 100).toFixed(2) : "");
+  }
+
+  function handleRateCancel() {
+    setEditingRateId(null);
+    setRateValue("");
+  }
+
+  function handleRateSubmit(courtId: string) {
+    const trimmed = rateValue.trim();
+    const cents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
+    setStatus(null);
+    setPendingId(courtId);
+    startTransition(async () => {
+      const result = await setCourtHourlyRate(courtId, cents, clubId);
+      setPendingId(null);
+      if (result.error) {
+        showStatus({ type: "error", message: result.error });
+      } else {
+        setEditingRateId(null);
+        showStatus({ type: "success", message: "Court rate saved." });
         router.refresh();
       }
     });
@@ -223,17 +271,17 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                       Only courts with no history can be deleted.
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0 text-xs font-medium">
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => handleDeleteConfirm(court)}
                       disabled={isPending && pendingId === court.id}
-                      className="px-2 py-1 rounded bg-red-600 text-white text-xs font-medium disabled:opacity-40 hover:bg-red-700 active:scale-95 motion-safe:transition-all motion-safe:duration-150"
+                      className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                     >
                       {isPending && pendingId === court.id ? "Deleting…" : "Delete"}
                     </button>
                     <button
                       onClick={handleDeleteCancel}
-                      className="text-gray-500 dark:text-gray-400"
+                      className={ACTION_BUTTON_SECONDARY_COMPACT}
                     >
                       Cancel
                     </button>
@@ -256,13 +304,51 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                   <button
                     onClick={() => handleRenameSubmit(court.id)}
                     disabled={isPending && pendingId === court.id}
-                    className="text-xs font-medium text-green-600 dark:text-green-400 disabled:opacity-40 hover:text-green-800 dark:hover:text-green-300 motion-safe:transition-colors motion-safe:duration-150"
+                    className={ACTION_BUTTON_POSITIVE_COMPACT}
                   >
                     {isPending && pendingId === court.id ? "Saving…" : "Save"}
                   </button>
                   <button
                     onClick={handleRenameCancel}
-                    className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 motion-safe:transition-colors motion-safe:duration-150"
+                    className={ACTION_BUTTON_SECONDARY_COMPACT}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : editingRateId === court.id ? (
+                /* ── Rate edit row ── */
+                <div className="flex items-center gap-2 px-4 py-3">
+                  <span className="text-sm text-gray-900 dark:text-gray-100 truncate min-w-0">
+                    {court.name}
+                  </span>
+                  <input
+                    autoFocus
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder={
+                      defaultHourlyRateCents !== null
+                        ? `${(defaultHourlyRateCents / 100).toFixed(2)} (club default)`
+                        : "0.00 (unpriced)"
+                    }
+                    value={rateValue}
+                    onChange={(e) => setRateValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleRateSubmit(court.id);
+                      if (e.key === "Escape") handleRateCancel();
+                    }}
+                    className="flex-1 min-w-0 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent motion-safe:transition-all motion-safe:duration-150"
+                  />
+                  <button
+                    onClick={() => handleRateSubmit(court.id)}
+                    disabled={isPending && pendingId === court.id}
+                    className={ACTION_BUTTON_POSITIVE_COMPACT}
+                  >
+                    {isPending && pendingId === court.id ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    onClick={handleRateCancel}
+                    className={ACTION_BUTTON_SECONDARY_COMPACT}
                   >
                     Cancel
                   </button>
@@ -271,7 +357,7 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                 /* ── Normal row ── */
                 <div className="flex items-center justify-between gap-2 px-4 py-3">
                   {/* Left: name + badge */}
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
                     <span className="text-sm text-gray-900 dark:text-gray-100 truncate">
                       {court.name}
                     </span>
@@ -282,14 +368,22 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                     }`}>
                       {court.is_active ? "Active" : "Inactive"}
                     </span>
+                    <span className="flex-shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+                      {formatOperatorPrice(court.hourly_rate_cents ?? defaultHourlyRateCents, currency)}
+                      {court.hourly_rate_cents !== null ? " /hr (override)" : court.hourly_rate_cents === null && defaultHourlyRateCents !== null ? " /hr (default)" : ""}
+                    </span>
                   </div>
 
-                  {/* Right: action buttons */}
-                  <div className="flex items-center gap-1 flex-shrink-0 text-xs font-medium">
+                  {/* Right: action buttons — one shared compact-button
+                      vocabulary (src/lib/actionButtonStyles.ts), same
+                      heights/spacing/focus/disabled treatment throughout.
+                      No plain-text actions and no pipe separators — each
+                      button's own border already separates it. */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
                     <button
                       onClick={() => handleMove(idx, "up")}
                       disabled={idx === 0 || anyPending}
-                      className="p-2 -m-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
+                      className={ACTION_BUTTON_SECONDARY_COMPACT}
                       aria-label="Move up"
                     >
                       ↑
@@ -297,32 +391,29 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                     <button
                       onClick={() => handleMove(idx, "down")}
                       disabled={idx === courts.length - 1 || anyPending}
-                      className="p-2 -m-1 text-gray-400 dark:text-gray-500 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
+                      className={ACTION_BUTTON_SECONDARY_COMPACT}
                       aria-label="Move down"
                     >
                       ↓
                     </button>
-
-                    <span className="mx-0.5 text-gray-200 dark:text-gray-700 select-none">|</span>
-
                     <button
                       onClick={() => handleRenameStart(court)}
                       disabled={anyPending}
-                      className="px-1 text-gray-500 dark:text-gray-400 hover:text-accent disabled:opacity-30 motion-safe:transition-colors motion-safe:duration-150"
+                      className={ACTION_BUTTON_SECONDARY_COMPACT}
                     >
                       Rename
                     </button>
-
-                    <span className="mx-0.5 text-gray-200 dark:text-gray-700 select-none">|</span>
-
+                    <button
+                      onClick={() => handleRateStart(court)}
+                      disabled={anyPending}
+                      className={ACTION_BUTTON_SECONDARY_COMPACT}
+                    >
+                      Rate
+                    </button>
                     <button
                       onClick={() => handleSetActive(court, !court.is_active)}
                       disabled={isPending && pendingId === court.id}
-                      className={`px-1 disabled:opacity-40 ${
-                        court.is_active
-                          ? "text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
-                          : "text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
-                      }`}
+                      className={court.is_active ? ACTION_BUTTON_WARNING_COMPACT : ACTION_BUTTON_POSITIVE_COMPACT}
                     >
                       {isPending && pendingId === court.id
                         ? "…"
@@ -330,13 +421,10 @@ export default function CourtManagementList({ initialCourts, clubId }: Props) {
                         ? "Deactivate"
                         : "Activate"}
                     </button>
-
-                    <span className="mx-0.5 text-gray-200 dark:text-gray-700 select-none">|</span>
-
                     <button
                       onClick={() => handleDeleteStart(court.id)}
                       disabled={anyPending}
-                      className="px-1 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30"
+                      className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
                     >
                       Delete
                     </button>

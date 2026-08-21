@@ -55,11 +55,12 @@ interface Props {
   userId?:           string;
   courts:            Court[];
   clubId:            string;
+  currency:          string;
   // When false, the "+ Create Event" button is hidden (used when a parent already shows one).
   showCreateButton?:   boolean;
 }
 
-export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, showCreateButton = true }: Props) {
+export default function AdminEventsClient({ initialEvents, hasMore: initialHasMore, clubTimezone, userRole, userId = "", courts, clubId, currency, showCreateButton = true }: Props) {
   const router                            = useRouter();
   // Phase 27C.2: read the search box's seed value (?q=<program title>,
   // used by the Programs "View Sessions" link — generated events share
@@ -771,6 +772,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           onClose={() => setCreatingEvent(false)}
           onCreated={() => { setCreatingEvent(false); router.refresh(); }}
         />

@@ -53,6 +53,7 @@ export interface ProgramListRow {
   generated_count:         number;
   next_session_starts_at:  string | null;
   archived_at:             string | null;
+  price_amount_cents:      number | null;
 }
 
 // Phase 27E: mirrors ArchiveView (src/app/(app)/admin/events/actions.ts)
@@ -72,6 +73,7 @@ interface RawProgramRow {
   default_capacity:  number;
   created_by:        string;
   archived_at:       string | null;
+  price_amount_cents: number | null;
   event_types:        { id: string; key: string; label: string; color: string } | null;
   program_schedule_rules: {
     id:                string;
@@ -106,6 +108,7 @@ export interface ProgramRow {
   updated_at:        string;
   archived_at:       string | null;
   archived_by:       string | null;
+  price_amount_cents: number | null;
 }
 
 export interface GenerateResult {
@@ -131,7 +134,7 @@ export async function getPrograms(
   const baseQuery = supabase
     .from("programs")
     .select(`
-      id, title, description, status, enrollment_model, starts_on, ends_on, default_capacity, created_by, archived_at,
+      id, title, description, status, enrollment_model, starts_on, ends_on, default_capacity, created_by, archived_at, price_amount_cents,
       event_types(id, key, label, color),
       program_schedule_rules(id, day_of_week, start_time, duration_minutes, capacity_override)
     `)
@@ -226,6 +229,7 @@ export async function getPrograms(
     generated_count:        generatedCountByProgram.get(p.id) ?? 0,
     next_session_starts_at: nextSessionByProgram.get(p.id) ?? null,
     archived_at:            p.archived_at,
+    price_amount_cents:     p.price_amount_cents,
   }));
 
   return { programs };
@@ -380,6 +384,32 @@ export async function archiveProgram(params: {
   revalidatePath("/calendar");
   revalidatePath("/my-schedule");
 
+  return { data: (data ?? undefined) as ProgramRow | undefined };
+}
+
+// ─── Pricing (Phase 34B) ─────────────────────────────────────────────────────
+//
+// Admin-only. Semantics depend on enrollment_model: for 'program', this is
+// the whole-series price snapshot at first enrollment; for 'per_session',
+// it's the price copied onto every newly-generated session Event; for
+// 'admin_managed', it's optional operational information only. Deliberately
+// kept out of create_program/update_program's shared signature, which stay
+// price-blind since Staff/Pro also call those.
+
+export async function setProgramPriceAction(params: {
+  p_program_id:          string;
+  p_price_amount_cents:  number | null;
+  expectedClubId:        string;
+}): Promise<{ data?: ProgramRow; error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("set_program_price", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  revalidatePath("/events");
   return { data: (data ?? undefined) as ProgramRow | undefined };
 }
 

@@ -62,9 +62,11 @@ export interface ClientNote {
 }
 
 interface LessonType {
-  id:                string;
-  name:              string;
-  allowed_durations: number[] | null;
+  id:                       string;
+  name:                     string;
+  allowed_durations:        number[] | null;
+  pricing_basis:            "flat" | "hourly";
+  unit_price_amount_cents:  number | null;
 }
 
 interface Court {
@@ -80,6 +82,7 @@ interface Props {
   initialNotes:   ClientNote[];
   clubId:         string;
   clubTimezone:   string;
+  currency:       string;
   pros:           ClubPro[];
   courts:         Court[];
   lessonTypes:    LessonType[];
@@ -160,6 +163,7 @@ export default function MemberDetailClient({
   initialNotes,
   clubId,
   clubTimezone,
+  currency,
   pros,
   courts,
   lessonTypes,
@@ -724,6 +728,7 @@ export default function MemberDetailClient({
           lessonTypes={lessonTypes}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           preselectedMemberId={rosterMemberId}
           viewerRole="admin"
           viewerId={adminId}

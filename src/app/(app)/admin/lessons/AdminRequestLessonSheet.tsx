@@ -4,6 +4,8 @@ import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { localDateTimeToUTC } from "@/lib/timezone";
+import { formatLessonUnitPrice, calculateLessonTotalCents } from "@/lib/money";
+import PriceSummary from "@/components/PriceSummary";
 import {
   adminCreateMemberLessonAction,
   type ClubPro,
@@ -25,9 +27,11 @@ interface Court {
 }
 
 interface LessonType {
-  id:                string;
-  name:              string;
-  allowed_durations: number[] | null;
+  id:                       string;
+  name:                     string;
+  allowed_durations:        number[] | null;
+  pricing_basis:            "flat" | "hourly";
+  unit_price_amount_cents:  number | null;
 }
 
 interface Props {
@@ -37,6 +41,7 @@ interface Props {
   lessonTypes:          LessonType[];
   clubId:               string;
   clubTimezone:         string;
+  currency:             string;
   preselectedMemberId?: string;
   // Phase 33G2: this sheet is now reused for both Admin (any Pro) and Pro
   // (self only) staff booking. A Pro caller never sees the "Choose a Pro"
@@ -110,6 +115,7 @@ export default function AdminRequestLessonSheet({
   lessonTypes,
   clubId,
   clubTimezone,
+  currency,
   preselectedMemberId,
   viewerRole,
   viewerId,
@@ -316,9 +322,25 @@ export default function AdminRequestLessonSheet({
               >
                 <option value="">No specific type</option>
                 {lessonTypes.map(lt => (
-                  <option key={lt.id} value={lt.id}>{lt.name}</option>
+                  <option key={lt.id} value={lt.id}>
+                    {lt.name} — {formatLessonUnitPrice(lt.pricing_basis, lt.unit_price_amount_cents, currency)}
+                  </option>
                 ))}
               </select>
+              {selectedType && (
+                <PriceSummary
+                  label="Lesson price"
+                  amountCents={calculateLessonTotalCents(selectedType.pricing_basis, selectedType.unit_price_amount_cents, duration)}
+                  currency={currency}
+                  viewer="operator"
+                  breakdown={
+                    selectedType.pricing_basis === "hourly"
+                      ? `${formatLessonUnitPrice("hourly", selectedType.unit_price_amount_cents, currency)} × ${duration} min`
+                      : selectedType.unit_price_amount_cents !== null ? "Flat lesson rate" : null
+                  }
+                  className="mt-2"
+                />
+              )}
             </div>
           )}
 

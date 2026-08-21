@@ -258,12 +258,13 @@ export default async function MySchedulePage({
     lessonsResult,
     prosResult,
     lessonCourtsResult,
+    lessonTypesResult,
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
     clubId
-      ? supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes").eq("club_id", clubId).single()
+      ? supabase.from("club_settings").select("cancellation_window_hours, cancellation_grace_minutes, currency").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
     reservationsQuery,
     eventParticipantsQuery,
@@ -272,11 +273,17 @@ export default async function MySchedulePage({
     clubId
       ? supabase.from("courts").select("id, name").eq("club_id", clubId).eq("is_active", true).order("display_order")
       : Promise.resolve({ data: [] }),
+    supabase.rpc("get_lesson_types"),
   ]);
 
   if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
+  const currency = settingsResult.data?.currency ?? "USD";
+  const lessonTypes = (lessonTypesResult.data ?? []) as {
+    id: string; name: string; allowed_durations: number[] | null;
+    pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
+  }[];
 
   // A silently-swallowed error here previously fell back to an empty list
   // indistinguishable from "genuinely no lessons" — logged now (matching
@@ -620,6 +627,8 @@ export default async function MySchedulePage({
               initialRequests={allLessons}
               pros={pros}
               courts={lessonCourts}
+              lessonTypes={lessonTypes}
+              currency={currency}
               userId={user.id}
               clubId={clubId}
               clubTimezone={clubTimezone}

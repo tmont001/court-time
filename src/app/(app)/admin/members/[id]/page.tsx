@@ -30,7 +30,7 @@ export default async function MemberDetailPage({ params }: Props) {
   const supabase  = await createClient();
   const clubId    = profile.activeClubId ?? "";
 
-  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, prosResult, courtsResult, lessonTypesResult, rosterResult] =
+  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, settingsResult, prosResult, courtsResult, lessonTypesResult, rosterResult] =
     await Promise.all([
       supabase.rpc("get_admin_member_detail", { p_member_id: id }),
       supabase.rpc("get_member_upcoming_activity", { p_member_id: id }),
@@ -38,6 +38,9 @@ export default async function MemberDetailPage({ params }: Props) {
       supabase.rpc("get_member_notes", { p_member_id: id }),
       clubId
         ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+        : Promise.resolve({ data: null }),
+      clubId
+        ? supabase.from("club_settings").select("currency").eq("club_id", clubId).single()
         : Promise.resolve({ data: null }),
       supabase.rpc("get_admin_club_pros"),
       clubId
@@ -83,7 +86,9 @@ export default async function MemberDetailPage({ params }: Props) {
   const courts = (courtsResult.data ?? []) as { id: string; name: string }[];
   const lessonTypes = (lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
+    pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
   }[];
+  const currency = (settingsResult as { data: { currency: string } | null })?.data?.currency ?? "USD";
   const rosterMemberId = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
@@ -104,6 +109,7 @@ export default async function MemberDetailPage({ params }: Props) {
             pros={pros}
             courts={courts}
             lessonTypes={lessonTypes}
+            currency={currency}
             rosterMemberId={rosterMemberId}
             adminId={user.id}
           />

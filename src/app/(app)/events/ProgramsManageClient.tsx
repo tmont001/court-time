@@ -18,10 +18,12 @@ import {
   completeProgram,
   archiveProgram,
   unarchiveProgram,
+  setProgramPriceAction,
   type ProgramListRow,
   type ProgramRow,
   type ProgramArchiveView,
 } from "./programsActions";
+import PriceSummary from "@/components/PriceSummary";
 import { mapProgramError } from "./programErrors";
 import {
   ACTION_BUTTON_PRIMARY,
@@ -44,8 +46,18 @@ interface Props {
   courts:          Court[];
   clubId:          string;
   clubTimezone:    string;
+  currency:        string;
   userRole:        string;
   userId:          string;
+}
+
+function priceLabel(model: ProgramListRow["enrollment_model"]): string {
+  return model === "program" ? "Program price" : model === "per_session" ? "Price" : "Program price (optional)";
+}
+
+function priceBreakdown(model: ProgramListRow["enrollment_model"], priced: boolean): string | null {
+  if (!priced) return null;
+  return model === "program" ? "for the full program" : model === "per_session" ? "per session" : null;
 }
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -97,7 +109,7 @@ function statusBadgeClass(status: ProgramListRow["status"]): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ProgramsManageClient({
-  initialPrograms, initialError, courts, clubId, clubTimezone, userRole, userId,
+  initialPrograms, initialError, courts, clubId, clubTimezone, currency, userRole, userId,
 }: Props) {
   const router = useRouter();
   const [programs, setPrograms] = useState<ProgramListRow[]>(initialPrograms);
@@ -124,6 +136,45 @@ export default function ProgramsManageClient({
   const [lifecycleUpdating, setLifecycleUpdating] = useState<Set<string>>(new Set());
   const [lifecycleErrors, setLifecycleErrors]     = useState<Map<string, string>>(new Map());
   const [confirmingAction, setConfirmingAction]   = useState<{ programId: string; action: "cancel" | "archive" } | null>(null);
+
+  // Phase 34B: Admin-only price editing, mirrors the inline
+  // create/edit-in-place pattern already used elsewhere in this component.
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [priceDraft,     setPriceDraft]     = useState("");
+  const [priceUpdating,  setPriceUpdating]  = useState(false);
+  const [priceError,     setPriceError]     = useState<string | null>(null);
+
+  function startEditPrice(p: ProgramListRow) {
+    setEditingPriceId(p.id);
+    setPriceDraft(p.price_amount_cents !== null ? (p.price_amount_cents / 100).toFixed(2) : "");
+    setPriceError(null);
+  }
+
+  function cancelEditPrice() {
+    setEditingPriceId(null);
+    setPriceError(null);
+  }
+
+  function saveEditPrice(programId: string) {
+    const trimmed = priceDraft.trim();
+    const cents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
+    setPriceUpdating(true);
+    setPriceError(null);
+    startTransition(async () => {
+      const result = await setProgramPriceAction({
+        p_program_id: programId,
+        p_price_amount_cents: cents,
+        expectedClubId: clubId,
+      });
+      setPriceUpdating(false);
+      if (result.error) {
+        setPriceError(mapProgramError(result.error.code, result.error.message));
+        return;
+      }
+      setEditingPriceId(null);
+      refresh();
+    });
+  }
 
   // Sync when the RSC parent refreshes (router.refresh() after a create).
   useEffect(() => {
@@ -313,6 +364,55 @@ export default function ProgramsManageClient({
                 {p.next_session_starts_at && ` · next ${formatNextSession(p.next_session_starts_at, clubTimezone)}`}
               </p>
 
+              {/* Phase 34B: pricing — Admin-only edit; everyone else sees the resolved price read-only. */}
+              {editingPriceId === p.id ? (
+                <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{priceLabel(p.enrollment_model)}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="0.00"
+                    value={priceDraft}
+                    onChange={e => setPriceDraft(e.target.value)}
+                    className="w-24 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-accent"
+                  />
+                  <button
+                    disabled={priceUpdating}
+                    onClick={() => saveEditPrice(p.id)}
+                    className="text-xs font-semibold text-accent hover:underline disabled:opacity-40"
+                  >
+                    {priceUpdating ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    disabled={priceUpdating}
+                    onClick={cancelEditPrice}
+                    className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  {priceError && <p className="w-full text-xs text-red-500">{priceError}</p>}
+                </div>
+              ) : (
+                <div className="mt-1 flex items-start gap-2">
+                  <PriceSummary
+                    label={priceLabel(p.enrollment_model)}
+                    amountCents={p.price_amount_cents}
+                    currency={currency}
+                    viewer="operator"
+                    breakdown={priceBreakdown(p.enrollment_model, p.price_amount_cents !== null)}
+                  />
+                  {userRole === "admin" && (
+                    <button
+                      onClick={() => startEditPrice(p)}
+                      className="text-xs text-accent hover:underline font-medium mt-4"
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Actions */}
               {canManage && (
                 <>
@@ -444,6 +544,8 @@ export default function ProgramsManageClient({
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
+          userRole={userRole}
           onClose={() => setCreating(false)}
           onSaved={handleProgramSaved}
         />
@@ -456,6 +558,8 @@ export default function ProgramsManageClient({
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
+          userRole={userRole}
           onClose={() => setEditing(null)}
           onSaved={handleProgramSaved}
         />

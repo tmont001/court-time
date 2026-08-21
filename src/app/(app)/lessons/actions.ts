@@ -230,6 +230,7 @@ export async function submitLessonRequest(params: {
   p_preferred_court_id?: string | null;
   p_member_note?:        string | null;
   p_preferred_windows?:  Record<string, unknown> | null;
+  p_lesson_type_id?:     string | null;
   expectedClubId:        string;
 }): Promise<{ error?: string }> {
   const guard = await assertActiveClub(params.expectedClubId);
@@ -244,7 +245,10 @@ export async function submitLessonRequest(params: {
     p_member_note:         params.p_member_note        ?? null,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     p_preferred_windows:   (params.p_preferred_windows ?? null) as any,
-    p_lesson_type_id:      null,  // explicitly target the 6-arg signature from migration 0070
+    // Phase 34B: Member-facing Lesson Type selection — explicitly named so
+    // this still targets the 7-arg signature (migration 0070/0140) that
+    // has this parameter, not any older overload without it.
+    p_lesson_type_id:      params.p_lesson_type_id ?? null,
   });
 
   if (error) return { error: mapLessonError(error.message) };

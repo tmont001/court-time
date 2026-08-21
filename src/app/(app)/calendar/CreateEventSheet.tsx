@@ -5,6 +5,8 @@ import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
 import { createEvent } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { formatOperatorPrice } from "@/lib/money";
+import PriceSummary from "@/components/PriceSummary";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,7 @@ interface EventType {
   default_duration_minutes: number;
   default_court_count:      number;
   shows_participant_names:  boolean;
+  default_price_amount_cents: number | null;
 }
 
 interface Court {
@@ -35,6 +38,7 @@ interface Props {
   courts:          Court[];
   clubId:          string;
   clubTimezone:    string;
+  currency:        string;
   onClose:         () => void;
   onCreated:       () => void;
   // Optional: return to slot action menu instead of closing
@@ -94,7 +98,7 @@ const TIME_SLOTS = (() => {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CreateEventSheet({
-  courts, clubId, clubTimezone, onClose, onCreated, onBack,
+  courts, clubId, clubTimezone, currency, onClose, onCreated, onBack,
   initialDate, initialHour, initialMinute, initialCourtId,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -129,7 +133,7 @@ export default function CreateEventSheet({
   useEffect(() => {
     supabase
       .from("event_types")
-      .select("id, key, label, color, default_capacity, default_duration_minutes, default_court_count, shows_participant_names")
+      .select("id, key, label, color, default_capacity, default_duration_minutes, default_court_count, shows_participant_names, default_price_amount_cents")
       .eq("club_id", clubId)
       .eq("is_active", true)
       .order("label")
@@ -340,7 +344,7 @@ export default function CreateEventSheet({
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{type.label}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {type.default_capacity} spots · {type.default_duration_minutes} min · {type.default_court_count} court{type.default_court_count !== 1 ? "s" : ""}
+                        {type.default_capacity} spots · {type.default_duration_minutes} min · {type.default_court_count} court{type.default_court_count !== 1 ? "s" : ""} · {formatOperatorPrice(type.default_price_amount_cents, currency)}
                       </p>
                     </div>
                   </button>
@@ -598,6 +602,17 @@ export default function CreateEventSheet({
                     {selectedType.label}
                   </span>
                   {title.trim()} · {summaryDate} · {summaryStart} – {endTimeLabel} · {summaryCourtNames} · {capacity} spot{capacity !== 1 ? "s" : ""}
+                </p>
+                <PriceSummary
+                  label="Event price"
+                  amountCents={selectedType.default_price_amount_cents}
+                  currency={currency}
+                  viewer="operator"
+                  breakdown={selectedType.default_price_amount_cents !== null ? "per participant" : null}
+                  className="mt-2"
+                />
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                  From the event type default — set an override after creating this event if needed.
                 </p>
               </div>
 

@@ -14,11 +14,19 @@ export default async function AdminCourtsPage() {
   if (!hasAdminAuthority(profile?.role)) redirect("/calendar");
 
   const supabase = await createClient();
-  const { data: courts, error } = await supabase
-    .from("courts")
-    .select("id, name, display_order, is_active")
-    .eq("club_id", profile?.club_id ?? "")
-    .order("display_order", { ascending: true });
+  const clubId = profile?.club_id ?? "";
+  const [{ data: courts, error }, { data: settings }] = await Promise.all([
+    supabase
+      .from("courts")
+      .select("id, name, display_order, is_active, hourly_rate_cents")
+      .eq("club_id", clubId)
+      .order("display_order", { ascending: true }),
+    supabase
+      .from("club_settings")
+      .select("currency, default_court_hourly_rate_cents")
+      .eq("club_id", clubId)
+      .single(),
+  ]);
 
   if (error) {
     console.error("[AdminCourts] courts query failed:", error.message);
@@ -41,7 +49,12 @@ export default async function AdminCourtsPage() {
           </p>
         </div>
         <hr className="border-gray-100 dark:border-gray-800" />
-        <CourtManagementList initialCourts={courts ?? []} clubId={profile?.club_id ?? ""} />
+        <CourtManagementList
+          initialCourts={courts ?? []}
+          clubId={clubId}
+          currency={settings?.currency ?? "USD"}
+          defaultHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
+        />
       </div>
     </>
   );

@@ -6,10 +6,11 @@ import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet"
 import EditEventSheet from "./EditEventSheet";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
-import { setEventMemberJoinableAction } from "@/app/(app)/admin/events/actions";
+import { setEventMemberJoinableAction, setEventPriceOverrideAction } from "@/app/(app)/admin/events/actions";
 import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
+import PriceSummary from "@/components/PriceSummary";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -44,6 +45,7 @@ interface EventWithDetails {
   description: string | null;
   updated_at: string;
   program_id: string | null;
+  price_amount_cents: number | null;
   event_types: {
     key: string;
     label: string;
@@ -82,6 +84,7 @@ interface Props {
   userRole: string;
   clubTimezone: string;
   clubId: string;
+  currency: string;
   onClose: () => void;
   onRefresh: () => void;
   // Phase 33G3: lets a successful, non-lifecycle mutation (currently just
@@ -98,7 +101,7 @@ interface Props {
   // this file's own top-of-file note on why), so a broad Partial<> here
   // would invite a cross-type mismatch for fields neither side actually
   // exchanges through this callback.
-  onEventUpdated: (eventId: string, patch: { member_joinable?: boolean }) => void;
+  onEventUpdated: (eventId: string, patch: { member_joinable?: boolean; price_amount_cents?: number | null }) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -147,7 +150,7 @@ function mapOfferError(message: string): string {
 const MAX_NAMES = 5;
 
 export default function EventDetailSheet({
-  event, courts, userId, userRosterMemberId, userRole, clubTimezone, clubId, onClose, onRefresh, onEventUpdated,
+  event, courts, userId, userRosterMemberId, userRole, clubTimezone, clubId, currency, onClose, onRefresh, onEventUpdated,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -180,6 +183,36 @@ export default function EventDetailSheet({
   const [localMemberJoinable, setLocalMemberJoinable] = useState(event.member_joinable);
   const [joinableSaving, setJoinableSaving]           = useState(false);
   const [joinableError, setJoinableError]             = useState<string | null>(null);
+
+  // Phase 34B: Admin-only Event price override — post-creation-only edit,
+  // never rewrites already-created participant/guest price snapshots.
+  const [localPriceCents, setLocalPriceCents]         = useState(event.price_amount_cents);
+  const [editingPrice, setEditingPrice]                = useState(false);
+  const [priceDraft, setPriceDraft]                    = useState("");
+  const [priceSaving, setPriceSaving]                  = useState(false);
+  const [priceError, setPriceError]                    = useState<string | null>(null);
+
+  function startEditPrice() {
+    setPriceDraft(localPriceCents !== null ? (localPriceCents / 100).toFixed(2) : "");
+    setPriceError(null);
+    setEditingPrice(true);
+  }
+
+  async function handleSavePrice() {
+    const trimmed = priceDraft.trim();
+    const cents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
+    setPriceSaving(true);
+    setPriceError(null);
+    const result = await setEventPriceOverrideAction(event.id, cents, clubId);
+    setPriceSaving(false);
+    if (result.error) {
+      setPriceError(result.error);
+      return;
+    }
+    setLocalPriceCents(cents);
+    setEditingPrice(false);
+    onEventUpdated(event.id, { price_amount_cents: cents });
+  }
   // Phase 33G3 runtime QA: parity with AdminEventsClient's confirmation —
   // an Open-to-Members event with existing active participants requires
   // explicit confirmation before becoming admin-managed (set_event_member_
@@ -499,6 +532,71 @@ export default function EventDetailSheet({
           {confirmedCount + offeredCount + guestCount} of {event.capacity} spots filled
           {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
+
+        {/* Phase 34B: price — Admin sees an editable override; everyone
+            else sees the resolved price, hidden entirely for Members when
+            unset (never implies payment is required). */}
+        {userRole === "admin" ? (
+          editingPrice ? (
+            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0.00"
+                value={priceDraft}
+                onChange={e => setPriceDraft(e.target.value)}
+                className="w-24 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <button
+                disabled={priceSaving}
+                onClick={handleSavePrice}
+                className="text-xs font-semibold text-accent hover:underline disabled:opacity-40"
+              >
+                {priceSaving ? "Saving…" : "Save"}
+              </button>
+              <button
+                disabled={priceSaving}
+                onClick={() => setEditingPrice(false)}
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+              >
+                Cancel
+              </button>
+              {priceError && <p className="w-full text-xs text-red-500">{priceError}</p>}
+            </div>
+          ) : (
+            <div className="mt-1.5 flex items-start justify-between gap-2">
+              <PriceSummary
+                label="Event price"
+                amountCents={localPriceCents}
+                currency={currency}
+                viewer="operator"
+                breakdown={localPriceCents !== null ? "per participant" : null}
+              />
+              <button onClick={startEditPrice} className="text-xs text-accent hover:underline font-medium shrink-0 mt-0.5">
+                Edit
+              </button>
+            </div>
+          )
+        ) : isOperator(userRole) ? (
+          <PriceSummary
+            label="Event price"
+            amountCents={localPriceCents}
+            currency={currency}
+            viewer="operator"
+            breakdown={localPriceCents !== null ? "per participant" : null}
+            className="mt-1.5"
+          />
+        ) : (
+          <PriceSummary
+            label="Event price"
+            amountCents={localPriceCents}
+            currency={currency}
+            viewer="member"
+            breakdown={localPriceCents !== null ? "per participant" : null}
+            className="mt-1.5"
+          />
+        )}
 
         {/* View Roster — admin/pro only */}
         {canViewRoster && (

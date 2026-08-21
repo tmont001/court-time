@@ -736,3 +736,45 @@ export async function updateEventAdmin(params: {
 
   return { data: { changedFields } };
 }
+
+// ---------------------------------------------------------------------------
+// setEventPriceOverrideAction
+// Phase 34B: Admin-only. Changes only this Event's own price snapshot —
+// never rewrites already-created event_participants/event_guests price
+// snapshots. New participants/guests added after this call use the new
+// price. Deliberately a separate, post-creation-only action from
+// create_event, which stays price-blind for its shared Staff/Pro/Admin
+// signature.
+// ---------------------------------------------------------------------------
+const PRICE_OVERRIDE_ERROR_MESSAGES: Record<string, string> = {
+  [STALE_CLUB_CONTEXT_ERROR]: STALE_CLUB_MESSAGE,
+  not_authenticated: "You must be signed in.",
+  insufficient_role: "Admin access required.",
+  event_not_found:   "Event not found.",
+  invalid_price:     "Price must be zero or a positive amount.",
+};
+
+export async function setEventPriceOverrideAction(
+  eventId: string,
+  priceAmountCents: number | null,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: PRICE_OVERRIDE_ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("set_event_price_override", {
+    p_event_id: eventId,
+    p_price_amount_cents: priceAmountCents,
+  });
+
+  if (error) {
+    const code = error.message?.trim() ?? "";
+    return { error: PRICE_OVERRIDE_ERROR_MESSAGES[code] ?? "Failed to save event price." };
+  }
+
+  revalidatePath("/calendar");
+  revalidatePath("/events");
+  return {};
+}

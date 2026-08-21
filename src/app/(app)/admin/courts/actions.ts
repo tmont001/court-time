@@ -14,6 +14,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   name_too_long:       "Court name must be 60 characters or fewer.",
   name_already_exists: "A court with that name already exists.",
   invalid_court_order: "Invalid court order. Please reload and try again.",
+  // Phase 34B
+  invalid_rate:         "Rate must be zero or a positive amount.",
 };
 
 function revalidateCourts() {
@@ -99,6 +101,34 @@ export async function setCourtActive(
     }
     const key = error.message.match(/not_authenticated|insufficient_role|invalid_court/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to update court." };
+  }
+
+  revalidateCourts();
+  return {};
+}
+
+// Phase 34B: optional per-court hourly rate override. A court override may
+// exist even when the club default is null — null clears the override,
+// falling back to the club default (or unpriced, if that's also null).
+export async function setCourtHourlyRate(
+  courtId: string,
+  hourlyRateCents: number | null,
+  expectedClubId: string,
+): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_court_hourly_rate", {
+    p_court_id: courtId,
+    p_hourly_rate_cents: hourlyRateCents,
+  });
+  if (error) {
+    const key = error.message.match(/not_authenticated|insufficient_role|invalid_court|invalid_rate/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save court rate." };
   }
 
   revalidateCourts();

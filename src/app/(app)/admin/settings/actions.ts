@@ -27,6 +27,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Lesson is now the canonical Lesson workflow, so this one legacy type
   // can never be reactivated.
   event_type_retired:          "This event type has been retired and can't be reactivated. Book Lesson is now the canonical Lesson workflow.",
+  // Phase 34B
+  currency_required:           "Currency is required.",
+  invalid_currency:            "Currency must be a 3-letter code (e.g. USD).",
+  invalid_rate:                "Rate must be zero or a positive amount.",
+  invalid_price:                "Price must be zero or a positive amount.",
 };
 
 export async function updateClubTimezone(
@@ -172,6 +177,52 @@ export async function updateBookingRules(
   if (error) {
     const key = error.message.match(/invalid_\w+|not_authenticated|insufficient_role/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to save settings." };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
+// Phase 34B: club-wide currency + optional default court hourly rate.
+// Court pricing is opt-in — p_default_court_hourly_rate_cents may be null.
+export async function updateClubPricing(
+  currency: string,
+  defaultCourtHourlyRateCents: number | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("update_club_pricing", {
+    p_currency: currency,
+    p_default_court_hourly_rate_cents: defaultCourtHourlyRateCents,
+  });
+  if (error) {
+    const key = error.message.match(/currency_required|invalid_currency|invalid_rate|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save pricing settings." };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
+// Phase 34B: Admin-only default price for an Event Type. New Events copy
+// this value at creation; changing it later never rewrites existing Events.
+export async function setEventTypePrice(
+  id: string,
+  defaultPriceAmountCents: number | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_event_type_price", {
+    p_id: id,
+    p_default_price_amount_cents: defaultPriceAmountCents,
+  });
+  if (error) {
+    const key = error.message.match(/invalid_event_type|invalid_price|not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save event type price." };
   }
 
   revalidatePath("/", "layout");

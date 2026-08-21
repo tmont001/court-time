@@ -20,6 +20,7 @@ interface Props {
   userRole:        string;
   clubId:          string;
   clubTimezone:    string;
+  currency:        string;
   pros?:           ClubPro[];
   onCreateRequest?: () => void;
 }
@@ -52,7 +53,7 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
-export default function LessonsTab({ initialRequests, courts, userId, userRole, clubId, clubTimezone, pros, onCreateRequest }: Props) {
+export default function LessonsTab({ initialRequests, courts, userId, userRole, clubId, clubTimezone, currency, pros, onCreateRequest }: Props) {
   const router                    = useRouter();
   const pathname                  = usePathname();
   const searchParams              = useSearchParams();
@@ -325,6 +326,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
           userId={userId}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           userRole={userRole}
           pros={pros}
           initialMode={proposeMode ? "propose" : undefined}

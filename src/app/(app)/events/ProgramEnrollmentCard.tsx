@@ -19,6 +19,7 @@ import {
 } from "./programEnrollmentActions";
 import { mapProgramError } from "./programErrors";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
+import PriceSummary from "@/components/PriceSummary";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ interface Props {
   program:      MemberProgramCard;
   clubId:       string;
   clubTimezone: string;
+  currency:     string;
   /** Phase 33F3B: false at a Staff-Managed club — hides Join Program and
    * Rejoin Waitlist (new/re-entry). Leave, Leave Waitlist, Pass, and
    * Accept Spot (existing-commitment continuity) are unaffected. A
@@ -79,7 +81,7 @@ const PENDING_LABEL: Record<Exclude<PendingKind, null>, string> = {
   rejoin:  "Rejoining…",
 };
 
-export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, memberSelfService }: Props) {
+export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, currency, memberSelfService }: Props) {
   const router = useRouter();
   // Single-transition protection, unchanged: one useTransition guards every
   // action on this card, so only one can ever be in flight at a time.
@@ -176,6 +178,14 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, m
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
         {scheduleSummary(program.rules)}
       </p>
+      <PriceSummary
+        label="Program price"
+        amountCents={program.price_amount_cents}
+        currency={currency}
+        viewer="member"
+        breakdown={program.price_amount_cents !== null ? "for the full program" : null}
+        className="mt-0.5"
+      />
 
       {/* Offer deadline */}
       {status === "offered" && !offerExpired && offerExpiresAt && (

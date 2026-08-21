@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import PriceSummary from "@/components/PriceSummary";
+import { formatMoney } from "@/lib/money";
 import { updateMemberReservationAdmin } from "./actions";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
@@ -41,12 +43,18 @@ interface EditableReservation {
   guest_names:       string[] | null;
   notes:             string | null;
   updated_at:        string;
+  // Phase 34B: the reservation's own snapshot — the A/B/C preview below
+  // starts from these, never from "today's" rate, unless court or
+  // duration actually changes.
+  hourly_rate_cents:  number | null;
+  price_amount_cents: number | null;
 }
 
 interface Court {
-  id:            string;
-  name:          string;
-  display_order: number;
+  id:                string;
+  name:              string;
+  display_order:     number;
+  hourly_rate_cents?: number | null;
 }
 
 // Phase 33C2 completion: one roster identity option for the Member picker —
@@ -66,6 +74,8 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  currency:                    string;
+  defaultCourtHourlyRateCents: number | null;
   onClose:      () => void;
   onSaved:      () => void;
 }
@@ -118,7 +128,7 @@ function mapEditError(code: string | undefined, message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EditReservationSheet({
-  reservation, courts, clubId, clubTimezone, onClose, onSaved,
+  reservation, courts, clubId, clubTimezone, currency, defaultCourtHourlyRateCents, onClose, onSaved,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -207,6 +217,31 @@ export default function EditReservationSheet({
   const endTimeLabel = endsAt.toLocaleTimeString("en-US", {
     timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
   });
+
+  // Phase 34B: client-side mirror of update_member_reservation's own A/B/C
+  // pricing invariants, purely for preview — the RPC is the actual
+  // authority and recomputes this itself server-side regardless of what
+  // this preview shows. Court changed -> resolve the DESTINATION court's
+  // CURRENT rate (a new pricing dimension). Duration-only changed ->
+  // preserve the EXISTING rate snapshot, recompute only the total. Neither
+  // changed -> preserve both exactly, never implying today's rate.
+  const pricePreview = useMemo(() => {
+    const courtChanged    = courtId !== reservation.court_id;
+    const durationChanged = duration !== durationOf(reservation);
+
+    if (courtChanged) {
+      const destCourt = courts.find(c => c.id === courtId);
+      const rate = (destCourt?.hourly_rate_cents ?? defaultCourtHourlyRateCents) ?? null;
+      const total = rate !== null ? Math.round((rate * duration) / 60) : null;
+      return { rateCents: rate, totalCents: total };
+    }
+    if (durationChanged) {
+      const rate = reservation.hourly_rate_cents;
+      const total = rate !== null ? Math.round((rate * duration) / 60) : null;
+      return { rateCents: rate, totalCents: total };
+    }
+    return { rateCents: reservation.hourly_rate_cents, totalCents: reservation.price_amount_cents };
+  }, [courtId, duration, courts, defaultCourtHourlyRateCents, reservation]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -504,6 +539,14 @@ export default function EditReservationSheet({
             className="mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-600 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>
+
+        <PriceSummary
+          label="Price"
+          amountCents={pricePreview.totalCents}
+          currency={currency}
+          viewer="operator"
+          breakdown={pricePreview.rateCents !== null ? `${formatMoney(pricePreview.rateCents, currency)}/hour × ${duration} min` : null}
+        />
 
         {error && <p className="text-xs text-red-500">{error}</p>}
 
