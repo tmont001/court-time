@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import PriceSummary from "@/components/PriceSummary";
+import { createClient } from "@/lib/supabase/client";
 import { isOperator } from "@/lib/auth/roles";
 import { localDateTimeToUTC } from "@/lib/timezone";
+import { formatLessonUnitPrice, calculateLessonTotalCents } from "@/lib/money";
 import {
   proposeLessonTime,
   declineLessonRequest,
@@ -26,10 +29,30 @@ interface Props {
   userId:       string;
   clubId:       string;
   clubTimezone: string;
+  currency:     string;
   userRole?:    string;
   pros?:        ClubPro[];
   initialMode?: "propose";
   onClose:      () => void;
+}
+
+// Mirrors AdminRequestLessonSheet's own duration preset — the domain rule
+// (minimum 30 minutes, multiples of 15) applied consistently anywhere a
+// Lesson Type doesn't restrict to its own allowed_durations.
+const DEFAULT_LESSON_DURATIONS = [30, 45, 60, 90];
+
+// Phase 34B: this sheet doesn't otherwise know a confirmed Lesson's price
+// snapshot or its Lesson Type's allowed_durations — get_pro_lesson_requests()
+// (the RPC behind ProLessonRequestRow) doesn't return either. Read directly
+// from lesson_requests/lesson_types instead of widening that RPC — both
+// already have club-scoped SELECT RLS for admin/staff/pro (0069/0070), so
+// this needs no backend change.
+interface LessonPriceSnapshot {
+  lessonTypeId:          string | null;
+  pricingBasis:           "flat" | "hourly" | null;
+  unitPriceAmountCents:   number | null;
+  priceAmountCents:       number | null;
+  allowedDurations:       number[] | null;
 }
 
 type ActionMode = "propose" | "decline" | "cancel" | "reassign" | "admin_edit" | null;
@@ -46,6 +69,27 @@ const TIME_SLOTS = (() => {
   }
   return slots;
 })();
+
+// Phase 34B: converts an ISO timestamp into this picker's club-local
+// {dateStr, slotIdx} — used to initialize admin_edit mode's date/time
+// fields from the Lesson's ACTUAL current schedule (proposed_starts_at),
+// never from today's date. Minutes are rounded down to the nearest
+// 30-minute slot (TIME_SLOTS' own granularity) since every entry point
+// that creates a Lesson already only offers 30-minute start times; this
+// only matters as a defensive fallback if one ever didn't. Falls back to
+// index 8 (9:00 AM) — the sheet's pre-existing default — if the hour ever
+// falls outside TIME_SLOTS' 5:00-22:00 range.
+function getLocalDateAndSlot(iso: string, tz: string): { dateStr: string; slotIdx: number } {
+  const dateStr = new Date(iso).toLocaleDateString("en-CA", { timeZone: tz });
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date(iso));
+  const hour24 = parseInt(parts.find(p => p.type === "hour")?.value ?? "0", 10) % 24;
+  const minute = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+  const roundedMinute = minute < 30 ? 0 : 30;
+  const slotIdx = TIME_SLOTS.findIndex(s => s.hour === hour24 && s.minute === roundedMinute);
+  return { dateStr, slotIdx: slotIdx === -1 ? 8 : slotIdx };
+}
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -239,7 +283,7 @@ function ReasonForm({
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function LessonProSheet({ request, courts, userId, clubId, clubTimezone, userRole, pros, initialMode, onClose }: Props) {
+export default function LessonProSheet({ request, courts, userId, clubId, clubTimezone, currency, userRole, pros, initialMode, onClose }: Props) {
   const router                    = useRouter();
   const [mode, setMode]           = useState<ActionMode>(initialMode ?? null);
   const [dateStr, setDateStr]     = useState<string>(() =>
@@ -249,12 +293,107 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   const [courtId, setCourtId]     = useState<string>(courts[0]?.id ?? "");
   const [reason, setReason]       = useState("");
   const [newProId, setNewProId]   = useState<string>("");
-  // Phase 33D1: admin direct-edit mode's Pro selection — reuses the
-  // existing courtId/dateStr/slotIdx state above (already generic, shared
-  // with "propose" mode's TimePicker) rather than duplicating them.
   const [editProId, setEditProId] = useState<string>(request.pro_id);
+  // Phase 34B: admin_edit mode's Duration — the one field this direct-edit
+  // flow was missing even though admin_update_member_lesson already
+  // supports it. Defaults to the Lesson's current duration.
+  const [editDurationMinutes, setEditDurationMinutes] = useState<number>(request.duration_minutes);
+  // Phase 34B (bugfix): admin_edit mode used to reuse the shared dateStr/
+  // slotIdx/courtId state above — the same state "propose" mode's
+  // TimePicker uses for proposing a brand-new time, which correctly
+  // starts blank (today/9:00 AM/first court). Reusing it for admin_edit
+  // meant editing a confirmed Lesson's Time/Court also silently discarded
+  // its actual Date/Court back to those same blank defaults, since nothing
+  // ever initialized them from the Lesson being edited. Separate,
+  // edit-mode-only state initialized directly from the Lesson's real
+  // current schedule (proposed_starts_at/proposed_court_id) fixes this
+  // without touching "propose" mode's own — still intentionally blank —
+  // defaults.
+  const [editDateStr, setEditDateStr] = useState<string>(() =>
+    request.proposed_starts_at
+      ? getLocalDateAndSlot(request.proposed_starts_at, clubTimezone).dateStr
+      : new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone })
+  );
+  const [editSlotIdx, setEditSlotIdx] = useState<number>(() =>
+    request.proposed_starts_at
+      ? getLocalDateAndSlot(request.proposed_starts_at, clubTimezone).slotIdx
+      : 8
+  );
+  const [editCourtId, setEditCourtId] = useState<string>(
+    request.proposed_court_id ?? courts[0]?.id ?? ""
+  );
+  const [priceSnapshot, setPriceSnapshot] = useState<LessonPriceSnapshot | null>(null);
   const [error, setError]         = useState("");
   const [isPending, startTransition] = useTransition();
+
+  // Phase 34B: fetch this Lesson's price snapshot + (if it has a Lesson
+  // Type) that type's allowed_durations once, on mount — see
+  // LessonPriceSnapshot's own comment for why this is a plain read rather
+  // than a widened RPC.
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      // Phase 34B: lesson_requests/lesson_types aren't in the generated
+      // Database["public"]["Tables"] map (both were only ever accessed via
+      // RPC before this checkpoint), so a strictly-typed .from() call
+      // doesn't type-check even though both columns genuinely exist —
+      // matches this codebase's existing narrow-cast precedent (e.g.
+      // admin/events/actions.ts's `(supabase.rpc as any)("archive_event"...)`
+      // for the same generated-types-lag reason.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: lr } = await (supabase.from as any)("lesson_requests")
+        .select("lesson_type_id, pricing_basis, unit_price_amount_cents, price_amount_cents")
+        .eq("id", request.id)
+        .single() as { data: {
+          lesson_type_id: string | null;
+          pricing_basis: "flat" | "hourly" | null;
+          unit_price_amount_cents: number | null;
+          price_amount_cents: number | null;
+        } | null };
+      if (cancelled || !lr) return;
+
+      let allowedDurations: number[] | null = null;
+      if (lr.lesson_type_id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: lt } = await (supabase.from as any)("lesson_types")
+          .select("allowed_durations")
+          .eq("id", lr.lesson_type_id)
+          .single() as { data: { allowed_durations: number[] | null } | null };
+        if (!cancelled) allowedDurations = lt?.allowed_durations ?? null;
+      }
+      if (!cancelled) {
+        setPriceSnapshot({
+          lessonTypeId:         lr.lesson_type_id,
+          pricingBasis:         lr.pricing_basis,
+          unitPriceAmountCents: lr.unit_price_amount_cents,
+          priceAmountCents:     lr.price_amount_cents,
+          allowedDurations,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [request.id]);
+
+  // Phase 34B: available duration choices for the admin_edit picker — the
+  // Lesson Type's own allowed_durations when it has one, else the same
+  // domain-rule preset AdminRequestLessonSheet uses at creation time.
+  const editAvailableDurations: number[] =
+    priceSnapshot?.allowedDurations?.length
+      ? priceSnapshot.allowedDurations
+      : DEFAULT_LESSON_DURATIONS;
+
+  // Phase 34B: pricing preview for admin_edit mode. This flow never
+  // changes lesson_type_id (no Lesson Type selector here), so the
+  // preview always mirrors the backend's "type unchanged" branch: flat ->
+  // total unchanged regardless of duration; hourly -> recompute from the
+  // PRESERVED unit rate times the new duration; NULL snapshot stays NULL.
+  // Never adopt today's Lesson Type rate merely because duration changed.
+  const editPricePreviewCents = priceSnapshot
+    ? priceSnapshot.pricingBasis === "hourly"
+      ? calculateLessonTotalCents(priceSnapshot.pricingBasis, priceSnapshot.unitPriceAmountCents, editDurationMinutes)
+      : priceSnapshot.priceAmountCents
+    : null;
 
   const memberName = [request.member_first_name, request.member_last_name].filter(Boolean).join(" ") || "Member";
   const proName     = [request.pro_first_name, request.pro_last_name].filter(Boolean).join(" ") || "Pro";
@@ -281,6 +420,9 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // admitted here; this function has never had a Pro path.
   const canAdminEditDirectly = isOperator(userRole) && !request.member_claimed && request.status === "confirmed";
 
+  // "propose" mode's own start/end — unchanged from before Phase 34B,
+  // duration always fixed at the Lesson's existing request.duration_minutes
+  // (propose mode has no duration picker of its own).
   const startsAt = useMemo(() => {
     const slot = TIME_SLOTS[slotIdx];
     return localDateTimeToUTC(dateStr, slot.hour, slot.minute, clubTimezone);
@@ -292,6 +434,23 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   );
 
   const endLabel = endsAt.toLocaleTimeString("en-US", {
+    timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+  });
+
+  // admin_edit mode's own start/end — built from its own edit-only
+  // date/time/duration state (see editDateStr/editSlotIdx/
+  // editDurationMinutes above), never from "propose" mode's state.
+  const editStartsAt = useMemo(() => {
+    const slot = TIME_SLOTS[editSlotIdx];
+    return localDateTimeToUTC(editDateStr, slot.hour, slot.minute, clubTimezone);
+  }, [editDateStr, editSlotIdx, clubTimezone]);
+
+  const editEndsAt = useMemo(
+    () => new Date(editStartsAt.getTime() + editDurationMinutes * 60_000),
+    [editStartsAt, editDurationMinutes]
+  );
+
+  const editEndLabel = editEndsAt.toLocaleTimeString("en-US", {
     timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
   });
 
@@ -537,12 +696,14 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
 
       {/* Phase 33D1: admin direct edit for a no-account Member's confirmed
           lesson — no negotiation step. Reuses the TimePicker component
-          (dateStr/slotIdx/courtId state) plus a Pro selector, submitting
-          directly to admin_update_member_lesson rather than propose_
-          lesson_time. request.roster_member_id is passed through
-          unchanged — this mode never reassigns the Member, only Pro/
-          court/time; a full Member-reassignment UI is left for a future
-          pass, out of this checkpoint's minimal scope. */}
+          (rendered with its own edit-only editDateStr/editSlotIdx/
+          editCourtId state — see their declaration above for why that's
+          separate from "propose" mode's dateStr/slotIdx/courtId) plus a
+          Pro selector, submitting directly to admin_update_member_lesson
+          rather than propose_lesson_time. request.roster_member_id is
+          passed through unchanged — this mode never reassigns the Member,
+          only Pro/court/time; a full Member-reassignment UI is left for a
+          future pass, out of this checkpoint's minimal scope. */}
       {mode === "admin_edit" && (
         <div className="space-y-4">
           <div>
@@ -561,16 +722,63 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
               ))}
             </select>
           </div>
+
+          {/* Phase 34B: Duration — the field this direct-edit flow was
+              missing even though the backend already supports it. Choices
+              come from the Lesson Type's own allowed_durations when it has
+              one, else the same preset used at creation time. */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Duration
+            </label>
+            <div className="grid grid-cols-4 gap-2">
+              {editAvailableDurations.map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setEditDurationMinutes(d)}
+                  className={`py-2 rounded-xl text-sm font-semibold border-2 motion-safe:transition-all motion-safe:duration-100 ${
+                    editDurationMinutes === d
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-accent/50"
+                  }`}
+                >
+                  {d} min
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Phase 34B: pricing preview — never adopts today's Lesson Type
+              rate merely because duration changed; mirrors the backend's
+              "Lesson Type unchanged" branch exactly, since this flow has
+              no control to change the Lesson Type itself. */}
+          {priceSnapshot && (
+            <PriceSummary
+              label="Lesson price"
+              amountCents={editPricePreviewCents}
+              currency={currency}
+              viewer="operator"
+              breakdown={
+                priceSnapshot.pricingBasis === "hourly"
+                  ? `${formatLessonUnitPrice("hourly", priceSnapshot.unitPriceAmountCents, currency)} × ${editDurationMinutes} min`
+                  : priceSnapshot.pricingBasis === "flat"
+                  ? "Flat lesson rate"
+                  : null
+              }
+            />
+          )}
+
           <TimePicker
-          dateStr={dateStr}
-          setDateStr={setDateStr}
-          slotIdx={slotIdx}
-          setSlotIdx={setSlotIdx}
-          courtId={courtId}
-          setCourtId={setCourtId}
+          dateStr={editDateStr}
+          setDateStr={setEditDateStr}
+          slotIdx={editSlotIdx}
+          setSlotIdx={setEditSlotIdx}
+          courtId={editCourtId}
+          setCourtId={setEditCourtId}
           courts={courts}
-          endLabel={endLabel}
-          durationMins={request.duration_minutes}
+          endLabel={editEndLabel}
+          durationMins={editDurationMinutes}
           clubTimezone={clubTimezone}
           error={error}
           isPending={isPending}
@@ -581,9 +789,9 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             expectedUpdatedAt: request.updated_at,
             rosterMemberId:    request.roster_member_id,
             proId:             editProId,
-            courtId,
-            startsAt:          startsAt.toISOString(),
-            endsAt:            endsAt.toISOString(),
+            courtId:           editCourtId,
+            startsAt:          editStartsAt.toISOString(),
+            endsAt:            editEndsAt.toISOString(),
           }))}
           onCancel={() => { setMode(null); setError(""); }}
           />

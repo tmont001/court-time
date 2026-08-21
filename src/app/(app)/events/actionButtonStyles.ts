@@ -1,98 +1,17 @@
 // actionButtonStyles.ts
-// Phase 27C.3: shared, page-scoped action-button classes for /events (all
-// four tabs — Upcoming, Manage → Events, Manage → Programs, Lessons).
-// Consolidates what was previously duplicated/ad hoc styling (bare text
-// links, a locally-defined pair of classes in ProgramsManageClient, small
-// bordered chips in AdminEventsClient) into one small set of variants.
-//
-// Deliberately NOT a global design-system component — scoped to this one
-// directory, plain exported class strings (matching this codebase's
-// existing convention, e.g. AdminEventsClient's own `selectClass`), used
-// only by /events' own components. Broader application-wide button
-// consistency is out of scope here and left as deferred visual-design
-// polish (see the Phase 27C.2 note this supersedes).
-//
-// Three variants, one consistent size (px-3 py-2, text-xs font-semibold,
-// rounded-lg) so hierarchy is communicated by color/fill/border alone —
-// never by size:
-//   PRIMARY     — the principal positive action on a card or toolbar
-//                 (Join, Accept, Rejoin, Preview & Generate, Manage
-//                 Sessions, Unarchive, Create Event/Program, Propose a
-//                 Time, Create Lesson Request). Accent-filled.
-//   SECONDARY   — supporting/navigational actions with no positive-or-
-//                 negative charge (View Sessions, View Roster, the
-//                 dismiss side of any confirmation, the admin-managed
-//                 toggle initiator). Neutral bordered.
-//   DESTRUCTIVE — actions that remove, cancel, restrict, or decline
-//                 something (Leave, Cancel Event, Archive, Decline/Pass,
-//                 Make admin-managed). Red-tinted bordered — a deliberate
-//                 tinted-not-solid fill so it reads as clearly red/
-//                 destructive without visually overpowering lower-stakes
-//                 instances of it (e.g. Pass, repeated down a long list)
-//                 the way a solid red fill would.
+// Phase 27C.3 originally defined this vocabulary scoped to /events. Phase
+// 34B promoted it to src/lib/actionButtonStyles.ts so Admin pricing
+// surfaces outside /events (courts, settings) could reuse the same
+// compact action-button treatment instead of inventing a second one. This
+// file now just re-exports from there — every existing import path in
+// /events keeps working unchanged.
 
-const BASE =
-  "px-3 py-2 rounded-lg text-xs font-semibold " +
-  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
-
-export const ACTION_BUTTON_PRIMARY =
-  BASE +
-  " text-white dark:text-gray-900 bg-accent " +
-  "hover:brightness-110 hover:shadow-sm motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 " +
-  "focus-visible:ring-accent";
-
-export const ACTION_BUTTON_SECONDARY =
-  BASE +
-  " text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 " +
-  "border border-gray-300 dark:border-gray-600 " +
-  "hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 " +
-  "focus-visible:ring-gray-400";
-
-export const ACTION_BUTTON_DESTRUCTIVE =
-  BASE +
-  " text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 " +
-  "border border-red-300 dark:border-red-800/60 " +
-  "hover:bg-red-100 dark:hover:bg-red-900/40 hover:border-red-400 dark:hover:border-red-700 " +
-  "focus-visible:ring-red-500";
-
-// Compact destructive variant — same red-tinted border/fill/hover/focus
-// treatment as ACTION_BUTTON_DESTRUCTIVE, sized down for a single
-// repeated inline action inside dense list rows (e.g. the roster sheet's
-// per-participant/per-guest "Remove") where the full px-3 py-2 size would
-// be disproportionate next to a name and a row of small status pills.
-// Still a real bordered/tinted button, never a bare text link.
-export const ACTION_BUTTON_DESTRUCTIVE_COMPACT =
-  "px-2 py-1 rounded-md text-[11px] font-semibold " +
-  "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 " +
-  "border border-red-300 dark:border-red-800/60 " +
-  "hover:bg-red-100 dark:hover:bg-red-900/40 hover:border-red-400 dark:hover:border-red-700 " +
-  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
-
-// Compact positive variant — same treatment as ACTION_BUTTON_DESTRUCTIVE_COMPACT
-// but green, for a compact affirmative admin roster action (e.g. "Force
-// Confirm" on an offered/waitlisted participant) that needs to keep its own
-// distinct semantic color rather than the shared accent.
-export const ACTION_BUTTON_POSITIVE_COMPACT =
-  "px-2 py-1 rounded-md text-[11px] font-semibold " +
-  "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 " +
-  "border border-green-300 dark:border-green-800/60 " +
-  "hover:bg-green-100 dark:hover:bg-green-900/40 hover:border-green-400 dark:hover:border-green-700 " +
-  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
-
-// Compact informational variant — same treatment, blue, for a compact
-// neutral-but-notable admin roster action (e.g. "Offer Spot" on a
-// waitlisted participant).
-export const ACTION_BUTTON_INFO_COMPACT =
-  "px-2 py-1 rounded-md text-[11px] font-semibold " +
-  "text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 " +
-  "border border-blue-300 dark:border-blue-800/60 " +
-  "hover:bg-blue-100 dark:hover:bg-blue-900/40 hover:border-blue-400 dark:hover:border-blue-700 " +
-  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
-  "disabled:opacity-40 disabled:pointer-events-none";
+export {
+  ACTION_BUTTON_PRIMARY,
+  ACTION_BUTTON_SECONDARY,
+  ACTION_BUTTON_SECONDARY_COMPACT,
+  ACTION_BUTTON_DESTRUCTIVE,
+  ACTION_BUTTON_DESTRUCTIVE_COMPACT,
+  ACTION_BUTTON_POSITIVE_COMPACT,
+  ACTION_BUTTON_INFO_COMPACT,
+} from "@/lib/actionButtonStyles";

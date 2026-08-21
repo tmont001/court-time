@@ -6,6 +6,8 @@ import { adminCancelReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
 import EditMaintenanceSheet from "./EditMaintenanceSheet";
+import PriceSummary from "@/components/PriceSummary";
+import { formatMoney } from "@/lib/money";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,12 +37,18 @@ interface ReservationBlock {
   notes:                 string | null;
   show_notes_to_members: boolean;
   updated_at:            string;
+  // Phase 34B: snapshotted at booking/edit time — never a live-resolved
+  // "current rate," so a legacy pre-pricing reservation correctly stays
+  // NULL here even after the club later configures pricing.
+  hourly_rate_cents:     number | null;
+  price_amount_cents:    number | null;
 }
 
 interface Court {
-  id:            string;
-  name:          string;
-  display_order: number;
+  id:                string;
+  name:              string;
+  display_order:     number;
+  hourly_rate_cents?: number | null;
 }
 
 // Phase 33C2: replaces the old OwnerProfile-only shape — the reservation's
@@ -79,6 +87,8 @@ interface Props {
   // from isAdmin: canEditMaintenance (maintenance/admin blocks) stays
   // isAdmin-only, unchanged.
   canManageMemberReservation: boolean;
+  currency:                    string;
+  defaultCourtHourlyRateCents: number | null;
   onClose:        () => void;
   onCancelled:    () => void;
   // Phase 30B1: fired after a successful admin edit.
@@ -99,7 +109,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, onClose, onCancelled, onUpdated, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, currency, defaultCourtHourlyRateCents, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -295,6 +305,24 @@ export default function ReservationDetailSheet({
           </div>
         )}
 
+        {/* Price — snapshotted at booking/edit time, shown read-only here.
+            Member sees it hidden entirely when unpriced; operator sees
+            "No price set." Never a live-resolved "today's rate." */}
+        {reservation.reason === "member_booking" && (
+          <PriceSummary
+            label="Price"
+            amountCents={reservation.price_amount_cents}
+            currency={currency}
+            viewer={onMemberCancel ? "member" : "operator"}
+            breakdown={
+              reservation.hourly_rate_cents !== null
+                ? `${formatMoney(reservation.hourly_rate_cents, currency)}/hour`
+                : null
+            }
+            className="mt-3"
+          />
+        )}
+
         {/* Maintenance notes — only for maintenance/admin_block reason */}
         {reservation.reason === "maintenance" && (
           <div className="mt-3">
@@ -353,6 +381,8 @@ export default function ReservationDetailSheet({
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
+          defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onUpdated(); }}
         />

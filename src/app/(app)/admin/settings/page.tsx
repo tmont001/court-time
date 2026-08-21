@@ -6,6 +6,8 @@ import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
 import EventTypesSection from "./EventTypesSection";
+import PricingSettingsForm from "./PricingSettingsForm";
+import LessonTypesSection from "./LessonTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
 import DateOverridesEditor from "./DateOverridesEditor";
@@ -22,10 +24,10 @@ export default async function AdminSettingsPage() {
   const supabase = await createClient();
   const clubId = profile?.club_id ?? "";
 
-  const [settingsResult, clubResult, eventTypesResult] = await Promise.all([
+  const [settingsResult, clubResult, eventTypesResult, lessonTypesResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours")
+      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours, currency, default_court_hourly_rate_cents")
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -35,17 +37,26 @@ export default async function AdminSettingsPage() {
       .single(),
     supabase
       .from("event_types")
-      .select("id, key, label, color, is_active")
+      .select("id, key, label, color, is_active, default_price_amount_cents")
       .eq("club_id", clubId)
       .order("is_active", { ascending: false })
       .order("label"),
+    supabase.rpc("get_lesson_types"),
   ]);
 
   const settings   = settingsResult.data;
   const club       = clubResult.data;
   const eventTypes = (eventTypesResult.data ?? []) as {
     id: string; key: string; label: string; color: string; is_active: boolean;
+    default_price_amount_cents: number | null;
   }[];
+  const lessonTypes = (lessonTypesResult.data ?? []) as {
+    id: string; name: string; description: string | null;
+    allowed_durations: number[] | null; max_participants: number;
+    pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
+    rate_notes: string | null; is_active: boolean;
+  }[];
+  const currency = settings?.currency ?? "USD";
 
   // Server-only config checks — booleans only ever reach the rendered page;
   // no environment-variable name or value is passed as a prop or exposed to
@@ -101,7 +112,36 @@ export default async function AdminSettingsPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Edit labels and colors. Deactivated types stay on historical events but are hidden when creating new ones.
           </p>
-          <EventTypesSection clubId={clubId} initialTypes={eventTypes} />
+          <EventTypesSection clubId={clubId} currency={currency} initialTypes={eventTypes} />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Pricing ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Pricing
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Club-wide currency and the default court reservation rate. Changes apply to new bookings only.
+          </p>
+          <PricingSettingsForm
+            currency={currency}
+            defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
+          />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Lesson Types ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Lesson Types
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Flat price per lesson type. Changing a price only affects lessons booked after the change.
+          </p>
+          <LessonTypesSection currency={currency} initialTypes={lessonTypes} />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />

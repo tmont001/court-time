@@ -22,10 +22,11 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  currency:     string;
   initialTab?:  Tab;
 }
 
-export default function EventsAdminShell({ upcoming, manage, lessons, courts, clubId, clubTimezone, initialTab = "upcoming" }: Props) {
+export default function EventsAdminShell({ upcoming, manage, lessons, courts, clubId, clubTimezone, currency, initialTab = "upcoming" }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
 
@@ -76,7 +77,7 @@ export default function EventsAdminShell({ upcoming, manage, lessons, courts, cl
         </div>
 
         {/* Owned internally — not passed as a ReactNode prop */}
-        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} onCreated={handleCreated} />
+        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} currency={currency} onCreated={handleCreated} />
       </div>
 
       {/* Tab panels — all rendered; CSS hides the inactive ones */}

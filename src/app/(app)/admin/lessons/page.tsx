@@ -28,7 +28,7 @@ export default async function AdminLessonsPage() {
   const supabase = await createClient();
   const clubId   = profile.club_id ?? "";
 
-  const [requestsResult, courtsResult, clubResult] = await Promise.all([
+  const [requestsResult, courtsResult, clubResult, settingsResult] = await Promise.all([
     supabase.rpc("get_pro_lesson_requests"),
     clubId
       ? supabase
@@ -40,6 +40,9 @@ export default async function AdminLessonsPage() {
       : Promise.resolve({ data: [] }),
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+      : Promise.resolve({ data: null }),
+    clubId
+      ? supabase.from("club_settings").select("currency").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -76,7 +79,9 @@ export default async function AdminLessonsPage() {
   }));
   const lessonTypes = (lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
+    pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
   }[];
+  const currency = (settingsResult as { data: { currency: string } | null })?.data?.currency ?? "USD";
   const userName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || "You";
 
   return (
@@ -95,6 +100,7 @@ export default async function AdminLessonsPage() {
             pros={pros}
             rosterMembers={rosterMembers}
             lessonTypes={lessonTypes}
+            currency={currency}
           />
         </div>
       </div>

@@ -25,7 +25,7 @@
 import { useState, useEffect, useMemo } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
-import { createProgram, updateProgram, type ProgramRow, type ProgramRulePayload, type ProgramListRow } from "./programsActions";
+import { createProgram, updateProgram, setProgramPriceAction, type ProgramRow, type ProgramRulePayload, type ProgramListRow } from "./programsActions";
 import { mapProgramError } from "./programErrors";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -63,6 +63,8 @@ interface Props {
   courts:          Court[];
   clubId:          string;
   clubTimezone:    string;
+  currency:        string;
+  userRole:        string;
   onClose:         () => void;
   onSaved:         (program: ProgramRow) => void;
   // Omit (or "create") for the create flow. Pass "edit" + the program being
@@ -70,6 +72,11 @@ interface Props {
   // instead of create_program.
   mode?:           "create" | "edit";
   editingProgram?: ProgramListRow;
+}
+
+// Phase 34B: label text depends on enrollment_model semantics — locked spec.
+function programPriceLabel(model: EnrollmentModel): string {
+  return model === "program" ? "Program price" : model === "per_session" ? "Price per session" : "Program price (optional)";
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -133,7 +140,7 @@ function rulesFromProgram(program: ProgramListRow): RuleDraft[] {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CreateProgramSheet({
-  courts, clubId, clubTimezone, onClose, onSaved, mode = "create", editingProgram,
+  courts, clubId, clubTimezone, currency, userRole, onClose, onSaved, mode = "create", editingProgram,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const isEdit = mode === "edit" && !!editingProgram;
@@ -163,6 +170,16 @@ export default function CreateProgramSheet({
   // to a number via defaultCapacityNum below, and clamped to >=1 at blur/submit.
   const [defaultCapacity, setDefaultCapacity] = useState(() => String(editingProgram?.default_capacity ?? 8));
   const [rules, setRules] = useState<RuleDraft[]>(() => editingProgram ? rulesFromProgram(editingProgram) : [makeRule()]);
+
+  // Phase 34B: Admin-only, optional. Blank = no price configured. Saved via
+  // a separate call to set_program_price after create/update succeeds —
+  // create_program/update_program stay price-blind since Staff/Pro also
+  // call them.
+  const [priceDollars, setPriceDollars] = useState(() =>
+    editingProgram?.price_amount_cents != null ? (editingProgram.price_amount_cents / 100).toFixed(2) : ""
+  );
+  const [priceSaveError, setPriceSaveError] = useState<string | null>(null);
+  const isAdmin = userRole === "admin";
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState<string | null>(null);
@@ -286,6 +303,26 @@ export default function CreateProgramSheet({
       setError(mapProgramError(rpcError?.code, rpcError?.message ?? ""));
       setSubmitting(false);
       return;
+    }
+
+    // Phase 34B: price is saved through its own Admin-only RPC after the
+    // program draft exists. Staff/Pro never see the price field, so this
+    // never runs for them — an existing program's price is left untouched.
+    // If the price save fails, surface that failure clearly rather than
+    // silently pretending it was saved.
+    if (isAdmin) {
+      const trimmed = priceDollars.trim();
+      const priceCents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
+      const priceResult = await setProgramPriceAction({
+        p_program_id: data.id,
+        p_price_amount_cents: priceCents,
+        expectedClubId: clubId,
+      });
+      if (priceResult.error) {
+        setPriceSaveError(mapProgramError(priceResult.error.code, priceResult.error.message));
+        setSubmitting(false);
+        return;
+      }
     }
 
     onSaved(data);
@@ -457,6 +494,25 @@ export default function CreateProgramSheet({
               />
             </div>
 
+            {isAdmin && (
+              <div>
+                <label className={labelClass}>{programPriceLabel(enrollmentModel)}</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0.00 (blank = no price set)"
+                  value={priceDollars}
+                  onChange={e => setPriceDollars(e.target.value)}
+                  className={inputClass}
+                  style={{ maxWidth: "10rem" }}
+                />
+                <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                  Currency: {currency}. Leave blank if this program is free or pricing isn&apos;t configured yet.
+                </p>
+              </div>
+            )}
+
             <button
               disabled={!basicsValid}
               onClick={() => setStep(2)}
@@ -624,6 +680,7 @@ export default function CreateProgramSheet({
             </p>
 
             {error && <p className="text-xs text-red-500">{error}</p>}
+            {priceSaveError && <p className="text-xs text-red-500">{priceSaveError}</p>}
 
             <button
               disabled={submitting || !basicsValid || !rulesValid}

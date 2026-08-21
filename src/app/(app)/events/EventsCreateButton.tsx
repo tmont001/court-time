@@ -15,12 +15,13 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  currency:     string;
   // When provided, the parent owns refresh + tab-switch logic.
   // When absent, falls back to router.refresh() (e.g. standalone usage).
   onCreated?:   () => void;
 }
 
-export default function EventsCreateButton({ courts, clubId, clubTimezone, onCreated }: Props) {
+export default function EventsCreateButton({ courts, clubId, clubTimezone, currency, onCreated }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -46,6 +47,7 @@ export default function EventsCreateButton({ courts, clubId, clubTimezone, onCre
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           onClose={() => setOpen(false)}
           onCreated={handleCreated}
         />

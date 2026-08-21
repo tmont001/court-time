@@ -55,6 +55,8 @@ export type Database = {
           cancellation_window_hours: number;
           cancellation_grace_minutes: number;
           waitlist_offer_window_hours: number;  // Phase 18A
+          currency: string;  // Phase 34B
+          default_court_hourly_rate_cents: number | null;  // Phase 34B
           created_at: string;
           updated_at: string;
         };
@@ -65,6 +67,8 @@ export type Database = {
           cancellation_window_hours?: number;
           cancellation_grace_minutes?: number;
           waitlist_offer_window_hours?: number;  // Phase 18A
+          currency?: string;  // Phase 34B
+          default_court_hourly_rate_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -75,6 +79,8 @@ export type Database = {
           cancellation_window_hours?: number;
           cancellation_grace_minutes?: number;
           waitlist_offer_window_hours?: number;  // Phase 18A
+          currency?: string;  // Phase 34B
+          default_court_hourly_rate_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -161,6 +167,7 @@ export type Database = {
           name: string;
           display_order: number;
           is_active: boolean;
+          hourly_rate_cents: number | null;  // Phase 34B
           created_at: string;
           updated_at: string;
         };
@@ -170,6 +177,7 @@ export type Database = {
           name: string;
           display_order?: number;
           is_active?: boolean;
+          hourly_rate_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -179,6 +187,7 @@ export type Database = {
           name?: string;
           display_order?: number;
           is_active?: boolean;
+          hourly_rate_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -289,6 +298,7 @@ export type Database = {
           default_court_count: number;
           shows_participant_names: boolean;
           is_active: boolean;
+          default_price_amount_cents: number | null;  // Phase 34B
           created_at: string;
           updated_at: string;
         };
@@ -303,6 +313,7 @@ export type Database = {
           default_court_count: number;
           shows_participant_names?: boolean;
           is_active?: boolean;
+          default_price_amount_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -317,6 +328,7 @@ export type Database = {
           default_court_count?: number;
           shows_participant_names?: boolean;
           is_active?: boolean;
+          default_price_amount_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -353,6 +365,8 @@ export type Database = {
           cancelled_at: string | null;
           cancelled_by: string | null;
           cancellation_kind: "member" | "admin" | "system" | null;
+          hourly_rate_cents: number | null;  // Phase 34B
+          price_amount_cents: number | null;  // Phase 34B
         };
         Insert: {
           id?: string;
@@ -376,6 +390,8 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancellation_kind?: "member" | "admin" | "system" | null;
+          hourly_rate_cents?: number | null;  // Phase 34B
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Update: {
           id?: string;
@@ -399,6 +415,8 @@ export type Database = {
           cancelled_at?: string | null;
           cancelled_by?: string | null;
           cancellation_kind?: "member" | "admin" | "system" | null;
+          hourly_rate_cents?: number | null;  // Phase 34B
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Relationships: [
           {
@@ -457,6 +475,7 @@ export type Database = {
           program_schedule_rule_id: string | null; // Phase 27B1
           program_occurrence_date: string | null;  // Phase 27B1
           is_program_exception: boolean;           // Phase 27B1
+          price_amount_cents: number | null;       // Phase 34B
         };
         Insert: {
           id?: string;
@@ -476,6 +495,7 @@ export type Database = {
           program_schedule_rule_id?: string | null; // Phase 27B1
           program_occurrence_date?: string | null;  // Phase 27B1
           is_program_exception?: boolean;           // Phase 27B1
+          price_amount_cents?: number | null;       // Phase 34B
         };
         Update: {
           id?: string;
@@ -495,6 +515,7 @@ export type Database = {
           program_schedule_rule_id?: string | null; // Phase 27B1
           program_occurrence_date?: string | null;  // Phase 27B1
           is_program_exception?: boolean;           // Phase 27B1
+          price_amount_cents?: number | null;       // Phase 34B
         };
         Relationships: [
           {
@@ -551,6 +572,7 @@ export type Database = {
           updated_at: string;
           archived_at: string | null;
           archived_by: string | null;
+          price_amount_cents: number | null;  // Phase 34B
         };
         Insert: {
           id?: string;
@@ -568,6 +590,7 @@ export type Database = {
           updated_at?: string;
           archived_at?: string | null;
           archived_by?: string | null;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Update: {
           id?: string;
@@ -585,6 +608,7 @@ export type Database = {
           updated_at?: string;
           archived_at?: string | null;
           archived_by?: string | null;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Relationships: [
           {
@@ -696,6 +720,7 @@ export type Database = {
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at: string | null;
           waitlisted_at: string | null;
+          price_amount_cents: number | null;  // Phase 34B
           created_at: string;
           updated_at: string;
         };
@@ -707,6 +732,7 @@ export type Database = {
           status: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
           waitlisted_at?: string | null;
+          price_amount_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -718,6 +744,7 @@ export type Database = {
           status?: "enrolled" | "waitlisted" | "offered" | "cancelled";
           offer_expires_at?: string | null;
           waitlisted_at?: string | null;
+          price_amount_cents?: number | null;  // Phase 34B
           created_at?: string;
           updated_at?: string;
         };
@@ -805,6 +832,7 @@ export type Database = {
           attendance_status: "attended" | "no_show" | null;
           cancelled_at:      string | null;
           cancelled_by:      string | null;
+          price_amount_cents: number | null;  // Phase 34B
         };
         Insert: {
           id?:               string;
@@ -817,6 +845,7 @@ export type Database = {
           attendance_status?: "attended" | "no_show" | null;
           cancelled_at?:      string | null;
           cancelled_by?:      string | null;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Update: {
           id?:               string;
@@ -829,6 +858,7 @@ export type Database = {
           attendance_status?: "attended" | "no_show" | null;
           cancelled_at?:      string | null;
           cancelled_by?:      string | null;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Relationships: [
           {
@@ -859,6 +889,7 @@ export type Database = {
           offer_expires_at: string | null;  // Phase 18A
           created_at: string;
           updated_at: string;
+          price_amount_cents: number | null;  // Phase 34B
         };
         Insert: {
           id?: string;
@@ -871,6 +902,7 @@ export type Database = {
           offer_expires_at?: string | null;  // Phase 18A
           created_at?: string;
           updated_at?: string;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Update: {
           id?: string;
@@ -883,6 +915,7 @@ export type Database = {
           offer_expires_at?: string | null;  // Phase 18A
           created_at?: string;
           updated_at?: string;
+          price_amount_cents?: number | null;  // Phase 34B
         };
         Relationships: [
           {
@@ -2042,6 +2075,27 @@ export type Database = {
       };
       set_event_type_active: {
         Args: { p_id: string; p_is_active: boolean };
+        Returns: undefined;
+      };
+      // Phase 34B
+      set_event_type_price: {
+        Args: { p_id: string; p_default_price_amount_cents: number | null };
+        Returns: undefined;
+      };
+      set_event_price_override: {
+        Args: { p_event_id: string; p_price_amount_cents: number | null };
+        Returns: undefined;
+      };
+      set_program_price: {
+        Args: { p_program_id: string; p_price_amount_cents: number | null };
+        Returns: undefined;
+      };
+      update_club_pricing: {
+        Args: { p_currency: string; p_default_court_hourly_rate_cents: number | null };
+        Returns: undefined;
+      };
+      set_court_hourly_rate: {
+        Args: { p_court_id: string; p_hourly_rate_cents: number | null };
         Returns: undefined;
       };
       set_event_member_joinable: {
@@ -3262,27 +3316,27 @@ export type Database = {
       get_lesson_types: {
         Args: Record<string, never>;
         Returns: {
-          id:                string;
-          name:              string;
-          description:       string | null;
-          allowed_durations: number[] | null;
-          max_participants:  number;
-          rate_amount:       number | null;
-          rate_currency:     string;
-          rate_notes:        string | null;
-          is_active:         boolean;
+          id:                       string;
+          name:                     string;
+          description:              string | null;
+          allowed_durations:        number[] | null;
+          max_participants:         number;
+          pricing_basis:            "flat" | "hourly";
+          unit_price_amount_cents:  number | null;
+          rate_notes:               string | null;
+          is_active:                boolean;
         }[];
       };
       upsert_lesson_type: {
         Args: {
-          p_id?:                string | null;
-          p_name?:              string | null;
-          p_description?:       string | null;
-          p_allowed_durations?: number[] | null;
-          p_max_participants?:  number;
-          p_rate_amount?:       number | null;
-          p_rate_currency?:     string | null;
-          p_rate_notes?:        string | null;
+          p_id?:                       string | null;
+          p_name?:                     string | null;
+          p_description?:              string | null;
+          p_allowed_durations?:        number[] | null;
+          p_max_participants?:         number;
+          p_pricing_basis?:            string;
+          p_unit_price_amount_cents?:  number | null;
+          p_rate_notes?:               string | null;
         };
         Returns: string;
       };

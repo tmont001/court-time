@@ -47,6 +47,7 @@ export interface MemberProgramCard {
   ends_on:           string;
   rules:             MemberProgramScheduleRule[];
   my_enrollment:     MemberProgramEnrollment | null;
+  price_amount_cents: number | null;
 }
 
 export interface EnrollmentResult {
@@ -60,6 +61,7 @@ interface RawMemberProgramRow {
   description:  string | null;
   starts_on:    string;
   ends_on:      string;
+  price_amount_cents: number | null;
   event_types:  { key: string; label: string; color: string } | null;
 }
 
@@ -132,7 +134,7 @@ export async function getMemberPrograms(
   const { data: programsData, error: programsErr } = await supabase
     .from("programs")
     .select(`
-      id, title, description, starts_on, ends_on,
+      id, title, description, starts_on, ends_on, price_amount_cents,
       event_types(key, label, color)
     `)
     .eq("club_id", clubId)
@@ -224,6 +226,7 @@ export async function getMemberPrograms(
     ends_on:       p.ends_on,
     rules:         rulesByProgram.get(p.id) ?? [],
     my_enrollment: enrollmentByProgram.get(p.id) ?? null,
+    price_amount_cents: p.price_amount_cents,
   }));
 
   return { programs };

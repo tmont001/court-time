@@ -21,9 +21,11 @@ interface Court {
 }
 
 interface LessonType {
-  id:                string;
-  name:              string;
-  allowed_durations: number[] | null;
+  id:                       string;
+  name:                     string;
+  allowed_durations:        number[] | null;
+  pricing_basis:            "flat" | "hourly";
+  unit_price_amount_cents:  number | null;
 }
 
 interface Props {
@@ -34,6 +36,7 @@ interface Props {
   userRole:      "admin" | "pro" | "staff";
   clubId:        string;
   clubTimezone:  string;
+  currency:      string;
   pros:          ClubPro[];
   rosterMembers: RosterMemberOption[];
   lessonTypes:   LessonType[];
@@ -56,6 +59,7 @@ export default function AdminLessonsWrapper({
   userRole,
   clubId,
   clubTimezone,
+  currency,
   pros,
   rosterMembers,
   lessonTypes,
@@ -105,6 +109,7 @@ export default function AdminLessonsWrapper({
         userRole={userRole}
         clubId={clubId}
         clubTimezone={clubTimezone}
+        currency={currency}
         pros={isOperator(userRole) ? pros : undefined}
         onCreateRequest={() => setCreateSheetOpen(true)}
       />
@@ -117,6 +122,7 @@ export default function AdminLessonsWrapper({
           lessonTypes={lessonTypes}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           viewerRole={userRole}
           viewerId={userId}
           viewerName={userName}

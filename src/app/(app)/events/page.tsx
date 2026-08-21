@@ -99,14 +99,17 @@ export default async function EventsPage({
   const now            = new Date().toISOString();
 
   // Parallel fetches: timezone + upcoming events + member programs + admin-only data (courts, all events, lesson requests, programs)
-  const [clubResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
+  const [clubResult, settingsResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
+      : Promise.resolve({ data: null }),
+    clubId
+      ? supabase.from("club_settings").select("currency").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
     supabase
       .from("events")
       .select(`
-        id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
+        id, title, starts_at, ends_at, capacity, status, created_by, member_joinable, price_amount_cents,
         event_types(key, label, color),
         event_participants(profile_id, role, status, offer_expires_at),
         event_guests(id, status),
@@ -158,6 +161,7 @@ export default async function EventsPage({
   ]);
 
   const clubTimezone  = clubResult.data?.timezone ?? "America/New_York";
+  const currency      = settingsResult.data?.currency ?? "USD";
   // Phase 27D2: the DB-level member_joinable filter was removed from the
   // events query above (see its comment) because every generated session
   // under a whole-program offering has member_joinable=false and must
@@ -205,6 +209,7 @@ export default async function EventsPage({
       userRole={profile?.role}
       clubId={clubId}
       clubTimezone={clubTimezone}
+      currency={currency}
       courtNames={courtNames}
       joinEventAction={joinEventAction.bind(null, clubId)}
       leaveEventAction={leaveEventAction.bind(null, clubId)}
@@ -239,6 +244,7 @@ export default async function EventsPage({
                       userId={user.id}
                       courts={adminCourts as { id: string; name: string; display_order: number }[]}
                       clubId={clubId}
+                      currency={currency}
                       showCreateButton={false}
                     />
                   }
@@ -251,6 +257,7 @@ export default async function EventsPage({
                       clubTimezone={clubTimezone}
                       userRole={profile!.role!}
                       userId={user.id}
+                      currency={currency}
                     />
                   }
                 />
@@ -263,11 +270,13 @@ export default async function EventsPage({
                   userRole={profile!.role!}
                   clubId={clubId}
                   clubTimezone={clubTimezone}
+                  currency={currency}
                 />
               }
               courts={adminCourts as { id: string; name: string; display_order: number }[]}
               clubId={clubId}
               clubTimezone={clubTimezone}
+              currency={currency}
               initialTab={initialTab as "upcoming" | "manage" | "lessons"}
             />
           ) : (

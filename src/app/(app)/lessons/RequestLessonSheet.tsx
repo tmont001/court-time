@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import PriceSummary from "@/components/PriceSummary";
+import { formatLessonUnitPrice, calculateLessonTotalCents } from "@/lib/money";
 import { submitLessonRequest } from "./actions";
 
 interface Pro {
@@ -16,12 +18,22 @@ interface Court {
   name: string;
 }
 
+interface LessonType {
+  id:                       string;
+  name:                     string;
+  allowed_durations:        number[] | null;
+  pricing_basis:            "flat" | "hourly";
+  unit_price_amount_cents:  number | null;
+}
+
 interface Props {
-  pros:    Pro[];
-  courts:  Court[];
-  clubId:  string;
-  onClose: () => void;
-  onDone:  () => void;
+  pros:        Pro[];
+  courts:      Court[];
+  lessonTypes: LessonType[];
+  currency:    string;
+  clubId:      string;
+  onClose:     () => void;
+  onDone:      () => void;
 }
 
 const DURATIONS = [30, 45, 60, 90];
@@ -32,15 +44,31 @@ function proName(p: Pro): string {
   return [p.first_name, p.last_name].filter(Boolean).join(" ") || "Unnamed Pro";
 }
 
-export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDone }: Props) {
+export default function RequestLessonSheet({ pros, courts, lessonTypes, currency, clubId, onClose, onDone }: Props) {
   const [step, setStep] = useState<Step>("pro");
   const [selectedPro, setSelectedPro] = useState<Pro | null>(null);
+  const [lessonTypeId, setLessonTypeId] = useState<string>("");
   const [duration, setDuration] = useState<number>(60);
   const [preferredCourt, setPreferredCourt] = useState<string>("");
   const [note, setNote] = useState<string>("");
   const [windows, setWindows] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [isPending, startTransition] = useTransition();
+
+  const selectedType = lessonTypes.find(lt => lt.id === lessonTypeId) ?? null;
+
+  // Available durations narrow to the selected Lesson Type's own
+  // allowed_durations when it has one — same domain rule enforced
+  // everywhere else a Lesson Type restricts duration.
+  const availableDurations: number[] =
+    selectedType?.allowed_durations?.length ? selectedType.allowed_durations : DURATIONS;
+
+  function handleTypeChange(id: string) {
+    setLessonTypeId(id);
+    const lt = lessonTypes.find(l => l.id === id);
+    const allowed = lt?.allowed_durations?.length ? lt.allowed_durations : DURATIONS;
+    if (!allowed.includes(duration)) setDuration(allowed[0] ?? 60);
+  }
 
   function handleBack() {
     setError("");
@@ -61,6 +89,7 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
         p_preferred_windows: windows.trim()
           ? { freeform: windows.trim() } as Record<string, unknown>
           : null,
+        p_lesson_type_id: lessonTypeId || null,
         expectedClubId: clubId,
       });
       if (result.error) {
@@ -130,11 +159,31 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
       {/* Step: choose duration */}
       {step === "duration" && (
         <div>
+          {lessonTypes.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
+                Lesson type (optional)
+              </p>
+              <select
+                value={lessonTypeId}
+                onChange={e => handleTypeChange(e.target.value)}
+                className="w-full ct-input text-base md:text-sm"
+              >
+                <option value="">No specific type</option>
+                {lessonTypes.map(lt => (
+                  <option key={lt.id} value={lt.id}>
+                    {lt.name} — {formatLessonUnitPrice(lt.pricing_basis, lt.unit_price_amount_cents, currency)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
             Duration
           </p>
           <div className="grid grid-cols-4 gap-2 mb-4" role="radiogroup" aria-label="Duration">
-            {DURATIONS.map(d => (
+            {availableDurations.map(d => (
               <button
                 key={d}
                 role="radio"
@@ -150,6 +199,22 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
               </button>
             ))}
           </div>
+
+          {selectedType && (
+            <PriceSummary
+              label="Lesson price"
+              amountCents={calculateLessonTotalCents(selectedType.pricing_basis, selectedType.unit_price_amount_cents, duration)}
+              currency={currency}
+              viewer="member"
+              breakdown={
+                selectedType.pricing_basis === "hourly"
+                  ? `${formatLessonUnitPrice("hourly", selectedType.unit_price_amount_cents, currency)} × ${duration} min`
+                  : selectedType.unit_price_amount_cents !== null ? "Flat lesson rate" : null
+              }
+              className="mb-4"
+            />
+          )}
+
           <button
             onClick={() => setStep("details")}
             className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold"
@@ -227,6 +292,12 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
               <span className="text-gray-500 dark:text-gray-400">Duration</span>
               <span className="font-medium text-gray-900 dark:text-gray-100">{duration} minutes</span>
             </div>
+            {selectedType && (
+              <div className="px-4 py-2.5 flex justify-between text-sm">
+                <span className="text-gray-500 dark:text-gray-400">Lesson type</span>
+                <span className="font-medium text-gray-900 dark:text-gray-100">{selectedType.name}</span>
+              </div>
+            )}
             {preferredCourt && (
               <div className="px-4 py-2.5 flex justify-between text-sm">
                 <span className="text-gray-500 dark:text-gray-400">Preferred court</span>
@@ -248,6 +319,20 @@ export default function RequestLessonSheet({ pros, courts, clubId, onClose, onDo
               </div>
             )}
           </div>
+
+          {selectedType && (
+            <PriceSummary
+              label="Lesson price"
+              amountCents={calculateLessonTotalCents(selectedType.pricing_basis, selectedType.unit_price_amount_cents, duration)}
+              currency={currency}
+              viewer="member"
+              breakdown={
+                selectedType.pricing_basis === "hourly"
+                  ? `${formatLessonUnitPrice("hourly", selectedType.unit_price_amount_cents, currency)} × ${duration} min`
+                  : selectedType.unit_price_amount_cents !== null ? "Flat lesson rate" : null
+              }
+            />
+          )}
 
           <p className="text-xs text-gray-400 dark:text-gray-500">
             This is a request, not a confirmed booking. The pro will review and confirm or propose a time.
