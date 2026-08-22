@@ -26,6 +26,7 @@ import {
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
   ACTION_BUTTON_INFO_COMPACT,
+  ACTION_BUTTON_PRIMARY_COMPACT_TOUCH,
 } from "@/app/(app)/events/actionButtonStyles";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
@@ -675,7 +676,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 comment above). Renders nothing when there
                                 is no payment row. */}
                             {paymentStateByRowKey.get(key) && (
-                              <div className="mt-1.5 flex items-center gap-2">
+                              <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center gap-2">
                                 <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
                                 {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
                                   <button
@@ -685,7 +686,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                       domainId: paymentStateByRowKey.get(key)!.current_payment_id,
                                       title: row.display_name,
                                     })}
-                                    className="text-xs font-semibold text-accent hover:underline"
+                                    className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
                                   >
                                     Record Payment
                                   </button>
@@ -954,7 +955,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 Members, and this whole sheet is already
                                 operator-scoped. */}
                             {paymentStateByRowKey.get(key) && (
-                              <div className="mt-1.5 flex items-center gap-2">
+                              <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center gap-2">
                                 <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
                                 {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
                                   <button
@@ -964,7 +965,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                       domainId: paymentStateByRowKey.get(key)!.current_payment_id,
                                       title: row.display_name,
                                     })}
-                                    className="text-xs font-semibold text-accent hover:underline"
+                                    className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
                                   >
                                     Record Payment
                                   </button>
@@ -1070,7 +1071,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 Members, and this whole sheet is already
                                 operator-scoped. */}
                             {paymentStateByRowKey.get(key) && (
-                              <div className="mt-1.5 flex items-center gap-2">
+                              <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center gap-2">
                                 <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
                                 {canRecordPayment && !readOnly && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
                                   <button
@@ -1080,7 +1081,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                       domainId: paymentStateByRowKey.get(key)!.current_payment_id,
                                       title: row.display_name,
                                     })}
-                                    className="text-xs font-semibold text-accent hover:underline"
+                                    className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
                                   >
                                     Record Payment
                                   </button>

@@ -11,6 +11,7 @@ import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import PriceSummary from "@/components/PriceSummary";
+import EventJoinConfirmModal from "@/components/EventJoinConfirmModal";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -341,6 +342,18 @@ export default function EventDetailSheet({
     onClose();
   }
 
+  // Phase 34C — positive-price Join confirmation, same policy as
+  // EventsUpcomingClient's EventJoinConfirmModal. Free/unpriced events keep
+  // the existing direct handleJoin() call untouched.
+  const [showJoinConfirm, setShowJoinConfirm] = useState(false);
+  function requestJoin() {
+    if (event.price_amount_cents !== null && event.price_amount_cents > 0) {
+      setShowJoinConfirm(true);
+      return;
+    }
+    void handleJoin();
+  }
+
   async function handleLeave() {
     setLoading(true);
     setError(null);
@@ -438,7 +451,7 @@ export default function EventDetailSheet({
     : isFull          ? "Join Waitlist"
     : "Join Event";
 
-  const handleAction = (myPart && !isHost) ? handleLeave : handleJoin;
+  const handleAction = (myPart && !isHost) ? handleLeave : requestJoin;
 
   const buttonClass = isHost || joinBlockedByPast
     ? "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
@@ -568,7 +581,7 @@ export default function EventDetailSheet({
               {offerError && <p className="mt-2 text-xs text-red-500">{offerError}</p>}
               <button
                 disabled={loading}
-                onClick={handleJoin}
+                onClick={requestJoin}
                 className="mt-3 w-full py-3 rounded-xl text-sm font-semibold bg-accent text-white dark:text-gray-900 disabled:opacity-40"
               >
                 {loading ? "Joining…" : isFull ? "Rejoin Waitlist" : "Rejoin Event"}
@@ -777,6 +790,18 @@ export default function EventDetailSheet({
           isAdmin={userRole === "admin"}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onRefresh(); }}
+        />
+      )}
+
+      {showJoinConfirm && event.price_amount_cents !== null && (
+        <EventJoinConfirmModal
+          eventTitle={event.title}
+          priceCents={event.price_amount_cents}
+          currency={currency}
+          willWaitlist={isFull}
+          submitting={loading}
+          onConfirm={() => { setShowJoinConfirm(false); void handleJoin(); }}
+          onCancel={() => setShowJoinConfirm(false)}
         />
       )}
     </>

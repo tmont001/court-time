@@ -27,11 +27,11 @@ import PriceSummary from "@/components/PriceSummary";
 import { mapProgramError } from "./programErrors";
 import {
   ACTION_BUTTON_PRIMARY,
+  ACTION_BUTTON_PRIMARY_COMPACT,
   ACTION_BUTTON_SECONDARY,
   ACTION_BUTTON_SECONDARY_COMPACT,
   ACTION_BUTTON_DESTRUCTIVE,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
-  ACTION_BUTTON_POSITIVE_COMPACT,
 } from "./actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -382,7 +382,7 @@ export default function ProgramsManageClient({
                   <button
                     disabled={priceUpdating}
                     onClick={() => saveEditPrice(p.id)}
-                    className={ACTION_BUTTON_POSITIVE_COMPACT}
+                    className={ACTION_BUTTON_PRIMARY_COMPACT}
                   >
                     {priceUpdating ? "Saving…" : "Save"}
                   </button>

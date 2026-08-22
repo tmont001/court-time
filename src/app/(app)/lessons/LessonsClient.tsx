@@ -311,6 +311,7 @@ export default function LessonsClient({
           userId={userId}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
           onClose={() => setSelected(null)}
         />
       )}

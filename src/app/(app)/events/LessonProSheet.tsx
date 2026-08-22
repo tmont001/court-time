@@ -9,9 +9,10 @@ import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import { createClient } from "@/lib/supabase/client";
 import { isOperator } from "@/lib/auth/roles";
 import { localDateTimeToUTC } from "@/lib/timezone";
-import { formatLessonUnitPrice, calculateLessonTotalCents } from "@/lib/money";
+import { formatLessonUnitPrice, calculateLessonTotalCents, formatOperatorPrice } from "@/lib/money";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 import {
   proposeLessonTime,
   declineLessonRequest,
@@ -335,11 +336,23 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   // accept_lesson_proposal/admin_create_member_lesson wiring), so this is
   // skipped entirely otherwise — no fetch, no badge.
   const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  const [paymentStateError, setPaymentStateError] = useState(false);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
 
   async function loadPaymentState() {
     if (request.status !== "confirmed") return;
-    const { data } = await fetchPaymentStates("lesson_request", [request.id]);
+    const { data, error } = await fetchPaymentStates("lesson_request", [request.id]);
+    // Phase 34C consolidation: a real RPC error must never collapse into
+    // the same "no payment row" null state a genuinely unpriced/untracked
+    // lesson produces — that silently hid failures from Pro (see fix
+    // below). Surface it distinctly instead of fabricating a status.
+    if (error) {
+      console.error("[LessonProSheet] fetchPaymentStates failed:", error);
+      setPaymentStateError(true);
+      setPaymentState(null);
+      return;
+    }
+    setPaymentStateError(false);
     setPaymentState(data?.[0] ?? null);
   }
 
@@ -593,21 +606,45 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
         </div>
       )}
 
-      {/* Payment state — Phase 34C. Renders nothing when there is no
-          payment row. Pro sees current state only, read-only, no prior
-          financial cycles (get_payment_states_for_domains itself already
-          enforces this — the UI just never shows a Record Payment action
-          to Pro on top of that). */}
-      {request.status === "confirmed" && paymentState && (
-        <div className="ct-card px-4 py-3 mb-4 flex items-center justify-between gap-2">
-          <PaymentStateBadge state={paymentState} />
-          {isOperator(userRole) && isPaymentOpenForRecording(paymentState) && (
-            <button
-              onClick={() => setRecordPaymentOpen(true)}
-              className="text-xs font-semibold text-accent hover:underline shrink-0"
-            >
-              Record Payment
-            </button>
+      {/* Price + payment state — Phase 34C. Price comes from the Lesson's
+          own snapshot (priceSnapshot, fetched unconditionally on mount —
+          see its own effect above), independent of whether a payment row
+          exists, so Pro/Admin/Staff see the actual committed price even
+          under payment_mode='none'. The payment-status row below is
+          separately gated on paymentState existing and renders nothing
+          when there is no payment row (never fabricates "Unpaid"). Pro
+          sees current state only, read-only, no prior financial cycles
+          (get_payment_states_for_domains itself already enforces this —
+          the UI just never shows a Record Payment action to Pro on top of
+          that), no refund/waive/void/reversal controls anywhere here.
+          Currency: this Lesson's price is snapshotted club-wide (single
+          currency per club at any given time — see 34B's currency lock),
+          so the club's own `currency` prop is the correct label for it. */}
+      {request.status === "confirmed" && priceSnapshot && (
+        <div className="ct-card px-4 py-3 mb-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Total lesson price</span>
+            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              {formatOperatorPrice(priceSnapshot.priceAmountCents, currency)}
+            </span>
+          </div>
+          {paymentState && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <PaymentStateBadge state={paymentState} />
+              {isOperator(userRole) && isPaymentOpenForRecording(paymentState) && (
+                <button
+                  onClick={() => setRecordPaymentOpen(true)}
+                  className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
+                >
+                  Record Payment
+                </button>
+              )}
+            </div>
+          )}
+          {paymentStateError && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Unable to load payment status right now.
+            </p>
           )}
         </div>
       )}

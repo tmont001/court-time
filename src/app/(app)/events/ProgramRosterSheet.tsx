@@ -37,7 +37,7 @@ import {
   forceConfirmProgramRosterMember,
 } from "./programRosterActions";
 import { mapProgramError } from "./programErrors";
-import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT, ACTION_BUTTON_POSITIVE_COMPACT } from "./actionButtonStyles";
+import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE_COMPACT, ACTION_BUTTON_POSITIVE_COMPACT, ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "./actionButtonStyles";
 import { isOperator } from "@/lib/auth/roles";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
@@ -544,12 +544,12 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               for Record Payment (never Pro). Renders
                               nothing when there is no payment row. */}
                           {paymentStateByRowKey.get(key) && (
-                            <div className="mt-1.5 flex items-center gap-2">
+                            <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center gap-2">
                               <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
                               {canRecordPayment && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
                                 <button
                                   onClick={() => setRecordPaymentTarget({ rowKey: key, title: displayName(row) })}
-                                  className="text-xs font-semibold text-accent hover:underline"
+                                  className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
                                 >
                                   Record Payment
                                 </button>

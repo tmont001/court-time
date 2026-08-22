@@ -101,6 +101,7 @@ export async function recordManualPaymentAction(
   revalidatePath("/calendar");
   revalidatePath("/admin/lessons");
   revalidatePath("/admin/members");
+  revalidatePath("/admin/payments");
   revalidatePath("/events");
   revalidatePath("/my-schedule");
   return {};

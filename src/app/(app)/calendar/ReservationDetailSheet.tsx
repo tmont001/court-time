@@ -13,6 +13,7 @@ import { formatMoney } from "@/lib/money";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -350,12 +351,12 @@ export default function ReservationDetailSheet({
             gate as Edit) and only offered when the balance is genuinely
             open. */}
         {reservation.reason === "member_booking" && paymentState && (
-          <div className="mt-2 flex items-center justify-between gap-2">
+          <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <PaymentStateBadge state={paymentState} />
             {!onMemberCancel && canManageMemberReservation && isPaymentOpenForRecording(paymentState) && (
               <button
                 onClick={() => setRecordPaymentOpen(true)}
-                className="text-xs font-semibold text-accent hover:underline shrink-0"
+                className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
               >
                 Record Payment
               </button>
