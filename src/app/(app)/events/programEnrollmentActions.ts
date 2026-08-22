@@ -34,6 +34,7 @@ export interface MemberProgramScheduleRule {
 export type ProgramEnrollmentStatus = "enrolled" | "waitlisted" | "offered" | "cancelled";
 
 export interface MemberProgramEnrollment {
+  id:                string;
   status:            ProgramEnrollmentStatus;
   offer_expires_at:  string | null;
 }
@@ -167,7 +168,7 @@ export async function getMemberPrograms(
   // rewriting program_enrollments.profile_id itself.
   let enrollmentQuery = supabase
     .from("program_enrollments")
-    .select("program_id, status, offer_expires_at")
+    .select("id, program_id, status, offer_expires_at")
     .in("program_id", programIds);
   enrollmentQuery = rosterMemberId
     ? enrollmentQuery.or(`profile_id.eq.${userId},roster_member_id.eq.${rosterMemberId}`)
@@ -212,9 +213,9 @@ export async function getMemberPrograms(
   // same Join Program action). This is a successful-read business rule,
   // not a fallback for a failed read (which is rejected above already).
   const enrollmentByProgram = new Map<string, MemberProgramEnrollment>();
-  for (const e of (enrollmentResult.data ?? []) as { program_id: string; status: ProgramEnrollmentStatus; offer_expires_at: string | null }[]) {
+  for (const e of (enrollmentResult.data ?? []) as { id: string; program_id: string; status: ProgramEnrollmentStatus; offer_expires_at: string | null }[]) {
     if (e.status === "cancelled") continue;
-    enrollmentByProgram.set(e.program_id, { status: e.status, offer_expires_at: e.offer_expires_at });
+    enrollmentByProgram.set(e.program_id, { id: e.id, status: e.status, offer_expires_at: e.offer_expires_at });
   }
 
   const programs: MemberProgramCard[] = rawPrograms.map(p => ({

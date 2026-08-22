@@ -7,6 +7,7 @@ import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
 import EventTypesSection from "./EventTypesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
+import PaymentTrackingSection from "./PaymentTrackingSection";
 import LessonTypesSection from "./LessonTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
@@ -27,7 +28,7 @@ export default async function AdminSettingsPage() {
   const [settingsResult, clubResult, eventTypesResult, lessonTypesResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours, currency, default_court_hourly_rate_cents")
+      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours, currency, default_court_hourly_rate_cents, payment_mode")
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -128,6 +129,24 @@ export default async function AdminSettingsPage() {
           <PricingSettingsForm
             currency={currency}
             defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
+          />
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Payment Tracking ── */}
+        <section className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Payment Tracking
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Controls whether Court Time tracks balances for new confirmed bookings. Existing
+            payment history is never hidden or gated by this setting — it only affects whether
+            NEW obligations are created going forward.
+          </p>
+          <PaymentTrackingSection
+            clubId={clubId}
+            currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
           />
         </section>
 

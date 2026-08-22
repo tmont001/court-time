@@ -7,8 +7,13 @@ import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
 import EditMaintenanceSheet from "./EditMaintenanceSheet";
 import PriceSummary from "@/components/PriceSummary";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import { formatMoney } from "@/lib/money";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,6 +122,23 @@ export default function ReservationDetailSheet({
   const [error, setError]                 = useState<string | null>(null);
   const [memberDisplay, setMemberDisplay] = useState<MemberDisplay | null>(null);
   const [editOpen, setEditOpen]           = useState(false);
+
+  // Phase 34C — payment state, fetched via the sanitized batched read
+  // boundary. Only meaningful for member_booking reservations (the only
+  // domain that can ever be priced/tracked here).
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
+
+  async function loadPaymentState() {
+    if (reservation.reason !== "member_booking") return;
+    const { data } = await fetchPaymentStates("reservation", [reservation.id]);
+    setPaymentState(data?.[0] ?? null);
+  }
+
+  useEffect(() => {
+    loadPaymentState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservation.id]);
 
   useEffect(() => {
     // Owner display is only needed for admin mode (to display "Booked by").
@@ -323,6 +345,25 @@ export default function ReservationDetailSheet({
           />
         )}
 
+        {/* Payment state — Phase 34C. Renders nothing when there is no
+            payment row (never fabricates "Unpaid"). Record Payment is
+            Admin/Staff only (canManageMemberReservation — the same role
+            gate as Edit) and only offered when the balance is genuinely
+            open. */}
+        {reservation.reason === "member_booking" && paymentState && (
+          <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <PaymentStateBadge state={paymentState} />
+            {!onMemberCancel && canManageMemberReservation && isPaymentOpenForRecording(paymentState) && (
+              <button
+                onClick={() => setRecordPaymentOpen(true)}
+                className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
+              >
+                Record Payment
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Maintenance notes — only for maintenance/admin_block reason */}
         {reservation.reason === "maintenance" && (
           <div className="mt-3">
@@ -385,6 +426,19 @@ export default function ReservationDetailSheet({
           defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onUpdated(); }}
+        />
+      )}
+
+      {recordPaymentOpen && paymentState && (
+        <RecordPaymentSheet
+          paymentId={paymentState.current_payment_id}
+          clubId={clubId}
+          amountDueCents={paymentState.current_amount_due_cents}
+          amountPaidCents={paymentState.current_amount_paid_cents}
+          currency={paymentState.current_currency}
+          title={`${courtName} — ${dateLabel}`}
+          onClose={() => setRecordPaymentOpen(false)}
+          onRecorded={() => { setRecordPaymentOpen(false); loadPaymentState(); }}
         />
       )}
     </>

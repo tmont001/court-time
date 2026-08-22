@@ -46,6 +46,36 @@ export const ACTION_BUTTON_SECONDARY =
   "hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 " +
   "focus-visible:ring-gray-400";
 
+// Compact accent/primary variant — same accent fill as ACTION_BUTTON_PRIMARY,
+// sized down for a single prominent action inline inside a dense
+// roster/detail row (e.g. "Record Payment" next to a name and a status
+// badge), where the full px-3 py-2 size would dominate the row. Still a
+// real filled button, never a bare text link — this is the one COMPACT
+// variant that intentionally outranks the others in visual weight,
+// matching its full-size PRIMARY counterpart's role as "the principal
+// positive action."
+export const ACTION_BUTTON_PRIMARY_COMPACT =
+  COMPACT_BASE +
+  " text-white dark:text-gray-900 bg-accent " +
+  "hover:brightness-110 hover:shadow-sm " +
+  "focus-visible:ring-accent";
+
+// Compact accent/primary variant, TOUCH-RESPONSIVE — same accent fill and
+// desktop sizing as ACTION_BUTTON_PRIMARY_COMPACT, but grows to a full
+// ~44px-tall, full-width tap target on mobile (< sm). For financial actions
+// (Record Payment) inline in a dense roster/detail row: the operator must
+// never have to guess whether something that small is tappable on a phone.
+// Pair with a `w-full sm:w-auto` sibling layout (flex-col sm:flex-row) so
+// the button gets its own full-width row on mobile and sits compact/inline
+// on desktop.
+export const ACTION_BUTTON_PRIMARY_COMPACT_TOUCH =
+  "w-full sm:w-auto px-4 py-2.5 rounded-lg text-sm sm:px-2 sm:py-1 sm:rounded-md sm:text-[11px] font-semibold " +
+  "text-white dark:text-gray-900 bg-accent " +
+  "active:scale-95 motion-safe:transition-all motion-safe:duration-150 " +
+  "hover:brightness-110 hover:shadow-sm " +
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 " +
+  "disabled:opacity-40 disabled:pointer-events-none";
+
 export const ACTION_BUTTON_SECONDARY_COMPACT =
   COMPACT_BASE +
   " text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 " +

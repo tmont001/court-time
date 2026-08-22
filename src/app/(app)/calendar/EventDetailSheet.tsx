@@ -6,11 +6,12 @@ import EventRosterSheet, { type RosterParticipantRow } from "./EventRosterSheet"
 import EditEventSheet from "./EditEventSheet";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { cancelEvent, joinEvent, leaveEvent, acceptWaitlistOffer, declineWaitlistOffer } from "./actions";
-import { setEventMemberJoinableAction, setEventPriceOverrideAction } from "@/app/(app)/admin/events/actions";
+import { setEventMemberJoinableAction } from "@/app/(app)/admin/events/actions";
 import { ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import PriceSummary from "@/components/PriceSummary";
+import EventJoinConfirmModal from "@/components/EventJoinConfirmModal";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -184,35 +185,12 @@ export default function EventDetailSheet({
   const [joinableSaving, setJoinableSaving]           = useState(false);
   const [joinableError, setJoinableError]             = useState<string | null>(null);
 
-  // Phase 34B: Admin-only Event price override — post-creation-only edit,
-  // never rewrites already-created participant/guest price snapshots.
-  const [localPriceCents, setLocalPriceCents]         = useState(event.price_amount_cents);
-  const [editingPrice, setEditingPrice]                = useState(false);
-  const [priceDraft, setPriceDraft]                    = useState("");
-  const [priceSaving, setPriceSaving]                  = useState(false);
-  const [priceError, setPriceError]                    = useState<string | null>(null);
-
-  function startEditPrice() {
-    setPriceDraft(localPriceCents !== null ? (localPriceCents / 100).toFixed(2) : "");
-    setPriceError(null);
-    setEditingPrice(true);
-  }
-
-  async function handleSavePrice() {
-    const trimmed = priceDraft.trim();
-    const cents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
-    setPriceSaving(true);
-    setPriceError(null);
-    const result = await setEventPriceOverrideAction(event.id, cents, clubId);
-    setPriceSaving(false);
-    if (result.error) {
-      setPriceError(result.error);
-      return;
-    }
-    setLocalPriceCents(cents);
-    setEditingPrice(false);
-    onEventUpdated(event.id, { price_amount_cents: cents });
-  }
+  // Phase 34B: Event price — post-creation-only edit, never rewrites
+  // already-created participant/guest price snapshots. Phase 34C: the
+  // standalone inline Edit/Save/Cancel control that used to live here was
+  // removed — Admin now edits price from within Edit Event (EditEventSheet)
+  // instead. This sheet only ever displays the resolved price now.
+  const localPriceCents = event.price_amount_cents;
   // Phase 33G3 runtime QA: parity with AdminEventsClient's confirmation —
   // an Open-to-Members event with existing active participants requires
   // explicit confirmation before becoming admin-managed (set_event_member_
@@ -364,6 +342,18 @@ export default function EventDetailSheet({
     onClose();
   }
 
+  // Phase 34C — positive-price Join confirmation, same policy as
+  // EventsUpcomingClient's EventJoinConfirmModal. Free/unpriced events keep
+  // the existing direct handleJoin() call untouched.
+  const [showJoinConfirm, setShowJoinConfirm] = useState(false);
+  function requestJoin() {
+    if (event.price_amount_cents !== null && event.price_amount_cents > 0) {
+      setShowJoinConfirm(true);
+      return;
+    }
+    void handleJoin();
+  }
+
   async function handleLeave() {
     setLoading(true);
     setError(null);
@@ -461,7 +451,7 @@ export default function EventDetailSheet({
     : isFull          ? "Join Waitlist"
     : "Join Event";
 
-  const handleAction = (myPart && !isHost) ? handleLeave : handleJoin;
+  const handleAction = (myPart && !isHost) ? handleLeave : requestJoin;
 
   const buttonClass = isHost || joinBlockedByPast
     ? "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
@@ -533,70 +523,20 @@ export default function EventDetailSheet({
           {waitlistCount > 0 ? ` · ${waitlistCount} on waitlist` : "."}
         </p>
 
-        {/* Phase 34B: price — Admin sees an editable override; everyone
-            else sees the resolved price, hidden entirely for Members when
-            unset (never implies payment is required). */}
-        {userRole === "admin" ? (
-          editingPrice ? (
-            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                placeholder="0.00"
-                value={priceDraft}
-                onChange={e => setPriceDraft(e.target.value)}
-                className="w-24 rounded-lg border border-gray-200 dark:border-gray-600 px-2 py-1 text-xs text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-accent"
-              />
-              <button
-                disabled={priceSaving}
-                onClick={handleSavePrice}
-                className="text-xs font-semibold text-accent hover:underline disabled:opacity-40"
-              >
-                {priceSaving ? "Saving…" : "Save"}
-              </button>
-              <button
-                disabled={priceSaving}
-                onClick={() => setEditingPrice(false)}
-                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-              >
-                Cancel
-              </button>
-              {priceError && <p className="w-full text-xs text-red-500">{priceError}</p>}
-            </div>
-          ) : (
-            <div className="mt-1.5 flex items-start justify-between gap-2">
-              <PriceSummary
-                label="Event price"
-                amountCents={localPriceCents}
-                currency={currency}
-                viewer="operator"
-                breakdown={localPriceCents !== null ? "per participant" : null}
-              />
-              <button onClick={startEditPrice} className="text-xs text-accent hover:underline font-medium shrink-0 mt-0.5">
-                Edit
-              </button>
-            </div>
-          )
-        ) : isOperator(userRole) ? (
-          <PriceSummary
-            label="Event price"
-            amountCents={localPriceCents}
-            currency={currency}
-            viewer="operator"
-            breakdown={localPriceCents !== null ? "per participant" : null}
-            className="mt-1.5"
-          />
-        ) : (
-          <PriceSummary
-            label="Event price"
-            amountCents={localPriceCents}
-            currency={currency}
-            viewer="member"
-            breakdown={localPriceCents !== null ? "per participant" : null}
-            className="mt-1.5"
-          />
-        )}
+        {/* Phase 34B: price display. Phase 34C: the standalone inline
+            Edit/Save/Cancel control that used to live here was removed —
+            Admin now edits price from within Edit Event instead (see the
+            "Edit Event" button below). Everyone sees the resolved price
+            read-only here, hidden entirely for Members when unset (never
+            implies payment is required). */}
+        <PriceSummary
+          label="Event price"
+          amountCents={localPriceCents}
+          currency={currency}
+          viewer={isOperator(userRole) ? "operator" : "member"}
+          breakdown={localPriceCents !== null ? "per participant" : null}
+          className="mt-1.5"
+        />
 
         {/* View Roster — admin/pro only */}
         {canViewRoster && (
@@ -641,7 +581,7 @@ export default function EventDetailSheet({
               {offerError && <p className="mt-2 text-xs text-red-500">{offerError}</p>}
               <button
                 disabled={loading}
-                onClick={handleJoin}
+                onClick={requestJoin}
                 className="mt-3 w-full py-3 rounded-xl text-sm font-semibold bg-accent text-white dark:text-gray-900 disabled:opacity-40"
               >
                 {loading ? "Joining…" : isFull ? "Rejoin Waitlist" : "Rejoin Event"}
@@ -846,8 +786,22 @@ export default function EventDetailSheet({
           courts={courts}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          currency={currency}
+          isAdmin={userRole === "admin"}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onRefresh(); }}
+        />
+      )}
+
+      {showJoinConfirm && event.price_amount_cents !== null && (
+        <EventJoinConfirmModal
+          eventTitle={event.title}
+          priceCents={event.price_amount_cents}
+          currency={currency}
+          willWaitlist={isFull}
+          submitting={loading}
+          onConfirm={() => { setShowJoinConfirm(false); void handleJoin(); }}
+          onCancel={() => setShowJoinConfirm(false)}
         />
       )}
     </>

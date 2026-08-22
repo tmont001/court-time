@@ -840,6 +840,9 @@ function mapLessonError(msg: string): string {
     capability_not_available:       "This feature isn't available at your club right now. Contact the office for help.",
     // Phase 33G1C
     member_schedule_conflict:       "The member already has another confirmed commitment at that time.",
+    // Phase 34C consolidation
+    lesson_type_required:           "Please choose a lesson type.",
+    lesson_price_not_configured:    "This lesson type isn't priced online yet — contact the club directly to book it.",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

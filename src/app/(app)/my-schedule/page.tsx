@@ -21,6 +21,8 @@ import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 // 33G3) Calendar's own EventDetailSheet — plain exported class strings, no
 // "use client" needed here since this file is a Server Component.
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "@/app/(app)/events/actionButtonStyles";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ interface EventItem {
 }
 
 interface RawSignupRow {
+  id:                string;
   event_id:          string;
   role:              string;
   status:            string;
@@ -56,7 +59,7 @@ interface RawSignupRow {
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event"; ev: EventItem; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
+  | { kind: "event"; ev: EventItem; participantId: string; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -157,8 +160,58 @@ function dateKey(iso: string, tz: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
 }
 
+// Phase 34C — compact date label for the Payments list (e.g. "Aug 23").
+function fmtShortDate(iso: string, tz: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    timeZone: tz, month: "short", day: "numeric",
+  });
+}
+
 function itemStartsAt(item: ScheduleItem): string {
   return item.kind === "reservation" ? item.res.starts_at : item.ev.starts_at;
+}
+
+interface PaymentListItem {
+  key: string;
+  kind: "reservation" | "lesson" | "event" | "program";
+  title: string;
+  dateLabel: string | null;
+  sortKey: string;
+  state: PaymentStateRow;
+  href: string;
+}
+
+const PAYMENT_KIND_LABEL: Record<PaymentListItem["kind"], string> = {
+  reservation: "Court Reservation",
+  lesson:      "Lesson",
+  event:       "Event",
+  program:     "Program",
+};
+
+// Whole card is a real (non-fabricated) link to that kind's list-level
+// surface — not a deep link to the specific item, since no per-item route
+// exists for these yet — plus an explicit "View" affordance for clarity.
+function PaymentListRow({ item }: { item: PaymentListItem }) {
+  return (
+    <Link
+      href={item.href}
+      className="ct-card px-4 py-3 flex items-center justify-between gap-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 dark:active:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100"
+    >
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide">
+          {PAYMENT_KIND_LABEL[item.kind]}
+        </p>
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mt-0.5 truncate">
+          {item.title}
+          {item.dateLabel ? ` · ${item.dateLabel}` : ""}
+        </p>
+        <PaymentStateBadge state={item.state} className="mt-1.5" />
+      </div>
+      <span className="shrink-0 text-xs font-medium text-gray-400 dark:text-gray-500">
+        View →
+      </span>
+    </Link>
+  );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -229,6 +282,7 @@ export default async function MySchedulePage({
   let eventParticipantsQuery = supabase
     .from("event_participants")
     .select(`
+      id,
       event_id,
       role,
       status,
@@ -280,10 +334,11 @@ export default async function MySchedulePage({
   if (settingsResult.data?.cancellation_window_hours  != null) cancellationWindowHours  = settingsResult.data.cancellation_window_hours;
   if (settingsResult.data?.cancellation_grace_minutes != null) cancellationGraceMinutes = settingsResult.data.cancellation_grace_minutes;
   const currency = settingsResult.data?.currency ?? "USD";
-  const lessonTypes = (lessonTypesResult.data ?? []) as {
+  const lessonTypes = ((lessonTypesResult.data ?? []) as {
     id: string; name: string; allowed_durations: number[] | null;
     pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
-  }[];
+    max_participants: number; is_active: boolean;
+  }[]).filter(lt => lt.is_active);
 
   // A silently-swallowed error here previously fell back to an empty list
   // indistinguishable from "genuinely no lessons" — logged now (matching
@@ -308,6 +363,22 @@ export default async function MySchedulePage({
   // explicit guarantee rather than an assumption.
   const rawReservations = (reservationsResult.data ?? []) as ReservationRow[];
   const reservations = Array.from(new Map(rawReservations.map(r => [r.id, r])).values());
+
+  // Phase 34C — the Member's own read-only payment state, via the
+  // sanitized batched read boundary (get_payment_states_for_domains
+  // itself scopes to rows whose snapshotted roster_member_id is the
+  // caller's own — never derived from live reservation ownership). A
+  // second round-trip, sequenced after `reservations` is known, since the
+  // domain ids aren't available until the parallel batch above resolves.
+  const { data: reservationPaymentStates } = reservations.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "reservation",
+        p_domain_ids: reservations.map(r => r.id),
+      })
+    : { data: [] };
+  const paymentStateByReservationId = new Map(
+    (reservationPaymentStates ?? []).map(p => [p.domain_id, p]),
+  );
 
   // ── 2. Event signups ─────────────────────────────────────────────────────────
   const { data: signupRows } = signupResult as { data: RawSignupRow[] | null };
@@ -361,6 +432,7 @@ export default async function MySchedulePage({
     ...validSignups.map(s => ({
       kind:           "event" as const,
       ev:             s.events!,
+      participantId:  s.id,
       myRole:         s.role,
       myStatus:       s.status,
       myAttendance:   s.attendance_status,
@@ -368,6 +440,168 @@ export default async function MySchedulePage({
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
+
+  // Phase 34C — the Member's own read-only Event payment state. Only
+  // confirmed participation can ever have an obligation.
+  const confirmedParticipantIds = validSignups
+    .filter(s => s.status === "confirmed")
+    .map(s => s.id);
+  const { data: eventPaymentStates } = confirmedParticipantIds.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "event_participant",
+        p_domain_ids: confirmedParticipantIds,
+      })
+    : { data: [] };
+  const paymentStateByParticipantId = new Map(
+    (eventPaymentStates ?? []).map(p => [p.domain_id, p]),
+  );
+
+  // ── Phase 34C — centralized Member Payments view ───────────────────────────
+  // Reuses the same sanitized get_payment_states_for_domains boundary as
+  // every other payment-state read in this app — no new RPC/migration, no
+  // direct payments/payment_events access. Scope (reported explicitly in
+  // the implementation notes, not silently claimed as exhaustive):
+  //   - reservations / event participations: the same UPCOMING set this
+  //     page already tracks above — not a full historical ledger.
+  //   - lesson requests: ALL of the Member's own confirmed lessons
+  //     (get_my_lesson_requests is already unbounded by time, so this
+  //     naturally includes past ones for free).
+  //   - Whole Program enrollments: currently-relevant only (ends_on >=
+  //     today), matching getMemberPrograms's own convention. Per-Session
+  //     Programs are deliberately NOT queried here — their obligations are
+  //     Event participant obligations, already covered by the events
+  //     branch above; querying program_enrollments for them would either
+  //     find nothing (no program-level enrollment row exists for
+  //     per_session) or, if it ever did, would be a duplicate — omitted
+  //     entirely rather than risk fabricating a second bill for the same
+  //     commitment.
+
+  const todayLocal = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
+
+  const confirmedLessons = allLessons.filter(r => r.status === "confirmed");
+  const { data: lessonPaymentStatesRaw } = confirmedLessons.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "lesson_request",
+        p_domain_ids: confirmedLessons.map(r => r.id),
+      })
+    : { data: [] };
+  const paymentStateByLessonId = new Map(
+    (lessonPaymentStatesRaw ?? []).map(p => [p.domain_id, p]),
+  );
+
+  // Whole Program enrollments — direct table reads, RLS-permitted for the
+  // Member's own row (program_enrollments_select, widened 0115), mirroring
+  // getMemberPrograms's own query shape rather than calling a new RPC.
+  let myProgramEnrollmentsQuery = supabase
+    .from("program_enrollments")
+    .select(`
+      id,
+      status,
+      programs!inner(id, title, price_amount_cents, ends_on, enrollment_model, status, archived_at)
+    `)
+    .eq("status", "enrolled");
+  myProgramEnrollmentsQuery = rosterMemberId
+    ? myProgramEnrollmentsQuery.or(`profile_id.eq.${user.id},roster_member_id.eq.${rosterMemberId}`)
+    : myProgramEnrollmentsQuery.eq("profile_id", user.id);
+  const { data: myProgramEnrollmentsRaw } = await myProgramEnrollmentsQuery;
+
+  type MyProgramEnrollmentRow = {
+    id: string;
+    status: string;
+    programs: {
+      id: string; title: string; price_amount_cents: number | null;
+      ends_on: string; enrollment_model: string; status: string; archived_at: string | null;
+    } | null;
+  };
+  const myWholeProgramEnrollments = ((myProgramEnrollmentsRaw ?? []) as unknown as MyProgramEnrollmentRow[])
+    .filter(e =>
+      e.programs &&
+      e.programs.enrollment_model === "program" &&
+      e.programs.status === "active" &&
+      !e.programs.archived_at &&
+      e.programs.ends_on >= todayLocal
+    );
+
+  const { data: programPaymentStatesRaw } = myWholeProgramEnrollments.length > 0
+    ? await supabase.rpc("get_payment_states_for_domains", {
+        p_domain_type: "program_enrollment",
+        p_domain_ids: myWholeProgramEnrollments.map(e => e.id),
+      })
+    : { data: [] };
+  const paymentStateByEnrollmentId = new Map(
+    (programPaymentStatesRaw ?? []).map(p => [p.domain_id, p]),
+  );
+
+  // Combined, flat list — only entries with an ACTUAL payment row (never
+  // fabricated). Sorted by a best-effort date where one exists, undated
+  // entries (e.g. a Program with no clean single date) last.
+  const paymentListItems: PaymentListItem[] = [];
+
+  for (const r of reservations) {
+    const state = paymentStateByReservationId.get(r.id);
+    if (!state) continue;
+    paymentListItems.push({
+      key: `reservation:${r.id}`,
+      kind: "reservation",
+      title: courtName.get(r.court_id) ?? "Court Reservation",
+      dateLabel: fmtShortDate(r.starts_at, clubTimezone),
+      sortKey: r.starts_at,
+      state,
+      href: "/calendar",
+    });
+  }
+
+  for (const r of confirmedLessons) {
+    const state = paymentStateByLessonId.get(r.id);
+    if (!state) continue;
+    const proName = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
+    paymentListItems.push({
+      key: `lesson:${r.id}`,
+      kind: "lesson",
+      title: `Lesson with ${proName}`,
+      dateLabel: r.proposed_starts_at ? fmtShortDate(r.proposed_starts_at, clubTimezone) : null,
+      sortKey: r.proposed_starts_at ?? r.created_at,
+      state,
+      href: "/lessons",
+    });
+  }
+
+  for (const s of validSignups) {
+    if (s.status !== "confirmed" || !s.events) continue;
+    const state = paymentStateByParticipantId.get(s.id);
+    if (!state) continue;
+    paymentListItems.push({
+      key: `event:${s.id}`,
+      kind: "event",
+      title: s.events.title,
+      dateLabel: fmtShortDate(s.events.starts_at, clubTimezone),
+      sortKey: s.events.starts_at,
+      state,
+      href: "/events",
+    });
+  }
+
+  for (const e of myWholeProgramEnrollments) {
+    const state = paymentStateByEnrollmentId.get(e.id);
+    if (!state || !e.programs) continue;
+    paymentListItems.push({
+      key: `program:${e.id}`,
+      kind: "program",
+      title: e.programs.title,
+      dateLabel: null,
+      sortKey: e.programs.ends_on,
+      state,
+      href: "/events",
+    });
+  }
+
+  paymentListItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  // Outstanding first (still owed — the same predicate the Record Payment
+  // action itself uses), Resolved as a secondary group. Never re-sorted by
+  // status within each group — chronological order is preserved.
+  const outstandingPaymentItems = paymentListItems.filter(i => isPaymentOpenForRecording(i.state));
+  const resolvedPaymentItems    = paymentListItems.filter(i => !isPaymentOpenForRecording(i.state));
 
   const pastItems = pastSignups
     .map(s => ({
@@ -393,11 +627,16 @@ export default async function MySchedulePage({
   }
   const sortedDateKeys = [...grouped.keys()].sort();
 
+  // Phase 34C consolidation: full-width segmented control — equal flex-1
+  // segments (2 for Admin/Pro's Upcoming/Past, 4 for Member's
+  // Upcoming/Lessons/Payments/Past) so it never reads as left-aligned and
+  // cramped on mobile, with a centered label and an adequate ~44px tap
+  // target per segment.
   const tabCls = (t: string) =>
-    `px-3 py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
+    `flex-1 text-center py-2.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap motion-safe:transition-colors motion-safe:duration-100 ${
       tab === t
-        ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-        : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+        ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm"
+        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
     }`;
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -411,13 +650,29 @@ export default async function MySchedulePage({
       >
         <div className="md:max-w-2xl md:mx-auto">
 
-          {/* Tab bar — Lesson Requests is Member-only; Admin/Pro use /admin/lessons */}
-          <div className="flex gap-1 px-4 pt-4 pb-3">
-            <Link href="/my-schedule"             className={tabCls("upcoming")}>Upcoming</Link>
-            {userRole === "member" && (
-              <Link href="/my-schedule?tab=lessons" className={tabCls("lessons")}>Lesson Requests</Link>
-            )}
-            <Link href="/my-schedule?tab=past"    className={tabCls("past")}>Past</Link>
+          {/* Tab bar — Lessons/Payments are Member-only; Admin/Pro use
+              /admin/lessons and the canonical Admin/Staff Payments
+              workspace instead. Full-width segmented control, equal
+              segments regardless of tab count. */}
+          <div className="px-4 pt-4 pb-3">
+            <div className="flex w-full gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
+              <Link href="/my-schedule" aria-current={tab === "upcoming" ? "page" : undefined} className={tabCls("upcoming")}>
+                Upcoming
+              </Link>
+              {userRole === "member" && (
+                <Link href="/my-schedule?tab=lessons" aria-current={tab === "lessons" ? "page" : undefined} className={tabCls("lessons")}>
+                  Lessons
+                </Link>
+              )}
+              {userRole === "member" && (
+                <Link href="/my-schedule?tab=payments" aria-current={tab === "payments" ? "page" : undefined} className={tabCls("payments")}>
+                  Payments
+                </Link>
+              )}
+              <Link href="/my-schedule?tab=past" aria-current={tab === "past" ? "page" : undefined} className={tabCls("past")}>
+                Past
+              </Link>
+            </div>
           </div>
 
           {/* ── Upcoming tab ─────────────────────────────────────────────── */}
@@ -463,6 +718,10 @@ export default async function MySchedulePage({
                                     {start} – {end} · {durationMin} min
                                     {formatLabel ? ` · ${formatLabel}` : ""}
                                   </p>
+                                  <PaymentStateBadge
+                                    state={paymentStateByReservationId.get(res.id) ?? null}
+                                    className="mt-1"
+                                  />
                                 </div>
                                 {item.isCancellable ? (
                                   <form action={cancelReservation.bind(null, clubId)}>
@@ -487,7 +746,7 @@ export default async function MySchedulePage({
                           }
 
                           // ── Upcoming event signup card ──────────────────────
-                          const { ev, myRole, myStatus, offerExpiresAt } = item;
+                          const { ev, participantId, myRole, myStatus, offerExpiresAt } = item;
                           const start = formatTime(ev.starts_at, clubTimezone);
                           const end   = formatTime(ev.ends_at,   clubTimezone);
                           const evCourtNames = ev.reservations
@@ -539,6 +798,12 @@ export default async function MySchedulePage({
                                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
                                     Accept by {formatTime(offerExpiresAt, clubTimezone)}
                                   </p>
+                                )}
+                                {myStatus === "confirmed" && (
+                                  <PaymentStateBadge
+                                    state={paymentStateByParticipantId.get(participantId) ?? null}
+                                    className="mt-1"
+                                  />
                                 )}
                               </div>
                               {myRole === "host" ? (
@@ -636,6 +901,56 @@ export default async function MySchedulePage({
               autoOpen={autoOpen && !prosError && pros.length > 0 && profile?.memberSelfService !== false}
               canRequestNew={profile?.memberSelfService !== false}
             />
+          )}
+
+          {/* ── Payments tab ─────────────────────────────────────────────── */}
+          {/* Phase 34C — centralized, read-only view of the Member's own
+              payment obligations. Every entry already passed through
+              get_payment_states_for_domains (the sanitized read boundary)
+              upstream — nothing here reads payments/payment_events
+              directly, and no entry is fabricated for a domain with no
+              payment row. No Record Payment control — Member never
+              mutates payments. */}
+          {tab === "payments" && (
+            <div className="px-4 pb-8">
+              {paymentListItems.length === 0 ? (
+                <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
+                  No payment obligations to show.
+                </p>
+              ) : (
+                <div className="pt-2 space-y-5">
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    Payments for your current and recent Court Time activity.
+                  </p>
+
+                  {outstandingPaymentItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Outstanding
+                      </p>
+                      <div className="space-y-2">
+                        {outstandingPaymentItems.map(item => (
+                          <PaymentListRow key={item.key} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {resolvedPaymentItems.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">
+                        Resolved
+                      </p>
+                      <div className="space-y-2">
+                        {resolvedPaymentItems.map(item => (
+                          <PaymentListRow key={item.key} item={item} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ── Past tab ─────────────────────────────────────────────────── */}

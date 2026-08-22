@@ -107,6 +107,7 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
     ? [
         { label: "Overview",      href: "/admin/overview",        exact: false },
         { label: "Members",       href: "/admin/members",         exact: false },
+        { label: "Payments",      href: "/admin/payments",        exact: false },
         { label: "Courts",        href: "/admin/courts",          exact: false },
         { label: "Club Settings", href: "/admin/settings",        exact: false },
         { label: "Audit Log",     href: "/admin/audit-log",       exact: false },
@@ -120,6 +121,7 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
     : isOperator(userRole)
     ? [
         { label: "Members",       href: "/admin/members",         exact: false },
+        { label: "Payments",      href: "/admin/payments",        exact: false },
         { label: "Profile",       href: "/profile",               exact: true  },
         { label: "Notifications", href: "/profile/notifications", exact: true  },
         { label: "Security",      href: "/profile/security",      exact: true  },

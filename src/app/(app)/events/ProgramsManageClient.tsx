@@ -27,7 +27,9 @@ import PriceSummary from "@/components/PriceSummary";
 import { mapProgramError } from "./programErrors";
 import {
   ACTION_BUTTON_PRIMARY,
+  ACTION_BUTTON_PRIMARY_COMPACT,
   ACTION_BUTTON_SECONDARY,
+  ACTION_BUTTON_SECONDARY_COMPACT,
   ACTION_BUTTON_DESTRUCTIVE,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
 } from "./actionButtonStyles";
@@ -380,14 +382,14 @@ export default function ProgramsManageClient({
                   <button
                     disabled={priceUpdating}
                     onClick={() => saveEditPrice(p.id)}
-                    className="text-xs font-semibold text-accent hover:underline disabled:opacity-40"
+                    className={ACTION_BUTTON_PRIMARY_COMPACT}
                   >
                     {priceUpdating ? "Saving…" : "Save"}
                   </button>
                   <button
                     disabled={priceUpdating}
                     onClick={cancelEditPrice}
-                    className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    className={ACTION_BUTTON_SECONDARY_COMPACT}
                   >
                     Cancel
                   </button>
@@ -405,7 +407,7 @@ export default function ProgramsManageClient({
                   {userRole === "admin" && (
                     <button
                       onClick={() => startEditPrice(p)}
-                      className="text-xs text-accent hover:underline font-medium mt-4"
+                      className={`${ACTION_BUTTON_SECONDARY_COMPACT} mt-4`}
                     >
                       Edit
                     </button>
@@ -587,6 +589,7 @@ export default function ProgramsManageClient({
           programTitle={viewingRoster.title}
           clubId={clubId}
           clubTimezone={clubTimezone}
+          userRole={userRole}
           onClose={() => setViewingRoster(null)}
         />
       )}

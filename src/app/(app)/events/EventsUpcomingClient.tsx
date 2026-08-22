@@ -7,6 +7,7 @@ import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
 import type { MemberProgramCard } from "./programEnrollmentActions";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 import PriceSummary from "@/components/PriceSummary";
+import EventJoinConfirmModal from "@/components/EventJoinConfirmModal";
 import { isOperator } from "@/lib/auth/roles";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -98,6 +99,34 @@ export default function EventsUpcomingClient({
   const router = useRouter();
   const [searchQuery,      setSearchQuery]      = useState("");
   const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
+
+  // Phase 34C — positive-price Join confirmation. Only ever set when
+  // price_amount_cents > 0; Free/unpriced events keep the existing
+  // frictionless direct-submit flow untouched.
+  const [joinConfirm, setJoinConfirm] = useState<{
+    eventId: string; title: string; priceCents: number; willWaitlist: boolean;
+  } | null>(null);
+  const [joinSubmitting, setJoinSubmitting] = useState(false);
+
+  function requestJoin(eventId: string, title: string, priceCents: number | null, willWaitlist: boolean) {
+    if (priceCents !== null && priceCents > 0) {
+      setJoinConfirm({ eventId, title, priceCents, willWaitlist });
+      return;
+    }
+    void submitJoin(eventId);
+  }
+
+  async function submitJoin(eventId: string) {
+    setJoinSubmitting(true);
+    const formData = new FormData();
+    formData.set("event_id", eventId);
+    try {
+      await joinEventAction(formData);
+    } finally {
+      setJoinSubmitting(false);
+      setJoinConfirm(null);
+    }
+  }
 
   const courtName = new Map(courtNames.map(c => [c.id, c.name]));
 
@@ -354,12 +383,13 @@ export default function EventsUpcomingClient({
                                   // offer is a re-entry action — hidden at a
                                   // Staff-Managed club, same as a fresh Join.
                                   memberSelfService ? (
-                                    <form action={joinEventAction}>
-                                      <input type="hidden" name="event_id" value={ev.id} />
-                                      <button type="submit" className={ACTION_BUTTON_PRIMARY}>
-                                        Rejoin
-                                      </button>
-                                    </form>
+                                    <button
+                                      type="button"
+                                      onClick={() => requestJoin(ev.id, ev.title, ev.price_amount_cents, isFull)}
+                                      className={ACTION_BUTTON_PRIMARY}
+                                    >
+                                      Rejoin
+                                    </button>
                                   ) : null
                                 ) : (
                                   <div className="flex items-center gap-2">
@@ -392,15 +422,13 @@ export default function EventsUpcomingClient({
                                 // clearest new-entry action — hidden at a
                                 // Staff-Managed club.
                                 memberSelfService ? (
-                                  <form action={joinEventAction}>
-                                    <input type="hidden" name="event_id" value={ev.id} />
-                                    <button
-                                      type="submit"
-                                      className={ACTION_BUTTON_PRIMARY}
-                                    >
-                                      {isFull ? "Join Waitlist" : "Join Event"}
-                                    </button>
-                                  </form>
+                                  <button
+                                    type="button"
+                                    onClick={() => requestJoin(ev.id, ev.title, ev.price_amount_cents, isFull)}
+                                    className={ACTION_BUTTON_PRIMARY}
+                                  >
+                                    {isFull ? "Join Waitlist" : "Join Event"}
+                                  </button>
                                 ) : null
                               )
                             }
@@ -484,6 +512,18 @@ export default function EventsUpcomingClient({
             </div>
           )}
         </>
+      )}
+
+      {joinConfirm && (
+        <EventJoinConfirmModal
+          eventTitle={joinConfirm.title}
+          priceCents={joinConfirm.priceCents}
+          currency={currency}
+          willWaitlist={joinConfirm.willWaitlist}
+          submitting={joinSubmitting}
+          onConfirm={() => submitJoin(joinConfirm.eventId)}
+          onCancel={() => setJoinConfirm(null)}
+        />
       )}
     </div>
   );

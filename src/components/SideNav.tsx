@@ -100,6 +100,17 @@ function SettingsIcon() {
   );
 }
 
+function PaymentsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+      <line x1="6" y1="15" x2="10" y2="15" />
+    </svg>
+  );
+}
+
 function AuditLogIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -267,6 +278,7 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
 
             <GroupLabel>Club</GroupLabel>
             <NavLink href="/admin/members"    label="Members"      Icon={MembersIcon}    pathname={pathname} />
+            <NavLink href="/admin/payments"   label="Payments"     Icon={PaymentsIcon}   pathname={pathname} />
             <NavLink href="/admin/courts"     label="Courts"       Icon={CourtsIcon}     pathname={pathname} />
             <NavLink href="/admin/settings"   label="Club Settings" Icon={SettingsIcon}  pathname={pathname} />
             <NavLink href="/admin/audit-log"  label="Audit Log"    Icon={AuditLogIcon}   pathname={pathname} />
@@ -295,6 +307,7 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
             <NavLink href="/events"        label="Events"   Icon={EventsIcon}   pathname={pathname} />
             <NavLink href="/admin/lessons" label="Lessons"  Icon={LessonsIcon}  pathname={pathname} />
             <NavLink href="/admin/members" label="Members"  Icon={MembersIcon}  pathname={pathname} />
+            <NavLink href="/admin/payments" label="Payments" Icon={PaymentsIcon} pathname={pathname} />
             <NavLink href="/my-schedule"   label="Bookings" Icon={ScheduleIcon} pathname={pathname} />
             <NavLink href="/profile"       label="Profile"  Icon={ProfileIcon}  pathname={pathname} />
           </>

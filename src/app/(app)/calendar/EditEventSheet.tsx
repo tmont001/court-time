@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import { updateEventAdmin } from "@/app/(app)/admin/events/actions";
+import { updateEventAdmin, setEventPriceOverrideAction } from "@/app/(app)/admin/events/actions";
+import PriceSummary from "@/components/PriceSummary";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -42,6 +43,8 @@ interface EditableEvent {
   court_ids:      string[];
   program_id:     string | null;
   updated_at:     string;
+  // Phase 34C — folded in from the removed standalone Edit Price control.
+  price_amount_cents: number | null;
 }
 
 interface EventType {
@@ -66,6 +69,11 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
+  // Phase 34C — Event price display/edit.
+  currency:     string;
+  // Admin only — Staff keeps its existing edit authority over every other
+  // field here, but must never gain Event-price configuration authority.
+  isAdmin:      boolean;
   onClose:      () => void;
   onSaved:      () => void;
 }
@@ -121,7 +129,7 @@ function mapEditError(code: string | undefined, message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EditEventSheet({
-  event, courts, clubId, clubTimezone, onClose, onSaved,
+  event, courts, clubId, clubTimezone, currency, isAdmin, onClose, onSaved,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -173,6 +181,13 @@ export default function EditEventSheet({
   );
   const [customDurationText, setCustomDurationText] = useState(String(initialDuration));
   const [capacityText, setCapacityText] = useState(String(event.capacity));
+
+  // Phase 34C — Event price, Admin only. Folded in from the removed
+  // standalone Edit Price control on EventDetailSheet.
+  const [priceDollars, setPriceDollars] = useState(
+    event.price_amount_cents !== null ? (event.price_amount_cents / 100).toFixed(2) : ""
+  );
+  const [priceError, setPriceError] = useState<string | null>(null);
 
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(event.updated_at);
   const [submitting, setSubmitting]     = useState(false);
@@ -236,7 +251,7 @@ export default function EditEventSheet({
     const { data } = await supabase
       .from("events")
       .select(`
-        id, title, event_type_id, description, starts_at, ends_at, capacity, updated_at,
+        id, title, event_type_id, description, starts_at, ends_at, capacity, updated_at, price_amount_cents,
         reservations(court_id, status, reason)
       `)
       .eq("id", event.id)
@@ -266,15 +281,18 @@ export default function EditEventSheet({
     setIsCustomDuration(!(DURATION_PRESETS as readonly number[]).includes(freshDuration));
     setCustomDurationText(String(freshDuration));
     setCapacityText(String(data.capacity));
+    setPriceDollars(data.price_amount_cents !== null ? (data.price_amount_cents / 100).toFixed(2) : "");
     setExpectedUpdatedAt(data.updated_at);
     setStaleConflict(false);
     setError(null);
+    setPriceError(null);
   }
 
   async function handleSave() {
     if (!canSave) return;
     setSubmitting(true);
     setError(null);
+    setPriceError(null);
     setStaleConflict(false);
 
     const { error: rpcError } = await updateEventAdmin({
@@ -298,6 +316,24 @@ export default function EditEventSheet({
       }
       setSubmitting(false);
       return;
+    }
+
+    // Phase 34C — Event price, Admin only, a deliberately separate RPC
+    // call from update_event_admin above (the two backend RPCs are not
+    // merged merely for UI convenience). Only called when the price
+    // actually changed, and only ever for Admin — Staff/Pro never reach
+    // this branch since the price field itself is not rendered for them.
+    if (isAdmin) {
+      const trimmed = priceDollars.trim();
+      const newPriceCents = trimmed === "" ? null : Math.round(parseFloat(trimmed) * 100);
+      if (newPriceCents !== event.price_amount_cents) {
+        const { error: priceRpcError } = await setEventPriceOverrideAction(event.id, newPriceCents, clubId);
+        if (priceRpcError) {
+          setPriceError(priceRpcError);
+          setSubmitting(false);
+          return;
+        }
+      }
     }
 
     onSaved();
@@ -537,6 +573,44 @@ export default function EditEventSheet({
             <p className="mt-1 text-xs text-red-500">Enter a whole number of at least 1.</p>
           )}
         </div>
+
+        {/* Event Price — Phase 34C, Admin only. Folded in here from the
+            removed standalone Edit Price control. Staff/Pro edit every
+            other field on this sheet but never gain price authority — for
+            them the price is simply not rendered at all. */}
+        {isAdmin ? (
+          <div>
+            <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Event Price <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+            </label>
+            <div className="mt-1.5 relative w-32">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-base md:text-sm">
+                $
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                placeholder="0.00"
+                value={priceDollars}
+                onChange={e => setPriceDollars(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 pl-7 pr-3 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+              Changes apply to new participants and guests. Existing participant and guest price
+              snapshots are unchanged. Leave blank for no price.
+            </p>
+            {priceError && <p className="mt-1 text-xs text-red-500">{priceError}</p>}
+          </div>
+        ) : event.price_amount_cents !== null ? (
+          <PriceSummary
+            label="Event Price"
+            amountCents={event.price_amount_cents}
+            currency={currency}
+            viewer="operator"
+          />
+        ) : null}
 
         {/* Description — standalone only */}
         {!isProgramSession && (

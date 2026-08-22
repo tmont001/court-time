@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import { createClient } from "@/lib/supabase/client";
 import {
   withdrawLessonRequest,
   acceptLessonProposal,
@@ -10,12 +12,16 @@ import {
   cancelLesson,
   type LessonRequestRow,
 } from "./actions";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import type { PaymentStateRow } from "@/lib/payments";
+import { formatMemberPrice } from "@/lib/money";
 
 interface Props {
   request:    LessonRequestRow;
   userId:     string;
   clubId:     string;
   clubTimezone: string;
+  currency:   string;
   onClose:    () => void;
 }
 
@@ -48,7 +54,7 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
-export default function LessonRequestDetail({ request, userId: _userId, clubId, clubTimezone, onClose }: Props) {
+export default function LessonRequestDetail({ request, userId: _userId, clubId, clubTimezone, currency, onClose }: Props) {
   const router = useRouter();
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [confirmCancel,   setConfirmCancel]   = useState(false);
@@ -56,7 +62,55 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
+  // Phase 34C — own read-only payment state via the sanitized batched read
+  // boundary. No Record Payment here — Member never mutates payments.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  useEffect(() => {
+    if (request.status !== "confirmed") return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await fetchPaymentStates("lesson_request", [request.id]);
+      if (!cancelled) setPaymentState(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [request.id, request.status]);
+
+  // Phase 34C — the already-snapshotted total price for this Lesson, at
+  // the commitment point (proposed = deciding whether to accept; confirmed
+  // = already committed). lesson_requests_select_member RLS (member_id =
+  // auth.uid()) permits this direct read of the Member's own row — never
+  // recalculated from current Lesson Type settings, always the stored
+  // snapshot, exactly like the equivalent read on the Pro/operator side
+  // (LessonProSheet's own priceSnapshot fetch).
+  const [priceAmountCents, setPriceAmountCents] = useState<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (request.status !== "proposed" && request.status !== "confirmed") return;
+    let cancelled = false;
+    const supabase = createClient();
+    (async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase.from as any)("lesson_requests")
+        .select("price_amount_cents")
+        .eq("id", request.id)
+        .single() as { data: { price_amount_cents: number | null } | null };
+      if (!cancelled) setPriceAmountCents(data?.price_amount_cents ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [request.id, request.status]);
+
   const proName = [request.pro_first_name, request.pro_last_name].filter(Boolean).join(" ") || "Pro";
+
+  // Phase 34C — already the pre-calculated TOTAL for this Lesson's actual
+  // duration (round(unit_price_amount_cents * duration_minutes / 60) for
+  // an hourly Lesson Type, computed server-side at snapshot time) — never
+  // recomputed here, and never merely the hourly rate. NULL stays hidden
+  // (never invented for a Member); undefined means "not yet fetched".
+  const priceLabel =
+    priceAmountCents === undefined || priceAmountCents === null
+      ? null
+      : priceAmountCents === 0
+      ? "Free"
+      : `Total lesson price: ${formatMemberPrice(priceAmountCents, currency)}`;
 
   function action(fn: () => Promise<{ error?: string }>) {
     setError("");
@@ -142,6 +196,11 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
               Court: {request.proposed_court_name}
             </p>
           )}
+          {priceLabel && (
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mt-1.5">
+              {priceLabel}
+            </p>
+          )}
         </div>
       )}
 
@@ -162,7 +221,17 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
               Court: {request.proposed_court_name}
             </p>
           )}
+          {priceLabel && (
+            <p className="text-sm font-semibold text-green-900 dark:text-green-100 mt-1.5">
+              {priceLabel}
+            </p>
+          )}
         </div>
+      )}
+
+      {/* Payment state — Phase 34C, own state only, read-only. */}
+      {request.status === "confirmed" && paymentState && (
+        <PaymentStateBadge state={paymentState} className="mb-4" />
       )}
 
       {/* Decline reason */}

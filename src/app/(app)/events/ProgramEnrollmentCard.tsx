@@ -7,7 +7,7 @@
 // matrix here operates on the caller's single program_enrollments row,
 // never on any individual generated event.
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   joinProgram,
@@ -20,6 +20,10 @@ import {
 import { mapProgramError } from "./programErrors";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 import PriceSummary from "@/components/PriceSummary";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import ProgramEnrollConfirmModal from "@/components/ProgramEnrollConfirmModal";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import type { PaymentStateRow } from "@/lib/payments";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,20 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
   const enrollment = program.my_enrollment;
   const status     = enrollment?.status ?? null;
 
+  // Phase 34C — own read-only Whole Program payment state. No mutation
+  // here — Member never records/resolves payments.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  useEffect(() => {
+    if (status !== "enrolled" || !enrollment) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await fetchPaymentStates("program_enrollment", [enrollment.id]);
+      if (!cancelled) setPaymentState(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, enrollment?.id]);
+
   const offerExpiresAt = status === "offered" ? enrollment!.offer_expires_at : null;
   // Point-in-time check at render/interaction time — matches the existing
   // per-event offer-expiry pattern in EventsUpcomingClient (no live-ticking
@@ -110,6 +128,11 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
     startTransition(async () => {
       const result = await action();
       setPendingKind(null);
+      // Mirrors EventsUpcomingClient's submitJoin: the confirmation modal
+      // (if this action came from one) stays open with its own "Joining…"
+      // state for the duration of the request and only closes once the
+      // result is known — never dismissed early on click.
+      setEnrollConfirm(null);
       if (result.error) {
         setError(mapProgramError(result.error.code, result.error.message));
         return;
@@ -121,7 +144,7 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
     });
   }
 
-  const handleJoin    = () => run("join",    () => joinProgram({ p_program_id: program.id, expectedClubId: clubId }));
+  const submitJoin   = () => run("join",   () => joinProgram({ p_program_id: program.id, expectedClubId: clubId }));
   const handleLeave   = () => run("leave",   () => leaveProgram({ p_program_id: program.id, expectedClubId: clubId }));
   const handleAccept  = () => run("accept",  () => acceptProgramOffer({ p_program_id: program.id, expectedClubId: clubId }));
   const handleDecline = () => run("decline", () => declineProgramOffer({ p_program_id: program.id, expectedClubId: clubId }));
@@ -129,7 +152,30 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
   // distinct button in a distinct state (offered-and-expired) with its own
   // pending label — kept separate rather than parameterizing handleJoin so
   // the kind passed to run() always matches the label the user clicked.
-  const handleRejoin  = () => run("rejoin",  () => joinProgram({ p_program_id: program.id, expectedClubId: clubId }));
+  const submitRejoin = () => run("rejoin", () => joinProgram({ p_program_id: program.id, expectedClubId: clubId }));
+
+  // Phase 34C consolidation — positive-price enrollment confirmation.
+  // Only ever shown when price_amount_cents > 0; Free/unpriced programs
+  // keep the existing frictionless direct-submit flow untouched. "join"
+  // here has an unknowable outcome (see ProgramEnrollConfirmModal's own
+  // comment); "rejoin" is always definitely a waitlist re-entry.
+  const [enrollConfirm, setEnrollConfirm] = useState<"join" | "rejoin" | null>(null);
+  const isPricedEnrollment = program.price_amount_cents !== null && program.price_amount_cents > 0;
+
+  const handleJoin = () => {
+    if (isPricedEnrollment) { setEnrollConfirm("join"); return; }
+    submitJoin();
+  };
+  const handleRejoin = () => {
+    if (isPricedEnrollment) { setEnrollConfirm("rejoin"); return; }
+    submitRejoin();
+  };
+  function confirmEnroll() {
+    // Left open (with its own submitting/"Joining…" state) until run()
+    // clears it once the result is known — see run()'s own comment.
+    if (enrollConfirm === "rejoin") submitRejoin();
+    else submitJoin();
+  }
 
   return (
     <div className="ct-card px-4 py-3">
@@ -186,11 +232,23 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
         breakdown={program.price_amount_cents !== null ? "for the full program" : null}
         className="mt-0.5"
       />
+      {status === "enrolled" && <PaymentStateBadge state={paymentState} className="mt-1" />}
 
       {/* Offer deadline */}
       {status === "offered" && !offerExpired && offerExpiresAt && (
         <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
           Accept by {formatOfferTime(offerExpiresAt, clubTimezone)}
+        </p>
+      )}
+
+      {/* Phase 34C consolidation — concrete QA: the "Waitlisted" pill alone
+          didn't explain what happens next or that no charge applies while
+          waiting. No roster position or enrolled/capacity count is shown —
+          no trustworthy count is available here without new capacity data
+          work (explicitly deferred). */}
+      {status === "waitlisted" && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          You&rsquo;re on the waitlist. No payment is due unless a spot is confirmed — we&rsquo;ll notify you if one opens.
         </p>
       )}
 
@@ -239,6 +297,18 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
           </button>
         )}
       </div>
+
+      {enrollConfirm && program.price_amount_cents !== null && (
+        <ProgramEnrollConfirmModal
+          programTitle={program.title}
+          priceCents={program.price_amount_cents}
+          currency={currency}
+          willDefinitelyWaitlist={enrollConfirm === "rejoin"}
+          submitting={isPending}
+          onConfirm={confirmEnroll}
+          onCancel={() => setEnrollConfirm(null)}
+        />
+      )}
     </div>
   );
 }

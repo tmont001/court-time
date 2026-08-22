@@ -47,7 +47,14 @@ function proName(p: Pro): string {
 export default function RequestLessonSheet({ pros, courts, lessonTypes, currency, clubId, onClose, onDone }: Props) {
   const [step, setStep] = useState<Step>("pro");
   const [selectedPro, setSelectedPro] = useState<Pro | null>(null);
-  const [lessonTypeId, setLessonTypeId] = useState<string>("");
+  // Phase 34C consolidation: submit_lesson_request (0146) now requires a
+  // Member self-service request to always name a priced Lesson Type — a
+  // blank "No specific type" choice is no longer valid, so the default
+  // selection is the first priced one available, never blank.
+  const [lessonTypeId, setLessonTypeId] = useState<string>(() => {
+    const firstPriced = lessonTypes.find(lt => lt.unit_price_amount_cents !== null);
+    return firstPriced?.id ?? lessonTypes[0]?.id ?? "";
+  });
   const [duration, setDuration] = useState<number>(60);
   const [preferredCourt, setPreferredCourt] = useState<string>("");
   const [note, setNote] = useState<string>("");
@@ -62,6 +69,18 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
   // everywhere else a Lesson Type restricts duration.
   const availableDurations: number[] =
     selectedType?.allowed_durations?.length ? selectedType.allowed_durations : DURATIONS;
+
+  // A Lesson Type with unit_price_amount_cents = NULL means "not configured
+  // yet" (distinct from a genuinely $0 Free type) — the Admin/Pro proposal
+  // flow has no way to establish a price for it after the fact, so letting
+  // a Member self-serve one would silently create a free lesson. Not
+  // selectable as a normal online request.
+  const selectedTypeUnpriced = selectedType !== null && selectedType.unit_price_amount_cents === null;
+  // A Lesson Type is now mandatory for Member self-service (0146) — no
+  // valid choice means either the club has none configured at all, or
+  // (shouldn't happen given the default above) none is selected yet.
+  const noLessonTypeAvailable = lessonTypes.length === 0;
+  const canContinueFromDuration = !noLessonTypeAvailable && lessonTypeId !== "" && !selectedTypeUnpriced;
 
   function handleTypeChange(id: string) {
     setLessonTypeId(id);
@@ -79,6 +98,16 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
 
   function handleSubmit() {
     if (!selectedPro) return;
+    // Fail-safe: a Lesson Type is mandatory and must be priced, even if
+    // stale UI state somehow reached this point.
+    if (!lessonTypeId) {
+      setError("Please choose a lesson type.");
+      return;
+    }
+    if (selectedTypeUnpriced) {
+      setError("This lesson type isn't priced online yet — contact the club directly to book it.");
+      return;
+    }
     setError("");
     startTransition(async () => {
       const result = await submitLessonRequest({
@@ -159,24 +188,35 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
       {/* Step: choose duration */}
       {step === "duration" && (
         <div>
-          {lessonTypes.length > 0 && (
+          {noLessonTypeAvailable ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-4">
+              No lesson types are available for online booking right now — contact the club directly.
+            </p>
+          ) : (
             <div className="mb-4">
               <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
-                Lesson type (optional)
+                Lesson type
               </p>
               <select
                 value={lessonTypeId}
                 onChange={e => handleTypeChange(e.target.value)}
                 className="w-full ct-input text-base md:text-sm"
               >
-                <option value="">No specific type</option>
                 {lessonTypes.map(lt => (
-                  <option key={lt.id} value={lt.id}>
-                    {lt.name} — {formatLessonUnitPrice(lt.pricing_basis, lt.unit_price_amount_cents, currency)}
+                  <option key={lt.id} value={lt.id} disabled={lt.unit_price_amount_cents === null}>
+                    {lt.unit_price_amount_cents === null
+                      ? `${lt.name} — Contact the club for pricing`
+                      : `${lt.name} — ${formatLessonUnitPrice(lt.pricing_basis, lt.unit_price_amount_cents, currency)}`}
                   </option>
                 ))}
               </select>
             </div>
+          )}
+
+          {selectedTypeUnpriced && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-4">
+              This lesson type isn&apos;t priced online yet — contact the club directly to book it.
+            </p>
           )}
 
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
@@ -217,7 +257,8 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
 
           <button
             onClick={() => setStep("details")}
-            className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold"
+            disabled={!canContinueFromDuration}
+            className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold disabled:opacity-50"
           >
             Continue
           </button>
