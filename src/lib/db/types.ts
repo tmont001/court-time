@@ -3470,6 +3470,50 @@ export type Database = {
           }[];
         }[];
       };
+      get_club_stripe_connect_status: {
+        // Phase 34D-A. service_role only — never callable from an
+        // authenticated browser session (so no client can pick its own
+        // p_livemode). Scoped to one (club, Stripe mode) pair. Never
+        // returns the raw Stripe account id — only the derived readiness
+        // signal. Accounts v2: card_payments_status is Stripe's own
+        // capability status vocabulary (active/pending/restricted/
+        // unsupported), not a locally-invented enum.
+        Args: { p_club_id: string; p_livemode: boolean };
+        Returns: {
+          connected:             boolean;
+          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
+          last_synced_at:        string | null;
+        }[];
+      };
+      get_club_stripe_account_ref: {
+        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
+        // mode) pair — a club may have both a test-mode and a live-mode
+        // connected account.
+        Args: { p_club_id: string; p_livemode: boolean };
+        Returns: string | null;
+      };
+      upsert_club_stripe_account: {
+        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
+        // mode) pair via the unique(club_id, livemode) constraint.
+        Args: {
+          p_club_id:              string;
+          p_stripe_account_id:    string;
+          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
+          p_actor_id:             string;
+          p_livemode:             boolean;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          stripe_account_id:     string;
+          livemode:              boolean;
+          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
+          last_synced_at:        string | null;
+          created_by:            string | null;
+          created_at:            string;
+          updated_at:            string;
+        };
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;

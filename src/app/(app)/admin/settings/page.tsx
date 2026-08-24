@@ -8,6 +8,8 @@ import ClubTimezoneSection from "./ClubTimezoneSection";
 import EventTypesSection from "./EventTypesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
+import StripeConnectSection from "./StripeConnectSection";
+import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import LessonTypesSection from "./LessonTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
@@ -25,7 +27,7 @@ export default async function AdminSettingsPage() {
   const supabase = await createClient();
   const clubId = profile?.club_id ?? "";
 
-  const [settingsResult, clubResult, eventTypesResult, lessonTypesResult] = await Promise.all([
+  const [settingsResult, clubResult, eventTypesResult, lessonTypesResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
       .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours, currency, default_court_hourly_rate_cents, payment_mode")
@@ -43,6 +45,11 @@ export default async function AdminSettingsPage() {
       .order("is_active", { ascending: false })
       .order("label"),
     supabase.rpc("get_lesson_types"),
+    // Phase 34D-A: club_stripe_accounts has no authenticated-client grant
+    // at all (0147) — this helper resolves the caller/club itself and
+    // reads through the service-role RPC, scoped to the server's own
+    // configured Stripe mode (never a client-selectable value).
+    getStripeConnectStatusForAdmin(),
   ]);
 
   const settings   = settingsResult.data;
@@ -58,6 +65,7 @@ export default async function AdminSettingsPage() {
     rate_notes: string | null; is_active: boolean;
   }[];
   const currency = settings?.currency ?? "USD";
+  const stripeStatus = stripeConnectResult.status;
 
   // Server-only config checks — booleans only ever reach the rendered page;
   // no environment-variable name or value is passed as a prop or exposed to
@@ -67,6 +75,7 @@ export default async function AdminSettingsPage() {
     !!process.env.TWILIO_AUTH_TOKEN &&
     !!process.env.TWILIO_FROM_NUMBER;
   const emailConfigured = !!process.env.RESEND_API_KEY;
+  const stripeConfigured = stripeConnectResult.configured;
 
   return (
     <>
@@ -134,20 +143,45 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
-        {/* ── Payment Tracking ── */}
-        <section className="space-y-3">
+        {/* ── Payments ── */}
+        {/* Phase 34D-A: grouped under one "Payments" heading — Payment
+            Tracking (34C, controls whether balances are tracked at all)
+            and Court Time Payments (34D-A, the Stripe connected-account
+            foundation a future checkpoint's activation gate will build
+            on) are related but distinct configuration surfaces, kept
+            visually separate within the group rather than merged into one
+            control. Operational balances/Record Payment stay entirely on
+            /admin/payments — nothing here duplicates that. */}
+        <section className="space-y-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Payment Tracking
+            Payments
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Controls whether Court Time tracks balances for new confirmed bookings. Existing
-            payment history is never hidden or gated by this setting — it only affects whether
-            NEW obligations are created going forward.
-          </p>
-          <PaymentTrackingSection
-            clubId={clubId}
-            currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
-          />
+
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              Payment Tracking
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Controls whether Court Time tracks balances for new confirmed bookings. Existing
+              payment history is never hidden or gated by this setting — it only affects whether
+              NEW obligations are created going forward.
+            </p>
+            <PaymentTrackingSection
+              clubId={clubId}
+              currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
+            />
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">
+              Court Time Payments
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Connect Stripe to prepare this club to accept online payments from Members. Court
+              Time Payments itself isn&apos;t available to turn on yet — this only sets up the connection.
+            </p>
+            <StripeConnectSection clubId={clubId} initialStatus={stripeStatus} configured={stripeConfigured} />
+          </div>
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
