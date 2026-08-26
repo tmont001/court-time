@@ -10,6 +10,7 @@ import PricingSettingsForm from "./PricingSettingsForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
+import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
 import LessonTypesSection from "./LessonTypesSection";
 import BookingRulesForm from "./BookingRulesForm";
 import OperatingHoursEditor from "./OperatingHoursEditor";
@@ -66,6 +67,11 @@ export default async function AdminSettingsPage() {
   }[];
   const currency = settings?.currency ?? "USD";
   const stripeStatus = stripeConnectResult.status;
+  // Phase 34D-C: the SAME derivation StripeConnectSection's own state
+  // already uses, computed once here so PaymentTrackingSection's
+  // activation gate and StripeConnectSection's own display can never
+  // disagree about whether the club is actually ready.
+  const stripeReadiness = deriveConnectUIState(stripeStatus.connected, stripeStatus.cardPaymentsStatus);
 
   // Server-only config checks — booleans only ever reach the rendered page;
   // no environment-variable name or value is passed as a prop or exposed to
@@ -169,6 +175,7 @@ export default async function AdminSettingsPage() {
             <PaymentTrackingSection
               clubId={clubId}
               currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
+              stripeReadiness={stripeReadiness}
             />
           </div>
 

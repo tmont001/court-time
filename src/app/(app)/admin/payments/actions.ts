@@ -4,6 +4,10 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { createPrivilegedClient } from "@/lib/supabase/privileged";
+import { getStripeContext } from "@/lib/stripe/server";
+import { isAuthorizedToConnectStripe } from "@/lib/stripe/connectConfig";
 import type { PaymentStateRow } from "@/lib/payments";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -12,6 +16,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   insufficient_role:   "You don't have permission to do that.",
   invalid_payment_mode: "Invalid payment tracking mode.",
   court_time_payments_not_available: "Court Time Payments isn't available yet.",
+  stripe_connect_not_ready: "Connect a Stripe account with an active status before turning on Court Time Payments.",
+  club_not_found:       "Something went wrong. Please try again.",
   payment_not_found:    "That payment could not be found.",
   invalid_payment_amount: "Enter a valid amount greater than zero.",
   invalid_payment_method: "Choose a valid payment method.",
@@ -50,6 +56,43 @@ export async function updateClubPaymentModeAction(
 ): Promise<{ error?: string }> {
   const guard = await assertActiveClub(expectedClubId);
   if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  // Phase 34D-C: court_time_payments is the ONE mode that never goes
+  // through update_club_payment_mode (which stays authenticated-callable,
+  // unchanged, and still unconditionally rejects this value directly —
+  // see 0149's own header comment for why). Activation instead goes
+  // through the service-role-only activate_court_time_payments RPC, with
+  // this Server Action independently resolving Admin identity and the
+  // server's own current Stripe environment (never a client-supplied
+  // value) before ever touching the privileged client.
+  if (mode === "court_time_payments") {
+    const user = await getAuthUser();
+    if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+    const profile = await getAuthProfile();
+    if (!profile || !isAuthorizedToConnectStripe(profile.role) || !profile.club_id) {
+      return { error: ERROR_MESSAGES.insufficient_role };
+    }
+
+    const context = getStripeContext();
+    if (!context) return { error: ERROR_MESSAGES.court_time_payments_not_available };
+
+    const privileged = createPrivilegedClient();
+    if (!privileged) return { error: ERROR_MESSAGES.club_not_found };
+
+    const { error } = await privileged.rpc("activate_court_time_payments", {
+      p_club_id: profile.club_id,
+      p_livemode: context.livemode,
+      p_actor_id: user.id,
+    });
+    if (error) {
+      const key = error.message.match(/stripe_connect_not_ready|invalid_arguments|club_not_found/)?.[0] ?? "";
+      return { error: ERROR_MESSAGES[key] ?? "Failed to update payment tracking mode." };
+    }
+
+    revalidatePath("/admin/settings");
+    return {};
+  }
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

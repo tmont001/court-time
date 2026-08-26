@@ -3,11 +3,11 @@
 // Phase 34D-A — Admin-only Stripe Connect onboarding entry point. Clearly
 // separate from PaymentTrackingSection above it: that section controls
 // whether Court Time tracks balances at all (none/manual/court_time_
-// payments); this section is the connected-account plumbing a future
-// checkpoint's activation gate will require before court_time_payments
-// can ever be selected — selecting it is still hard-blocked everywhere
-// today (UI, update_club_payment_mode, _create_payment_obligation),
-// unchanged by this checkpoint.
+// payments); this section is the connected-account plumbing. Since
+// Phase 34D-C, PaymentTrackingSection's own court_time_payments option
+// becomes selectable exactly when this section's own state below is
+// "ready" (card_payments_status = active) — both read the identical
+// server-derived state, computed once in AdminSettingsPage.
 //
 // Accounts v2 readiness model: Stripe reports per-capability status
 // (active/pending/restricted/unsupported) rather than v1's charges_

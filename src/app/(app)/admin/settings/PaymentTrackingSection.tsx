@@ -3,9 +3,17 @@
 // Phase 34C — Admin-only payment tracking mode selector. Admin only reaches
 // this page at all (AdminSettingsPage redirects any non-admin), so no
 // additional role gating is needed here beyond the RPC's own Admin check.
+//
+// Phase 34D-C: court_time_payments is no longer unconditionally disabled —
+// it's selectable exactly when the club's Stripe Connect account for the
+// CURRENT server environment is ready (stripeReadiness === "ready", i.e.
+// card_payments_status = "active"). stripeReadiness is computed server-side
+// by AdminSettingsPage via the same deriveConnectUIState/getStripeContext
+// path StripeConnectSection already uses — never faked, never guessed here.
 
 import { useState, useTransition } from "react";
 import { updateClubPaymentModeAction } from "@/app/(app)/admin/payments/actions";
+import { isCourtTimePaymentsSelectable, type ConnectUIState } from "@/lib/stripe/connectConfig";
 
 type PaymentMode = "none" | "manual" | "court_time_payments";
 
@@ -20,23 +28,37 @@ const MODE_COPY: Record<PaymentMode, { title: string; description: string }> = {
   },
   court_time_payments: {
     title: "Court Time Payments",
-    description: "In-app payment processing. Coming soon.",
+    description: "Collect payments online through Stripe.",
   },
+};
+
+// Mirrors StripeConnectSection's own wording for each non-ready state, so
+// an Admin sees the same story in both places on this page.
+const NOT_READY_COPY: Record<Exclude<ConnectUIState, "ready">, string> = {
+  not_connected: "Connect a Stripe account below first.",
+  pending: "Stripe is still reviewing your account.",
+  action_required: "Finish Stripe setup below before turning this on.",
+  unsupported: "Your Stripe account needs attention before this can be enabled.",
 };
 
 export default function PaymentTrackingSection({
   clubId,
   currentMode,
+  stripeReadiness,
 }: {
   clubId: string;
   currentMode: PaymentMode;
+  stripeReadiness: ConnectUIState;
 }) {
   const [mode, setMode] = useState<PaymentMode>(currentMode);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
+  const courtTimePaymentsReady = isCourtTimePaymentsSelectable(stripeReadiness);
+
   function handleSelect(next: PaymentMode) {
-    if (next === "court_time_payments" || next === mode || isPending) return;
+    if (next === mode || isPending) return;
+    if (next === "court_time_payments" && !courtTimePaymentsReady) return;
 
     setStatus(null);
     startTransition(async () => {
@@ -56,7 +78,7 @@ export default function PaymentTrackingSection({
       <div className="grid gap-2 sm:grid-cols-3">
         {(["none", "manual", "court_time_payments"] as PaymentMode[]).map((option) => {
           const isSelected = mode === option;
-          const isDisabled = option === "court_time_payments";
+          const isDisabled = option === "court_time_payments" && !courtTimePaymentsReady;
           return (
             <button
               key={option}
@@ -78,11 +100,15 @@ export default function PaymentTrackingSection({
                 )}
                 {isDisabled && (
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                    Coming Soon
+                    Not Ready
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{MODE_COPY[option].description}</p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {option === "court_time_payments" && isDisabled
+                  ? NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, "ready">]
+                  : MODE_COPY[option].description}
+              </p>
             </button>
           );
         })}

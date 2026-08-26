@@ -152,20 +152,15 @@ describe("account-events webhook route — orchestration contract (Phase 34D-B)"
   });
 });
 
-describe("court_time_payments remains locked (three layers, unrelated to and untouched by 34D-A)", () => {
-  it("update_club_payment_mode still rejects court_time_payments (0143)", () => {
+describe("court_time_payments locks — 0143's own original definitions (historical, unchanged files)", () => {
+  it("update_club_payment_mode still rejects court_time_payments directly (0143, unchanged, still the none/manual path only)", () => {
     const src = readSource("supabase/migrations/0143_payment_mode_and_ledger_foundation.sql");
     expect(src).toContain("court_time_payments_not_available");
   });
 
-  it("_create_payment_obligation still only acts on manual mode (0143)", () => {
+  it("0143's OWN original _create_payment_obligation body only acted on manual mode — a historical fact this file's own text still accurately describes (0149 supersedes it for the live system; see the 0149 describe block below)", () => {
     const src = readSource("supabase/migrations/0143_payment_mode_and_ledger_foundation.sql");
     expect(src).toContain("if v_mode is distinct from 'manual' then");
-  });
-
-  it("PaymentTrackingSection still disables the court_time_payments option in the UI", () => {
-    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    expect(src).toContain('isDisabled = option === "court_time_payments"');
   });
 });
 
@@ -325,5 +320,117 @@ describe("0148 migration — Phase 34D-B lifecycle event idempotency and safety 
       "if p_card_payments_status not in ('active', 'pending', 'restricted', 'unsupported') then",
     );
     expect(src).toContain("raise exception 'invalid_card_payments_status';");
+  });
+});
+
+describe("0149 migration — Phase 34D-C activation gate invariants", () => {
+  const migration = () => readSource("supabase/migrations/0149_court_time_payments_activation_gate.sql");
+
+  it("exists as its own migration and does not touch 0143-0148 (diff-empty, verified separately via git diff --stat)", () => {
+    expect(() => migration()).not.toThrow();
+  });
+
+  it("activate_court_time_payments checks a row matching BOTH club_id and livemode — never 'any active row for this club' regardless of environment", () => {
+    const src = migration();
+    expect(src).toMatch(
+      /select 1 from public\.club_stripe_accounts\s*\n\s*where club_id = p_club_id\s*\n\s*and livemode = p_livemode\s*\n\s*and card_payments_status = 'active'/,
+    );
+  });
+
+  it("raises stripe_connect_not_ready (a stable, UI-mappable error) when not ready", () => {
+    const src = migration();
+    expect(src).toMatch(/if not v_ready then\s*\n\s*raise exception 'stripe_connect_not_ready';/);
+  });
+
+  it("activate_court_time_payments is service-role-only — never authenticated-callable, so no client-supplied p_livemode can bypass the gate", () => {
+    const src = migration();
+    expect(src).toContain(
+      "revoke execute on function public.activate_court_time_payments(uuid, boolean, uuid) from public, anon, authenticated;",
+    );
+    expect(src).toContain(
+      "grant  execute on function public.activate_court_time_payments(uuid, boolean, uuid) to service_role;",
+    );
+  });
+
+  it("does not redefine update_club_payment_mode — the none/manual (downgrade) path stays exactly as 0143 defined it", () => {
+    const src = migration();
+    expect(src).not.toMatch(/create (or replace )?function public\.update_club_payment_mode/);
+  });
+
+  it("widens _create_payment_obligation's mode gate to manual and court_time_payments using IS DISTINCT FROM, never NOT IN", () => {
+    const src = migration();
+    expect(src).toContain(
+      "if v_mode is distinct from 'manual'\n     and v_mode is distinct from 'court_time_payments' then",
+    );
+    // Regression: `v_mode not in ('manual', 'court_time_payments')` is a
+    // real bug for a null/unrecognized v_mode — SQL's NOT IN evaluates to
+    // NULL (not true) against a null left-hand side, so the `if` would be
+    // falsy and execution would fall through instead of returning null.
+    // IS DISTINCT FROM has no such NULL trap. Matches actual code usage
+    // (the `if` statement), not the file's own explanatory prose above.
+    expect(src).not.toMatch(/if\s+v_mode\s+not in\s*\(/);
+  });
+
+  it("excludes event_guest from court_time_payments — only manual mode may create an obligation for that domain type", () => {
+    const src = migration();
+    expect(src).toMatch(
+      /if v_mode = 'court_time_payments' and p_domain_type = 'event_guest' then\s*\n\s*return null;\s*\n\s*end if;/,
+    );
+  });
+
+  it("the event_guest carve-out is a plain return-null no-op — no new exception type, matching every caller's use of `perform` to discard the return value", () => {
+    const src = migration();
+    const fnBody = src.slice(
+      src.indexOf("create or replace function public._create_payment_obligation"),
+      src.indexOf("revoke all on function public._create_payment_obligation"),
+    );
+    // Exactly the two pre-existing raised exceptions from 0143
+    // (event_guest_must_not_have_roster_member_id, roster_member_id_required,
+    // cross_club_roster_member_not_allowed) — no new exception name added
+    // for the court_time_payments/event_guest exclusion.
+    expect(countOccurrences(fnBody, "raise exception")).toBe(3);
+    expect(fnBody).not.toMatch(/raise exception 'event_guest.*court_time/i);
+  });
+
+  it("the event_guest carve-out runs BEFORE the pre-existing event_guest roster_member_id validation, so it short-circuits cleanly for court_time_payments", () => {
+    const src = migration();
+    const carveOutIndex = src.indexOf("if v_mode = 'court_time_payments' and p_domain_type = 'event_guest' then");
+    const validationIndex = src.indexOf("if p_domain_type = 'event_guest' then");
+    expect(carveOutIndex).toBeGreaterThan(-1);
+    expect(validationIndex).toBeGreaterThan(carveOutIndex);
+  });
+
+  it("_create_payment_obligation is otherwise the same body as 0143 — no INSERT/UPDATE beyond the existing payments/payment_events writes", () => {
+    const src = migration();
+    const fnBody = src.slice(
+      src.indexOf("create or replace function public._create_payment_obligation"),
+      src.indexOf("revoke all on function public._create_payment_obligation"),
+    );
+    expect(countOccurrences(fnBody, "insert into public.")).toBe(2);
+    expect(fnBody).toContain("insert into public.payments (");
+    expect(fnBody).toContain("insert into public.payment_events (");
+  });
+
+  it("no PaymentIntent, Checkout, charge, or application_fee code anywhere in this migration — activation/readiness only, zero money movement (the file's own header comments explain the ABSENCE of these using the words themselves, so this checks actual SQL code lines only, excluding `--` comments)", () => {
+    const codeOnly = migration()
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("--"))
+      .join("\n");
+    expect(codeOnly).not.toMatch(/PaymentIntent/);
+    expect(codeOnly).not.toMatch(/checkout/i);
+    expect(codeOnly).not.toMatch(/application_fee|applicationFee/);
+    expect(codeOnly).not.toMatch(/stripe\.charges|\.charges\.create/);
+  });
+
+  it("never calls a Stripe account-mutating operation — this migration is pure Postgres DDL/DML, no Stripe API calls of any kind", () => {
+    const src = migration();
+    expect(src).not.toMatch(/\.v2\.core\.accounts\.(create|update)/);
+    expect(src).not.toMatch(/stripe\.accounts\.(create|update)/);
+  });
+
+  it("wraps both object definitions in a single begin/commit transaction", () => {
+    const src = migration();
+    expect(countOccurrences(src, "\nbegin;\n")).toBe(1);
+    expect(countOccurrences(src, "\ncommit;\n")).toBe(1);
   });
 });

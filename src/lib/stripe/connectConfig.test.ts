@@ -9,6 +9,7 @@ import {
   isAuthorizedToConnectStripe,
   SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES,
   isSupportedAccountLifecycleEventType,
+  isCourtTimePaymentsSelectable,
 } from "./connectConfig";
 
 // Phase 34D-A regression coverage for the concrete runtime failure: Stripe
@@ -202,5 +203,35 @@ describe("SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES / isSupportedAccountLifecycleE
 
   it("rejects a completely unrelated event type", () => {
     expect(isSupportedAccountLifecycleEventType("v2.commerce.product_catalog.imports.failed")).toBe(false);
+  });
+});
+
+describe("isCourtTimePaymentsSelectable — Phase 34D-C activation-gate UI predicate", () => {
+  it("only 'ready' (card_payments_status = active) is selectable", () => {
+    expect(isCourtTimePaymentsSelectable("ready")).toBe(true);
+  });
+
+  it("every non-ready state is unselectable — not_connected, pending, restricted (action_required), unsupported", () => {
+    expect(isCourtTimePaymentsSelectable("not_connected")).toBe(false);
+    expect(isCourtTimePaymentsSelectable("pending")).toBe(false);
+    expect(isCourtTimePaymentsSelectable("action_required")).toBe(false);
+    expect(isCourtTimePaymentsSelectable("unsupported")).toBe(false);
+  });
+
+  it("composes correctly with deriveConnectUIState for the current real sandbox state (connected, restricted) — must remain unselectable", () => {
+    const readiness = deriveConnectUIState(true, "restricted");
+    expect(readiness).toBe("action_required");
+    expect(isCourtTimePaymentsSelectable(readiness)).toBe(false);
+  });
+
+  it("composes correctly with deriveConnectUIState for a genuinely active account — becomes selectable", () => {
+    const readiness = deriveConnectUIState(true, "active");
+    expect(readiness).toBe("ready");
+    expect(isCourtTimePaymentsSelectable(readiness)).toBe(true);
+  });
+
+  it("composes correctly with deriveConnectUIState for no connected account at all — unselectable", () => {
+    const readiness = deriveConnectUIState(false, null);
+    expect(isCourtTimePaymentsSelectable(readiness)).toBe(false);
   });
 });

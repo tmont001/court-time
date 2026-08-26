@@ -153,6 +153,18 @@ export function deriveConnectUIState(
   }
 }
 
+// Phase 34D-C — the ONE place that decides whether PaymentTrackingSection
+// may let an Admin select court_time_payments. Deliberately a single
+// exported predicate (not re-derived inline) so the UI gate and any
+// future caller agree by construction: "ready" (card_payments_status =
+// active for the current server environment) is the only selectable
+// state. Never faked, never guessed — stripeReadiness is always computed
+// server-side via deriveConnectUIState from a real club_stripe_accounts
+// read.
+export function isCourtTimePaymentsSelectable(readiness: ConnectUIState): boolean {
+  return readiness === "ready";
+}
+
 // Phase 34D-B — the exact two Accounts v2 thin-event types the lifecycle
 // webhook subscribes to. requirements.updated replaces v1's account.
 // updated onboarding-requirement workflow; configuration.merchant's

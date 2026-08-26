@@ -3541,6 +3541,19 @@ export type Database = {
           matched:            boolean;
         }[];
       };
+      activate_court_time_payments: {
+        // Phase 34D-C. service_role only — never callable from an
+        // authenticated browser session (so no client can supply its own
+        // p_livemode to bypass the readiness gate). The ONLY path to
+        // court_time_payments: requires a club_stripe_accounts row
+        // matching BOTH p_club_id and p_livemode with card_payments_status
+        // = 'active'; otherwise throws stripe_connect_not_ready. On
+        // success, updates club_settings.payment_mode exactly like
+        // update_club_payment_mode's own none/manual path (same audit_log
+        // action name).
+        Args: { p_club_id: string; p_livemode: boolean; p_actor_id: string };
+        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;
