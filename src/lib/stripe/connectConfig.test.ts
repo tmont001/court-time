@@ -7,6 +7,8 @@ import {
   deriveLivemode,
   deriveConnectUIState,
   isAuthorizedToConnectStripe,
+  SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES,
+  isSupportedAccountLifecycleEventType,
 } from "./connectConfig";
 
 // Phase 34D-A regression coverage for the concrete runtime failure: Stripe
@@ -175,5 +177,30 @@ describe("isAuthorizedToConnectStripe — Admin-only, matching the update_club_p
     expect(isAuthorizedToConnectStripe(undefined)).toBe(false);
     expect(isAuthorizedToConnectStripe("")).toBe(false);
     expect(isAuthorizedToConnectStripe("owner")).toBe(false);
+  });
+});
+
+describe("SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES / isSupportedAccountLifecycleEventType — Phase 34D-B", () => {
+  it("subscribes to exactly the two locked thin-event types, no more", () => {
+    expect(SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES).toEqual([
+      "v2.core.account[requirements].updated",
+      "v2.core.account[configuration.merchant].capability_status_updated",
+    ]);
+  });
+
+  it("recognizes both locked event types", () => {
+    expect(isSupportedAccountLifecycleEventType("v2.core.account[requirements].updated")).toBe(true);
+    expect(isSupportedAccountLifecycleEventType("v2.core.account[configuration.merchant].capability_status_updated")).toBe(true);
+  });
+
+  it("rejects the broader v1-style account.updated and other unrelated Account events — no unrelated event type is handled without a concrete reason", () => {
+    expect(isSupportedAccountLifecycleEventType("v2.core.account.updated")).toBe(false);
+    expect(isSupportedAccountLifecycleEventType("v2.core.account.created")).toBe(false);
+    expect(isSupportedAccountLifecycleEventType("v2.core.account_person.created")).toBe(false);
+    expect(isSupportedAccountLifecycleEventType("v2.core.account_link.returned")).toBe(false);
+  });
+
+  it("rejects a completely unrelated event type", () => {
+    expect(isSupportedAccountLifecycleEventType("v2.commerce.product_catalog.imports.failed")).toBe(false);
   });
 });

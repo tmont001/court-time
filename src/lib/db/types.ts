@@ -3514,6 +3514,33 @@ export type Database = {
           updated_at:            string;
         };
       };
+      process_stripe_connect_account_event: {
+        // Phase 34D-B. service_role only — never callable from an
+        // authenticated browser session. The one atomic entry point for
+        // Stripe Connect account lifecycle events: deduplicates on
+        // p_stripe_event_id (a genuine duplicate is a clean no-op —
+        // already_processed: true), then updates club_stripe_accounts.
+        // card_payments_status/last_synced_at only for the row matching
+        // BOTH stripe_account_id and livemode. Never creates a new
+        // club_stripe_accounts row and never touches any row for a
+        // different account/mode. If no row matches, the call THROWS
+        // (stripe_account_not_found) and rolls back — including the event
+        // receipt insert — so the caller (the webhook route) surfaces a
+        // 500 and Stripe's own retry can succeed later once the account
+        // mapping exists; an unmatched event is never silently/
+        // permanently recorded as handled.
+        Args: {
+          p_stripe_event_id:      string;
+          p_event_type:           string;
+          p_livemode:             boolean;
+          p_stripe_account_id:    string;
+          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;

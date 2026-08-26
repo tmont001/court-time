@@ -32,6 +32,7 @@ const STRIPE_CALLING_FILES = [
   "src/app/(app)/admin/settings/stripeConnectShared.ts",
   "src/app/api/stripe/connect/refresh/route.ts",
   "src/app/api/stripe/connect/return/route.ts",
+  "src/app/api/stripe/connect/account-events/route.ts",
 ];
 
 describe("Stripe Connect v2 regression guardrail", () => {
@@ -74,13 +75,80 @@ describe("Stripe Connect v2 regression guardrail", () => {
     }
   });
 
-  it("no PaymentIntent, Checkout, or application_fee code exists anywhere in 34D-A", () => {
+  it("no PaymentIntent, Checkout, or application_fee code exists anywhere in 34D-A/34D-B", () => {
     for (const file of [...STRIPE_CALLING_FILES, "src/app/(app)/admin/settings/StripeConnectSection.tsx", "src/lib/stripe/server.ts", "src/lib/stripe/connectConfig.ts"]) {
       const src = readSource(file);
       expect(src, `${file} must not reference PaymentIntent`).not.toMatch(/PaymentIntent/);
       expect(src, `${file} must not reference checkout`).not.toMatch(/checkout/i);
       expect(src, `${file} must not reference application_fee`).not.toMatch(/application_fee|applicationFee/);
     }
+  });
+});
+
+describe("account-events webhook route — orchestration contract (Phase 34D-B)", () => {
+  const route = () => readSource("src/app/api/stripe/connect/account-events/route.ts");
+
+  it("requires the Stripe-Signature header before doing anything else", () => {
+    const src = route();
+    expect(src).toMatch(/headers\.get\(["']stripe-signature["']\)/);
+    expect(src).toMatch(/if \(!signature\)/);
+  });
+
+  it("reads the raw body via request.text(), never actually calls request.json() (which could alter the signed bytes)", () => {
+    const src = route();
+    expect(src).toContain("await request.text()");
+    // Real code usage would be `request.json()` or `await request.json()` —
+    // not present anywhere as an actual call; the file's own explanatory
+    // comment mentions the phrase "request.json()" in prose, which is fine.
+    expect(src).not.toMatch(/[^/]\s*await request\.json\(\)|=\s*request\.json\(\)/);
+  });
+
+  it("verifies the signature via the SDK's parseEventNotification, never trusting the body first", () => {
+    const src = route();
+    expect(src).toContain(".parseEventNotification(rawBody, signature, webhookSecret)");
+  });
+
+  it("only acts on the two locked event types — every other valid, verified event is a safe 200 no-op", () => {
+    const src = route();
+    expect(src).toContain("SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES[0]");
+    expect(src).toContain("SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES[1]");
+  });
+
+  it("re-fetches the full versioned Event via the SDK using the verified notification's own id, rather than trusting the thin body's own fields directly", () => {
+    const src = route();
+    expect(src).toContain("notification.fetchEvent()");
+  });
+
+  it("re-retrieves current Account state with configuration.merchant included, via the same shared params 34D-A's return route uses", () => {
+    const src = route();
+    expect(src).toContain(".v2.core.accounts.retrieve(accountId, CONNECT_ACCOUNT_RETRIEVE_PARAMS)");
+  });
+
+  it("derives card_payments_status via the shared extractCardPaymentsStatus helper — never reads a status field directly off the webhook body", () => {
+    const src = route();
+    expect(src).toContain("extractCardPaymentsStatus(account)");
+    expect(src).not.toMatch(/notification\.data/);
+  });
+
+  it("passes event.livemode (from the verified event) into the RPC — never a client/query-supplied value", () => {
+    const src = route();
+    expect(src).toContain("p_livemode: event.livemode");
+    expect(src).not.toMatch(/searchParams/);
+    expect(src).not.toMatch(/req\.query/);
+  });
+
+  it("persists through the narrow service-role RPC boundary, not a direct table write", () => {
+    const src = route();
+    expect(src).toContain('.rpc("process_stripe_connect_account_event"');
+    expect(src).not.toMatch(/\.from\(["']stripe_event_receipts["']\)/);
+    expect(src).not.toMatch(/\.from\(["']club_stripe_accounts["']\)/);
+  });
+
+  it("fails closed (does not proceed) when its own webhook secret or Stripe key is unconfigured", () => {
+    const src = route();
+    expect(src).toMatch(/STRIPE_CONNECT_ACCOUNT_WEBHOOK_SECRET/);
+    expect(src).toMatch(/if \(!webhookSecret\)/);
+    expect(src).toMatch(/if \(!context\)/);
   });
 });
 
@@ -143,11 +211,119 @@ describe("0147 migration — mode scoping and financial-identity immutability in
     expect(src).not.toMatch(/details_submitted\s+boolean/);
   });
 
-  it("only migration 0147 exists for this feature — no 0148 was created", () => {
+  it("0147 exists and is a distinct file from 0148 (Phase 34D-B's lifecycle-events migration)", () => {
     // Guards against a stray migration number regression, not a full
     // directory scan (out of scope for a pure-TS test with no fs.readdir
     // policy elsewhere in this suite) — the file must at least exist at
     // this exact path.
     expect(() => migration()).not.toThrow();
+  });
+});
+
+describe("0148 migration — Phase 34D-B lifecycle event idempotency and safety invariants", () => {
+  const migration = () => readSource("supabase/migrations/0148_stripe_connect_lifecycle_events.sql");
+
+  it("exists as its own migration — 34D-B does not rewrite 0147", () => {
+    expect(() => migration()).not.toThrow();
+  });
+
+  it("does not touch payment_events — this is technical webhook infrastructure, not the financial ledger", () => {
+    const src = migration();
+    expect(src).not.toMatch(/create table public\.payment_events/);
+    expect(src).not.toMatch(/insert into public\.payment_events/);
+  });
+
+  it("deduplicates on stripe_event_id via a primary key + ON CONFLICT DO NOTHING", () => {
+    const src = migration();
+    expect(src).toContain("stripe_event_id    text        primary key");
+    expect(src).toContain("on conflict (stripe_event_id) do nothing;");
+  });
+
+  it("never inserts a new club_stripe_accounts row — only updates an existing one matching both stripe_account_id and livemode", () => {
+    const src = migration();
+    expect(src).not.toMatch(/insert into public\.club_stripe_accounts/);
+    expect(src).toMatch(/update public\.club_stripe_accounts[\s\S]*where stripe_account_id = p_stripe_account_id\s*\n\s*and livemode\s*=\s*p_livemode/);
+  });
+
+  it("does not store full Stripe payloads or secrets — only the documented minimum columns", () => {
+    const src = migration();
+    expect(src).toMatch(/create table public\.stripe_event_receipts \(\s*\n\s*stripe_event_id/);
+    expect(src).not.toMatch(/payload\s+jsonb/);
+    expect(src).not.toMatch(/\bsecret\b\s+text/);
+    expect(src).not.toMatch(/raw_body/);
+  });
+
+  it("the lifecycle RPC is service-role-only, never authenticated-callable", () => {
+    const src = migration();
+    expect(src).toContain(
+      "grant  execute on function public.process_stripe_connect_account_event(text, text, boolean, text, text) to service_role;",
+    );
+    expect(src).not.toMatch(/grant\s+execute on function public\.process_stripe_connect_account_event.*to authenticated/);
+  });
+
+  it("stripe_event_receipts is deny-all RLS, identical discipline to club_stripe_accounts (0147)", () => {
+    const src = migration();
+    expect(src).toContain("alter table public.stripe_event_receipts enable row level security;");
+    expect(src).toContain("revoke all on public.stripe_event_receipts from public, anon, authenticated;");
+  });
+
+  it("card_payments_status parameter accepts a value (validated against Stripe's own four documented values inside the RPC too — see below)", () => {
+    const src = migration();
+    expect(src).toContain("p_card_payments_status text");
+  });
+
+  // Pre-apply correction: an unknown-account/livemode-mismatch first
+  // delivery must be RETRYABLE (roll back its receipt, fail the RPC),
+  // never a permanently recorded no-op.
+  it("stripe_account_id is NOT NULL — a row only ever exists for a genuinely matched event", () => {
+    const src = migration();
+    expect(src).toContain("stripe_account_id  text        not null,");
+  });
+
+  it("raises stripe_account_not_found (not a silent no-op) when the UPDATE matches zero rows, so the caller/route can retry", () => {
+    const src = migration();
+    expect(src).toContain("raise exception 'stripe_account_not_found';");
+    // The exception must be reachable from the UPDATE's own `if not found`
+    // branch, not just present somewhere in a comment.
+    expect(src).toMatch(/if not found then\s*\n[\s\S]{0,400}raise exception 'stripe_account_not_found';/);
+  });
+
+  it("the exception is raised AFTER the event-receipt INSERT, in the same function call, so Postgres rolls the INSERT back too", () => {
+    const src = migration();
+    const insertIndex = src.indexOf("insert into public.stripe_event_receipts");
+    const updateIndex = src.indexOf("update public.club_stripe_accounts");
+    const raiseIndex = src.indexOf("raise exception 'stripe_account_not_found';");
+    expect(insertIndex).toBeGreaterThan(-1);
+    expect(updateIndex).toBeGreaterThan(insertIndex);
+    expect(raiseIndex).toBeGreaterThan(updateIndex);
+  });
+
+  it("never claims an unmatched event was successfully receipted/no-op'd — no stale comment language remains", () => {
+    const src = migration();
+    expect(src).not.toMatch(/still records? a receipt/);
+    expect(src).not.toMatch(/still gets a receipt/);
+    expect(src).not.toMatch(/receipted as no-?op/i);
+  });
+
+  it("a duplicate delivery returns already_processed=true and never re-runs the UPDATE", () => {
+    const src = migration();
+    const notNewBlock = src.slice(src.indexOf("if not v_new_receipt then"), src.indexOf("update public.club_stripe_accounts"));
+    expect(notNewBlock).toContain("return query select true, true;");
+    expect(notNewBlock).toContain("return;");
+  });
+
+  it("validates p_event_type against exactly the two locked event types, failing closed otherwise", () => {
+    const src = migration();
+    expect(src).toMatch(
+      /if p_event_type not in \(\s*\n\s*'v2\.core\.account\[requirements\]\.updated',\s*\n\s*'v2\.core\.account\[configuration\.merchant\]\.capability_status_updated'\s*\n\s*\) then\s*\n\s*raise exception 'invalid_event_type';/,
+    );
+  });
+
+  it("validates p_card_payments_status against exactly Stripe's four documented values, failing closed otherwise", () => {
+    const src = migration();
+    expect(src).toContain(
+      "if p_card_payments_status not in ('active', 'pending', 'restricted', 'unsupported') then",
+    );
+    expect(src).toContain("raise exception 'invalid_card_payments_status';");
   });
 });

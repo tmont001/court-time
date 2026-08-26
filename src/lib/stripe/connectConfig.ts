@@ -152,3 +152,23 @@ export function deriveConnectUIState(
     default: return "action_required";
   }
 }
+
+// Phase 34D-B — the exact two Accounts v2 thin-event types the lifecycle
+// webhook subscribes to. requirements.updated replaces v1's account.
+// updated onboarding-requirement workflow; configuration.merchant's
+// capability_status_updated reports changes to the single capability
+// (card_payments) club_stripe_accounts persists. Deliberately not the
+// broader v2.core.account.updated or any other Account event — no
+// unrelated event type is handled without a concrete reason.
+export const SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES = [
+  "v2.core.account[requirements].updated",
+  "v2.core.account[configuration.merchant].capability_status_updated",
+] as const;
+
+export type SupportedAccountLifecycleEventType = typeof SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES[number];
+
+export function isSupportedAccountLifecycleEventType(
+  type: string,
+): type is SupportedAccountLifecycleEventType {
+  return (SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES as readonly string[]).includes(type);
+}
