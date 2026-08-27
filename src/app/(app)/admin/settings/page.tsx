@@ -150,13 +150,15 @@ export default async function AdminSettingsPage() {
         <hr className="border-gray-100 dark:border-gray-800" />
 
         {/* ── Payments ── */}
-        {/* Phase 34D-A: grouped under one "Payments" heading — Payment
-            Tracking (34C, controls whether balances are tracked at all)
-            and Court Time Payments (34D-A, the Stripe connected-account
-            foundation a future checkpoint's activation gate will build
-            on) are related but distinct configuration surfaces, kept
-            visually separate within the group rather than merged into one
-            control. Operational balances/Record Payment stay entirely on
+        {/* Phase 34D-D3: three conceptually separate but related controls
+            under one "Payments" heading — Payment tracking (whether
+            balances are created at all), Online payments (whether Members
+            can pay those balances through Stripe — PaymentTrackingSection
+            itself renders this AND an Offline payments explainer, despite
+            the component's historical name), and the Stripe account
+            connection/readiness status below. Each answers exactly one
+            question and none of them duplicate each other's copy.
+            Operational balances/Record Payment stay entirely on
             /admin/payments — nothing here duplicates that. */}
         <section className="space-y-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -164,13 +166,10 @@ export default async function AdminSettingsPage() {
           </p>
 
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              Payment Tracking
-            </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Controls whether Court Time tracks balances for new confirmed bookings. Existing
-              payment history is never hidden or gated by this setting — it only affects whether
-              NEW obligations are created going forward.
+              Choose whether Court Time tracks balances for new bookings and whether Members can
+              pay those balances online through Stripe. Existing payment history is never hidden
+              or rewritten by these settings — they only affect what happens going forward.
             </p>
             <PaymentTrackingSection
               clubId={clubId}
@@ -181,11 +180,11 @@ export default async function AdminSettingsPage() {
 
           <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">
-              Court Time Payments
+              Stripe account
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Connect Stripe to prepare this club to accept online payments from Members. Once
-              Stripe is ready, activate Court Time Payments in Payment Tracking above.
+              Connect and verify your club&apos;s Stripe account. Once Stripe reports ready, turn on
+              Court Time Payments above to let Members pay online.
             </p>
             <StripeConnectSection clubId={clubId} initialStatus={stripeStatus} configured={stripeConfigured} />
           </div>

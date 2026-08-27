@@ -1,36 +1,42 @@
 "use client";
 
-// Phase 34C — Admin-only payment tracking mode selector. Admin only reaches
-// this page at all (AdminSettingsPage redirects any non-admin), so no
+// Phase 34C — Admin-only payment tracking control. Admin only reaches this
+// page at all (AdminSettingsPage redirects any non-admin), so no
 // additional role gating is needed here beyond the RPC's own Admin check.
 //
-// Phase 34D-C: court_time_payments is no longer unconditionally disabled —
-// it's selectable exactly when the club's Stripe Connect account for the
-// CURRENT server environment is ready (stripeReadiness === "ready", i.e.
-// card_payments_status = "active"). stripeReadiness is computed server-side
-// by AdminSettingsPage via the same deriveConnectUIState/getStripeContext
-// path StripeConnectSection already uses — never faked, never guessed here.
+// Phase 34D-D3 — restructured from a single mutually-exclusive None /
+// Manual / Court Time Payments selector into two conceptually separate
+// ON/OFF controls (Payment Tracking, Online Payments) plus a
+// non-interactive Offline Payments explainer — WITHOUT changing the
+// underlying domain model. club_settings.payment_mode remains the exact
+// same single 3-value enum it always was; both toggles below are pure
+// DERIVED views of that one value (`mode` is the only client-side state
+// that represents it — never a second, independently-tracked boolean that
+// could drift), and every mutation still goes through the exact same two
+// RPCs this component already called before this restructure:
+// update_club_payment_mode (none/manual) and activate_court_time_payments
+// (court_time_payments, Stripe-readiness-gated, unchanged). The 34D-D3
+// audit found record_manual_payment was ALREADY independent of
+// payment_mode/payment_mode_at_creation — offline recording was never
+// actually gated by the old selector, only presented as if it were, which
+// is the sole defect this restructure corrects.
+//
+// Locked mapping (from the audit, unchanged):
+//   none                  = tracking OFF, online OFF
+//   manual                = tracking ON,  online OFF
+//   court_time_payments   = tracking ON,  online ON
 
 import { useState, useTransition } from "react";
 import { updateClubPaymentModeAction } from "@/app/(app)/admin/payments/actions";
 import { isCourtTimePaymentsSelectable, type ConnectUIState } from "@/lib/stripe/connectConfig";
-
-type PaymentMode = "none" | "manual" | "court_time_payments";
-
-const MODE_COPY: Record<PaymentMode, { title: string; description: string }> = {
-  none: {
-    title: "None",
-    description: "Court Time does not create or track new payment obligations.",
-  },
-  manual: {
-    title: "Manual",
-    description: "Track balances and record payments received outside Court Time (cash, check, card terminal, etc.).",
-  },
-  court_time_payments: {
-    title: "Court Time Payments",
-    description: "Collect payments online through Stripe.",
-  },
-};
+import DisablePaymentTrackingConfirmModal from "@/components/DisablePaymentTrackingConfirmModal";
+import {
+  isOnlinePaymentsOn,
+  isPaymentTrackingOn,
+  nextModeForOnlineToggle,
+  nextModeForTrackingToggle,
+  type PaymentMode,
+} from "@/lib/paymentModeToggle";
 
 // Mirrors StripeConnectSection's own wording for each non-ready state, so
 // an Admin sees the same story in both places on this page.
@@ -41,6 +47,38 @@ const NOT_READY_COPY: Record<Exclude<ConnectUIState, "ready">, string> = {
   unsupported: "Your Stripe account needs attention before this can be enabled.",
 };
 
+function ToggleSwitch({
+  checked,
+  disabled,
+  label,
+  onClick,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={`relative shrink-0 inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-400 dark:focus-visible:ring-offset-gray-800 ${
+        disabled ? "opacity-40 cursor-not-allowed" : ""
+      } ${checked ? "bg-accent" : "bg-gray-200 dark:bg-gray-700"}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
 export default function PaymentTrackingSection({
   clubId,
   currentMode,
@@ -50,20 +88,26 @@ export default function PaymentTrackingSection({
   currentMode: PaymentMode;
   stripeReadiness: ConnectUIState;
 }) {
+  // The ONE piece of client-side state representing payment_mode — both
+  // toggles below are derived from it on every render, never tracked
+  // independently, so they can never drift out of sync with each other or
+  // with the actual enum value.
   const [mode, setMode] = useState<PaymentMode>(currentMode);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [confirmingDisableTracking, setConfirmingDisableTracking] = useState(false);
 
-  const courtTimePaymentsReady = isCourtTimePaymentsSelectable(stripeReadiness);
+  const trackingOn = isPaymentTrackingOn(mode);
+  const onlineOn = isOnlinePaymentsOn(mode);
+  const stripeReady = isCourtTimePaymentsSelectable(stripeReadiness);
 
-  function handleSelect(next: PaymentMode) {
-    if (next === mode || isPending) return;
-    if (next === "court_time_payments" && !courtTimePaymentsReady) return;
-
+  function submitMode(next: PaymentMode) {
     setStatus(null);
     startTransition(async () => {
       const result = await updateClubPaymentModeAction(next, clubId);
       if (result.error) {
+        // Never optimistically flips — `mode` (and therefore both derived
+        // toggles) stays exactly where it was before this attempt.
         setStatus({ type: "error", message: result.error });
       } else {
         setMode(next);
@@ -73,45 +117,102 @@ export default function PaymentTrackingSection({
     });
   }
 
+  function handleTrackingToggle() {
+    if (isPending) return;
+    if (trackingOn) {
+      // manual -> none, or court_time_payments -> none: both stop NEW
+      // obligation creation (and, transitively, online payments) — an
+      // intentional action, so it requires explicit confirmation rather
+      // than firing immediately on click.
+      setConfirmingDisableTracking(true);
+      return;
+    }
+    submitMode(nextModeForTrackingToggle(mode, true));
+  }
+
+  function handleConfirmDisableTracking() {
+    setConfirmingDisableTracking(false);
+    submitMode(nextModeForTrackingToggle(mode, false));
+  }
+
+  function handleOnlineToggle() {
+    if (isPending || !trackingOn) return;
+    if (!onlineOn && !stripeReady) return;
+    // activate_court_time_payments itself independently re-derives and
+    // re-validates Stripe readiness server-side — the stripeReady check
+    // above is only a UX convenience, never the authorization boundary.
+    // Turning online payments off never needs confirmation — it only
+    // stops NEW obligations from being online-payable; tracking itself
+    // (and offline recording) is unaffected.
+    submitMode(nextModeForOnlineToggle(mode, !onlineOn));
+  }
+
+  const onlineDisabled = !trackingOn || !stripeReady;
+  const onlineDisabledReason = !trackingOn
+    ? "Turn on payment tracking first."
+    : !stripeReady
+    ? NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, "ready">]
+    : null;
+
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3">
-        {(["none", "manual", "court_time_payments"] as PaymentMode[]).map((option) => {
-          const isSelected = mode === option;
-          const isDisabled = option === "court_time_payments" && !courtTimePaymentsReady;
-          return (
-            <button
-              key={option}
-              type="button"
-              disabled={isDisabled || isPending}
-              onClick={() => handleSelect(option)}
-              className={`text-left rounded-xl border px-4 py-3 motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-800 active:scale-[0.98] ${
-                isSelected
-                  ? "border-accent bg-accent/5 dark:bg-accent/10"
-                  : "border-gray-200 dark:border-gray-700 hover:border-accent/60"
-              } ${isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                  {MODE_COPY[option].title}
-                </p>
-                {isSelected && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-accent">Active</span>
-                )}
-                {isDisabled && (
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                    Not Ready
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {option === "court_time_payments" && isDisabled
-                  ? NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, "ready">]
-                  : MODE_COPY[option].description}
-              </p>
-            </button>
-          );
-        })}
+      {/* Payment tracking */}
+      <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Payment tracking</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {trackingOn
+                ? "Court Time creates and maintains payment balances for new bookings."
+                : "New bookings will not create payment balances. Existing balances and payment history remain available."}
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={trackingOn}
+            disabled={isPending}
+            label="Payment tracking"
+            onClick={handleTrackingToggle}
+          />
+        </div>
+      </div>
+
+      {/* Online payments */}
+      <div
+        className={`rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5 ${
+          onlineDisabled ? "opacity-60" : ""
+        }`}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Court Time Payments</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              {onlineOn
+                ? "Members can pay tracked balances online through Stripe."
+                : "Members cannot pay balances online. Staff can still record payments received outside Court Time."}
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={onlineOn}
+            disabled={isPending || onlineDisabled}
+            label="Court Time Payments"
+            onClick={handleOnlineToggle}
+          />
+        </div>
+        {onlineDisabledReason && (
+          <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">{onlineDisabledReason}</p>
+        )}
+      </div>
+
+      {/* Offline payments — informational only, never a toggle. Always
+          true whenever a tracked balance exists — never gated by mode or
+          payment_mode_at_creation (see this file's own header comment). */}
+      <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40 px-4 py-3.5">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Offline payments</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          {trackingOn
+            ? "Cash, check, card terminal, bank transfer, digital wallet, and other payments can still be recorded by Admins/Staff whenever Court Time is tracking a balance."
+            : "Existing tracked balances can still be resolved, but new bookings will not create balances."}
+        </p>
       </div>
 
       {status && (
@@ -124,10 +225,13 @@ export default function PaymentTrackingSection({
         </p>
       )}
 
-      <p className="text-xs text-gray-400 dark:text-gray-500">
-        Switching from Manual to None does not erase existing payment obligations — any balances
-        already tracked remain visible and can still be resolved.
-      </p>
+      {confirmingDisableTracking && (
+        <DisablePaymentTrackingConfirmModal
+          submitting={isPending}
+          onConfirm={handleConfirmDisableTracking}
+          onCancel={() => setConfirmingDisableTracking(false)}
+        />
+      )}
     </div>
   );
 }

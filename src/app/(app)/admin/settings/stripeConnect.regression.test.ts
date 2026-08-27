@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 34D-A — regression coverage for the exact runtime failure
@@ -484,24 +484,22 @@ describe("Activation UI — stale 'coming in a future update' copy removed (requ
     const src = readSource("src/app/(app)/admin/settings/StripeConnectSection.tsx");
     expect(src).not.toMatch(/coming in a future update/i);
     // Points the Admin at the actual control instead.
-    expect(src).toMatch(/Select Court Time Payments in Payment Tracking above/);
+    expect(src).toMatch(/Turn on Court Time Payments above/);
   });
 
-  it("the admin/settings page's Court Time Payments section intro no longer claims activation isn't available yet", () => {
+  it("the admin/settings page's Payments section intro no longer claims activation isn't available yet", () => {
     const src = readSource("src/app/(app)/admin/settings/page.tsx");
     expect(src).not.toMatch(/isn.t available to turn on yet/i);
-    expect(src).toMatch(/activate Court Time Payments in Payment Tracking above/);
+    expect(src).not.toMatch(/Court Time Payments itself isn/i);
   });
 
-  it("PaymentTrackingSection's court_time_payments option is genuinely selectable (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to", () => {
+  it("PaymentTrackingSection's online-payments toggle is genuinely enable-able (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to", () => {
     const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    expect(src).toContain("const courtTimePaymentsReady = isCourtTimePaymentsSelectable(stripeReadiness);");
-    expect(src).toContain('const isDisabled = option === "court_time_payments" && !courtTimePaymentsReady;');
+    expect(src).toContain("const stripeReady = isCourtTimePaymentsSelectable(stripeReadiness);");
+    expect(src).toContain("const onlineDisabled = !trackingOn || !stripeReady;");
     // Never unconditionally disabled — that would be the pre-34D-C, "Coming
     // Soon" behavior this fix's copy update would otherwise still contradict.
-    // The exact old unconditional line (no trailing "&& !courtTimePaymentsReady")
-    // must be structurally absent.
-    expect(src).not.toContain('const isDisabled = option === "court_time_payments";');
+    expect(src).not.toMatch(/onlineDisabled\s*=\s*true\s*;/);
   });
 
   it("court_time_payments Server Action wiring already exists end-to-end (no missing application wiring beyond the copy fix) — role check, server-derived livemode, and the activation RPC call are all present", () => {
@@ -515,11 +513,11 @@ describe("Activation UI — stale 'coming in a future update' copy removed (requ
 });
 
 describe("Activation UI — failed activation never falsely shows ACTIVE (requirement 7)", () => {
-  it("PaymentTrackingSection only updates the locally-selected mode inside the SUCCESS branch — an error response leaves the previously-active option showing Active, never the one that just failed", () => {
+  it("PaymentTrackingSection only updates the locally-tracked mode inside the SUCCESS branch of submitMode — an error response leaves both derived toggles showing their previous state, never the one that just failed", () => {
     const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    const handleSelectStart = src.indexOf("function handleSelect(next: PaymentMode) {");
-    const handleSelectEnd = src.indexOf("\n  }\n", handleSelectStart);
-    const fnBody = src.slice(handleSelectStart, handleSelectEnd);
+    const submitModeStart = src.indexOf("function submitMode(next: PaymentMode) {");
+    const submitModeEnd = src.indexOf("\n  }\n", submitModeStart);
+    const fnBody = src.slice(submitModeStart, submitModeEnd);
     const errorBranch = fnBody.slice(fnBody.indexOf("if (result.error) {"), fnBody.indexOf("} else {"));
     const successBranch = fnBody.slice(fnBody.indexOf("} else {"));
     expect(errorBranch).not.toMatch(/setMode\(/);
@@ -527,9 +525,128 @@ describe("Activation UI — failed activation never falsely shows ACTIVE (requir
     expect(successBranch).toContain("setMode(next);");
   });
 
-  it("the Active badge is derived purely from the current `mode` state, never from isPending/optimistic UI — so a still-in-flight or failed activation can never render as Active", () => {
+  it("both toggles are derived purely from the current `mode` state, never from isPending/optimistic UI — so a still-in-flight or failed mutation can never render either toggle as ON when it isn't", () => {
     const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    expect(src).toContain("const isSelected = mode === option;");
-    expect(src).not.toMatch(/isSelected\s*=\s*.*isPending/);
+    expect(src).toContain("const trackingOn = isPaymentTrackingOn(mode);");
+    expect(src).toContain("const onlineOn = isOnlinePaymentsOn(mode);");
+    expect(src).not.toMatch(/trackingOn\s*=.*isPending/);
+    expect(src).not.toMatch(/onlineOn\s*=.*isPending/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 34D-D3 — hybrid payments UX. Requirements 9-15 (1-8 are covered as
+// genuine unit tests in src/lib/paymentModeToggle.test.ts, since the derivation/
+// transition logic they exercise was extracted there as pure functions).
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Hybrid payments UX — online toggle disabled states (requirements 9-11)", () => {
+  const src = () => readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+
+  it("online toggle disabled while tracking OFF", () => {
+    const s = src();
+    expect(s).toContain("const onlineDisabled = !trackingOn || !stripeReady;");
+    expect(s).toContain('? "Turn on payment tracking first."');
+  });
+
+  it("online toggle disabled while Stripe is not ready", () => {
+    const s = src();
+    // Same onlineDisabled expression covers both conditions; the
+    // not-ready branch surfaces the exact per-state reason via
+    // NOT_READY_COPY, matching StripeConnectSection's own wording.
+    expect(s).toContain("NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, \"ready\">]");
+  });
+
+  it("Stripe-ready + tracking ON allows online activation", () => {
+    const s = src();
+    // handleOnlineToggle only blocks on (isPending || !trackingOn), and
+    // separately on (!onlineOn && !stripeReady) — i.e. turning ON
+    // specifically requires stripeReady, but is otherwise unblocked once
+    // tracking is on.
+    expect(s).toContain("if (isPending || !trackingOn) return;");
+    expect(s).toContain("if (!onlineOn && !stripeReady) return;");
+    expect(s).toContain("submitMode(nextModeForOnlineToggle(mode, !onlineOn));");
+  });
+});
+
+describe("Hybrid payments UX — failed mutation does not falsely flip displayed state (requirement 12)", () => {
+  it("submitMode's error branch never calls setMode — already proven in detail by the 'Activation UI — failed activation never falsely shows ACTIVE' describe block above; this test confirms the SAME submitMode function now backs BOTH toggles, not two independently-drifting copies", () => {
+    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    expect(countOccurrences(src, "function submitMode(next: PaymentMode) {")).toBe(1);
+    expect(countOccurrences(src, "await updateClubPaymentModeAction(next, clubId)")).toBe(1);
+  });
+});
+
+describe("Hybrid payments UX — disabling tracking presents intentional confirmation (requirement 13)", () => {
+  const src = () => readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+
+  it("turning tracking OFF opens a confirmation modal instead of submitting immediately", () => {
+    const s = src();
+    const fnStart = s.indexOf("function handleTrackingToggle() {");
+    const fnEnd = s.indexOf("\n  }\n", fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
+    expect(fnBody).toMatch(/if \(trackingOn\) \{\s*\n[\s\S]{0,300}setConfirmingDisableTracking\(true\);\s*\n\s*return;/);
+    // Only the confirm handler (not handleTrackingToggle itself) actually
+    // submits the "off" transition.
+    expect(fnBody).not.toMatch(/submitMode\(nextModeForTrackingToggle\(mode, false\)\)/);
+  });
+
+  it("the confirmation modal itself only submits on explicit user confirmation, and uses the app's existing ResponsiveSheet modal pattern — never window.confirm", () => {
+    const modalSrc = readSource("src/components/DisablePaymentTrackingConfirmModal.tsx");
+    expect(modalSrc).toContain('import ResponsiveSheet from "@/components/ResponsiveSheet";');
+    expect(modalSrc).not.toMatch(/window\.confirm/);
+    expect(modalSrc).toContain("onConfirm");
+    expect(modalSrc).toContain("onCancel");
+  });
+
+  it("PaymentTrackingSection wires the confirm modal's onConfirm to the actual off-transition, and onCancel merely dismisses without mutating anything", () => {
+    const s = src();
+    expect(s).toContain("function handleConfirmDisableTracking() {");
+    const fnStart = s.indexOf("function handleConfirmDisableTracking() {");
+    const fnEnd = s.indexOf("\n  }\n", fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
+    expect(fnBody).toContain("submitMode(nextModeForTrackingToggle(mode, false));");
+    expect(s).toContain("onCancel={() => setConfirmingDisableTracking(false)}");
+  });
+
+  it("turning tracking ON (the opposite direction) never shows a confirmation — only disabling requires one", () => {
+    const s = src();
+    const fnStart = s.indexOf("function handleTrackingToggle() {");
+    const fnEnd = s.indexOf("\n  }\n", fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
+    // The ON path (trackingOn is currently false) falls straight through
+    // to submitMode with no confirmation step.
+    const afterConfirmBlock = fnBody.slice(fnBody.indexOf("return;\n    }\n"));
+    expect(afterConfirmBlock).toContain("submitMode(nextModeForTrackingToggle(mode, true));");
+    expect(afterConfirmBlock).not.toContain("setConfirmingDisableTracking");
+  });
+});
+
+describe("Hybrid payments UX — backend independence and no new mutation surface (requirements 14-15)", () => {
+  it("record_manual_payment (0143, byte-unchanged) remains independent of payment_mode_at_creation — it is never referenced anywhere in that function's body", () => {
+    const src = readSource("supabase/migrations/0143_payment_mode_and_ledger_foundation.sql");
+    const fnStart = src.indexOf("create or replace function public.record_manual_payment(");
+    const fnEnd = src.indexOf("revoke execute on function public.record_manual_payment(");
+    const fnBody = src.slice(fnStart, fnEnd);
+    expect(fnBody).not.toMatch(/payment_mode/);
+  });
+
+  it("no new migration is introduced by Phase 34D-D3 — 0150 remains the latest, and no 0151 exists", () => {
+    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
+    const latest = files.filter((f) => /^\d{4}_/.test(f)).sort().at(-1);
+    expect(latest).toBe("0150_reservation_checkout_foundation.sql");
+  });
+
+  it("PaymentTrackingSection's only two mutation call sites are the SAME two RPCs it already called before this restructure — update_club_payment_mode (via updateClubPaymentModeAction for none/manual) and activate_court_time_payments (via the same action for court_time_payments) — no new Server Action or RPC name appears", () => {
+    const uiSrc = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    expect(uiSrc).toContain('import { updateClubPaymentModeAction } from "@/app/(app)/admin/payments/actions";');
+    expect(countOccurrences(uiSrc, "updateClubPaymentModeAction(")).toBe(1);
+
+    const actionsSrc = readSource("src/app/(app)/admin/payments/actions.ts");
+    expect(actionsSrc).toContain('.rpc("update_club_payment_mode"');
+    expect(actionsSrc).toContain('.rpc("activate_court_time_payments"');
+    // No third RPC name was introduced for this restructure.
+    expect(countOccurrences(actionsSrc, '.rpc("update_club_payment_mode"')).toBe(1);
+    expect(countOccurrences(actionsSrc, '.rpc("activate_court_time_payments"')).toBe(1);
   });
 });
