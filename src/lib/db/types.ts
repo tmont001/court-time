@@ -3554,6 +3554,181 @@ export type Database = {
         Args: { p_club_id: string; p_livemode: boolean; p_actor_id: string };
         Returns: Database["public"]["Tables"]["club_settings"]["Row"];
       };
+      get_reservation_payment_for_checkout: {
+        // Phase 34D-D1. authenticated-grant, pure read. Requires the
+        // caller's CURRENT role to be exactly 'member' (raises
+        // insufficient_role otherwise — an Admin/Staff/Pro with a roster
+        // identity must not pass), then returns at most one row: the
+        // CALLER's own latest payment obligation for a reservation —
+        // independently re-derived via current_user_roster_member_id(),
+        // never trusting a client-supplied identity. Hardcoded to
+        // domain_type = 'reservation', so Event Guest is structurally
+        // unreachable. payment_mode_at_creation lets the caller enforce
+        // that an obligation created under 'manual' stays manual-only
+        // forever, even if the club later enables Court Time Payments.
+        Args: { p_reservation_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      open_payment_checkout_attempt: {
+        // Phase 34D-D1 (correction round 4). service_role only.
+        // Re-derives amount owed and eligibility fresh from the payments
+        // row under a row lock — never trusts an earlier caller-side
+        // read. Returns action='ready' when an existing OPEN attempt is
+        // reused as-is (amount, currency, connected Stripe account, AND
+        // livemode ALL match, and its bound Session's own Stripe-reported
+        // expiration — stripe_session_expires_at — is still in the
+        // future, or it has no bound Session yet) or a fresh attempt was
+        // opened (including when a stale UNBOUND attempt was safely
+        // superseded locally — no remote Stripe artifact existed for it).
+        // Returns action='must_expire_remote' — mutating NOTHING — when an
+        // existing OPEN attempt needs replacing but already has a bound
+        // Session that may still be genuinely payable at Stripe: the
+        // caller MUST retrieve/expire it via Stripe (in the STALE
+        // attempt's own stripe_account_id context) before calling
+        // supersede_checkout_attempt_and_open_fresh. Raises
+        // stale_attempt_environment_mismatch (never returns
+        // 'must_expire_remote') when the stale bound attempt's own
+        // livemode differs from the current one — that Session cannot be
+        // safely addressed by the current Stripe API key at all.
+        Args: {
+          p_payment_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_checkout_attempt_and_open_fresh: {
+        // Phase 34D-D1 (correction round 4). service_role only. Called
+        // ONLY after the Server Action has confirmed via Stripe (using
+        // the stale attempt's own stripe_account_id context) that its
+        // bound Session is no longer payable. Re-validates payment
+        // eligibility fresh (state may have changed during the Stripe
+        // round-trip) and re-checks the stale attempt is STILL 'open' at
+        // this exact moment — if something else resolved it in the
+        // meantime (most notably the webhook completing it), returns
+        // action='already_completed' with that row and creates NO new
+        // attempt. Otherwise marks the stale attempt 'expired' and opens
+        // a fresh one carrying the current stripe_account_id/livemode, in
+        // the same transaction — action='ready'.
+        Args: {
+          p_stale_attempt_id:  string;
+          p_payment_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      record_checkout_session_created: {
+        // Phase 34D-D1. service_role only. Stores the Stripe Checkout
+        // Session id AND Stripe's own authoritative expires_at returned
+        // by the create call onto its attempt row — REQUIRED to succeed
+        // before the Server Action may return a checkout URL
+        // (process_stripe_payment_event finds an attempt solely by this
+        // id). Fails loudly (throws) rather than silently affecting zero
+        // rows: checkout_attempt_not_found for an unknown attempt,
+        // checkout_attempt_not_open for a canceled/expired/completed
+        // attempt, checkout_session_mismatch for an already-stored
+        // DIFFERENT session id. Binding the SAME session id again onto a
+        // still-open attempt (a Server Action retry) is idempotent
+        // success.
+        Args: {
+          p_attempt_id: string;
+          p_stripe_checkout_session_id: string;
+          p_stripe_session_expires_at: string;
+        };
+        Returns: void;
+      };
+      process_stripe_payment_event: {
+        // Phase 34D-D1 (correction round 4). service_role only. The one
+        // atomic payment-reconciliation RPC for checkout.session.completed.
+        // Dedupes via stripe_event_receipts (shared with 0148's Connect
+        // lifecycle events). Canonical lock order: locates the payment_id
+        // via a non-locking lookup, locks payments FIRST, then re-reads/
+        // locks the attempt row and revalidates it (matching
+        // open_payment_checkout_attempt / supersede_checkout_attempt_
+        // and_open_fresh's own payments-first lock order — avoids a
+        // deadlock opportunity). Immutable-identity validation (connected
+        // account, livemode, currency, amount) runs BEFORE the
+        // completed-attempt no-op — every mismatch raises, rolling back
+        // the just-inserted receipt too, so a valid Stripe payment Court
+        // Time cannot safely reconcile is always retryable rather than
+        // permanently dropped. Deliberately NOT gated on the local
+        // payment's current status — once Stripe has genuinely collected
+        // money against a matched attempt, it is recorded regardless of
+        // what happened locally since the Session was created (manual
+        // payment, price change, waiver, void); _recompute_payment_rollup
+        // reflects that real money correctly. p_stripe_payment_intent_id
+        // is NULLABLE — Stripe documents Checkout Session.payment_intent
+        // as nullable even for a paid mode=payment Session, so a
+        // genuinely paid, signature-verified Session must never be
+        // dropped merely because it's absent; p_stripe_checkout_session_id
+        // (required) is this function's real immutable reconciliation
+        // identity. A completed attempt's PaymentIntent is only checked
+        // for conflict when BOTH the stored and incoming ids are non-null
+        // and differ. On success, marks the attempt completed, stores the
+        // (possibly null) PaymentIntent id, and inserts a single
+        // online_payment_recorded payment_events row whose
+        // external_reference is the Checkout SESSION id (always
+        // non-null) — atomically.
+        Args: {
+          p_stripe_event_id:            string;
+          p_event_type:                 string;
+          p_livemode:                   boolean;
+          p_stripe_account_id:          string;
+          p_stripe_checkout_session_id: string;
+          p_stripe_payment_intent_id:   string | null;
+          p_amount_total_cents:         number;
+          p_currency:                   string;
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;

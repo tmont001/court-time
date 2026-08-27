@@ -164,6 +164,12 @@ interface Props {
   userRole:                string;
   todayISO:                string; // YYYY-MM-DD in club timezone, computed server-side
   initialDateISO?:         string | null; // optional ?date= override from URL
+  // Phase 34D-D1: optional ?checkout=success&reservation=<id> return from
+  // Stripe Checkout. Never mutates any financial state on its own — only
+  // used to auto-open that reservation's own detail sheet, which shows
+  // authoritative, freshly-fetched payment state (paid or still unpaid,
+  // whichever the webhook has actually reconciled so far).
+  initialCheckoutReservationId?: string | null;
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
   currency:                     string; // Phase 34B
@@ -257,7 +263,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialCheckoutReservationId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -384,6 +390,30 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [creatingBlock, setCreatingBlock]             = useState(false);
+
+  // Phase 34D-D1 — returning from Stripe Checkout: fetch and auto-open the
+  // reservation's own detail sheet directly by id (independent of whatever
+  // date range this mount happens to have loaded into `reservations`,
+  // which may not include it at all), so the Member immediately sees
+  // authoritative, freshly-fetched payment state. Runs once on mount only
+  // — the query params are stripped immediately after so a later refresh
+  // never reopens it. RLS (reservations_select_same_club) already scopes
+  // this fetch to the caller's own club; no additional ownership check is
+  // needed here since the detail sheet itself only shows Pay Now/Cancel
+  // for the caller's own booking regardless of how it was opened.
+  useEffect(() => {
+    if (!initialCheckoutReservationId) return;
+    supabase
+      .from("reservations")
+      .select("*")
+      .eq("id", initialCheckoutReservationId)
+      .single()
+      .then(({ data }) => {
+        if (data) setSelectedReservation(data);
+      });
+    router.replace("/calendar", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
   // Operator (admin/pro/staff): maps owner_user_id → display name for

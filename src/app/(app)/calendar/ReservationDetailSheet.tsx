@@ -13,6 +13,10 @@ import { formatMoney } from "@/lib/money";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import {
+  getReservationCheckoutEligibilityAction,
+  createReservationCheckoutAction,
+} from "./reservationCheckoutActions";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -129,6 +133,16 @@ export default function ReservationDetailSheet({
   const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
   const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
 
+  // Phase 34D-D1 — whether THIS reservation's obligation was created under
+  // court_time_payments (never re-derived from the club's CURRENT payment
+  // mode, which may have changed since). Only fetched in member-cancel
+  // mode (the viewer owns this booking) — this is purely a UI-gating
+  // signal for whether Pay Now renders at all; createReservationCheckoutAction
+  // always re-derives eligibility fresh itself and never trusts this flag.
+  const [checkoutEligible, setCheckoutEligible] = useState(false);
+  const [checkoutLoading, setCheckoutLoading]   = useState(false);
+  const [checkoutError, setCheckoutError]       = useState<string | null>(null);
+
   async function loadPaymentState() {
     if (reservation.reason !== "member_booking") return;
     const { data } = await fetchPaymentStates("reservation", [reservation.id]);
@@ -139,6 +153,32 @@ export default function ReservationDetailSheet({
     loadPaymentState();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservation.id]);
+
+  useEffect(() => {
+    if (!onMemberCancel || reservation.reason !== "member_booking") {
+      setCheckoutEligible(false);
+      return;
+    }
+    getReservationCheckoutEligibilityAction(reservation.id, clubId).then(({ eligible }) => {
+      setCheckoutEligible(eligible);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reservation.id]);
+
+  async function handlePayNow() {
+    setCheckoutLoading(true);
+    setCheckoutError(null);
+    const result = await createReservationCheckoutAction(reservation.id, clubId);
+    if (result.error) {
+      setCheckoutError(result.error);
+      setCheckoutLoading(false);
+      return;
+    }
+    if (result.url) {
+      // External Stripe-hosted destination — a plain browser navigation.
+      window.location.href = result.url;
+    }
+  }
 
   useEffect(() => {
     // Owner display is only needed for admin mode (to display "Booked by").
@@ -349,7 +389,12 @@ export default function ReservationDetailSheet({
             payment row (never fabricates "Unpaid"). Record Payment is
             Admin/Staff only (canManageMemberReservation — the same role
             gate as Edit) and only offered when the balance is genuinely
-            open. */}
+            open. Pay Now (Phase 34D-D1) is the Member/Pro owner's own
+            action — onMemberCancel presence is the same "this is my own
+            booking" UI-eligibility mirror the Cancel button below already
+            uses; real ownership and online-payability are independently
+            re-derived server-side by createReservationCheckoutAction,
+            never trusted from this client-side gate alone. */}
         {reservation.reason === "member_booking" && paymentState && (
           <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <PaymentStateBadge state={paymentState} />
@@ -361,8 +406,18 @@ export default function ReservationDetailSheet({
                 Record Payment
               </button>
             )}
+            {onMemberCancel && checkoutEligible && isPaymentOpenForRecording(paymentState) && (
+              <button
+                disabled={checkoutLoading}
+                onClick={handlePayNow}
+                className={`${ACTION_BUTTON_PRIMARY_COMPACT_TOUCH} disabled:opacity-50`}
+              >
+                {checkoutLoading ? "Redirecting…" : "Pay Now"}
+              </button>
+            )}
           </div>
         )}
+        {checkoutError && <p className="mt-2 text-xs text-red-500">{checkoutError}</p>}
 
         {/* Maintenance notes — only for maintenance/admin_block reason */}
         {reservation.reason === "maintenance" && (
