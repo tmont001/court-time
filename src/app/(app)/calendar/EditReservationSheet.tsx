@@ -122,6 +122,18 @@ function mapEditError(code: string | undefined, message: string): string {
   if (message === "roster_member_not_found")      return "That Member could not be found in your club.";
   if (message === "member_schedule_conflict")     return "The member already has another confirmed commitment at that time.";
   if (code === "23P01")                           return "That court is already booked for the selected time.";
+  // Phase 34E-A: this edit was about to change the priced amount or
+  // reassign the Member while a Stripe Checkout Session was already open
+  // for the current obligation, and updateMemberReservationAdmin could
+  // not safely clear it (or Stripe reports the old Session already
+  // processing/completed) before its retry.
+  if (message === "checkout_still_processing")
+    return "An online payment is already processing or completed. Refresh the payment before making another change.";
+  // Distinct from the above (correction pass): Court Time could not
+  // safely verify/expire the open Checkout Session at all (network/DB/
+  // livemode-mismatch failure) — never implies a payment completed.
+  if (message === "checkout_resolution_failed")
+    return "Court Time could not verify the online payment status. No changes were made. Please try again.";
   return "Something went wrong. Please try again.";
 }
 

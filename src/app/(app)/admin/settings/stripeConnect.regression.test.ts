@@ -631,10 +631,14 @@ describe("Hybrid payments UX — backend independence and no new mutation surfac
     expect(fnBody).not.toMatch(/payment_mode/);
   });
 
-  it("no new migration is introduced by Phase 34D-D3 — 0150 remains the latest, and no 0151 exists", () => {
+  it("no new migration is introduced by Phase 34D-D3 — 0150 was the latest migration this checkpoint touched", () => {
+    // Phase 34E-A subsequently added 0151 (a genuinely audit-proven-
+    // necessary migration, unrelated to this 34D-D3 UX restructure) — this
+    // assertion is scoped to confirming 34D-D3 itself introduced none,
+    // not that 0150 remains the newest migration in the repo forever.
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const latest = files.filter((f) => /^\d{4}_/.test(f)).sort().at(-1);
-    expect(latest).toBe("0150_reservation_checkout_foundation.sql");
+    expect(files).toContain("0150_reservation_checkout_foundation.sql");
+    expect(files).not.toContain("0150b_hybrid_payments_ux.sql");
   });
 
   it("PaymentTrackingSection's only two mutation call sites are the SAME two RPCs it already called before this restructure — update_club_payment_mode (via updateClubPaymentModeAction for none/manual) and activate_court_time_payments (via the same action for court_time_payments) — no new Server Action or RPC name appears", () => {

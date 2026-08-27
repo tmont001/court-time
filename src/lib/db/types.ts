@@ -3729,6 +3729,44 @@ export type Database = {
           matched:            boolean;
         }[];
       };
+      get_blocking_checkout_attempt_for_payment: {
+        // Phase 34E-A. service_role only. Read-only. Called by a Server
+        // Action immediately after its own mutation RPC (record_manual_
+        // payment / waive_payment / void_payment_obligation / record_
+        // refund / reverse_payment_event / update_member_reservation /
+        // admin_update_member_lesson) raised open_checkout_requires_
+        // resolution, to fetch the Stripe identity of the bound, open
+        // attempt it must resolve via Stripe before safely retrying.
+        // Returns zero rows if already resolved in the interim.
+        Args: {
+          p_payment_id: string;
+          p_club_id:    string;
+        };
+        Returns: {
+          id:                         string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string;
+        }[];
+      };
+      expire_blocking_checkout_attempt: {
+        // Phase 34E-A. service_role only. Called ONLY after the Server
+        // Action has independently confirmed via Stripe that the blocking
+        // attempt's bound Session is no longer payable (already expired,
+        // or just actively expired). Re-verifies the attempt is STILL
+        // 'open' under a fresh lock before marking it 'expired' —
+        // returns action='already_completed' (mutating nothing) if the
+        // webhook resolved it in the interim; the caller must stop and
+        // never retry its competing local mutation in that case.
+        Args: {
+          p_attempt_id: string;
+          p_payment_id: string;
+          p_club_id:    string;
+        };
+        Returns: {
+          action: "proceed" | "already_completed";
+        }[];
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;

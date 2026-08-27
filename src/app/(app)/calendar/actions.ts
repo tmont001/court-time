@@ -17,6 +17,11 @@ import {
   dispatchEventNotification,
   dispatchWaitlistNotification,
 } from "@/lib/notification-dispatch";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import {
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 
 // ---------------------------------------------------------------------------
 // Shared result shape for update_member_reservation / cancel_member_reservation
@@ -606,10 +611,24 @@ export async function updateMemberReservationAdmin(params: {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("update_member_reservation", {
-    ...rpcParams,
-    p_expected_club_id: expectedClubId,
-  });
+  const rpcArgs = { ...rpcParams, p_expected_club_id: expectedClubId };
+  let { data, error } = await supabase.rpc("update_member_reservation", rpcArgs);
+
+  // Phase 34E-A: this edit is about to change the priced amount or
+  // reassign the Member while a bound, potentially still-payable Stripe
+  // Checkout Session is open for the current obligation — resolve it via
+  // Stripe (never a silent local override) before safely retrying once.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("reservation", [params.p_reservation_id]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: { message: "Failed to update reservation." } };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: { code: resolved.code, message: resolved.code } };
+
+    ({ data, error } = await supabase.rpc("update_member_reservation", rpcArgs));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   const result = data as unknown as UpdateMemberReservationResult | null;

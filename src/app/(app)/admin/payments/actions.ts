@@ -8,6 +8,11 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { getStripeContext } from "@/lib/stripe/server";
 import { isAuthorizedToConnectStripe } from "@/lib/stripe/connectConfig";
+import {
+  CHECKOUT_STILL_PROCESSING_MESSAGE,
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 import type { PaymentStateRow } from "@/lib/payments";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -22,6 +27,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_payment_amount: "Enter a valid amount greater than zero.",
   invalid_payment_method: "Choose a valid payment method.",
   payment_not_open_for_payment: "This balance can't accept a new payment right now — it may already be resolved.",
+  // Phase 34E-A: only reachable if a second, concurrent Checkout Session
+  // was bound again in the brief window between this action's own
+  // resolve-via-Stripe step and its retry — the normal path already
+  // returns CHECKOUT_STILL_PROCESSING_MESSAGE directly, never reaching
+  // this map.
+  open_checkout_requires_resolution: CHECKOUT_STILL_PROCESSING_MESSAGE,
 };
 
 // Read-only, batched, sanitized. Callable directly from a Server Component
@@ -125,15 +136,27 @@ export async function recordManualPaymentAction(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
-  const { error } = await supabase.rpc("record_manual_payment", {
+  const rpcParams = {
     p_payment_id: params.paymentId,
     p_amount_cents: params.amountCents,
     p_method: params.method as "cash" | "check" | "card_terminal" | "bank_transfer" | "digital_wallet" | "other",
     p_external_reference: params.externalReference || null,
     p_notes: params.notes || null,
-  });
+  };
+
+  let { error } = await supabase.rpc("record_manual_payment", rpcParams);
+
+  // Phase 34E-A: a bound, potentially still-payable Stripe Checkout
+  // Session is open for this payment — resolve it via Stripe (never a
+  // silent local override) before safely retrying exactly once.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(params.paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+    ({ error } = await supabase.rpc("record_manual_payment", rpcParams));
+  }
+
   if (error) {
-    const key = error.message.match(/not_authenticated|insufficient_role|payment_not_found|invalid_payment_amount|invalid_payment_method|payment_not_open_for_payment/)?.[0] ?? "";
+    const key = error.message.match(/not_authenticated|insufficient_role|payment_not_found|invalid_payment_amount|invalid_payment_method|payment_not_open_for_payment|open_checkout_requires_resolution/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to record payment." };
   }
 
