@@ -120,7 +120,7 @@ export default function StripeConnectSection({
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {state === "ready"
-            ? "Stripe has confirmed this club can accept payments. Court Time Payments activation is coming in a future update."
+            ? "Stripe has confirmed this club can accept payments. Select Court Time Payments in Payment Tracking above to turn it on."
             : state === "pending"
             ? "Stripe is reviewing this account. This can take a little while — no action is needed right now."
             : state === "action_required"

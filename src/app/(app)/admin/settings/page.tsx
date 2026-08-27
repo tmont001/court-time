@@ -184,8 +184,8 @@ export default async function AdminSettingsPage() {
               Court Time Payments
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Connect Stripe to prepare this club to accept online payments from Members. Court
-              Time Payments itself isn&apos;t available to turn on yet — this only sets up the connection.
+              Connect Stripe to prepare this club to accept online payments from Members. Once
+              Stripe is ready, activate Court Time Payments in Payment Tracking above.
             </p>
             <StripeConnectSection clubId={clubId} initialStatus={stripeStatus} configured={stripeConfigured} />
           </div>

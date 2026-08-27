@@ -433,4 +433,103 @@ describe("0149 migration — Phase 34D-C activation gate invariants", () => {
     expect(countOccurrences(src, "\nbegin;\n")).toBe(1);
     expect(countOccurrences(src, "\ncommit;\n")).toBe(1);
   });
+
+  // Phase 34D-C2 (activation UI fix) requirement 5 — switching a club's
+  // payment_mode to court_time_payments must preserve existing payment
+  // history and existing obligations; only future/new obligations follow
+  // the newly selected mode. activate_court_time_payments only ever
+  // updates club_settings — it must never write to payments/payment_events
+  // itself (that stays exclusively _create_payment_obligation's job, and
+  // only for NEW obligations created after activation).
+  it("activate_court_time_payments only ever updates club_settings — never payments or payment_events directly, so existing obligation history is untouched by activation itself", () => {
+    const src = migration();
+    const fnBody = src.slice(
+      src.indexOf("create or replace function public.activate_court_time_payments"),
+      src.indexOf("revoke execute on function public.activate_court_time_payments"),
+    );
+    expect(fnBody).toContain("update public.club_settings");
+    expect(fnBody).not.toMatch(/update public\.payments/);
+    expect(fnBody).not.toMatch(/insert into public\.payments/);
+    expect(fnBody).not.toMatch(/update public\.payment_events/);
+    expect(fnBody).not.toMatch(/insert into public\.payment_events/);
+  });
+
+  it("an obligation's payment_mode_at_creation is immutable once written — _create_payment_obligation snapshots the club's mode at INSERT time only, never re-stamping existing rows when the club's mode later changes", () => {
+    const src = migration();
+    const fnBody = src.slice(
+      src.indexOf("create or replace function public._create_payment_obligation"),
+      src.indexOf("revoke all on function public._create_payment_obligation"),
+    );
+    // payment_mode_at_creation is only ever written inside the INSERT —
+    // there is no UPDATE ... set payment_mode_at_creation anywhere.
+    expect(fnBody).toContain("payment_mode_at_creation, created_by");
+    expect(fnBody).not.toMatch(/update public\.payments[\s\S]*payment_mode_at_creation\s*=/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 34D-C2 — activation UI fix. Root cause: activation wiring
+// (activate_court_time_payments, updateClubPaymentModeAction,
+// PaymentTrackingSection's own selectable/click logic) was already fully
+// implemented in 34D-C — the ONLY defect was stale copy in two places
+// (StripeConnectSection's "ready" description, and page.tsx's Court Time
+// Payments section intro) that both falsely claimed activation "isn't
+// available yet" even once Stripe was genuinely ready, making the
+// already-working control undiscoverable/untrustworthy. These tests would
+// have FAILED against that stale copy.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Activation UI — stale 'coming in a future update' copy removed (requirement 6)", () => {
+  it("StripeConnectSection's 'ready' state no longer claims activation is coming in a future update", () => {
+    const src = readSource("src/app/(app)/admin/settings/StripeConnectSection.tsx");
+    expect(src).not.toMatch(/coming in a future update/i);
+    // Points the Admin at the actual control instead.
+    expect(src).toMatch(/Select Court Time Payments in Payment Tracking above/);
+  });
+
+  it("the admin/settings page's Court Time Payments section intro no longer claims activation isn't available yet", () => {
+    const src = readSource("src/app/(app)/admin/settings/page.tsx");
+    expect(src).not.toMatch(/isn.t available to turn on yet/i);
+    expect(src).toMatch(/activate Court Time Payments in Payment Tracking above/);
+  });
+
+  it("PaymentTrackingSection's court_time_payments option is genuinely selectable (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to", () => {
+    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    expect(src).toContain("const courtTimePaymentsReady = isCourtTimePaymentsSelectable(stripeReadiness);");
+    expect(src).toContain('const isDisabled = option === "court_time_payments" && !courtTimePaymentsReady;');
+    // Never unconditionally disabled — that would be the pre-34D-C, "Coming
+    // Soon" behavior this fix's copy update would otherwise still contradict.
+    // The exact old unconditional line (no trailing "&& !courtTimePaymentsReady")
+    // must be structurally absent.
+    expect(src).not.toContain('const isDisabled = option === "court_time_payments";');
+  });
+
+  it("court_time_payments Server Action wiring already exists end-to-end (no missing application wiring beyond the copy fix) — role check, server-derived livemode, and the activation RPC call are all present", () => {
+    const src = readSource("src/app/(app)/admin/payments/actions.ts");
+    expect(src).toContain('if (mode === "court_time_payments")');
+    expect(src).toContain("isAuthorizedToConnectStripe(profile.role)");
+    expect(src).toContain("const context = getStripeContext();");
+    expect(src).toContain('.rpc("activate_court_time_payments", {');
+    expect(src).toContain("p_livemode: context.livemode,");
+  });
+});
+
+describe("Activation UI — failed activation never falsely shows ACTIVE (requirement 7)", () => {
+  it("PaymentTrackingSection only updates the locally-selected mode inside the SUCCESS branch — an error response leaves the previously-active option showing Active, never the one that just failed", () => {
+    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    const handleSelectStart = src.indexOf("function handleSelect(next: PaymentMode) {");
+    const handleSelectEnd = src.indexOf("\n  }\n", handleSelectStart);
+    const fnBody = src.slice(handleSelectStart, handleSelectEnd);
+    const errorBranch = fnBody.slice(fnBody.indexOf("if (result.error) {"), fnBody.indexOf("} else {"));
+    const successBranch = fnBody.slice(fnBody.indexOf("} else {"));
+    expect(errorBranch).not.toMatch(/setMode\(/);
+    expect(errorBranch).toContain('setStatus({ type: "error", message: result.error });');
+    expect(successBranch).toContain("setMode(next);");
+  });
+
+  it("the Active badge is derived purely from the current `mode` state, never from isPending/optimistic UI — so a still-in-flight or failed activation can never render as Active", () => {
+    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    expect(src).toContain("const isSelected = mode === option;");
+    expect(src).not.toMatch(/isSelected\s*=\s*.*isPending/);
+  });
 });
