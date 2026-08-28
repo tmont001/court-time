@@ -176,6 +176,41 @@ export default async function AdminPaymentsPage() {
     (refundableResult.data ?? []).map(r => [r.payment_id, r.refundable_cents]),
   );
 
+  // Phase 34E-C — informational Stripe dispute state. Unlike payment_
+  // checkout_attempts/payment_refund_attempts, payment_disputes has a
+  // normal club-scoped Admin/Staff SELECT policy (mirrors payments' own
+  // payments_select_admin_staff, 0143) — a plain read, no RPC needed.
+  const disputesResult = paymentIds.length > 0
+    ? await supabase
+        .from("payment_disputes")
+        .select("payment_id, status, reason, amount_cents, currency, evidence_due_by, is_charge_refundable, stripe_created_at")
+        .eq("club_id", clubId)
+        .in("payment_id", paymentIds)
+    : {
+        data: [] as {
+          payment_id: string; status: string; reason: string; amount_cents: number; currency: string;
+          evidence_due_by: string | null; is_charge_refundable: boolean; stripe_created_at: string;
+        }[],
+      };
+  const disputesError = (disputesResult as { error?: { code?: string; message?: string } }).error;
+  if (disputesError) {
+    console.error("[dispute] payment_disputes read failed", {
+      payment_ids: paymentIds,
+      code: disputesError.code ?? null,
+      message: disputesError.message ?? null,
+    });
+  }
+  // A payment can in principle carry more than one dispute row over time
+  // (a charge disputed, resolved, then disputed again) — the UI shows
+  // only the most recently created one; refund eligibility is blocked by
+  // ANY of them still reporting is_charge_refundable = false.
+  const disputesByPaymentId = new Map<string, NonNullable<typeof disputesResult.data>>();
+  for (const d of disputesResult.data ?? []) {
+    const existing = disputesByPaymentId.get(d.payment_id) ?? [];
+    existing.push(d);
+    disputesByPaymentId.set(d.payment_id, existing);
+  }
+
   const rows: AdminPaymentRow[] = [];
   for (const p of latestPayments) {
     let title: string | null = null;
@@ -226,6 +261,11 @@ export default async function AdminPaymentsPage() {
       href = "/events?tab=manage";
     }
 
+    const disputesForPayment = disputesByPaymentId.get(p.id) ?? [];
+    const currentDispute = disputesForPayment.length > 0
+      ? [...disputesForPayment].sort((a, b) => b.stripe_created_at.localeCompare(a.stripe_created_at))[0]
+      : null;
+
     rows.push({
       key: p.id,
       domainType: p.domain_type,
@@ -234,6 +274,16 @@ export default async function AdminPaymentsPage() {
       dateLabel,
       href,
       refundableCents: refundableByPaymentId.get(p.id) ?? 0,
+      // Phase 34E-C — informational only; never derived from or fed back
+      // into payments.amount_paid_cents/status.
+      dispute: currentDispute && {
+        status: currentDispute.status,
+        reason: currentDispute.reason,
+        amountCents: currentDispute.amount_cents,
+        currency: currentDispute.currency,
+        evidenceDueBy: currentDispute.evidence_due_by,
+      },
+      disputeBlocksRefund: disputesForPayment.some(d => !d.is_charge_refundable),
       state: {
         domain_id: p.domain_id,
         current_payment_id: p.id,

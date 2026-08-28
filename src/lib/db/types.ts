@@ -142,6 +142,56 @@ export type Database = {
           }
         ];
       };
+      payment_disputes: {
+        // Phase 34E-C — informational Stripe dispute state, entirely
+        // separate from payment_events/payment_refund_attempts. Read-only
+        // for `authenticated` (club-scoped Admin/Staff SELECT policy);
+        // every write goes through process_stripe_dispute_webhook_event
+        // (service-role only, via the webhook Route Handler).
+        Row: {
+          id: string;
+          club_id: string;
+          payment_id: string;
+          source_checkout_attempt_id: string;
+          stripe_dispute_id: string;
+          stripe_charge_id: string;
+          stripe_payment_intent_id: string;
+          stripe_account_id: string;
+          livemode: boolean;
+          amount_cents: number;
+          currency: string;
+          // Stripe's raw dispute status string — deliberately untyped
+          // beyond `string` (no CHECK at the DB layer either); see
+          // disputeConfig.ts's own presentDisputeStatus for the UI's safe
+          // known-value-plus-fallback mapping.
+          status: string;
+          reason: string;
+          evidence_due_by: string | null;
+          is_charge_refundable: boolean;
+          stripe_created_at: string;
+          last_synced_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "payment_disputes_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_disputes_payment_id_club_id_fkey";
+            columns: ["payment_id", "club_id"];
+            isOneToOne: false;
+            referencedRelation: "payments";
+            referencedColumns: ["id", "club_id"];
+          }
+        ];
+      };
       payment_events: {
         // Phase 34C — append-only canonical ledger. UI code should never
         // write here directly; always via record_manual_payment /
@@ -3896,6 +3946,40 @@ export type Database = {
           refundable_cents: number;
           currency:         string;
         }[];
+      };
+      process_stripe_dispute_webhook_event: {
+        // Phase 34E-C. service_role only. The webhook path for charge.
+        // dispute.created/updated/closed/funds_withdrawn/funds_reinstated.
+        // Dedupes on Stripe's own event id (stripe_event_receipts, reused
+        // unchanged), then reconciles from the CURRENT Stripe-retrieved
+        // Dispute state the Route Handler passes in (never a trusted
+        // event-payload snapshot). A dispute is never Court-Time-
+        // initiated — resolution is ALWAYS by verified account/livemode/
+        // PaymentIntent provenance against a completed Court Time
+        // Checkout attempt, never by metadata (disputes carry none).
+        // Returns a plain boolean (matched) — deliberately NOT a
+        // RETURNS TABLE function, sidestepping the 0153/0154/0155
+        // OUT-variable ambiguity class by construction. false means
+        // genuinely foreign/unmatched, safely ignored. INFORMATIONAL
+        // ONLY: never touches payments.amount_paid_cents or any
+        // payment/refund ledger event.
+        Args: {
+          p_stripe_event_id:          string;
+          p_event_type:               string;
+          p_livemode:                 boolean;
+          p_stripe_account_id:        string;
+          p_stripe_dispute_id:        string;
+          p_stripe_charge_id:         string;
+          p_stripe_payment_intent_id: string | null;
+          p_amount_cents:             number;
+          p_currency:                 string;
+          p_status:                   string;
+          p_reason:                   string;
+          p_evidence_due_by:          string | null;
+          p_is_charge_refundable:     boolean;
+          p_stripe_created_at:        string;
+        };
+        Returns: boolean;
       };
       upsert_lesson_type: {
         Args: {

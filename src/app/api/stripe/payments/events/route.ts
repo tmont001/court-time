@@ -13,22 +13,25 @@
 // RPC below, never trusted from metadata.
 //
 // Handles checkout.session.completed (only when the Session's own
-// payment_status is genuinely 'paid') and, since Phase 34E-B, the three
-// Stripe Refund lifecycle events (refund.created/updated/failed) — for
-// refunds, the handler RETRIEVES the Refund fresh by id (never trusting
-// the event payload's own point-in-time snapshot, since Stripe does not
-// guarantee webhook delivery ordering) and reconciles from THAT current
-// state, never assumed from the event type alone (a refund.created
-// delivery may already report status='succeeded'). No dispute lifecycle
-// event is handled in this checkpoint. The browser's own success redirect
-// is NEVER the authority for marking a payment paid or a refund
-// succeeded; this verified webhook is.
+// payment_status is genuinely 'paid'), since Phase 34E-B the three
+// Stripe Refund lifecycle events (refund.created/updated/failed), and
+// since Phase 34E-C the five connected-account dispute lifecycle events
+// (charge.dispute.created/updated/closed/funds_withdrawn/
+// funds_reinstated, INFORMATIONAL ONLY — never mutates payment/refund
+// state, see disputeConfig.ts and 0156's own header comment). For both
+// refunds and disputes, the handler RETRIEVES the Stripe object fresh by
+// id (never trusting the event payload's own point-in-time snapshot,
+// since Stripe does not guarantee webhook delivery ordering) and
+// reconciles from THAT current state, never assumed from the event type
+// alone. The browser's own success redirect is NEVER the authority for
+// marking a payment paid or a refund succeeded; this verified webhook is.
 
 import { NextResponse } from "next/server";
 import { getStripeContext } from "@/lib/stripe/server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { isSupportedPaymentWebhookEventType } from "@/lib/stripe/paymentsConfig";
 import { isRefundStatus, isSupportedRefundWebhookEventType } from "@/lib/stripe/refundConfig";
+import { isSupportedDisputeWebhookEventType } from "@/lib/stripe/disputeConfig";
 import type Stripe from "stripe";
 
 export async function POST(request: Request) {
@@ -60,6 +63,10 @@ export async function POST(request: Request) {
 
   if (isSupportedRefundWebhookEventType(event.type)) {
     return handleRefundEvent(event);
+  }
+
+  if (isSupportedDisputeWebhookEventType(event.type)) {
+    return handleDisputeEvent(event);
   }
 
   if (!isSupportedPaymentWebhookEventType(event.type)) {
@@ -205,5 +212,106 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
   // or Dashboard-initiated) or genuinely foreign (matched: false, no
   // PaymentIntent/account/livemode match) — both are a successfully
   // processed valid Stripe event from Stripe's point of view.
+  return new NextResponse(null, { status: 200 });
+}
+
+// Phase 34E-C — charge.dispute.created/updated/closed/funds_withdrawn/
+// funds_reinstated. INFORMATIONAL ONLY (see disputeConfig.ts's own header
+// comment): this handler never submits evidence, never accepts/closes a
+// dispute, never mutates payments.amount_paid_cents or any refund/payment
+// ledger event. A dispute is never Court-Time-initiated — unlike refunds,
+// there is no Court Time metadata and no Court-Time-side candidate id to
+// reconcile against; resolution is purely by verified account/livemode/
+// PaymentIntent provenance against a completed Court Time attempt.
+//
+// Stripe does not guarantee webhook delivery ordering, so — exactly like
+// handleRefundEvent above — the event payload's own point-in-time
+// snapshot is NEVER trusted: this handler RETRIEVES the Dispute fresh, by
+// id, in the event's own verified connected-account context, and
+// reconciles from THAT current state via process_stripe_dispute_webhook_
+// event (0156).
+async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
+  const eventDispute = event.data.object as Stripe.Dispute;
+
+  const stripeAccountId = event.account;
+  if (!stripeAccountId) {
+    // A dispute event with no connected-account context cannot belong to
+    // this integration's direct-charge model — safely ignored.
+    return new NextResponse(null, { status: 200 });
+  }
+
+  const context = getStripeContext();
+  if (!context) return new NextResponse(null, { status: 500 });
+
+  // Current-state retrieve (mirrors handleRefundEvent) — in the event's
+  // own verified connected-account context, never a caller-derived one.
+  let dispute: Stripe.Dispute;
+  try {
+    dispute = await context.client.disputes.retrieve(
+      eventDispute.id,
+      {},
+      { stripeAccount: stripeAccountId },
+    );
+  } catch {
+    // Cannot safely confirm the current state — retryable, not a
+    // legitimate skip.
+    return new NextResponse(null, { status: 500 });
+  }
+
+  // Dispute.charge is never null (installed SDK) — always available
+  // directly. Dispute.payment_intent CAN be null (installed SDK); when it
+  // is, fall back to retrieving the Charge in the SAME connected-account
+  // context and read its own payment_intent. Never guessed, never left to
+  // metadata.
+  const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id;
+  let paymentIntentId =
+    typeof dispute.payment_intent === "string" ? dispute.payment_intent : dispute.payment_intent?.id ?? null;
+
+  if (!paymentIntentId) {
+    try {
+      const charge = await context.client.charges.retrieve(chargeId, {}, { stripeAccount: stripeAccountId });
+      paymentIntentId =
+        typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id ?? null;
+    } catch {
+      // Cannot safely confirm the current state — retryable, not a
+      // legitimate skip.
+      return new NextResponse(null, { status: 500 });
+    }
+  }
+
+  // Stripe documents evidence_details.due_by as 0 when the customer's
+  // bank doesn't allow a response at all — normalized to null here
+  // ("no deadline"), same treatment as a genuinely absent value.
+  const dueBy = dispute.evidence_details?.due_by;
+  const evidenceDueBy = dueBy ? new Date(dueBy * 1000).toISOString() : null;
+
+  const privileged = createPrivilegedClient();
+  if (!privileged) return new NextResponse(null, { status: 500 });
+
+  const { error } = await privileged.rpc("process_stripe_dispute_webhook_event", {
+    p_stripe_event_id: event.id,
+    p_event_type: event.type,
+    p_livemode: event.livemode,
+    p_stripe_account_id: stripeAccountId,
+    p_stripe_dispute_id: dispute.id,
+    p_stripe_charge_id: chargeId,
+    // May still be null here (Charge fallback also came up empty) — the
+    // RPC's own provenance match naturally treats that as unmatched,
+    // never a reason to guess or fall back to metadata.
+    p_stripe_payment_intent_id: paymentIntentId,
+    p_amount_cents: dispute.amount,
+    p_currency: dispute.currency,
+    p_status: dispute.status,
+    p_reason: dispute.reason,
+    p_evidence_due_by: evidenceDueBy,
+    p_is_charge_refundable: dispute.is_charge_refundable,
+    p_stripe_created_at: new Date(dispute.created * 1000).toISOString(),
+  });
+  if (error) return new NextResponse(null, { status: 500 });
+
+  // Either reconciled (a genuine Court Time charge) or genuinely foreign
+  // (matched: false, no PaymentIntent/account/livemode match) — both are
+  // a successfully processed valid Stripe event from Stripe's own point
+  // of view.
   return new NextResponse(null, { status: 200 });
 }

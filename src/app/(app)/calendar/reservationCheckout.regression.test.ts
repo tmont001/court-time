@@ -557,7 +557,14 @@ describe("payments/events webhook route — signature verification and shape", (
   // documents Checkout Session.payment_intent as nullable even for a paid
   // mode=payment Session).
   it("a null PaymentIntent does NOT short-circuit before the reconciliation RPC — session.id, not payment_intent, is the required reconciliation identity", () => {
-    const s = src();
+    // Scoped to the main POST handler (checkout.session.completed path)
+    // only — Phase 34E-C's handleDisputeEvent, further down this same
+    // file, legitimately has its own unrelated `if (!paymentIntentId)`
+    // (its Charge-retrieve fallback) and must not be scanned here.
+    const full = src();
+    const handlerEndIdx = full.indexOf("async function handleRefundEvent");
+    expect(handlerEndIdx).toBeGreaterThan(0);
+    const s = full.slice(0, handlerEndIdx);
     expect(s).not.toMatch(/if \(!paymentIntentId\)/);
     // paymentIntentId (possibly null) is passed straight through — the
     // route itself never gates on its presence.

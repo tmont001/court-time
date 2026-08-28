@@ -8,7 +8,17 @@ import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import RefundPaymentSheet from "@/components/RefundPaymentSheet";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
+import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
+import { formatMoney } from "@/lib/money";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+
+export interface AdminPaymentDispute {
+  status: string;
+  reason: string;
+  amountCents: number;
+  currency: string;
+  evidenceDueBy: string | null;
+}
 
 export interface AdminPaymentRow {
   key: string;
@@ -21,6 +31,16 @@ export interface AdminPaymentRow {
   // still refundable. Never derived from state.current_amount_paid_cents,
   // which nets manual money in too (locked decision 1).
   refundableCents: number;
+  // Phase 34E-C — the most recent Stripe dispute for this payment, if
+  // any. INFORMATIONAL ONLY — never derived from or fed back into
+  // state/refundableCents. Admin/Staff-only data (page.tsx never fetches
+  // this for a Member/Pro-facing surface).
+  dispute: AdminPaymentDispute | null;
+  // True when ANY dispute on this payment currently reports Stripe's own
+  // is_charge_refundable = false — used only to hide the Refund action so
+  // it never misleadingly offers a call that Stripe would reject; Stripe
+  // itself remains authoritative for any race after page render.
+  disputeBlocksRefund: boolean;
   state: PaymentStateRow;
   sortKey: string;
 }
@@ -125,10 +145,13 @@ export default function AdminPaymentsClient({
                   </p>
                 </Link>
               </div>
+              {row.dispute && (
+                <DisputeBadge dispute={row.dispute} />
+              )}
               <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <PaymentStateBadge state={row.state} />
                 <div className="flex gap-2">
-                  {isOnlineRefundEligible(row.refundableCents) && (
+                  {isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
                     <button
                       onClick={() => setRefundTarget(row)}
                       className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
@@ -176,5 +199,20 @@ export default function AdminPaymentsClient({
         />
       )}
     </div>
+  );
+}
+
+// Phase 34E-C — compact, informational-only dispute line. Court Time
+// never submits evidence or manages the dispute here; the club uses
+// Stripe directly for that (locked scope). Kept deliberately minimal —
+// broad payment-status visual polish is 34G-C.
+function DisputeBadge({ dispute }: { dispute: AdminPaymentDispute }) {
+  const presentation = presentDisputeStatus(dispute.status);
+  return (
+    <p
+      className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${disputeToneClassName(presentation.tone)}`}
+    >
+      {presentation.label} · {formatMoney(dispute.amountCents, dispute.currency)} · {formatDisputeReason(dispute.reason)}
+    </p>
   );
 }

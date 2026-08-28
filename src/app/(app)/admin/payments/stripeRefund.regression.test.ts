@@ -951,7 +951,10 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
 
   it("a paid, refund-eligible row still renders Refund on the \"All\" tab — the button's own condition is independent of the tab filter", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
-    const btnIdx = src.indexOf("{isOnlineRefundEligible(row.refundableCents) && (");
+    // Phase 34E-C added !row.disputeBlocksRefund alongside the original
+    // 34E-B condition — still never isPaymentOpenForRecording, and still
+    // independent of the Outstanding/All tab filter.
+    const btnIdx = src.indexOf("{isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(btnIdx).toBeGreaterThan(0);
     const btnBlock = src.slice(btnIdx, src.indexOf("Refund\n", btnIdx));
     expect(btnBlock).not.toMatch(/isPaymentOpenForRecording/);
