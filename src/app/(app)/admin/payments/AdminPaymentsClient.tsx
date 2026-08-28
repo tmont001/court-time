@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
+import RefundPaymentSheet from "@/components/RefundPaymentSheet";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 
 export interface AdminPaymentRow {
@@ -15,6 +17,10 @@ export interface AdminPaymentRow {
   identityName: string;
   dateLabel: string | null;
   href: string;
+  // Phase 34E-B — how much of this payment's ONLINE (Stripe) money is
+  // still refundable. Never derived from state.current_amount_paid_cents,
+  // which nets manual money in too (locked decision 1).
+  refundableCents: number;
   state: PaymentStateRow;
   sortKey: string;
 }
@@ -40,8 +46,14 @@ export default function AdminPaymentsClient({
   const [filter, setFilter] = useState<Filter>("outstanding");
   const [query, setQuery]   = useState("");
   const [recordTarget, setRecordTarget] = useState<AdminPaymentRow | null>(null);
+  const [refundTarget, setRefundTarget] = useState<AdminPaymentRow | null>(null);
 
   const filtered = useMemo(() => {
+    // Locked semantics (runtime QA correction) — Outstanding means
+    // "balances the member still owes": unpaid/partially_paid only. A
+    // fully paid, Stripe-refundable transaction belongs on All, never
+    // Outstanding — Refund remains reachable there via row.refundableCents
+    // (see the Refund button's own, separate render condition below).
     let list = filter === "outstanding" ? rows.filter(r => isPaymentOpenForRecording(r.state)) : rows;
     const q = query.trim().toLowerCase();
     if (q) {
@@ -115,14 +127,24 @@ export default function AdminPaymentsClient({
               </div>
               <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                 <PaymentStateBadge state={row.state} />
-                {isPaymentOpenForRecording(row.state) && (
-                  <button
-                    onClick={() => setRecordTarget(row)}
-                    className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
-                  >
-                    Record Payment
-                  </button>
-                )}
+                <div className="flex gap-2">
+                  {isOnlineRefundEligible(row.refundableCents) && (
+                    <button
+                      onClick={() => setRefundTarget(row)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                    >
+                      Refund
+                    </button>
+                  )}
+                  {isPaymentOpenForRecording(row.state) && (
+                    <button
+                      onClick={() => setRecordTarget(row)}
+                      className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
+                    >
+                      Record Payment
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -139,6 +161,18 @@ export default function AdminPaymentsClient({
           title={recordTarget.identityName}
           onClose={() => setRecordTarget(null)}
           onRecorded={() => { setRecordTarget(null); router.refresh(); }}
+        />
+      )}
+
+      {refundTarget && (
+        <RefundPaymentSheet
+          paymentId={refundTarget.state.current_payment_id}
+          clubId={clubId}
+          refundableCents={refundTarget.refundableCents}
+          currency={refundTarget.state.current_currency || currency}
+          title={refundTarget.identityName}
+          onClose={() => setRefundTarget(null)}
+          onRefunded={() => { setRefundTarget(null); router.refresh(); }}
         />
       )}
     </div>

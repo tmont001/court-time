@@ -12,16 +12,23 @@
 // compared against the stored attempt's own stripe_account_id inside the
 // RPC below, never trusted from metadata.
 //
-// Handles exactly one event type: checkout.session.completed, and only
-// acts when the Session's own payment_status is genuinely 'paid' — no
-// refund/dispute/failure lifecycle event is handled in this checkpoint.
-// The browser's own success redirect is NEVER the authority for marking a
-// payment paid; this verified webhook is.
+// Handles checkout.session.completed (only when the Session's own
+// payment_status is genuinely 'paid') and, since Phase 34E-B, the three
+// Stripe Refund lifecycle events (refund.created/updated/failed) — for
+// refunds, the handler RETRIEVES the Refund fresh by id (never trusting
+// the event payload's own point-in-time snapshot, since Stripe does not
+// guarantee webhook delivery ordering) and reconciles from THAT current
+// state, never assumed from the event type alone (a refund.created
+// delivery may already report status='succeeded'). No dispute lifecycle
+// event is handled in this checkpoint. The browser's own success redirect
+// is NEVER the authority for marking a payment paid or a refund
+// succeeded; this verified webhook is.
 
 import { NextResponse } from "next/server";
 import { getStripeContext } from "@/lib/stripe/server";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { isSupportedPaymentWebhookEventType } from "@/lib/stripe/paymentsConfig";
+import { isRefundStatus, isSupportedRefundWebhookEventType } from "@/lib/stripe/refundConfig";
 import type Stripe from "stripe";
 
 export async function POST(request: Request) {
@@ -50,6 +57,10 @@ export async function POST(request: Request) {
   }
 
   // Everything below this line has a Stripe-verified signature behind it.
+
+  if (isSupportedRefundWebhookEventType(event.type)) {
+    return handleRefundEvent(event);
+  }
 
   if (!isSupportedPaymentWebhookEventType(event.type)) {
     // A real, verified Stripe event we simply don't act on — safely
@@ -117,5 +128,82 @@ export async function POST(request: Request) {
   // Handled (first delivery, applied) or safely no-op (duplicate delivery)
   // — both are a successfully processed valid Stripe event from Stripe's
   // point of view, so both are 2xx.
+  return new NextResponse(null, { status: 200 });
+}
+
+// Phase 34E-B (correction pass) — refund.created/refund.updated/
+// refund.failed. Stripe does not guarantee webhook delivery ordering, so
+// the event payload's own point-in-time snapshot is NEVER trusted as the
+// reconciliation source — this handler RETRIEVES the Refund fresh, by id,
+// in the event's own verified connected-account context, and reconciles
+// from THAT current state via process_stripe_refund_webhook_event (0153).
+// A Refund with no recognizable Court Time metadata is not assumed
+// foreign: a club's Full Stripe Dashboard access means a refund against a
+// Court Time charge can be created entirely outside Court Time, so the
+// verified Refund's own payment_intent is always passed through, letting
+// the RPC match it against a completed Court Time attempt server-side
+// before ever concluding an event is genuinely unrelated.
+async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
+  const eventRefund = event.data.object as Stripe.Refund;
+
+  const stripeAccountId = event.account;
+  if (!stripeAccountId) {
+    // A refund event with no connected-account context cannot belong to
+    // this integration's direct-charge model — safely ignored.
+    return new NextResponse(null, { status: 200 });
+  }
+
+  const context = getStripeContext();
+  if (!context) return new NextResponse(null, { status: 500 });
+
+  // Current-state retrieve (correction pass) — in the event's own
+  // verified connected-account context, never a caller-derived one.
+  let refund: Stripe.Refund;
+  try {
+    refund = await context.client.refunds.retrieve(
+      eventRefund.id,
+      {},
+      { stripeAccount: stripeAccountId },
+    );
+  } catch {
+    // Cannot safely confirm the current state — retryable, not a
+    // legitimate skip.
+    return new NextResponse(null, { status: 500 });
+  }
+
+  if (!isRefundStatus(refund.status)) {
+    // A Refund object missing one of Stripe's five documented statuses
+    // at this point is a data anomaly, not a legitimate skip — fail
+    // retryably.
+    return new NextResponse(null, { status: 500 });
+  }
+
+  const paymentIntentId =
+    typeof refund.payment_intent === "string" ? refund.payment_intent : refund.payment_intent?.id ?? null;
+
+  const refundAttemptId = refund.metadata?.court_time_refund_attempt_id ?? null;
+
+  const privileged = createPrivilegedClient();
+  if (!privileged) return new NextResponse(null, { status: 500 });
+
+  const { error } = await privileged.rpc("process_stripe_refund_webhook_event", {
+    p_stripe_event_id: event.id,
+    p_event_type: event.type,
+    p_livemode: event.livemode,
+    p_stripe_account_id: stripeAccountId,
+    p_stripe_refund_id: refund.id,
+    p_refund_attempt_id: refundAttemptId,
+    p_stripe_payment_intent_id: paymentIntentId,
+    p_status: refund.status,
+    p_amount_cents: refund.amount,
+    p_currency: refund.currency,
+    p_failure_reason: refund.failure_reason ?? null,
+  });
+  if (error) return new NextResponse(null, { status: 500 });
+
+  // Either reconciled (a genuine Court Time charge, whether Court-Time-
+  // or Dashboard-initiated) or genuinely foreign (matched: false, no
+  // PaymentIntent/account/livemode match) — both are a successfully
+  // processed valid Stripe event from Stripe's point of view.
   return new NextResponse(null, { status: 200 });
 }

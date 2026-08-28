@@ -148,6 +148,34 @@ export default async function AdminPaymentsPage() {
     return new Date(iso).toLocaleDateString("en-US", { timeZone: clubTimezone, month: "short", day: "numeric" });
   }
 
+  // Phase 34E-B — the one sanctioned read path for "how much online
+  // money is still Stripe-refundable" (payment_checkout_attempts and
+  // payment_refund_attempts are both deny-all RLS; this batched RPC is
+  // the only way to learn this without a raw table read this page could
+  // never actually perform).
+  const paymentIds = latestPayments.map(p => p.id);
+  const refundableResult = paymentIds.length > 0
+    ? await supabase.rpc("get_online_refundable_amount_for_payments", { p_payment_ids: paymentIds })
+    : { data: [] as { payment_id: string; refundable_cents: number; currency: string }[] };
+  // Runtime QA (0154) — a failure here must never vanish without a trace
+  // the way it did before: falling back to "0 refundable everywhere" is
+  // still the correct, fail-safe Admin-facing behavior (never show a
+  // Refund button when eligibility can't be confirmed), but it must be
+  // logged server-side so a real infrastructure failure stays observable.
+  // Safe fields only — payment ids (internal UUIDs, not PII) plus error
+  // code/message, never secrets/JWTs.
+  const refundableError = (refundableResult as { error?: { code?: string; message?: string } }).error;
+  if (refundableError) {
+    console.error("[refund] get_online_refundable_amount_for_payments failed", {
+      payment_ids: paymentIds,
+      code: refundableError.code ?? null,
+      message: refundableError.message ?? null,
+    });
+  }
+  const refundableByPaymentId = new Map(
+    (refundableResult.data ?? []).map(r => [r.payment_id, r.refundable_cents]),
+  );
+
   const rows: AdminPaymentRow[] = [];
   for (const p of latestPayments) {
     let title: string | null = null;
@@ -205,6 +233,7 @@ export default async function AdminPaymentsPage() {
       identityName,
       dateLabel,
       href,
+      refundableCents: refundableByPaymentId.get(p.id) ?? 0,
       state: {
         domain_id: p.domain_id,
         current_payment_id: p.id,

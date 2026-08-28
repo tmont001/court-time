@@ -3767,6 +3767,136 @@ export type Database = {
           action: "proceed" | "already_completed";
         }[];
       };
+      open_payment_refund_attempt: {
+        // Phase 34E-B. service_role only. Resolves the payment's own
+        // latest COMPLETED online payment_checkout_attempts row as
+        // trusted refund provenance, computes that attempt's own
+        // Stripe-refundable ceiling, and either reuses an existing
+        // unresolved ('pending', unbound) attempt for this payment WHEN
+        // THE REQUESTED AMOUNT MATCHES (double-submit / retry-after-
+        // uncertainty safety — never mints a second Stripe idempotency
+        // key for what may be the same in-flight request), raises
+        // pending_refund_amount_mismatch before any Stripe call when a
+        // DIFFERENT amount is requested against that same unresolved
+        // attempt (correction pass — never silently substitutes the old
+        // amount), or opens a fresh one.
+        Args: {
+          p_payment_id:             string;
+          p_club_id:                string;
+          p_requested_amount_cents: number;
+          p_actor_id:               string;
+          p_admin_reason?:          string | null;
+        };
+        Returns: {
+          id:                          string;
+          payment_id:                  string;
+          club_id:                     string;
+          source_checkout_attempt_id:  string;
+          stripe_account_id:           string;
+          livemode:                    boolean;
+          stripe_checkout_session_id:  string | null;
+          stripe_payment_intent_id:    string | null;
+          requested_amount_cents:      number;
+          status:                      "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          currency:                    string;
+        }[];
+      };
+      mark_refund_attempt_local_failure: {
+        // Phase 34E-B. service_role only. Only for a failure BEFORE any
+        // Stripe API call was ever made (e.g. no PaymentIntent could be
+        // resolved) — raises refund_already_submitted_to_stripe if a
+        // Stripe Refund id is already bound.
+        Args: {
+          p_refund_attempt_id: string;
+          p_failure_reason:    string | null;
+        };
+        Returns: void;
+      };
+      backfill_refund_attempt_payment_intent: {
+        // Phase 34E-B (correction pass). service_role only, narrow.
+        // Called BEFORE stripe.refunds.create() whenever the source
+        // Checkout attempt's own stripe_payment_intent_id was null and
+        // had to be resolved fresh via a trusted Session retrieve —
+        // persists it onto BOTH the refund attempt and its source
+        // Checkout attempt so it is never merely held in memory. Raises
+        // payment_intent_mismatch if a DIFFERENT PaymentIntent is already
+        // stored; a repeat call with the SAME value is a no-op.
+        Args: {
+          p_refund_attempt_id:        string;
+          p_stripe_payment_intent_id: string;
+        };
+        Returns: void;
+      };
+      bind_stripe_refund_result: {
+        // Phase 34E-B. service_role only. Called by the Server Action
+        // immediately after its own stripe.refunds.create() call
+        // returns — reconciles from that response's CURRENT state via
+        // the shared internal helper, which is terminal-state-safe
+        // (correction pass): 'succeeded'/'failed'/'canceled' are never
+        // regressed by a later call reporting anything else. p_refund_
+        // attempt_id is trusted directly for RESOLUTION (a same-request,
+        // server-generated value); p_stripe_payment_intent_id is passed
+        // through for VALIDATION only against trusted stored provenance.
+        Args: {
+          p_refund_attempt_id: string;
+          p_stripe_refund_id:  string;
+          p_status:            "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          p_amount_cents:      number;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_currency:          string;
+          p_failure_reason?:   string | null;
+          p_stripe_payment_intent_id?: string | null;
+        };
+        Returns: void;
+      };
+      process_stripe_refund_webhook_event: {
+        // Phase 34E-B (correction pass). service_role only. The
+        // asynchronous webhook path for refund.created/refund.updated/
+        // refund.failed. Dedupes on Stripe's own event id (stripe_event_
+        // receipts, reused unchanged), then reconciles from the CURRENT
+        // Stripe-retrieved Refund state the Route Handler passes in
+        // (never a trusted event-payload snapshot) — never assumes a
+        // particular event type implies a particular status.
+        // Resolution is ALWAYS by p_stripe_payment_intent_id/account/
+        // livemode provenance matching, never by p_refund_attempt_id
+        // directly — that value (sourced from the Refund's own metadata,
+        // a forgeable client-set field) is used ONLY as a candidate to
+        // verify against the independently-resolved truth; a mismatch
+        // raises refund_attempt_provenance_mismatch. matched: false in
+        // the return value means genuinely foreign, safely ignored.
+        Args: {
+          p_stripe_event_id:           string;
+          p_event_type:                string;
+          p_livemode:                  boolean;
+          p_stripe_account_id:         string;
+          p_stripe_refund_id:          string;
+          p_refund_attempt_id:         string | null;
+          p_stripe_payment_intent_id:  string | null;
+          p_status:                    "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          p_amount_cents:              number;
+          p_currency:                  string;
+          p_failure_reason?:           string | null;
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
+      get_online_refundable_amount_for_payments: {
+        // Phase 34E-B. authenticated (Admin/Staff role-checked
+        // internally) — pure ledger read, no Stripe identity/livemode
+        // involved. The one sanctioned read path for "how much online
+        // money is still Stripe-refundable" for a batch of payments.
+        Args: {
+          p_payment_ids: string[];
+        };
+        Returns: {
+          payment_id:       string;
+          refundable_cents: number;
+          currency:         string;
+        }[];
+      };
       upsert_lesson_type: {
         Args: {
           p_id?:                       string | null;
