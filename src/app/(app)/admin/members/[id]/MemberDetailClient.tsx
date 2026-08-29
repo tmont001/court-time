@@ -16,6 +16,7 @@ import {
 import type { ClubPro } from "@/app/(app)/lessons/actions";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import type { PaymentStateRow } from "@/lib/payments";
+import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/lib/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -382,36 +383,48 @@ export default function MemberDetailClient({
               </p>
             )}
             {/* Phase 34A: Staff's provider status is optional, unlike Pro's
-                automatic grant — same toggle as Admin's block below, just
-                labeled "Staff · Pro" to distinguish the combination from a
-                plain Lesson Pro. set_lesson_provider_status (0131) already
-                accepts role in ('admin','staff') as a valid toggle target. */}
+                automatic grant — same toggle as Admin's block below.
+                set_lesson_provider_status (0131) already accepts role in
+                ('admin','staff') as a valid toggle target. Deliberately
+                worded as a "designation"/"capability", never a "role" —
+                this toggle changes lesson-provider eligibility only, not
+                the member's own Staff/Admin role. State (Enabled/Not
+                enabled) and action (Enable/Disable) are kept visually
+                distinct so the enabled state can't be mistaken for inert
+                metadata, reusing the same green/gray pill tokens as
+                statusBadge and the shared compact action-button styles. */}
             {(member.role === "admin" || member.role === "staff") && (
               <div className="mt-2">
                 <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Lesson Pro</span>
                   {lessonProviderStatus ? (
                     <>
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-accent/10 text-accent">
-                        {member.role === "staff" ? "Staff · Pro" : "Lesson Pro"}
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                        Enabled
                       </span>
                       <button
                         disabled={lessonProviderLoading}
                         onClick={() => handleLessonProviderToggle(false)}
-                        className="text-xs text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50 motion-safe:transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
-                        aria-label="Remove Lesson Pro designation"
+                        className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                        aria-label="Disable Lesson Pro designation"
                       >
-                        {lessonProviderLoading ? "Saving…" : "Remove"}
+                        {lessonProviderLoading ? "Saving…" : "Disable"}
                       </button>
                     </>
                   ) : (
-                    <button
-                      disabled={lessonProviderLoading}
-                      onClick={() => handleLessonProviderToggle(true)}
-                      className="inline-flex items-center px-2.5 py-1 rounded-lg border border-accent text-accent text-xs font-medium hover:bg-accent/10 disabled:opacity-50 motion-safe:transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      aria-label="Enable Lesson Pro designation"
-                    >
-                      {lessonProviderLoading ? "Saving…" : "Enable Lesson Pro"}
-                    </button>
+                    <>
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                        Not enabled
+                      </span>
+                      <button
+                        disabled={lessonProviderLoading}
+                        onClick={() => handleLessonProviderToggle(true)}
+                        className={ACTION_BUTTON_PRIMARY_COMPACT}
+                        aria-label="Enable Lesson Pro designation"
+                      >
+                        {lessonProviderLoading ? "Saving…" : "Enable"}
+                      </button>
+                    </>
                   )}
                 </div>
                 {lessonProviderError && (
