@@ -61,6 +61,63 @@ export async function fetchPaymentStates(
   return { data: (data ?? []) as PaymentStateRow[] };
 }
 
+export interface PaymentEventHistoryItem {
+  id: string;
+  eventType: string;
+  amountCents: number | null;
+  method: string | null;
+  notes: string | null;
+  occurredAt: string;
+  isReversed: boolean;
+}
+
+// Phase 34E-E — read-only chronological ledger for the payment-detail
+// surface. payment_events already carries an Admin/Staff club-scoped
+// SELECT policy (payment_events_select_admin_staff, 0143) — a plain
+// authenticated read, no privileged client, no new RPC, no migration.
+// Deliberately excludes external_reference (raw Stripe/manual reference
+// ids) from this list surface — see this feature's own locked scope
+// ("avoid exposing raw Stripe IDs as primary UI"). Never mutates
+// anything; historical events are never rewritten.
+export async function fetchPaymentEventHistory(
+  paymentId: string,
+  expectedClubId: string,
+): Promise<{ data?: PaymentEventHistoryItem[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data, error } = await supabase
+    .from("payment_events")
+    .select("id, event_type, amount_cents, method, notes, occurred_at, reverses_event_id")
+    .eq("payment_id", paymentId)
+    .eq("club_id", expectedClubId)
+    .order("occurred_at", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) return { error: "Failed to load payment history." };
+
+  const rows = data ?? [];
+  // A row is "reversed" when some OTHER row in this same result set names
+  // it via reverses_event_id — read-only annotation for display, never a
+  // rewrite of the historical event itself.
+  const reversedIds = new Set(rows.map(r => r.reverses_event_id).filter((id): id is string => id !== null));
+
+  return {
+    data: rows.map(r => ({
+      id: r.id,
+      eventType: r.event_type,
+      amountCents: r.amount_cents,
+      method: r.method,
+      notes: r.notes,
+      occurredAt: r.occurred_at,
+      isReversed: reversedIds.has(r.id),
+    })),
+  };
+}
+
 export async function updateClubPaymentModeAction(
   mode: "none" | "manual" | "court_time_payments",
   expectedClubId: string,

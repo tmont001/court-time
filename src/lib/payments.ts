@@ -112,6 +112,41 @@ export const PAYMENT_METHOD_OPTIONS: { value: string; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
+// Phase 34E-E — the same paid-minus-due arithmetic formatPaymentStateLabel's
+// own "overpaid" branch already uses, extracted for reuse in the payment-
+// detail surface. Never clamps/derives from anything else — canonical
+// financial data only (row.current_amount_paid_cents/current_amount_due_
+// cents), matching the locked "amount_paid_cents = actual net retained
+// money" invariant. Returns 0 (never negative) when not actually overpaid.
+export function computeOverpaidCents(row: PaymentStateRow | null | undefined): number {
+  if (!row) return 0;
+  return Math.max(row.current_amount_paid_cents - row.current_amount_due_cents, 0);
+}
+
+// Phase 34E-E — operator-friendly labels for payment_events.event_type,
+// for the financial-history surface. Every value here matches an entry in
+// payment_events' own CHECK constraint (0143/0150/0153) — an unrecognized
+// future value falls back to a humanized version of the raw type rather
+// than breaking rendering.
+const PAYMENT_EVENT_LABELS: Record<string, string> = {
+  obligation_created: "Obligation created",
+  obligation_amount_adjusted: "Amount adjusted",
+  manual_payment_recorded: "Manual payment recorded",
+  online_payment_recorded: "Online payment received",
+  refund_recorded: "Refund recorded",
+  online_refund_recorded: "Online refund completed",
+  waived: "Waived",
+  void_payment_obligation: "Voided",
+  reverse_payment_event: "Payment/reversal correction",
+};
+
+export function formatPaymentEventLabel(eventType: string): string {
+  return (
+    PAYMENT_EVENT_LABELS[eventType] ??
+    eventType.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+  );
+}
+
 export function toneClassName(tone: PaymentStateTone): string {
   switch (tone) {
     case "warning":

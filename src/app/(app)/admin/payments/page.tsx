@@ -5,6 +5,14 @@ import { isOperator } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import AdminPaymentsClient, { type AdminPaymentRow } from "./AdminPaymentsClient";
 import type { PaymentStateRow } from "@/lib/payments";
+import {
+  dateTimeRangeLabel,
+  reservationLifecycleLabel,
+  lessonRequestLifecycleLabel,
+  eventParticipantLifecycleLabel,
+  eventGuestLifecycleLabel,
+  programEnrollmentLifecycleLabel,
+} from "./paymentContext";
 
 // Phase 34C consolidation — the canonical Admin/Staff operational surface
 // for "who owes money, for what, how much, and can I record a payment" —
@@ -92,31 +100,31 @@ export default async function AdminPaymentsPage() {
     rosterMembersResult,
   ] = await Promise.all([
     idsByDomain.reservation.length > 0
-      ? supabase.from("reservations").select("id, court_id, starts_at").in("id", idsByDomain.reservation)
+      ? supabase.from("reservations").select("id, court_id, starts_at, ends_at, status").in("id", idsByDomain.reservation)
       : Promise.resolve({ data: [] }),
     idsByDomain.lesson_request.length > 0
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (supabase.from as any)("lesson_requests").select("id, pro_id, proposed_starts_at").in("id", idsByDomain.lesson_request)
+      ? (supabase.from as any)("lesson_requests").select("id, pro_id, proposed_starts_at, proposed_ends_at, status").in("id", idsByDomain.lesson_request)
       : Promise.resolve({ data: [] }),
     idsByDomain.event_participant.length > 0
-      ? supabase.from("event_participants").select("id, event_id").in("id", idsByDomain.event_participant)
+      ? supabase.from("event_participants").select("id, event_id, status").in("id", idsByDomain.event_participant)
       : Promise.resolve({ data: [] }),
     idsByDomain.event_guest.length > 0
       ? supabase.from("event_guests").select("id, event_id, display_name").in("id", idsByDomain.event_guest)
       : Promise.resolve({ data: [] }),
     idsByDomain.program_enrollment.length > 0
-      ? supabase.from("program_enrollments").select("id, program_id").in("id", idsByDomain.program_enrollment)
+      ? supabase.from("program_enrollments").select("id, program_id, status").in("id", idsByDomain.program_enrollment)
       : Promise.resolve({ data: [] }),
     rosterMemberIds.size > 0
       ? supabase.from("roster_members").select("id, first_name, last_name").in("id", [...rosterMemberIds])
       : Promise.resolve({ data: [] }),
   ]);
 
-  const reservations = (reservationsResult.data ?? []) as { id: string; court_id: string; starts_at: string }[];
-  const lessonRequests = (lessonRequestsResult.data ?? []) as { id: string; pro_id: string; proposed_starts_at: string | null }[];
-  const eventParticipants = (eventParticipantsResult.data ?? []) as { id: string; event_id: string }[];
+  const reservations = (reservationsResult.data ?? []) as { id: string; court_id: string; starts_at: string; ends_at: string; status: string }[];
+  const lessonRequests = (lessonRequestsResult.data ?? []) as { id: string; pro_id: string; proposed_starts_at: string | null; proposed_ends_at: string | null; status: string }[];
+  const eventParticipants = (eventParticipantsResult.data ?? []) as { id: string; event_id: string; status: string }[];
   const eventGuests = (eventGuestsResult.data ?? []) as { id: string; event_id: string; display_name: string }[];
-  const programEnrollments = (programEnrollmentsResult.data ?? []) as { id: string; program_id: string }[];
+  const programEnrollments = (programEnrollmentsResult.data ?? []) as { id: string; program_id: string; status: string }[];
   const rosterMembers = (rosterMembersResult.data ?? []) as { id: string; first_name: string; last_name: string }[];
 
   const courtIds  = [...new Set(reservations.map(r => r.court_id))];
@@ -127,15 +135,15 @@ export default async function AdminPaymentsPage() {
   const [courtsResult, prosResult, eventsResult, programsResult] = await Promise.all([
     courtIds.length > 0 ? supabase.from("courts").select("id, name").in("id", courtIds) : Promise.resolve({ data: [] }),
     proIds.length > 0 ? supabase.from("profiles").select("id, first_name, last_name").in("id", proIds) : Promise.resolve({ data: [] }),
-    eventIds.length > 0 ? supabase.from("events").select("id, title, starts_at").in("id", eventIds) : Promise.resolve({ data: [] }),
-    programIds.length > 0 ? supabase.from("programs").select("id, title, starts_on").in("id", programIds) : Promise.resolve({ data: [] }),
+    eventIds.length > 0 ? supabase.from("events").select("id, title, starts_at, status").in("id", eventIds) : Promise.resolve({ data: [] }),
+    programIds.length > 0 ? supabase.from("programs").select("id, title, starts_on, status").in("id", programIds) : Promise.resolve({ data: [] }),
   ]);
 
   const courtName    = new Map((courtsResult.data ?? []).map((c: { id: string; name: string }) => [c.id, c.name]));
   const proName       = new Map((prosResult.data ?? []).map((p: { id: string; first_name: string | null; last_name: string | null }) =>
     [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || "Pro"]));
-  const eventById     = new Map((eventsResult.data ?? []).map((e: { id: string; title: string; starts_at: string }) => [e.id, e]));
-  const programById   = new Map((programsResult.data ?? []).map((p: { id: string; title: string; starts_on: string }) => [p.id, p]));
+  const eventById     = new Map((eventsResult.data ?? []).map((e: { id: string; title: string; starts_at: string; status: string }) => [e.id, e]));
+  const programById   = new Map((programsResult.data ?? []).map((p: { id: string; title: string; starts_on: string; status: string }) => [p.id, p]));
   const rosterName    = new Map(rosterMembers.map(m => [m.id, [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unknown"]));
   const reservationById       = new Map(reservations.map(r => [r.id, r]));
   const lessonRequestById     = new Map(lessonRequests.map(r => [r.id, r]));
@@ -217,33 +225,45 @@ export default async function AdminPaymentsPage() {
     let identityName = "Unknown";
     let dateLabel: string | null = null;
     let href = "/calendar";
+    // Phase 34E-E — the underlying domain's OWN lifecycle state, entirely
+    // independent from the payment's financial status (locked invariant:
+    // cancellation never mutates amount_paid_cents/status). Null when the
+    // domain row is active or has no cancellation concept at all.
+    let lifecycleLabel: string | null = null;
 
     if (p.domain_type === "reservation") {
       const r = reservationById.get(p.domain_id);
       if (!r) continue;
       title = courtName.get(r.court_id) as string | undefined ?? "Court Reservation";
-      dateLabel = shortDate(r.starts_at);
+      dateLabel = dateTimeRangeLabel(r.starts_at, r.ends_at, clubTimezone);
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/calendar";
+      lifecycleLabel = reservationLifecycleLabel(r.status);
     } else if (p.domain_type === "lesson_request") {
       const r = lessonRequestById.get(p.domain_id);
       if (!r) continue;
       title = `Lesson with ${proName.get(r.pro_id) as string | undefined ?? "Pro"}`;
-      dateLabel = shortDate(r.proposed_starts_at);
+      dateLabel = dateTimeRangeLabel(r.proposed_starts_at, r.proposed_ends_at, clubTimezone);
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/admin/lessons";
+      lifecycleLabel = lessonRequestLifecycleLabel(r.status);
     } else if (p.domain_type === "event_participant") {
       const r = eventParticipantById.get(p.domain_id);
       if (!r) continue;
-      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string } | undefined;
+      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; status: string } | undefined;
       title = ev?.title ?? "Event";
       dateLabel = ev ? shortDate(ev.starts_at) : null;
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/calendar";
+      // External review correction — the PARENT event's own status takes
+      // precedence: cancel_event cancels the event without cancelling
+      // individual (confirmed/waitlisted) participant rows, which are
+      // intentionally preserved as historical.
+      lifecycleLabel = eventParticipantLifecycleLabel(ev?.status, r.status);
     } else if (p.domain_type === "event_guest") {
       const r = eventGuestById.get(p.domain_id);
       if (!r) continue;
-      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string } | undefined;
+      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; status: string } | undefined;
       title = ev?.title ?? "Event";
       dateLabel = ev ? shortDate(ev.starts_at) : null;
       // Guest payer identity is intentionally unresolved to a roster
@@ -251,14 +271,23 @@ export default async function AdminPaymentsPage() {
       // display_name is the correct identity here, not "Unknown".
       identityName = `${r.display_name} (Guest)`;
       href = "/calendar";
+      // event_guests has no status/cancellation column of its own at all
+      // (audited) — the ONLY lifecycle signal available is the parent
+      // event's own status. Never invents a guest-specific status.
+      lifecycleLabel = eventGuestLifecycleLabel(ev?.status);
     } else {
       const r = programEnrollmentById.get(p.domain_id);
       if (!r) continue;
-      const prog = programById.get(r.program_id) as { id: string; title: string; starts_on: string } | undefined;
+      const prog = programById.get(r.program_id) as { id: string; title: string; starts_on: string; status: string } | undefined;
       title = prog?.title ?? "Program";
       dateLabel = null;
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/events?tab=manage";
+      // External review correction — the PARENT program's own status
+      // takes precedence: cancel_program cancels the program without
+      // cancelling individual enrollment rows, which are intentionally
+      // preserved (may remain enrolled/waitlisted/offered).
+      lifecycleLabel = programEnrollmentLifecycleLabel(prog?.status, r.status);
     }
 
     const disputesForPayment = disputesByPaymentId.get(p.id) ?? [];
@@ -273,6 +302,7 @@ export default async function AdminPaymentsPage() {
       identityName,
       dateLabel,
       href,
+      lifecycleLabel,
       refundableCents: refundableByPaymentId.get(p.id) ?? 0,
       // Phase 34E-C — informational only; never derived from or fed back
       // into payments.amount_paid_cents/status.
@@ -304,7 +334,7 @@ export default async function AdminPaymentsPage() {
       <Header screenTitle="Payments" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-3xl md:mx-auto">
-          <AdminPaymentsClient rows={rows} clubId={clubId} currency={currency} />
+          <AdminPaymentsClient rows={rows} clubId={clubId} currency={currency} clubTimezone={clubTimezone} />
         </div>
       </div>
     </>

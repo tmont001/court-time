@@ -6,11 +6,12 @@ import Link from "next/link";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import RefundPaymentSheet from "@/components/RefundPaymentSheet";
-import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { isPaymentOpenForRecording, toneClassName, type PaymentStateRow } from "@/lib/payments";
 import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
 import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
 import { formatMoney } from "@/lib/money";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import PaymentDetailSheet from "@/components/PaymentDetailSheet";
 
 export interface AdminPaymentDispute {
   status: string;
@@ -27,6 +28,11 @@ export interface AdminPaymentRow {
   identityName: string;
   dateLabel: string | null;
   href: string;
+  // Phase 34E-E — the underlying domain's OWN lifecycle state (e.g.
+  // "Booking Cancelled"), entirely independent from payment/financial
+  // status. Null when the domain row is active or has no cancellation
+  // concept at all (e.g. event_guest).
+  lifecycleLabel: string | null;
   // Phase 34E-B — how much of this payment's ONLINE (Stripe) money is
   // still refundable. Never derived from state.current_amount_paid_cents,
   // which nets manual money in too (locked decision 1).
@@ -56,17 +62,19 @@ const DOMAIN_LABEL: Record<AdminPaymentRow["domainType"], string> = {
 type Filter = "outstanding" | "all";
 
 export default function AdminPaymentsClient({
-  rows, clubId, currency,
+  rows, clubId, currency, clubTimezone,
 }: {
   rows: AdminPaymentRow[];
   clubId: string;
   currency: string;
+  clubTimezone: string;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("outstanding");
   const [query, setQuery]   = useState("");
   const [recordTarget, setRecordTarget] = useState<AdminPaymentRow | null>(null);
   const [refundTarget, setRefundTarget] = useState<AdminPaymentRow | null>(null);
+  const [detailTarget, setDetailTarget] = useState<AdminPaymentRow | null>(null);
 
   const filtered = useMemo(() => {
     // Locked semantics (runtime QA correction) — Outstanding means
@@ -149,8 +157,24 @@ export default function AdminPaymentsClient({
                 <DisputeBadge dispute={row.dispute} />
               )}
               <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <PaymentStateBadge state={row.state} />
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Phase 34E-E — domain lifecycle (e.g. "Booking
+                      Cancelled") is always its own, visually distinct
+                      pill, never merged into the financial-status badge. */}
+                  {row.lifecycleLabel && (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                      {row.lifecycleLabel}
+                    </span>
+                  )}
+                  <PaymentStateBadge state={row.state} />
+                </div>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => setDetailTarget(row)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100"
+                  >
+                    Details
+                  </button>
                   {isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
                     <button
                       onClick={() => setRefundTarget(row)}
@@ -196,6 +220,21 @@ export default function AdminPaymentsClient({
           title={refundTarget.identityName}
           onClose={() => setRefundTarget(null)}
           onRefunded={() => { setRefundTarget(null); router.refresh(); }}
+        />
+      )}
+
+      {detailTarget && (
+        <PaymentDetailSheet
+          row={detailTarget}
+          clubId={clubId}
+          currency={currency}
+          clubTimezone={clubTimezone}
+          onClose={() => setDetailTarget(null)}
+          // Detail is read-only — any actual mutation hands off to the
+          // SAME existing 34E-B/34C sheets, closing Detail first so only
+          // one sheet is ever open at a time.
+          onRequestRefund={() => { setRefundTarget(detailTarget); setDetailTarget(null); }}
+          onRequestRecordPayment={() => { setRecordTarget(detailTarget); setDetailTarget(null); }}
         />
       )}
     </div>
