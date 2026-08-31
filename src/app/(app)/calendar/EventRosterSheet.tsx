@@ -459,7 +459,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
           )}
 
           {!loading && !error && (
-            <>
+            <div className="ct-content-settle">
               {/* Read-only notice — shown for archived events */}
               {readOnly && (
                 <div className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/60 px-3 py-2">
@@ -1099,7 +1099,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                   )}
                 </>
               )}
-            </>
+            </div>
           )}
 
     </ResponsiveSheet>

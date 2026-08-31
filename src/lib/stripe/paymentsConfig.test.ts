@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLessonCheckoutIdempotencyKey,
+  buildLessonCheckoutReturnUrls,
+  buildLessonCheckoutSessionParams,
   buildReservationCheckoutIdempotencyKey,
   buildReservationCheckoutReturnUrls,
   buildReservationCheckoutSessionParams,
@@ -167,6 +170,111 @@ describe("isReservationPaymentEligibleForCheckout — the UI Pay Now gate (never
   it("fails closed for a missing row (no obligation exists at all)", () => {
     expect(isReservationPaymentEligibleForCheckout(null)).toBe(false);
     expect(isReservationPaymentEligibleForCheckout(undefined)).toBe(false);
+  });
+});
+
+// Phase 34F-A — lesson_request checkout builders. isReservationPaymentEligible
+// ForCheckout, computeReservationCheckoutExpiresAt, and remainingCents are
+// reused UNCHANGED for lessons (already fully domain-agnostic, see their own
+// describe blocks above) — only the genuinely domain-specific string-
+// building below gets its own lesson sibling.
+
+describe("buildLessonCheckoutIdempotencyKey — stable server-derived key, distinct namespace from reservations", () => {
+  it("is deterministic for the same attempt id", () => {
+    const a = buildLessonCheckoutIdempotencyKey("attempt-1");
+    const b = buildLessonCheckoutIdempotencyKey("attempt-1");
+    expect(a).toBe(b);
+  });
+
+  it("differs between attempts", () => {
+    const a = buildLessonCheckoutIdempotencyKey("attempt-1");
+    const b = buildLessonCheckoutIdempotencyKey("attempt-2");
+    expect(a).not.toBe(b);
+  });
+
+  it("never collides with a reservation attempt's own key for the same attempt id — distinct Stripe idempotency namespace", () => {
+    const lessonKey = buildLessonCheckoutIdempotencyKey("shared-id");
+    const reservationKey = buildReservationCheckoutIdempotencyKey("shared-id");
+    expect(lessonKey).not.toBe(reservationKey);
+  });
+});
+
+describe("buildLessonCheckoutSessionParams — same locked direct-charge Checkout model as reservations, lesson-flavored identity", () => {
+  const params = buildLessonCheckoutSessionParams({
+    amountCents: 8000,
+    currency: "USD",
+    successUrl: "https://example.com/my-schedule?tab=lessons&checkout=success&lesson=l1",
+    cancelUrl: "https://example.com/my-schedule?tab=lessons&checkout=cancel&lesson=l1",
+    lessonRequestId: "l1",
+    paymentId: "p1",
+    attemptId: "a1",
+    expiresAt: 1700003600,
+  });
+
+  it("uses mode=payment — never subscription/setup", () => {
+    expect(params.mode).toBe("payment");
+  });
+
+  it("restricts payment_method_types to cards only — no Elements, no async payment methods", () => {
+    expect(params.payment_method_types).toEqual(["card"]);
+  });
+
+  it("never sets application_fee_amount, on_behalf_of, or a customer — no destination charge, no per-transaction fee, no saved payment method", () => {
+    expect(params).not.toHaveProperty("application_fee_amount");
+    expect(params).not.toHaveProperty("on_behalf_of");
+    expect(params).not.toHaveProperty("customer");
+    expect(params).not.toHaveProperty("payment_intent_data");
+  });
+
+  it("passes the exact amount/currency through as the line item's price_data — never re-derives or rounds", () => {
+    expect(params.line_items[0].price_data.unit_amount).toBe(8000);
+    expect(params.line_items[0].price_data.currency).toBe("usd");
+    expect(params.line_items[0].quantity).toBe(1);
+  });
+
+  it("uses a lesson-specific product name, distinct from the reservation line item's own wording", () => {
+    expect(params.line_items[0].price_data.product_data.name).toBe("Tennis lesson payment");
+    const reservationParams = buildReservationCheckoutSessionParams({
+      amountCents: 8000,
+      currency: "USD",
+      successUrl: "x",
+      cancelUrl: "x",
+      reservationId: "r1",
+      paymentId: "p1",
+      attemptId: "a1",
+      expiresAt: 1700003600,
+    });
+    expect(params.line_items[0].price_data.product_data.name).not.toBe(
+      reservationParams.line_items[0].price_data.product_data.name,
+    );
+  });
+
+  it("carries only internal identifiers in metadata, keyed lesson_request_id (never reservation_id) — never PII, never treated as authorization", () => {
+    expect(params.metadata).toEqual({ payment_id: "p1", lesson_request_id: "l1", attempt_id: "a1" });
+  });
+
+  it("uses client_reference_id = lessonRequestId", () => {
+    expect(params.client_reference_id).toBe("l1");
+  });
+
+  it("uses the exact success/cancel URLs passed in — never invents its own", () => {
+    expect(params.success_url).toBe("https://example.com/my-schedule?tab=lessons&checkout=success&lesson=l1");
+    expect(params.cancel_url).toBe("https://example.com/my-schedule?tab=lessons&checkout=cancel&lesson=l1");
+  });
+});
+
+describe("buildLessonCheckoutReturnUrls — server-derived from a trusted base URL, distinct destination from reservations", () => {
+  it("builds /my-schedule?tab=lessons destinations carrying the lesson request id, distinct success vs cancel", () => {
+    const { successUrl, cancelUrl } = buildLessonCheckoutReturnUrls("https://court-time.app", "lesson-123");
+    expect(successUrl).toBe("https://court-time.app/my-schedule?tab=lessons&checkout=success&lesson=lesson-123");
+    expect(cancelUrl).toBe("https://court-time.app/my-schedule?tab=lessons&checkout=cancel&lesson=lesson-123");
+    expect(successUrl).not.toBe(cancelUrl);
+  });
+
+  it("never targets /calendar — a lesson payment must never return the Member to the reservation surface", () => {
+    const { successUrl, cancelUrl } = buildLessonCheckoutReturnUrls("https://court-time.app", "lesson-123");
+    expect(successUrl).not.toContain("/calendar");
+    expect(cancelUrl).not.toContain("/calendar");
   });
 });
 

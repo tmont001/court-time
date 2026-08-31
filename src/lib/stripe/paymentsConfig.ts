@@ -135,6 +135,83 @@ export function buildReservationCheckoutReturnUrls(
   };
 }
 
+// Phase 34F-A — Lesson Online Payment Expansion. The reservation Checkout
+// machinery above (open_payment_checkout_attempt, process_stripe_payment_
+// event, and this file's own computeReservationCheckoutExpiresAt/
+// remainingCents/isReservationPaymentEligibleForCheckout) is domain-
+// agnostic already and reused UNCHANGED for lessons — see
+// lessonCheckoutActions.ts. Only the pure string-building below (Stripe
+// line-item product name, metadata keys, return-URL destination) is
+// genuinely domain-specific and gets its own small lesson sibling here,
+// exactly mirroring the reservation functions' own shape.
+
+export function buildLessonCheckoutIdempotencyKey(attemptId: string): string {
+  return `lesson-checkout:${attemptId}`;
+}
+
+export interface LessonCheckoutSessionInput {
+  amountCents: number;
+  // ISO 4217, uppercase (matches payments.currency's own CHECK, 0143).
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  lessonRequestId: string;
+  paymentId: string;
+  attemptId: string;
+  // Epoch seconds — see computeReservationCheckoutExpiresAt above (reused
+  // unchanged for lessons; the expiry math has no domain-specific input).
+  expiresAt: number;
+}
+
+// Pure parameter construction — no Stripe API call. Mirrors
+// buildReservationCheckoutSessionParams exactly, differing only in the
+// Stripe-hosted product name and the metadata/client_reference_id identity
+// key (lesson_request_id instead of reservation_id).
+export function buildLessonCheckoutSessionParams(input: LessonCheckoutSessionInput) {
+  return {
+    mode: "payment" as const,
+    payment_method_types: ["card"] as Array<"card">,
+    line_items: [
+      {
+        price_data: {
+          currency: input.currency.toLowerCase(),
+          product_data: { name: "Tennis lesson payment" },
+          unit_amount: input.amountCents,
+        },
+        quantity: 1,
+      },
+    ],
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    expires_at: input.expiresAt,
+    client_reference_id: input.lessonRequestId,
+    // Observability only, never authorization — the webhook RPC
+    // (process_stripe_payment_event) never reads metadata; it matches
+    // purely on the verified Session id against the stored attempt row.
+    metadata: {
+      payment_id: input.paymentId,
+      lesson_request_id: input.lessonRequestId,
+      attempt_id: input.attemptId,
+    },
+  };
+}
+
+// Server-side success/cancel destinations — never client-influenced. Both
+// return the browser to /my-schedule?tab=lessons (the only place a Member
+// sees their own lesson payment state today), mirroring
+// buildReservationCheckoutReturnUrls's own reasoning exactly. No date-jump
+// parameter is needed here (unlike /calendar): the lessons tab is a flat
+// request list, not date-navigated.
+export function buildLessonCheckoutReturnUrls(
+  siteUrl: string,
+  lessonRequestId: string,
+): { successUrl: string; cancelUrl: string } {
+  return {
+    successUrl: `${siteUrl}/my-schedule?tab=lessons&checkout=success&lesson=${lessonRequestId}`,
+    cancelUrl: `${siteUrl}/my-schedule?tab=lessons&checkout=cancel&lesson=${lessonRequestId}`,
+  };
+}
+
 export interface ReservationPaymentEligibility {
   paymentModeAtCreation: string;
   status: string;

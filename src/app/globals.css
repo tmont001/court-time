@@ -480,13 +480,19 @@
 }
 
 /* ── Sheet entrance animation ──────────────────────────────────────────── */
-/* Applied to fixed bottom sheets (booking, event, block, slot action).
-   Slides up 16px + fades in over 180ms. Exit is skipped — components
+/* Slides up 16px + fades in over 180ms. Exit is skipped — components
    unmount immediately, which avoids needing exit-animation state.
    fill-mode: both applies the `from` state (opacity:0) before the first
-   paint, so there is no flash. ResponsiveSheet's draggable-mode drag logic
-   overrides style.transform with inline styles during gestures — inline
-   styles win over animation fills in the cascade, so there is no conflict. */
+   paint, so there is no flash.
+   Not currently applied by any consumer (ResponsiveSheet uses the
+   ct-sheet-modal-enter / ct-sheet-panel-enter variants below instead) —
+   kept for any future fixed-sheet use. Note for whoever reaches for it
+   next to a draggable element: a CSS animation's fill-mode both/forwards
+   OUTRANKS a same-element inline style for the animated property (CSS
+   animations sit above author-normal/inline in the cascade), so it must
+   never share an element with code that writes style.transform directly
+   (e.g. a drag gesture) — see the ResponsiveSheet.tsx header comment for
+   the two-layer split that avoids this. */
 @keyframes ct-sheet-enter-keyframes {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0);    }
@@ -524,6 +530,73 @@
   }
 }
 
+/* ── ResponsiveSheet hydration-stable responsive variants ───────────────── */
+/* Runtime QA — ResponsiveSheet used to pick its ENTIRE structural tree
+   (mobile bottom sheet vs desktop modal/panel) from a `useState` seeded by
+   `window.matchMedia` — a value that differs between the server (no
+   `window`, always "mobile") and the client's own first render (real
+   viewport, possibly "desktop"), causing a hydration mismatch and a full
+   client-side tree regeneration on cold desktop loads. The fix: one
+   hydration-stable DOM tree per variant, with plain CSS media queries
+   (matching Tailwind's own `md:` breakpoint, 768px) choosing the visual
+   presentation — never React state. These four classes are the two
+   genuinely non-Tailwind-expressible pieces of that per-breakpoint
+   variance (a safe-area-aware calc()/env() max-height, and switching
+   between two entirely different @keyframes animations) — everything else
+   uses plain `md:` utility classes directly in ResponsiveSheet.tsx.
+
+   Reuses the EXISTING ct-sheet-enter-keyframes / ct-modal-enter-keyframes /
+   ct-panel-enter-keyframes @keyframes above verbatim — only the class names
+   that select which keyframes apply, per breakpoint, are new. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-sheet-modal-enter {
+    animation: ct-sheet-enter-keyframes 180ms ease-out both;
+  }
+  @media (min-width: 768px) {
+    .ct-sheet-modal-enter {
+      animation: ct-modal-enter-keyframes 150ms ease-out both;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ct-sheet-panel-enter {
+    animation: ct-sheet-enter-keyframes 180ms ease-out both;
+  }
+  @media (min-width: 768px) {
+    .ct-sheet-panel-enter {
+      animation: ct-panel-enter-keyframes 180ms ease-out both;
+    }
+  }
+}
+
+/* Mobile: capped to the safe-area-aware viewport height (matches the old
+   inline SHEET_MAX_HEIGHT constant exactly). Desktop: the centered modal's
+   own 85vh cap — the same value ResponsiveSheet's desktop-modal branch
+   already used via the max-h-[85vh] Tailwind class. */
+.ct-sheet-modal-max-h {
+  max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 1.5rem);
+}
+@media (min-width: 768px) {
+  .ct-sheet-modal-max-h {
+    max-height: 85vh;
+  }
+}
+
+/* Mobile: same safe-area-aware cap as the modal variant. Desktop: no cap —
+   the panel is a full-height right-edge sidebar, sized by the flex wrapper's
+   own items-stretch (see ResponsiveSheet.tsx), matching the original
+   fixed right-0 top-0 bottom-0 (implicitly full-height) panel exactly. */
+.ct-sheet-panel-max-h {
+  max-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 1.5rem);
+}
+@media (min-width: 768px) {
+  .ct-sheet-panel-max-h {
+    max-height: none;
+  }
+}
+
 /* ── Calendar item settle-in (Phase 33G4) ──────────────────────────────── */
 /* Applied only to a Calendar reservation/event block that a mutation-
    triggered refetch (Create/Cancel/Edit) just added or changed — never to
@@ -541,6 +614,39 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .ct-calendar-item-settle {
+    animation: ct-calendar-item-settle-keyframes 180ms ease-out both;
+  }
+}
+
+/* ── Sheet content-swap settle-in ──────────────────────────────────────── */
+/* Runtime QA (34F-A round 2) — two related but distinct sources of the same
+   underlying defect, both inside a ResponsiveSheet whose panel is content-
+   sized (not fixed-height) and either flex-centered (desktop modal),
+   bottom-anchored (mobile), or full-height-stretched (desktop panel):
+   1) RequestLessonSheet / CreateEventSheet each hold one persistent
+      ResponsiveSheet across their whole wizard, sibling-conditionally
+      rendering exactly one step's content div at a time. Switching to a
+      step whose content is a meaningfully different height reflows the
+      panel instantly, with no transition — most noticeable between the
+      most size-mismatched step pair in each wizard (lesson: Choose Pro's
+      variable-length list vs. Duration's compact form; event: Date & Time's
+      tall multi-section form vs. Courts' short pill list).
+   2) EventRosterSheet (variant="panel") starts in a small loading state and
+      swaps to the full roster once its fetch resolves, typically while the
+      panel's own entrance animation is still playing or just finished —
+      an equally abrupt, untransitioned content-height change.
+   This class does not animate the underlying height change itself
+   (animating between two `auto` heights needs JS-measured before/after
+   heights, which is a heavier fix than either defect warrants) — it only
+   softens the accompanying content swap into a settle rather than a snap.
+   Opacity-only, reusing ct-calendar-item-settle-keyframes verbatim, for the
+   same reason that treatment stays opacity-only: no transform/positional
+   movement to avoid compounding the reflow that's already happening. In
+   both use sites the swapped-in content is a genuinely new DOM node
+   (conditional siblings / conditional fragments, never a reused node), so
+   the animation replays correctly with no key prop needed. */
+@media (prefers-reduced-motion: no-preference) {
+  .ct-content-settle {
     animation: ct-calendar-item-settle-keyframes 180ms ease-out both;
   }
 }

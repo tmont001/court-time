@@ -326,7 +326,7 @@ export default function CreateEventSheet({
     >
           {/* ── Step 1: Event type selection ─────────────────────────────── */}
           {step === 1 && (
-            <div className="space-y-3 pt-1">
+            <div className="ct-content-settle space-y-3 pt-1">
               {loadingTypes ? (
                 <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
               ) : typesError ? (
@@ -355,7 +355,7 @@ export default function CreateEventSheet({
 
           {/* ── Step 2: Title + date/time/duration ───────────────────────── */}
           {step === 2 && selectedType && (
-            <div className="pt-1 space-y-5">
+            <div className="ct-content-settle pt-1 space-y-5">
 
               {/* Title */}
               <div>
@@ -499,7 +499,7 @@ export default function CreateEventSheet({
 
           {/* ── Step 3: Court selection ───────────────────────────────────── */}
           {step === 3 && (
-            <div className="pt-1 space-y-5">
+            <div className="ct-content-settle pt-1 space-y-5">
               <div>
                 <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Select Courts</label>
                 <div className="flex flex-wrap gap-2 pt-2" role="group" aria-label="Select Courts">
@@ -549,7 +549,7 @@ export default function CreateEventSheet({
 
           {/* ── Step 4: Capacity + confirm ────────────────────────────────── */}
           {step === 4 && selectedType && (
-            <div className="pt-1 space-y-5">
+            <div className="ct-content-settle pt-1 space-y-5">
 
               {/* Capacity */}
               <div>

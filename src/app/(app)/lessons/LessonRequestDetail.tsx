@@ -13,8 +13,10 @@ import {
   type LessonRequestRow,
 } from "./actions";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
-import type { PaymentStateRow } from "@/lib/payments";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 import { formatMemberPrice } from "@/lib/money";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { getLessonCheckoutEligibilityAction, createLessonCheckoutAction } from "./lessonCheckoutActions";
 
 interface Props {
   request:    LessonRequestRow;
@@ -74,6 +76,43 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
     })();
     return () => { cancelled = true; };
   }, [request.id, request.status]);
+
+  // Phase 34F-A — whether THIS lesson's obligation was created under
+  // court_time_payments (never re-derived from the club's CURRENT payment
+  // mode, which may have changed since). Purely a UI-gating signal for
+  // whether Pay Now renders at all — createLessonCheckoutAction always
+  // re-derives eligibility fresh itself and never trusts this flag.
+  // Mirrors ReservationDetailSheet's own identical checkoutEligible
+  // pattern.
+  const [checkoutEligible, setCheckoutEligible] = useState(false);
+  const [checkoutLoading, setCheckoutLoading]   = useState(false);
+  const [checkoutError, setCheckoutError]       = useState<string | null>(null);
+
+  useEffect(() => {
+    if (request.status !== "confirmed") {
+      setCheckoutEligible(false);
+      return;
+    }
+    getLessonCheckoutEligibilityAction(request.id, clubId).then(({ eligible }) => {
+      setCheckoutEligible(eligible);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request.id, request.status]);
+
+  async function handlePayNow() {
+    setCheckoutLoading(true);
+    setCheckoutError(null);
+    const result = await createLessonCheckoutAction(request.id, clubId);
+    if (result.error) {
+      setCheckoutError(result.error);
+      setCheckoutLoading(false);
+      return;
+    }
+    if (result.url) {
+      // External Stripe-hosted destination — a plain browser navigation.
+      window.location.href = result.url;
+    }
+  }
 
   // Phase 34C — the already-snapshotted total price for this Lesson, at
   // the commitment point (proposed = deciding whether to accept; confirmed
@@ -229,10 +268,26 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
         </div>
       )}
 
-      {/* Payment state — Phase 34C, own state only, read-only. */}
+      {/* Payment state — Phase 34C, own state only, read-only. Pay Now
+          (Phase 34F-A) is the Member's own action — mirrors
+          ReservationDetailSheet's identical onMemberCancel-analogous
+          pattern; this Member never sees Admin's Record Payment control,
+          which lives only on /admin/payments and admin/lessons. */}
       {request.status === "confirmed" && paymentState && (
-        <PaymentStateBadge state={paymentState} className="mb-4" />
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <PaymentStateBadge state={paymentState} />
+          {checkoutEligible && isPaymentOpenForRecording(paymentState) && (
+            <button
+              disabled={checkoutLoading}
+              onClick={handlePayNow}
+              className={`${ACTION_BUTTON_PRIMARY_COMPACT_TOUCH} disabled:opacity-50`}
+            >
+              {checkoutLoading ? "Redirecting…" : "Pay Now"}
+            </button>
+          )}
+        </div>
       )}
+      {checkoutError && <p className="mb-4 text-xs text-red-500">{checkoutError}</p>}
 
       {/* Decline reason */}
       {request.status === "declined" && request.decline_reason && (

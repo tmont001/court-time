@@ -60,6 +60,12 @@ interface Props {
    * start a NEW lesson request. Resolving an existing request/proposal
    * (RequestCard -> LessonRequestDetail) is unaffected. */
   canRequestNew:   boolean;
+  /** Phase 34F-A: set when the Member just returned from a successful
+   * Stripe Checkout (?checkout=success&lesson=<id>) — reopens that
+   * request's own detail sheet so authoritative, freshly-fetched payment
+   * state is immediately visible. Mirrors CalendarShell's identical
+   * initialCheckoutReservationId handling. */
+  initialCheckoutLessonId?: string | null;
 }
 
 function statusBadge(status: string) {
@@ -98,10 +104,35 @@ export default function LessonsClient({
   prosError,
   autoOpen,
   canRequestNew,
+  initialCheckoutLessonId,
 }: Props) {
   const router = useRouter();
   const [showRequest, setShowRequest] = useState(autoOpen);
-  const [selected, setSelected]       = useState<LessonRequestRow | null>(null);
+  const [selected, setSelected]       = useState<LessonRequestRow | null>(
+    initialCheckoutLessonId ? initialRequests.find(r => r.id === initialCheckoutLessonId) ?? null : null,
+  );
+
+  // Phase 34F-A (flicker regression fix) — strip ?checkout=&lesson= from
+  // the URL once the detail sheet has been opened above, so a later
+  // browser refresh never reopens it. Deliberately uses the raw History
+  // API (window.history.replaceState), NOT next/navigation's router.replace:
+  // /my-schedule's own page.tsx reads searchParams directly (tab/request/
+  // checkout/lesson), so router.replace with a changed search-param set
+  // forces Next.js to re-render/re-fetch the ENTIRE Server Component tree
+  // for this route — and because my-schedule/loading.tsx exists, that
+  // second, client-triggered re-fetch (milliseconds after the genuine
+  // hard-navigation redirect from Stripe already rendered the page once)
+  // visibly flashed the skeleton fallback a second time. history.
+  // replaceState updates the URL bar with zero Next.js navigation/
+  // re-render — the sheet already shows freshly-fetched payment state via
+  // its own fetchPaymentStates effect, so no re-fetch is needed here at
+  // all. router.replace remains correct for the ?request=1 case below
+  // (pre-existing, unrelated to this regression, out of scope here).
+  useEffect(() => {
+    if (!initialCheckoutLessonId) return;
+    window.history.replaceState(null, "", "/my-schedule?tab=lessons");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Phase 34C — the Member's own read-only payment state per confirmed
   // request, via the sanitized batched read boundary. Batched once for

@@ -398,7 +398,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
         )}
 
         {!loading && !error && (
-          <>
+          <div className="ct-content-settle">
             {/* ── Add Member ──────────────────────────────────────────── */}
             <div className="mb-5">
               {!addMemberOpen ? (
@@ -761,7 +761,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                 )}
               </>
             )}
-          </>
+          </div>
         )}
     </ResponsiveSheet>
 

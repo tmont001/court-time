@@ -687,6 +687,7 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             p_ends_at:              endsAt.toISOString(),
             p_court_id:             courtId || null,
             member_id:              request.member_id,
+            expectedClubId:         clubId,
           }))}
           onCancel={() => { setMode(null); setError(""); }}
         />

@@ -3627,6 +3627,107 @@ export type Database = {
           payment_mode_at_creation: string;
         }[];
       };
+      get_lesson_payment_for_checkout: {
+        // Phase 34F-A (rewritten after external review). authenticated-
+        // grant, pure read — the lesson_request sibling of get_
+        // reservation_payment_for_checkout above, hardcoded to domain_type
+        // = 'lesson_request'. Requires the caller's CURRENT role to be
+        // exactly 'member' AND the lesson_request's CURRENT status to be
+        // exactly 'confirmed' (server-derived, never trusted from the
+        // client) before returning a row at all — a cancelled/declined/
+        // withdrawn/pending/proposed lesson is structurally unreachable.
+        // Unlike get_reservation_payment_for_checkout, this DOES check
+        // lifecycle status: Court Time has no cancellation-fee model, so a
+        // cancelled lesson's (still-preserved, still Admin-resolvable)
+        // obligation must not remain Member-Checkout-payable. Also
+        // verifies the lesson_request's own club_id matches the resolved
+        // payment's club_id. Independently re-derives the caller's own
+        // roster identity via current_user_roster_member_id(), never
+        // trusting a client-supplied identity.
+        Args: { p_request_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      open_lesson_payment_checkout_attempt: {
+        // Phase 34F-A (external review correction, BLOCKER 1). service_
+        // role only. Atomic lesson-aware wrapper around open_payment_
+        // checkout_attempt below — closes the TOCTOU race between get_
+        // lesson_payment_for_checkout's own read and this, the actual
+        // attempt-opening step. Locks the lesson_requests row FIRST,
+        // re-verifies status = 'confirmed' UNDER that lock (raises
+        // lesson_not_found / lesson_not_confirmed otherwise), resolves the
+        // current payment_id fresh, then delegates entirely to open_
+        // payment_checkout_attempt for everything else — never duplicates
+        // that function's own algorithm. Same Returns shape.
+        Args: {
+          p_request_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_lesson_checkout_attempt_and_open_fresh: {
+        // Phase 34F-A (external review correction, BLOCKER 1). service_
+        // role only. Atomic lesson-aware wrapper around supersede_
+        // checkout_attempt_and_open_fresh below — the SAME race closed at
+        // the primary attempt-open call site (open_lesson_payment_
+        // checkout_attempt above) exists identically here: the out-of-
+        // process Stripe round-trip between the two calls cannot hold a DB
+        // lock. Locks the lesson_requests row, re-verifies status =
+        // 'confirmed', resolves payment_id fresh, then delegates entirely
+        // to supersede_checkout_attempt_and_open_fresh. Same Returns
+        // shape.
+        Args: {
+          p_request_id:        string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
       open_payment_checkout_attempt: {
         // Phase 34D-D1 (correction round 4). service_role only.
         // Re-derives amount owed and eligibility fresh from the payments
