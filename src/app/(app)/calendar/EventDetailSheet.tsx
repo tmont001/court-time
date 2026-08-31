@@ -12,6 +12,11 @@ import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import PriceSummary from "@/components/PriceSummary";
 import EventJoinConfirmModal from "@/components/EventJoinConfirmModal";
+import PaymentStateBadge from "@/components/PaymentStateBadge";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { getEventCheckoutEligibilityAction, createEventCheckoutAction } from "./eventCheckoutActions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─
 
@@ -30,6 +35,16 @@ interface EventParticipant {
   role: string;
   status: string;
   offer_expires_at?: string | null;
+  // Phase 34F-B: the event_participants row's own id — the domain_id
+  // needed to read this participant's payment state via fetchPaymentStates
+  // ("event_participant", [id]). Optional, matching offer_expires_at's own
+  // existing optionality immediately above: EventRosterSheet's onRosterCha
+  // nge callback (RosterParticipantRow, get_event_roster's own return
+  // shape) does not carry either field, an existing, pre-34F-B gap this
+  // migration does not widen — the payment-state effect below simply skips
+  // itself when id is unavailable, exactly like the offer-expiry UI
+  // already tolerates a missing offer_expires_at after a roster refresh.
+  id?: string;
 }
 
 interface EventWithDetails {
@@ -198,6 +213,22 @@ export default function EventDetailSheet({
   // UX gate only, same as /admin/events).
   const [confirmingMakeAdminManaged, setConfirmingMakeAdminManaged] = useState(false);
 
+  // Phase 34F-B — own read-only payment state via the sanitized batched
+  // read boundary, mirroring LessonRequestDetail's identical pattern
+  // exactly. No Record Payment here — Member never mutates payments; that
+  // control lives only on /admin/payments and the roster's own Admin
+  // tools. Populated below once myPart (the caller's own participant row)
+  // is resolved and confirmed.
+  const [paymentState, setPaymentState] = useState<PaymentStateRow | null>(null);
+  // Whether THIS participant's obligation was created under
+  // court_time_payments (never re-derived from the club's CURRENT payment
+  // mode). Purely a UI-gating signal for whether Pay Now renders at all —
+  // createEventCheckoutAction always re-derives eligibility fresh itself
+  // and never trusts this flag.
+  const [checkoutEligible, setCheckoutEligible] = useState(false);
+  const [checkoutLoading, setCheckoutLoading]   = useState(false);
+  const [checkoutError, setCheckoutError]       = useState<string | null>(null);
+
   // ── Derived values ────────────────────────────────────────────────────────
 
   // Only confirmed participants with role = 'participant' consume capacity.
@@ -243,6 +274,13 @@ export default function EventDetailSheet({
   const isHost       = myPart?.role === "host";
   const isWaitlisted = myPart?.status === "waitlisted";
   const isOffered    = myPart?.status === "offered";
+  // Phase 34F-B — eligibility point per the locked audit model: confirmed
+  // participant AND the parent Event still scheduled (cancel_event does
+  // NOT cascade into event_participants.status — a cancelled Event's
+  // confirmed participant rows are intentionally preserved as historical,
+  // so event.status must be checked independently here, exactly like
+  // eventParticipantLifecycleLabel already does on /admin/payments).
+  const isConfirmed  = myPart?.status === "confirmed" && event.status === "scheduled";
 
   // Offer expiry (client-side). Evaluated once per render; no polling needed
   // because the sheet closes/re-opens on every action refresh.
@@ -384,6 +422,51 @@ export default function EventDetailSheet({
     }
     onRefresh();
     onClose();
+  }
+
+  // Phase 34F-B — payment state + Checkout eligibility, mirroring
+  // LessonRequestDetail's identical two-effect pattern exactly. Re-runs
+  // whenever the caller's own participant status or the event's own
+  // status changes (e.g. accepting a waitlist offer, or the event being
+  // cancelled while this sheet is open).
+  useEffect(() => {
+    if (!isConfirmed || !myPart?.id) {
+      setPaymentState(null);
+      return;
+    }
+    const participantId = myPart.id;
+    let cancelled = false;
+    (async () => {
+      const { data } = await fetchPaymentStates("event_participant", [participantId]);
+      if (!cancelled) setPaymentState(data?.[0] ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [isConfirmed, myPart?.id]);
+
+  useEffect(() => {
+    if (!isConfirmed) {
+      setCheckoutEligible(false);
+      return;
+    }
+    getEventCheckoutEligibilityAction(event.id, clubId).then(({ eligible }) => {
+      setCheckoutEligible(eligible);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id, isConfirmed]);
+
+  async function handlePayNow() {
+    setCheckoutLoading(true);
+    setCheckoutError(null);
+    const result = await createEventCheckoutAction(event.id, clubId, clubTimezone);
+    if (result.error) {
+      setCheckoutError(result.error);
+      setCheckoutLoading(false);
+      return;
+    }
+    if (result.url) {
+      // External Stripe-hosted destination — a plain browser navigation.
+      window.location.href = result.url;
+    }
   }
 
   async function handleToggleMemberJoinable() {
@@ -645,6 +728,31 @@ export default function EventDetailSheet({
             </button>
           </>
         )}
+
+        {/* Payment state — Phase 34F-B, own state only, read-only. Pay Now
+            is the Member's own action for their own confirmed registration
+            — mirrors LessonRequestDetail's identical pattern exactly; this
+            Member never sees Admin's Record Payment control, which lives
+            only on /admin/payments and this event's own roster Admin
+            tools. Renders only for the owning Member's own confirmed,
+            still-scheduled participation (isConfirmed already encodes
+            both) — never for a waitlisted/offered participant, another
+            Member, a guest, or an Admin/Staff/Pro viewing this sheet. */}
+        {isConfirmed && paymentState && (
+          <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <PaymentStateBadge state={paymentState} />
+            {checkoutEligible && isPaymentOpenForRecording(paymentState) && (
+              <button
+                disabled={checkoutLoading}
+                onClick={handlePayNow}
+                className={`${ACTION_BUTTON_PRIMARY_COMPACT_TOUCH} disabled:opacity-50`}
+              >
+                {checkoutLoading ? "Redirecting…" : "Pay Now"}
+              </button>
+            )}
+          </div>
+        )}
+        {checkoutError && <p className="mt-2 text-xs text-red-500">{checkoutError}</p>}
 
         {/* Edit — admin-only, eligible events only */}
         {canEdit && (

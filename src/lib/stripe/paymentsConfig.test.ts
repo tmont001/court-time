@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEventCheckoutIdempotencyKey,
+  buildEventCheckoutReturnUrls,
+  buildEventCheckoutSessionParams,
   buildLessonCheckoutIdempotencyKey,
   buildLessonCheckoutReturnUrls,
   buildLessonCheckoutSessionParams,
@@ -275,6 +278,115 @@ describe("buildLessonCheckoutReturnUrls — server-derived from a trusted base U
     const { successUrl, cancelUrl } = buildLessonCheckoutReturnUrls("https://court-time.app", "lesson-123");
     expect(successUrl).not.toContain("/calendar");
     expect(cancelUrl).not.toContain("/calendar");
+  });
+});
+
+describe("buildEventCheckoutIdempotencyKey — stable server-derived key, distinct namespace from reservations/lessons", () => {
+  it("is deterministic for the same attempt id", () => {
+    const a = buildEventCheckoutIdempotencyKey("attempt-1");
+    const b = buildEventCheckoutIdempotencyKey("attempt-1");
+    expect(a).toBe(b);
+  });
+
+  it("differs for a different attempt id", () => {
+    const a = buildEventCheckoutIdempotencyKey("attempt-1");
+    const b = buildEventCheckoutIdempotencyKey("attempt-2");
+    expect(a).not.toBe(b);
+  });
+
+  it("differs from the reservation/lesson key for the SAME attempt id — no cross-domain idempotency collision", () => {
+    const eventKey = buildEventCheckoutIdempotencyKey("shared-id");
+    const reservationKey = buildReservationCheckoutIdempotencyKey("shared-id");
+    const lessonKey = buildLessonCheckoutIdempotencyKey("shared-id");
+    expect(eventKey).not.toBe(reservationKey);
+    expect(eventKey).not.toBe(lessonKey);
+  });
+});
+
+describe("buildEventCheckoutSessionParams — same locked direct-charge Checkout model as reservations/lessons, event-flavored identity, generic (non-title) product name", () => {
+  const params = buildEventCheckoutSessionParams({
+    amountCents: 5000,
+    currency: "USD",
+    successUrl: "https://example.com/calendar?checkout=success&event=e1",
+    cancelUrl: "https://example.com/calendar?checkout=cancel&event=e1",
+    eventId: "e1",
+    paymentId: "p1",
+    attemptId: "a1",
+    expiresAt: 1700003600,
+  });
+
+  it("uses mode=payment — never subscription/setup", () => {
+    expect(params.mode).toBe("payment");
+  });
+
+  it("restricts payment_method_types to cards only", () => {
+    expect(params.payment_method_types).toEqual(["card"]);
+  });
+
+  it("never sets application_fee_amount, on_behalf_of, or a customer", () => {
+    expect(params).not.toHaveProperty("application_fee_amount");
+    expect(params).not.toHaveProperty("on_behalf_of");
+    expect(params).not.toHaveProperty("customer");
+    expect(params).not.toHaveProperty("payment_intent_data");
+  });
+
+  it("passes the exact amount/currency through as the line item's price_data", () => {
+    expect(params.line_items[0].price_data.unit_amount).toBe(5000);
+    expect(params.line_items[0].price_data.currency).toBe("usd");
+    expect(params.line_items[0].quantity).toBe(1);
+  });
+
+  it("uses a generic, event-specific product name — NEVER the Event's own title. This is the exact evidence 0161's material-vs-non-material-edit decision relies on: since the Member never sees the title on the Stripe-hosted page, a title-only edit is not a payment-material change", () => {
+    expect(params.line_items[0].price_data.product_data.name).toBe("Event payment");
+    expect(params.line_items[0].price_data.product_data.name).not.toMatch(/Championship|Tournament|Clinic/);
+  });
+
+  it("uses a product name distinct from reservation/lesson's own wording", () => {
+    const reservationParams = buildReservationCheckoutSessionParams({
+      amountCents: 5000, currency: "USD", successUrl: "x", cancelUrl: "x",
+      reservationId: "r1", paymentId: "p1", attemptId: "a1", expiresAt: 1700003600,
+    });
+    const lessonParams = buildLessonCheckoutSessionParams({
+      amountCents: 5000, currency: "USD", successUrl: "x", cancelUrl: "x",
+      lessonRequestId: "l1", paymentId: "p1", attemptId: "a1", expiresAt: 1700003600,
+    });
+    expect(params.line_items[0].price_data.product_data.name).not.toBe(reservationParams.line_items[0].price_data.product_data.name);
+    expect(params.line_items[0].price_data.product_data.name).not.toBe(lessonParams.line_items[0].price_data.product_data.name);
+  });
+
+  it("carries only internal identifiers in metadata, keyed event_id (never reservation_id/lesson_request_id) — never PII, never treated as authorization", () => {
+    expect(params.metadata).toEqual({ payment_id: "p1", event_id: "e1", attempt_id: "a1" });
+  });
+
+  it("uses client_reference_id = eventId", () => {
+    expect(params.client_reference_id).toBe("e1");
+  });
+
+  it("uses the exact success/cancel URLs passed in — never invents its own", () => {
+    expect(params.success_url).toBe("https://example.com/calendar?checkout=success&event=e1");
+    expect(params.cancel_url).toBe("https://example.com/calendar?checkout=cancel&event=e1");
+  });
+});
+
+describe("buildEventCheckoutReturnUrls — server-derived from a trusted base URL, targets /calendar (the one canonical Event detail surface)", () => {
+  it("builds /calendar destinations carrying the event id, distinct success vs cancel", () => {
+    const { successUrl, cancelUrl } = buildEventCheckoutReturnUrls("https://court-time.app", "event-123", null);
+    expect(successUrl).toBe("https://court-time.app/calendar?checkout=success&event=event-123");
+    expect(cancelUrl).toBe("https://court-time.app/calendar?checkout=cancel&event=event-123");
+    expect(successUrl).not.toBe(cancelUrl);
+  });
+
+  it("includes an optional date= jump parameter when a date is supplied — /calendar is date-navigated, unlike /my-schedule's flat lesson list", () => {
+    const { successUrl, cancelUrl } = buildEventCheckoutReturnUrls("https://court-time.app", "event-123", "2026-03-05");
+    expect(successUrl).toBe("https://court-time.app/calendar?date=2026-03-05&checkout=success&event=event-123");
+    expect(cancelUrl).toBe("https://court-time.app/calendar?date=2026-03-05&checkout=cancel&event=event-123");
+  });
+
+  it("never targets /my-schedule or /events — an Event payment must return the Member to the one canonical calendar detail surface", () => {
+    const { successUrl, cancelUrl } = buildEventCheckoutReturnUrls("https://court-time.app", "event-123", null);
+    expect(successUrl).not.toContain("/my-schedule");
+    expect(successUrl).not.toContain("/events?");
+    expect(cancelUrl).not.toContain("/my-schedule");
   });
 });
 

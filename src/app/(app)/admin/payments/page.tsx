@@ -135,14 +135,14 @@ export default async function AdminPaymentsPage() {
   const [courtsResult, prosResult, eventsResult, programsResult] = await Promise.all([
     courtIds.length > 0 ? supabase.from("courts").select("id, name").in("id", courtIds) : Promise.resolve({ data: [] }),
     proIds.length > 0 ? supabase.from("profiles").select("id, first_name, last_name").in("id", proIds) : Promise.resolve({ data: [] }),
-    eventIds.length > 0 ? supabase.from("events").select("id, title, starts_at, status").in("id", eventIds) : Promise.resolve({ data: [] }),
+    eventIds.length > 0 ? supabase.from("events").select("id, title, starts_at, ends_at, status").in("id", eventIds) : Promise.resolve({ data: [] }),
     programIds.length > 0 ? supabase.from("programs").select("id, title, starts_on, status").in("id", programIds) : Promise.resolve({ data: [] }),
   ]);
 
   const courtName    = new Map((courtsResult.data ?? []).map((c: { id: string; name: string }) => [c.id, c.name]));
   const proName       = new Map((prosResult.data ?? []).map((p: { id: string; first_name: string | null; last_name: string | null }) =>
     [p.id, [p.first_name, p.last_name].filter(Boolean).join(" ") || "Pro"]));
-  const eventById     = new Map((eventsResult.data ?? []).map((e: { id: string; title: string; starts_at: string; status: string }) => [e.id, e]));
+  const eventById     = new Map((eventsResult.data ?? []).map((e: { id: string; title: string; starts_at: string; ends_at: string; status: string }) => [e.id, e]));
   const programById   = new Map((programsResult.data ?? []).map((p: { id: string; title: string; starts_on: string; status: string }) => [p.id, p]));
   const rosterName    = new Map(rosterMembers.map(m => [m.id, [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unknown"]));
   const reservationById       = new Map(reservations.map(r => [r.id, r]));
@@ -150,11 +150,6 @@ export default async function AdminPaymentsPage() {
   const eventParticipantById  = new Map(eventParticipants.map(p => [p.id, p]));
   const eventGuestById        = new Map(eventGuests.map(g => [g.id, g]));
   const programEnrollmentById = new Map(programEnrollments.map(e => [e.id, e]));
-
-  function shortDate(iso: string | null): string | null {
-    if (!iso) return null;
-    return new Date(iso).toLocaleDateString("en-US", { timeZone: clubTimezone, month: "short", day: "numeric" });
-  }
 
   // Phase 34E-B — the one sanctioned read path for "how much online
   // money is still Stripe-refundable" (payment_checkout_attempts and
@@ -230,6 +225,13 @@ export default async function AdminPaymentsPage() {
     // cancellation never mutates amount_paid_cents/status). Null when the
     // domain row is active or has no cancellation concept at all.
     let lifecycleLabel: string | null = null;
+    // Runtime QA polish — true only for a cancelled parent Event (event_
+    // participant/event_guest below); withholds the Record Payment action
+    // without touching any financial data. Default false for every other
+    // domain — this pass deliberately does not extend the same treatment
+    // to Reservation/Lesson/Program, which keep their existing behavior
+    // unchanged.
+    let recordPaymentBlocked = false;
 
     if (p.domain_type === "reservation") {
       const r = reservationById.get(p.domain_id);
@@ -250,9 +252,14 @@ export default async function AdminPaymentsPage() {
     } else if (p.domain_type === "event_participant") {
       const r = eventParticipantById.get(p.domain_id);
       if (!r) continue;
-      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; status: string } | undefined;
+      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; ends_at: string; status: string } | undefined;
       title = ev?.title ?? "Event";
-      dateLabel = ev ? shortDate(ev.starts_at) : null;
+      // Runtime QA polish — full start/end time range (club timezone),
+      // matching Reservation/Lesson's own dateTimeRangeLabel convention,
+      // not just a bare date. A cancelled Event still shows its originally
+      // scheduled time here — this is historical context, not a live
+      // schedule, and starts_at/ends_at are never mutated by cancellation.
+      dateLabel = ev ? dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone) : null;
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/calendar";
       // External review correction — the PARENT event's own status takes
@@ -260,12 +267,22 @@ export default async function AdminPaymentsPage() {
       // individual (confirmed/waitlisted) participant rows, which are
       // intentionally preserved as historical.
       lifecycleLabel = eventParticipantLifecycleLabel(ev?.status, r.status);
+      // Runtime QA polish — a cancelled parent Event must not encourage
+      // staff to collect the original Event fee: Unpaid/Partially Paid
+      // stays visible as historical financial truth (never waived/voided/
+      // mutated merely because the Event was cancelled), but Record
+      // Payment is withheld. Paid stays Paid and the existing Refund
+      // action is untouched by this flag — it only ever gates Record
+      // Payment eligibility, computed here (not via string-matching
+      // lifecycleLabel) so it stays correct even if that label's copy
+      // changes later.
+      recordPaymentBlocked = ev?.status === "cancelled";
     } else if (p.domain_type === "event_guest") {
       const r = eventGuestById.get(p.domain_id);
       if (!r) continue;
-      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; status: string } | undefined;
+      const ev = eventById.get(r.event_id) as { id: string; title: string; starts_at: string; ends_at: string; status: string } | undefined;
       title = ev?.title ?? "Event";
-      dateLabel = ev ? shortDate(ev.starts_at) : null;
+      dateLabel = ev ? dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone) : null;
       // Guest payer identity is intentionally unresolved to a roster
       // Member (see EventRosterSheet's own comment) — the guest's own
       // display_name is the correct identity here, not "Unknown".
@@ -275,6 +292,10 @@ export default async function AdminPaymentsPage() {
       // (audited) — the ONLY lifecycle signal available is the parent
       // event's own status. Never invents a guest-specific status.
       lifecycleLabel = eventGuestLifecycleLabel(ev?.status);
+      // Same reasoning as event_participant immediately above — a guest's
+      // manual-mode payment (the only mode a guest can ever have, 0149)
+      // must not encourage fee collection for a cancelled Event either.
+      recordPaymentBlocked = ev?.status === "cancelled";
     } else {
       const r = programEnrollmentById.get(p.domain_id);
       if (!r) continue;
@@ -303,6 +324,7 @@ export default async function AdminPaymentsPage() {
       dateLabel,
       href,
       lifecycleLabel,
+      recordPaymentBlocked,
       refundableCents: refundableByPaymentId.get(p.id) ?? 0,
       // Phase 34E-C — informational only; never derived from or fed back
       // into payments.amount_paid_cents/status.

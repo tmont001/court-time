@@ -33,6 +33,14 @@ export interface AdminPaymentRow {
   // status. Null when the domain row is active or has no cancellation
   // concept at all (e.g. event_guest).
   lifecycleLabel: string | null;
+  // Runtime QA polish — true only for a cancelled parent Event
+  // (event_participant/event_guest). Withholds the Record Payment action
+  // (list row + PaymentDetailSheet) without touching amount_due_cents/
+  // amount_paid_cents/status — Unpaid/Partially Paid remains visible as
+  // historical financial truth, and Refund (for an already-Paid payment)
+  // is completely unaffected by this flag. Always false for every other
+  // domain in this pass.
+  recordPaymentBlocked: boolean;
   // Phase 34E-B — how much of this payment's ONLINE (Stripe) money is
   // still refundable. Never derived from state.current_amount_paid_cents,
   // which nets manual money in too (locked decision 1).
@@ -183,7 +191,7 @@ export default function AdminPaymentsClient({
                       Refund
                     </button>
                   )}
-                  {isPaymentOpenForRecording(row.state) && (
+                  {isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (
                     <button
                       onClick={() => setRecordTarget(row)}
                       className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}

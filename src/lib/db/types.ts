@@ -1852,6 +1852,50 @@ export type Database = {
           updated_at: string;
         };
       };
+      create_event_with_price_override: {
+        // Phase 34F-B (pre-commit correction). Admin-only, authenticated
+        // grant, service-role NOT required (unlike the Checkout attempt
+        // wrappers — this never touches Stripe/payment_checkout_attempts,
+        // only events/audit_log, matching create_event's/set_event_price_
+        // override's own authenticated-grant convention). Atomically
+        // composes the existing, unmodified create_event and
+        // set_event_price_override inside ONE transaction — see the
+        // migration's own header for the full race this closes.
+        // p_price_amount_cents is nullable: null = explicit "no price"
+        // override, 0 = explicit Free, positive = custom price. "Use the
+        // Event Type default" is a DIFFERENT path entirely (plain
+        // create_event, no override call at all) — never expressed
+        // through this function.
+        Args: {
+          p_event_type_id: string;
+          p_title: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_court_ids: string[];
+          p_price_amount_cents: number | null;
+          p_description?: string | null;
+          p_capacity?: number | null;
+          p_notes?: string | null;
+          p_member_joinable?: boolean;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count: number;
+          status: string;
+          created_by: string;
+          member_joinable: boolean;
+          price_amount_cents: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       join_event: {
         Args: { p_event_id: string };
         Returns: {
@@ -3727,6 +3771,117 @@ export type Database = {
           created_at:                 string;
           updated_at:                 string;
         }[];
+      };
+      get_event_payment_for_checkout: {
+        // Phase 34F-B. authenticated-grant, pure read — the event_
+        // participant sibling of get_lesson_payment_for_checkout above,
+        // hardcoded to domain_type = 'event_participant'. Requires the
+        // caller's CURRENT role to be exactly 'member', the parent Event's
+        // CURRENT status to be exactly 'scheduled' and not archived, and
+        // the caller's own event_participants row (matched by roster
+        // identity) to be exactly 'confirmed' before returning a row at
+        // all — waitlisted/offered/cancelled participants and a
+        // cancelled/archived Event are all structurally unreachable.
+        // event_starts_at is additionally returned so callers can build a
+        // date-aware /calendar return URL, mirroring get_reservation_
+        // payment_for_checkout's own reservationDateISO need. No guest
+        // path — event_guest has no roster identity to match.
+        Args: { p_event_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+          event_starts_at:          string | null;
+        }[];
+      };
+      open_event_payment_checkout_attempt: {
+        // Phase 34F-B. service_role only. Atomic event-aware wrapper
+        // around open_payment_checkout_attempt below — closes the TOCTOU
+        // race between get_event_payment_for_checkout's own read and this,
+        // the actual attempt-opening step. Locks the events row FIRST,
+        // re-verifies the Event is scheduled/non-archived AND the caller's
+        // own (p_actor_id-resolved) event_participants row is still
+        // 'confirmed' UNDER that lock, resolves the current payment_id
+        // fresh, then delegates entirely to open_payment_checkout_attempt
+        // for everything else — never duplicates that function's own
+        // algorithm. Same Returns shape as the Lesson/Reservation
+        // siblings.
+        Args: {
+          p_event_id:          string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_event_checkout_attempt_and_open_fresh: {
+        // Phase 34F-B. service_role only. Atomic event-aware wrapper
+        // around supersede_checkout_attempt_and_open_fresh below — the
+        // SAME race closed at the primary attempt-open call site (open_
+        // event_payment_checkout_attempt above) exists identically here.
+        // Locks the events row, re-verifies scheduled/non-archived +
+        // participant confirmed, resolves payment_id fresh, then
+        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
+        // Same Returns shape.
+        Args: {
+          p_event_id:          string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      list_event_blocking_checkout_attempts: {
+        // Phase 34F-B. service_role only, read-only. Event-level batch
+        // preflight for the cancel_event / update_event fan-out stale-
+        // Checkout guard — for every CURRENTLY confirmed participant on
+        // the Event, reports that participant's latest payment id if (and
+        // only if) it has a genuinely blocking attempt (status='open' AND
+        // a bound Stripe Checkout Session), the same predicate get_
+        // blocking_checkout_attempt_for_payment (0151) uses for the
+        // single-payment case. Returns payment_id ONLY — never a Stripe
+        // session id or any participant identity/PII.
+        Args: { p_event_id: string; p_club_id: string };
+        Returns: { payment_id: string }[];
       };
       open_payment_checkout_attempt: {
         // Phase 34D-D1 (correction round 4). service_role only.

@@ -212,6 +212,92 @@ export function buildLessonCheckoutReturnUrls(
   };
 }
 
+// Phase 34F-B — Event Online Payment Expansion. Mirrors the Lesson sibling
+// above exactly (own product name + metadata/client_reference_id identity
+// key, event_id instead of lesson_request_id) — reservation Checkout's own
+// domain-agnostic machinery (open_payment_checkout_attempt, process_stripe_
+// payment_event, computeReservationCheckoutExpiresAt/remainingCents/
+// isReservationPaymentEligibleForCheckout below) is reused unchanged.
+//
+// Stripe display evidence (34F-B audit): "Event payment" is a fixed,
+// generic product name — never the Event's own title, date/time, or court
+// — exactly matching "Court reservation payment"/"Tennis lesson payment"
+// above. This is why title changes do not invalidate an open Event
+// Checkout attempt (0161's own header comment): the Member never sees the
+// title on the Stripe-hosted page regardless of whether it changed.
+
+export function buildEventCheckoutIdempotencyKey(attemptId: string): string {
+  return `event-checkout:${attemptId}`;
+}
+
+export interface EventCheckoutSessionInput {
+  amountCents: number;
+  // ISO 4217, uppercase (matches payments.currency's own CHECK, 0143).
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  eventId: string;
+  paymentId: string;
+  attemptId: string;
+  // Epoch seconds — see computeReservationCheckoutExpiresAt above (reused
+  // unchanged for events; the expiry math has no domain-specific input).
+  expiresAt: number;
+}
+
+// Pure parameter construction — no Stripe API call. Mirrors
+// buildReservationCheckoutSessionParams/buildLessonCheckoutSessionParams
+// exactly, differing only in the Stripe-hosted product name and the
+// metadata/client_reference_id identity key (event_id instead of
+// reservation_id/lesson_request_id).
+export function buildEventCheckoutSessionParams(input: EventCheckoutSessionInput) {
+  return {
+    mode: "payment" as const,
+    payment_method_types: ["card"] as Array<"card">,
+    line_items: [
+      {
+        price_data: {
+          currency: input.currency.toLowerCase(),
+          product_data: { name: "Event payment" },
+          unit_amount: input.amountCents,
+        },
+        quantity: 1,
+      },
+    ],
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    expires_at: input.expiresAt,
+    client_reference_id: input.eventId,
+    // Observability only, never authorization — the webhook RPC
+    // (process_stripe_payment_event) never reads metadata; it matches
+    // purely on the verified Session id against the stored attempt row.
+    metadata: {
+      payment_id: input.paymentId,
+      event_id: input.eventId,
+      attempt_id: input.attemptId,
+    },
+  };
+}
+
+// Server-side success/cancel destinations — never client-influenced. Both
+// return the browser to /calendar (the only place a Member sees Event
+// detail/payment state today, per the 34F-B audit's own canonical-surface
+// finding), mirroring buildReservationCheckoutReturnUrls's own reasoning
+// exactly, including the same optional `date=` jump parameter — /calendar
+// is date-navigated like Reservation's own surface (unlike /my-schedule's
+// flat lesson list). eventDateISO is derived server-side by the caller from
+// the Event's own starts_at + the club's timezone — never client-supplied.
+export function buildEventCheckoutReturnUrls(
+  siteUrl: string,
+  eventId: string,
+  eventDateISO: string | null,
+): { successUrl: string; cancelUrl: string } {
+  const dateParam = eventDateISO ? `date=${eventDateISO}&` : "";
+  return {
+    successUrl: `${siteUrl}/calendar?${dateParam}checkout=success&event=${eventId}`,
+    cancelUrl: `${siteUrl}/calendar?${dateParam}checkout=cancel&event=${eventId}`,
+  };
+}
+
 export interface ReservationPaymentEligibility {
   paymentModeAtCreation: string;
   status: string;

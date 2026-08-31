@@ -8,6 +8,42 @@ import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { ADMIN_EVENT_SELECT, mapAdminEventRow } from "./adminEventRow";
 import type { RawAdminEventRow, AdminEventRow } from "./adminEventRow";
 import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import {
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
+import { createPrivilegedClient } from "@/lib/supabase/privileged";
+
+// Phase 34F-B — bounded batch resolution for Event-level fan-out guards
+// (update_event's material-edit path — mirrors calendar/actions.ts's own
+// identical helper for cancel_event exactly; not re-exported from there to
+// avoid a cross-file "use server" re-export, which Next.js Server Actions
+// modules don't support for non-async-function values). Lists every
+// currently-blocking (bound + open) Checkout attempt for the Event via the
+// service-role-only list_event_blocking_checkout_attempts RPC (0161), then
+// resolves each via the SAME generic resolveBlockingCheckoutBeforeMutation
+// helper every other guard already uses.
+async function resolveAllBlockingEventCheckouts(
+  eventId: string,
+  clubId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const privileged = createPrivilegedClient();
+  if (!privileged) return { ok: false, error: "Something went wrong. Please try again." };
+
+  const { data: blockingRows, error: listError } = await privileged.rpc(
+    "list_event_blocking_checkout_attempts",
+    { p_event_id: eventId, p_club_id: clubId },
+  );
+  if (listError) return { ok: false, error: "Something went wrong. Please try again." };
+
+  for (const { payment_id } of blockingRows ?? []) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(payment_id, clubId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+  }
+
+  return { ok: true };
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,10 +199,39 @@ export async function adminRemoveParticipant(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("admin_remove_participant", {
+  // Phase 34F-B — resolve this participant's own current payment (if any)
+  // BEFORE attempting the removal, so a subsequent open_checkout_requires_
+  // resolution failure (raised by admin_remove_participant's own pre-
+  // mutation guard, 0161) can be resolved without a second round-trip to
+  // discover which payment was blocking.
+  const { data: participantRow } = await supabase
+    .from("event_participants")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq("profile_id", profileId)
+    .in("status", ["confirmed", "offered", "waitlisted"])
+    .maybeSingle();
+
+  let { error } = await supabase.rpc("admin_remove_participant", {
     p_event_id:   eventId,
     p_profile_id: profileId,
   });
+
+  // Phase 34F-B — a bound, potentially still-payable Stripe Checkout
+  // Session is open for this participant's payment — resolve it via
+  // Stripe before safely retrying exactly once, mirroring
+  // recordManualPayment's own established resolve-then-retry pattern.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && participantRow) {
+    const { data: states } = await fetchPaymentStates("event_participant", [participantRow.id]);
+    const paymentId = states?.[0]?.current_payment_id ?? null;
+    if (!paymentId) return { error: rpcError(error) };
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+    ({ error } = await supabase.rpc("admin_remove_participant", {
+      p_event_id:   eventId,
+      p_profile_id: profileId,
+    }));
+  }
 
   if (error) return { error: rpcError(error) };
   return {};
@@ -375,11 +440,35 @@ export async function adminRemoveRosterParticipant(
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("admin_remove_roster_participant", {
+  // Phase 34F-B — resolve this participant's own current payment (if any)
+  // BEFORE attempting the removal, mirroring adminRemoveParticipant's own
+  // identical resolve-then-retry pattern exactly.
+  const { data: participantRow } = await supabase
+    .from("event_participants")
+    .select("id")
+    .eq("event_id", eventId)
+    .eq("roster_member_id", rosterMemberId)
+    .in("status", ["confirmed", "offered", "waitlisted"])
+    .maybeSingle();
+
+  let { error } = await supabase.rpc("admin_remove_roster_participant", {
     p_event_id:         eventId,
     p_expected_club_id: expectedClubId,
     p_roster_member_id: rosterMemberId,
   });
+
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && participantRow) {
+    const { data: states } = await fetchPaymentStates("event_participant", [participantRow.id]);
+    const paymentId = states?.[0]?.current_payment_id ?? null;
+    if (!paymentId) return { error: rpcError(error) };
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+    ({ error } = await supabase.rpc("admin_remove_roster_participant", {
+      p_event_id:         eventId,
+      p_expected_club_id: expectedClubId,
+      p_roster_member_id: rosterMemberId,
+    }));
+  }
 
   if (error) return { error: rpcError(error) };
   return {};
@@ -708,10 +797,28 @@ export async function updateEventAdmin(params: {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("update_event", {
+  let { data, error } = await supabase.rpc("update_event", {
     ...rpcParams,
     p_expected_club_id: expectedClubId,
   });
+
+  // Phase 34F-B — material-edit fan-out guard: update_event's own
+  // pre-mutation loop (0161) raises open_checkout_requires_resolution if
+  // the edit is material (starts_at/ends_at/court set/event_type_id) AND
+  // ANY currently-confirmed participant has a bound, possibly-still-
+  // payable Stripe Checkout Session, rolling back the WHOLE edit before it
+  // touches anything. Same bounded batch-resolve-then-retry shape as
+  // cancelEvent (calendar/actions.ts) — never an unbounded loop; a
+  // resolution failure leaves the Event exactly as it was.
+  for (let attempt = 0; attempt < 2 && error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION); attempt++) {
+    const resolved = await resolveAllBlockingEventCheckouts(params.p_event_id, expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("update_event", {
+      ...rpcParams,
+      p_expected_club_id: expectedClubId,
+    }));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   const result = data as unknown as UpdateEventResult | null;

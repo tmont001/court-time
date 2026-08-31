@@ -88,11 +88,19 @@ describe("Refund action is gated ONLY by real Stripe-refundable provenance, neve
     expect(canRefundLine).not.toMatch(/lifecycleLabel/);
   });
 
-  it("Record Payment is gated ONLY by isPaymentOpenForRecording (status-based, unaffected by lifecycle or refund state) — unchanged from 34E-B", () => {
+  it("Record Payment is gated by isPaymentOpenForRecording (status-based) — unaffected by refund state or dispute state, exactly as in 34E-B. Runtime QA (34F-B polish) added ONE additional, narrowly-scoped condition — !row.recordPaymentBlocked, true only for a cancelled parent Event's participant/guest payment (see recordPaymentLifecycle.regression.test.ts) — isPaymentOpenForRecording itself remains the same domain-neutral, status-only financial check for every domain.", () => {
     const clientSrc = readSource(CLIENT_PATH);
-    expect(clientSrc).toContain("{isPaymentOpenForRecording(row.state) && (");
+    expect(clientSrc).toContain("{isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (");
     const detailSrc = readSource(DETAIL_SHEET_PATH);
-    expect(detailSrc).toContain("const canRecordPayment = isPaymentOpenForRecording(row.state);");
+    expect(detailSrc).toContain("const canRecordPayment = isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked;");
+    // The underlying financial check itself takes no lifecycle/dispute
+    // argument at all — recordPaymentBlocked is computed entirely
+    // separately (page.tsx, from the domain row), never inside
+    // isPaymentOpenForRecording.
+    const isPaymentOpenSrc = readSource("src/lib/payments.ts");
+    const fnStart = isPaymentOpenSrc.indexOf("export function isPaymentOpenForRecording(");
+    const fnEnd = isPaymentOpenSrc.indexOf("\n}", fnStart) + 2;
+    expect(isPaymentOpenSrc.slice(fnStart, fnEnd)).not.toMatch(/lifecycle|dispute|cancelled/i);
   });
 });
 

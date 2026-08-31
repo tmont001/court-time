@@ -88,7 +88,7 @@ interface RawEventRow {
   // directly to event_participants; roster_member_id is the durable
   // identity, used for claim-continuity ownership matching in
   // EventDetailSheet (see userRosterMemberId).
-  event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
+  event_participants: Array<{ id: string; profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
   // Phase 33E2: status distinguishes an active guest (occupies capacity)
   // from a soft-cancelled one (does not) — consumers filter accordingly.
   event_guests: Array<{ id: string; status: string }>;
@@ -120,7 +120,7 @@ interface EventWithDetails {
   // directly to event_participants; roster_member_id is the durable
   // identity, used for claim-continuity ownership matching in
   // EventDetailSheet (see userRosterMemberId).
-  event_participants: Array<{ profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
+  event_participants: Array<{ id: string; profile_id: string | null; roster_member_id: string | null; role: string; status: string; offer_expires_at: string | null }>;
   // Phase 33E2: status distinguishes an active guest (occupies capacity)
   // from a soft-cancelled one (does not) — consumers filter accordingly.
   event_guests: Array<{ id: string; status: string }>;
@@ -170,6 +170,13 @@ interface Props {
   // authoritative, freshly-fetched payment state (paid or still unpaid,
   // whichever the webhook has actually reconciled so far).
   initialCheckoutReservationId?: string | null;
+  // Phase 34F-B: optional ?checkout=success&event=<uuid> return from
+  // Stripe Checkout. Never mutates any financial state on its own — only
+  // used to auto-open that Event's own detail sheet, which shows
+  // authoritative, freshly-fetched payment state (paid or still unpaid,
+  // whichever the webhook has actually reconciled so far). Mirrors
+  // initialCheckoutReservationId immediately above exactly.
+  initialCheckoutEventId?: string | null;
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
   currency:                     string; // Phase 34B
@@ -263,7 +270,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialCheckoutReservationId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialCheckoutReservationId, initialCheckoutEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -412,6 +419,68 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         if (data) setSelectedReservation(data);
       });
     router.replace("/calendar", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Phase 34F-B — returning from Stripe Checkout for an Event: fetch and
+  // auto-open the Event's own detail sheet directly by id, mirroring the
+  // reservation effect immediately above exactly (independent of whatever
+  // date range this mount happens to have loaded into `events`, same
+  // full-detail select shape fetchEvents itself uses so EventDetailSheet
+  // receives everything it needs). Runs once on mount only.
+  //
+  // Uses window.history.replaceState, NOT router.replace (the mechanism
+  // the reservation effect above still uses) — the 34F-A lesson-navigation
+  // runtime QA fix (LessonsClient.tsx) found that next/navigation's
+  // router.replace with a CHANGED search-param set forces Next.js to
+  // re-render/re-fetch the route's entire Server Component tree, visibly
+  // re-flashing /calendar's own loading fallback a second time right after
+  // Stripe's hard-navigation redirect already rendered the page once.
+  // window.history.replaceState updates the URL bar with zero Next.js
+  // navigation/re-render. Scoped to this new effect only — the pre-
+  // existing reservation effect's own router.replace is left untouched,
+  // out of this checkpoint's scope.
+  useEffect(() => {
+    if (!initialCheckoutEventId) return;
+    supabase
+      .from("events")
+      .select(`
+        id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
+        event_type_id, description, updated_at, program_id, is_program_exception, price_amount_cents,
+        event_types(key, label, color, shows_participant_names),
+        event_participants(id, profile_id, roster_member_id, role, status, offer_expires_at),
+        event_guests(id, status),
+        reservations(court_id, status, reason)
+      `)
+      .eq("id", initialCheckoutEventId)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        const r = data as unknown as RawEventRow;
+        setSelectedEvent({
+          id:                 r.id,
+          title:              r.title,
+          starts_at:          r.starts_at,
+          ends_at:            r.ends_at,
+          capacity:           r.capacity,
+          status:             r.status,
+          created_by:         r.created_by,
+          member_joinable:    r.member_joinable,
+          event_type_id:      r.event_type_id,
+          description:        r.description,
+          updated_at:         r.updated_at,
+          program_id:         r.program_id,
+          is_program_exception: r.is_program_exception,
+          price_amount_cents: r.price_amount_cents,
+          event_types:        r.event_types,
+          event_participants: r.event_participants,
+          event_guests:       r.event_guests,
+          court_ids: r.reservations
+            .filter(res => res.reason === "event" && res.status === "confirmed")
+            .map(res => res.court_id),
+        });
+      });
+    window.history.replaceState(null, "", "/calendar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
@@ -839,7 +908,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         id, title, starts_at, ends_at, capacity, status, created_by, member_joinable,
         event_type_id, description, updated_at, program_id, is_program_exception, price_amount_cents,
         event_types(key, label, color, shows_participant_names),
-        event_participants(profile_id, roster_member_id, role, status, offer_expires_at),
+        event_participants(id, profile_id, roster_member_id, role, status, offer_expires_at),
         event_guests(id, status),
         reservations(court_id, status, reason)
       `)
@@ -1646,6 +1715,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           clubId={clubId}
           clubTimezone={clubTimezone}
           currency={currency}
+          isAdmin={userRole === "admin"}
           onClose={closeSlotFlow}
           onCreated={() => { setRefreshTick(t => t + 1); closeSlotFlow(); }}
           onBack={slotPreFill ? backToSlotMenu : undefined}

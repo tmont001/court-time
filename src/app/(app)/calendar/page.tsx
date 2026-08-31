@@ -93,6 +93,14 @@ export default async function CalendarPage({
   const initialCheckoutReservationId =
     checkoutParam === "success" && reservationParam && uuidRe.test(reservationParam) ? reservationParam : null;
 
+  // Phase 34F-B: optional ?checkout=success&event=<uuid> return from Stripe
+  // Checkout — see CalendarShell's own comment for what this does (and
+  // does not do: never mutates any financial state itself). Mirrors the
+  // reservation param immediately above exactly.
+  const eventParam = typeof sp.event === "string" ? sp.event : null;
+  const initialCheckoutEventId =
+    checkoutParam === "success" && eventParam && uuidRe.test(eventParam) ? eventParam : null;
+
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
   }
@@ -114,6 +122,7 @@ export default async function CalendarPage({
           todayISO={todayISO}
           initialDateISO={initialDateISO}
           initialCheckoutReservationId={initialCheckoutReservationId}
+          initialCheckoutEventId={initialCheckoutEventId}
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}
           currency={settings?.currency ?? "USD"}

@@ -478,9 +478,10 @@ describe("CRITICAL MONEY INVARIANT — dispute reconciliation cannot alter payme
     expect(fnBody).not.toMatch(/isPaymentOpenForRecording/);
   });
 
-  it("the Record Payment button's render condition in AdminPaymentsClient.tsx is untouched by this phase — still gated solely on isPaymentOpenForRecording(row.state), with no dispute-related condition added", () => {
+  it("the Record Payment button's render condition in AdminPaymentsClient.tsx is untouched by dispute work — no dispute-related condition was ever added to it. A separate, unrelated 34F-B correction (!row.recordPaymentBlocked, cancelled-Event-only, never dispute-driven) is covered in recordPaymentLifecycle.regression.test.ts", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
-    expect(src).toContain("{isPaymentOpenForRecording(row.state) && (");
+    expect(src).toContain("{isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (");
+    expect(src).not.toMatch(/isPaymentOpenForRecording\(row\.state\)[^)]*dispute/i);
   });
 });
 

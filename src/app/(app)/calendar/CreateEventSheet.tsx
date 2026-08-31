@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { createClient } from "@/lib/supabase/client";
-import { createEvent } from "./actions";
+import { createEvent, createEventWithPriceOverride } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { formatOperatorPrice } from "@/lib/money";
 import PriceSummary from "@/components/PriceSummary";
@@ -39,6 +39,11 @@ interface Props {
   clubId:          string;
   clubTimezone:    string;
   currency:        string;
+  // Phase 34F-B polish — gates the per-event price override field
+  // (Step 4), mirroring EditEventSheet's own identical isAdmin gate for
+  // Event pricing exactly. Staff/Pro can create events but never gain
+  // price authority, matching create_event's own price-blind RPC.
+  isAdmin:         boolean;
   onClose:         () => void;
   onCreated:       () => void;
   // Optional: return to slot action menu instead of closing
@@ -80,6 +85,10 @@ function mapCreateError(code: string | undefined, message: string): string {
   if (message === "club_closed_this_day")            return "The club is closed on that day.";
   if (message === "outside_operating_hours")         return "That time is outside operating hours.";
   if (message === "inactive_event_type")             return "That event type is no longer active. Refresh and choose another.";
+  // Phase 34F-B — raised by create_event_with_price_override (0162) for a
+  // negative custom price; unreachable in practice since priceDollarsValid
+  // already disables Create Event client-side, kept as defense in depth.
+  if (message === "invalid_price")                   return "Price must be zero or a positive amount.";
   return "Something went wrong. Please try again.";
 }
 
@@ -98,7 +107,7 @@ const TIME_SLOTS = (() => {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function CreateEventSheet({
-  courts, clubId, clubTimezone, currency, onClose, onCreated, onBack,
+  courts, clubId, clubTimezone, currency, isAdmin, onClose, onCreated, onBack,
   initialDate, initialHour, initialMinute, initialCourtId,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -127,6 +136,17 @@ export default function CreateEventSheet({
   const [typesError, setTypesError]                   = useState<string | null>(null);
   const [isCustomDuration, setIsCustomDuration]       = useState(false);
   const [customDurationText, setCustomDurationText]   = useState("60");
+  // Phase 34F-B — Admin-only per-event price override, submitted via the
+  // atomic createEventWithPriceOverride action (0162) when customized —
+  // see handleCreate below. priceDollars always reflects what will be
+  // submitted (mirrors EditEventSheet's own priceDollars state exactly);
+  // priceCustomized distinguishes "still showing the Event Type's own
+  // default, nothing to override" from "Admin has deliberately entered a
+  // different value" — reset together whenever a new Event Type is picked
+  // (selectType below), since a leftover override from a previously-
+  // selected type would be meaningless once the type itself changes.
+  const [priceDollars, setPriceDollars]               = useState("");
+  const [priceCustomized, setPriceCustomized]         = useState(false);
 
   // ── Fetch event types on mount ─────────────────────────────────────────────
 
@@ -223,7 +243,20 @@ export default function CreateEventSheet({
     setSelectedCourtIds(defaults);
     setTitle("");
     setError(null);
+    setPriceDollars(type.default_price_amount_cents !== null ? (type.default_price_amount_cents / 100).toFixed(2) : "");
+    setPriceCustomized(false);
     setStep(2);
+  }
+
+  function handlePriceDollarsChange(value: string) {
+    setPriceDollars(value);
+    setPriceCustomized(true);
+  }
+
+  function resetPriceToTypeDefault() {
+    if (!selectedType) return;
+    setPriceDollars(selectedType.default_price_amount_cents !== null ? (selectedType.default_price_amount_cents / 100).toFixed(2) : "");
+    setPriceCustomized(false);
   }
 
   function toggleCourt(courtId: string) {
@@ -245,19 +278,41 @@ export default function CreateEventSheet({
     setSubmitting(true);
     setError(null);
 
-    const { error: rpcError } = await createEvent({
-      p_event_type_id:  selectedType.id,
-      p_title:          title.trim(),
-      p_starts_at:      startsAt.toISOString(),
-      p_ends_at:        endsAt.toISOString(),
-      p_court_ids:      selectedCourtIds,
-      p_capacity:       capacity,
-      p_member_joinable: memberJoinable,
-      expectedClubId:   clubId,
-    });
+    // Phase 34F-B (runtime QA correction) — an Admin-customized price uses
+    // the atomic create_event_with_price_override RPC (0162): the Event
+    // and its custom price commit together, in one transaction, or neither
+    // commits. This is a single call, never create_event followed by a
+    // separate price-override round-trip — that two-commit sequence left a
+    // window where a concurrent join could snapshot the Event Type default
+    // price instead of the Admin's intended custom one. An untouched
+    // (still-default) price continues through plain create_event,
+    // unchanged, reachable by every role it always was (pro/admin/staff).
+    const useCustomPrice = isAdmin && priceCustomized;
+    const result = useCustomPrice
+      ? await createEventWithPriceOverride({
+          p_event_type_id:      selectedType.id,
+          p_title:              title.trim(),
+          p_starts_at:          startsAt.toISOString(),
+          p_ends_at:            endsAt.toISOString(),
+          p_court_ids:          selectedCourtIds,
+          p_price_amount_cents: priceDollarsTrimmed === "" ? null : Math.round(priceDollarsNum * 100),
+          p_capacity:           capacity,
+          p_member_joinable:    memberJoinable,
+          expectedClubId:       clubId,
+        })
+      : await createEvent({
+          p_event_type_id:  selectedType.id,
+          p_title:          title.trim(),
+          p_starts_at:      startsAt.toISOString(),
+          p_ends_at:        endsAt.toISOString(),
+          p_court_ids:      selectedCourtIds,
+          p_capacity:       capacity,
+          p_member_joinable: memberJoinable,
+          expectedClubId:   clubId,
+        });
 
-    if (rpcError) {
-      setError(mapCreateError(rpcError.code, rpcError.message));
+    if (result.error) {
+      setError(mapCreateError(result.error.code, result.error.message));
       setSubmitting(false);
       return;
     }
@@ -283,6 +338,17 @@ export default function CreateEventSheet({
   const customDurationValid = !isCustomDuration || (
     /^\d+$/.test(customDurationText.trim()) && parseInt(customDurationText.trim(), 10) > 0
   );
+
+  // Phase 34F-B polish — priceDollars validity (blank is valid: "no
+  // price"); effectivePriceCents drives the Summary card's own PriceSummary
+  // so the confirm screen always reflects what will actually be charged,
+  // never a stale Event Type default once the Admin has customized it.
+  const priceDollarsTrimmed = priceDollars.trim();
+  const priceDollarsNum     = parseFloat(priceDollarsTrimmed);
+  const priceDollarsValid   = priceDollarsTrimmed === "" || (Number.isFinite(priceDollarsNum) && priceDollarsNum >= 0);
+  const effectivePriceCents = isAdmin
+    ? (priceDollarsTrimmed === "" ? null : (Number.isFinite(priceDollarsNum) ? Math.round(priceDollarsNum * 100) : null))
+    : (selectedType?.default_price_amount_cents ?? null);
 
   const stepTitles: Record<1 | 2 | 3 | 4, string> = {
     1: "Event Type",
@@ -565,6 +631,60 @@ export default function CreateEventSheet({
                 </select>
               </div>
 
+              {/* Price per member — Admin only. Staff/Pro see the Event
+                  Type's own default as a read-only PriceSummary instead,
+                  matching EditEventSheet's identical isAdmin gate for
+                  Event pricing exactly. */}
+              {isAdmin ? (
+                <div>
+                  <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    Price per member <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+                  </label>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <div className="relative w-32">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-base md:text-sm">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        placeholder="0.00"
+                        value={priceDollars}
+                        onChange={e => handlePriceDollarsChange(e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 pl-7 pr-3 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 motion-safe:transition-all motion-safe:duration-150"
+                      />
+                    </div>
+                    {priceCustomized && (
+                      <button
+                        type="button"
+                        onClick={resetPriceToTypeDefault}
+                        className="text-xs font-medium text-accent hover:underline whitespace-nowrap"
+                      >
+                        Use {selectedType.label} default
+                      </button>
+                    )}
+                  </div>
+                  {priceDollarsTrimmed.length > 0 && !priceDollarsValid && (
+                    <p className="mt-1 text-xs text-red-500">Enter a valid, non-negative amount.</p>
+                  )}
+                  <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                    {priceCustomized
+                      ? "Custom price for this event."
+                      : `Using ${selectedType.label} default.`}
+                    {" "}Leave blank for no price.
+                  </p>
+                </div>
+              ) : (
+                <PriceSummary
+                  label="Event price"
+                  amountCents={selectedType.default_price_amount_cents}
+                  currency={currency}
+                  viewer="operator"
+                  breakdown={selectedType.default_price_amount_cents !== null ? "per participant" : null}
+                />
+              )}
+
               {/* Member joinable toggle */}
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -605,21 +725,18 @@ export default function CreateEventSheet({
                 </p>
                 <PriceSummary
                   label="Event price"
-                  amountCents={selectedType.default_price_amount_cents}
+                  amountCents={effectivePriceCents}
                   currency={currency}
                   viewer="operator"
-                  breakdown={selectedType.default_price_amount_cents !== null ? "per participant" : null}
+                  breakdown={effectivePriceCents !== null ? "per participant" : null}
                   className="mt-2"
                 />
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-                  From the event type default — set an override after creating this event if needed.
-                </p>
               </div>
 
               {error && <p className="text-xs text-red-500">{error}</p>}
 
               <button
-                disabled={submitting || capacity < 1}
+                disabled={submitting || capacity < 1 || !priceDollarsValid}
                 onClick={handleCreate}
                 className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
               >

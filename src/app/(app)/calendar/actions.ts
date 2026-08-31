@@ -22,6 +22,37 @@ import {
   OPEN_CHECKOUT_REQUIRES_RESOLUTION,
   resolveBlockingCheckoutBeforeMutation,
 } from "@/lib/stripe/checkoutInvalidation";
+import { createPrivilegedClient } from "@/lib/supabase/privileged";
+
+// Phase 34F-B — bounded batch resolution for Event-level fan-out guards
+// (cancel_event, updateEventAdmin's material-edit path). Lists every
+// currently-blocking (bound + open) Checkout attempt for the Event via the
+// service-role-only list_event_blocking_checkout_attempts RPC (0161), then
+// resolves each via the SAME generic resolveBlockingCheckoutBeforeMutation
+// helper every other guard already uses — never a duplicated Stripe
+// resolution algorithm. Returns false (never retry) on any resolution
+// failure — the caller must leave the Event/edit exactly as it was rather
+// than risk charging for a cancelled Event or a stale edit.
+async function resolveAllBlockingEventCheckouts(
+  eventId: string,
+  clubId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const privileged = createPrivilegedClient();
+  if (!privileged) return { ok: false, error: "Something went wrong. Please try again." };
+
+  const { data: blockingRows, error: listError } = await privileged.rpc(
+    "list_event_blocking_checkout_attempts",
+    { p_event_id: eventId, p_club_id: clubId },
+  );
+  if (listError) return { ok: false, error: "Something went wrong. Please try again." };
+
+  for (const { payment_id } of blockingRows ?? []) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(payment_id, clubId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+  }
+
+  return { ok: true };
+}
 
 // ---------------------------------------------------------------------------
 // Shared result shape for update_member_reservation / cancel_member_reservation
@@ -193,7 +224,51 @@ export async function createEvent(params: {
 
   const supabase = await createClient();
 
+  // Phase 34F-B — this is the DEFAULT-price path only, matching
+  // createReservation/adminCreateMemberReservation's own established
+  // convention of discarding the created row entirely (the caller has no
+  // need for it). An Admin creating an Event with a CUSTOM price uses
+  // createEventWithPriceOverride (below) instead — a single atomic RPC
+  // call, never this action followed by a separate price-override
+  // round-trip (runtime QA correction: that two-commit sequence left a
+  // window where a concurrent join could snapshot the Event Type default
+  // price instead of the Admin's intended custom one).
   const { error } = await supabase.rpc("create_event", rpcParams);
+  if (error) return { error: { code: error.code, message: error.message } };
+
+  return {};
+}
+
+// ---------------------------------------------------------------------------
+// createEventWithPriceOverride
+// Phase 34F-B (runtime QA correction) — the CUSTOM-price Create Event path.
+// Calls create_event_with_price_override (0162), which atomically composes
+// the existing, unmodified create_event and set_event_price_override
+// inside ONE transaction — either the Event and its custom price both
+// commit, or neither does. Never call this action followed by a separate
+// setEventPriceOverrideAction call for CREATE-time pricing; that
+// two-commit sequence is exactly what 0162 replaces. setEventPriceOverride
+// Action itself is untouched and remains the correct primitive for editing
+// an EXISTING Event's price for future sign-ups (EditEventSheet).
+// ---------------------------------------------------------------------------
+export async function createEventWithPriceOverride(params: {
+  p_event_type_id:      string;
+  p_title:              string;
+  p_starts_at:          string;
+  p_ends_at:            string;
+  p_court_ids:          string[];
+  p_price_amount_cents: number | null;
+  p_capacity:           number;
+  p_member_joinable:    boolean;
+  expectedClubId:       string;
+}): Promise<{ error?: { code?: string; message: string } }> {
+  const { expectedClubId, ...rpcParams } = params;
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: { message: guard.error } };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("create_event_with_price_override", rpcParams);
   if (error) return { error: { code: error.code, message: error.message } };
 
   return {};
@@ -842,10 +917,35 @@ export async function leaveEvent(
 
   const supabase = await createClient();
 
-  const { data, error: rpcError } = await supabase.rpc(
+  // Phase 34F-B — resolve the caller's own current payment (if any) BEFORE
+  // attempting the leave, so a subsequent open_checkout_requires_
+  // resolution failure (raised by _leave_event_impl's own pre-mutation
+  // guard, 0161) can be resolved without a second round-trip to discover
+  // which payment was blocking. get_event_payment_for_checkout only ever
+  // returns a row for a CONFIRMED participant with an actual obligation —
+  // exactly the one case _leave_event_impl's guard could ever find
+  // something to invalidate; a waitlisted/offered leave resolves no row
+  // here and never needs resolution.
+  const { data: paymentRow } = await supabase.rpc("get_event_payment_for_checkout", {
+    p_event_id: eventId,
+  });
+  const paymentId = paymentRow?.[0]?.payment_id ?? null;
+
+  let { data, error: rpcError } = await supabase.rpc(
     "leave_event_v2",
     { p_event_id: eventId }
   );
+
+  // Phase 34F-B — a bound, potentially still-payable Stripe Checkout
+  // Session is open for the caller's own event payment — resolve it via
+  // Stripe (never a silent local override) before safely retrying exactly
+  // once, mirroring recordManualPayment's own established resolve-then-
+  // retry pattern (admin/payments/actions.ts).
+  if (rpcError?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && paymentId) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+    ({ data, error: rpcError } = await supabase.rpc("leave_event_v2", { p_event_id: eventId }));
+  }
 
   if (rpcError) return { error: rpcError.message };
 
@@ -1056,9 +1156,29 @@ export async function cancelEvent(
   const { data: { user } } = await supabase.auth.getUser();
   const actorUserId = user?.id ?? null;
 
-  const { data, error: rpcError } = await supabase.rpc("cancel_event", {
+  let { data, error: rpcError } = await supabase.rpc("cancel_event", {
     p_event_id: eventId,
   });
+
+  // Phase 34F-B — Event cancellation fan-out guard: cancel_event's own
+  // pre-mutation loop (0161) raises open_checkout_requires_resolution if
+  // ANY currently-confirmed participant has a bound, possibly-still-
+  // payable Stripe Checkout Session, rolling back the WHOLE cancellation
+  // before it touches anything. Rather than force the Admin through one
+  // attempt-at-a-time retries, resolve every currently-known blocking
+  // attempt for the Event in one bounded pass (resolveAllBlockingEventChec
+  // kouts — lists via the service-role preflight RPC, resolves each via
+  // the existing generic per-payment helper, never a duplicated Stripe
+  // algorithm), then retry cancel_event once. If a NEW payable Session
+  // raced into existence during that pass, this fails closed a second time
+  // and one more bounded resolve+retry pass runs — never an unbounded
+  // loop. On any resolution failure, the Event is left scheduled exactly
+  // as it was rather than risk charging for a cancelled Event.
+  for (let attempt = 0; attempt < 2 && rpcError?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION); attempt++) {
+    const resolved = await resolveAllBlockingEventCheckouts(eventId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+    ({ data, error: rpcError } = await supabase.rpc("cancel_event", { p_event_id: eventId }));
+  }
 
   if (rpcError) return { error: rpcError.message };
 

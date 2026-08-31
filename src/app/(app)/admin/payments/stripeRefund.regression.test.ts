@@ -960,9 +960,9 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
     expect(btnBlock).not.toMatch(/isPaymentOpenForRecording/);
   });
 
-  it("the Record Payment button's own render condition is untouched — still gated solely on isPaymentOpenForRecording(row.state)", () => {
+  it("the Record Payment button's own render condition is untouched by Refund work — still gated on isPaymentOpenForRecording(row.state); a narrower, unrelated 34F-B correction (!row.recordPaymentBlocked, cancelled-Event-only) is covered separately in recordPaymentLifecycle.regression.test.ts", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
-    const btnIdx = src.indexOf("{isPaymentOpenForRecording(row.state) && (");
+    const btnIdx = src.indexOf("{isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (");
     expect(btnIdx).toBeGreaterThan(0);
   });
 

@@ -16,12 +16,15 @@ interface Props {
   clubId:       string;
   clubTimezone: string;
   currency:     string;
+  // Phase 34F-B polish — threaded through to CreateEventSheet so the
+  // per-event price override field only renders for Admin.
+  isAdmin:      boolean;
   // When provided, the parent owns refresh + tab-switch logic.
   // When absent, falls back to router.refresh() (e.g. standalone usage).
   onCreated?:   () => void;
 }
 
-export default function EventsCreateButton({ courts, clubId, clubTimezone, currency, onCreated }: Props) {
+export default function EventsCreateButton({ courts, clubId, clubTimezone, currency, isAdmin, onCreated }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -48,6 +51,7 @@ export default function EventsCreateButton({ courts, clubId, clubTimezone, curre
           clubId={clubId}
           clubTimezone={clubTimezone}
           currency={currency}
+          isAdmin={isAdmin}
           onClose={() => setOpen(false)}
           onCreated={handleCreated}
         />

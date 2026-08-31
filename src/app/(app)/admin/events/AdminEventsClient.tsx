@@ -773,6 +773,7 @@ export default function AdminEventsClient({ initialEvents, hasMore: initialHasMo
           clubId={clubId}
           clubTimezone={clubTimezone}
           currency={currency}
+          isAdmin={userRole === "admin"}
           onClose={() => setCreatingEvent(false)}
           onCreated={() => { setCreatingEvent(false); router.refresh(); }}
         />

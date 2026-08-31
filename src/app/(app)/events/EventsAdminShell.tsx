@@ -23,10 +23,14 @@ interface Props {
   clubId:       string;
   clubTimezone: string;
   currency:     string;
+  // Phase 34F-B polish — threaded down to EventsCreateButton/CreateEventSheet
+  // so the per-event price override field only renders for Admin, matching
+  // EditEventSheet's own identical price-authority gate.
+  isAdmin:      boolean;
   initialTab?:  Tab;
 }
 
-export default function EventsAdminShell({ upcoming, manage, lessons, courts, clubId, clubTimezone, currency, initialTab = "upcoming" }: Props) {
+export default function EventsAdminShell({ upcoming, manage, lessons, courts, clubId, clubTimezone, currency, isAdmin, initialTab = "upcoming" }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab);
 
@@ -77,7 +81,7 @@ export default function EventsAdminShell({ upcoming, manage, lessons, courts, cl
         </div>
 
         {/* Owned internally — not passed as a ReactNode prop */}
-        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} currency={currency} onCreated={handleCreated} />
+        <EventsCreateButton courts={courts} clubId={clubId} clubTimezone={clubTimezone} currency={currency} isAdmin={isAdmin} onCreated={handleCreated} />
       </div>
 
       {/* Tab panels — all rendered; CSS hides the inactive ones */}

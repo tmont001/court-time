@@ -79,7 +79,12 @@ export default function PaymentDetailSheet({
         );
 
   const canRefund = isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund;
-  const canRecordPayment = isPaymentOpenForRecording(row.state);
+  // Runtime QA polish — a cancelled parent Event withholds Record Payment
+  // eligibility without touching row.state at all (no waive/void/refund,
+  // no amount_due_cents/amount_paid_cents mutation) — the balance stays
+  // visible above as historical financial truth. Refund (canRefund, above)
+  // is completely independent of this flag.
+  const canRecordPayment = isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked;
 
   // Goal 5 — a "why review" block only when there is actually something
   // to explain: overpaid, a cancelled/declined/withdrawn domain lifecycle,
@@ -107,6 +112,12 @@ export default function PaymentDetailSheet({
     reviewNotes.push(
       "This payment has an active Stripe dispute. Disputes are informational only in Court Time — " +
       "they are never treated as a refund and never change the amount retained. Manage the dispute directly in Stripe.",
+    );
+  }
+  if (row.recordPaymentBlocked && isPaymentOpenForRecording(row.state)) {
+    reviewNotes.push(
+      "The parent Event was cancelled, so Record Payment is withheld here — the balance above remains " +
+      "historical truth and is never automatically waived or voided. Use Refund if money was already collected and should be returned.",
     );
   }
 

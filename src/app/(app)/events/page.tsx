@@ -277,6 +277,7 @@ export default async function EventsPage({
               clubId={clubId}
               clubTimezone={clubTimezone}
               currency={currency}
+              isAdmin={profile!.role === "admin"}
               initialTab={initialTab as "upcoming" | "manage" | "lessons"}
             />
           ) : (
