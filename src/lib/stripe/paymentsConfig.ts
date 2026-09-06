@@ -298,6 +298,94 @@ export function buildEventCheckoutReturnUrls(
   };
 }
 
+// Phase 34F-C — Programs Online Payment Expansion. Mirrors the Lesson/
+// Event siblings above exactly (own product name + metadata/client_
+// reference_id identity key). LOCKED domain semantics: whole-program
+// enrollment is ONE purchase for the entire Program (payment domain_type =
+// 'program_enrollment', domain_id = program_enrollments.id). The identity
+// key here is programId, not the enrollment id: get_program_payment_for_
+// checkout (0163) deliberately returns only the fields required by
+// Checkout, and the enrollment id is not one of them (the return route,
+// /events, is keyed by program, not by enrollment — mirroring buildEventChe
+// ckoutReturnUrls's own use of eventId, not the participant row id).
+// payment_id (below, in metadata) already fully and uniquely identifies
+// the specific payments row/domain_id server-side; program_id here is
+// purely a human-observability aid, exactly like event_id's own role in
+// the Event sibling.
+//
+// Stripe display evidence (34F-C audit, same reasoning as Event/Lesson
+// above): "Program payment" is a fixed, generic product name — never the
+// Program's own title — so a Program title/description edit can never be
+// payment-material regardless of edit path.
+
+export function buildProgramCheckoutIdempotencyKey(attemptId: string): string {
+  return `program-checkout:${attemptId}`;
+}
+
+export interface ProgramCheckoutSessionInput {
+  amountCents: number;
+  // ISO 4217, uppercase (matches payments.currency's own CHECK, 0143).
+  currency: string;
+  successUrl: string;
+  cancelUrl: string;
+  programId: string;
+  paymentId: string;
+  attemptId: string;
+  // Epoch seconds — see computeReservationCheckoutExpiresAt above (reused
+  // unchanged for programs; the expiry math has no domain-specific input).
+  expiresAt: number;
+}
+
+// Pure parameter construction — no Stripe API call. Mirrors
+// buildEventCheckoutSessionParams exactly, differing only in the
+// Stripe-hosted product name and the metadata/client_reference_id identity
+// key (program_id instead of event_id).
+export function buildProgramCheckoutSessionParams(input: ProgramCheckoutSessionInput) {
+  return {
+    mode: "payment" as const,
+    payment_method_types: ["card"] as Array<"card">,
+    line_items: [
+      {
+        price_data: {
+          currency: input.currency.toLowerCase(),
+          product_data: { name: "Program payment" },
+          unit_amount: input.amountCents,
+        },
+        quantity: 1,
+      },
+    ],
+    success_url: input.successUrl,
+    cancel_url: input.cancelUrl,
+    expires_at: input.expiresAt,
+    client_reference_id: input.programId,
+    // Observability only, never authorization — the webhook RPC
+    // (process_stripe_payment_event) never reads metadata; it matches
+    // purely on the verified Session id against the stored attempt row.
+    metadata: {
+      payment_id: input.paymentId,
+      program_id: input.programId,
+      attempt_id: input.attemptId,
+    },
+  };
+}
+
+// Server-side success/cancel destinations — never client-influenced. Both
+// return the browser to /events (the ONE canonical Member Program surface,
+// per this checkpoint's own locked UI decision — never /calendar, never
+// /my-schedule), mirroring buildEventCheckoutReturnUrls's own reasoning.
+// No date-jump parameter is needed here (unlike /calendar): /events is a
+// flat upcoming-programs list, not date-navigated. programId is embedded
+// so the return page can re-locate the correct ProgramEnrollmentCard.
+export function buildProgramCheckoutReturnUrls(
+  siteUrl: string,
+  programId: string,
+): { successUrl: string; cancelUrl: string } {
+  return {
+    successUrl: `${siteUrl}/events?checkout=success&program=${programId}`,
+    cancelUrl: `${siteUrl}/events?checkout=cancel&program=${programId}`,
+  };
+}
+
 export interface ReservationPaymentEligibility {
   paymentModeAtCreation: string;
   status: string;

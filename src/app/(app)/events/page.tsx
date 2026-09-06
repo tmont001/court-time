@@ -65,7 +65,7 @@ async function declineWaitlistOfferAction(clubId: string, formData: FormData) {
 export default async function EventsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; checkout?: string; program?: string }>;
 }) {
   // Phase 27C.2: ?manageView and ?q (the Programs "View Sessions" link's
   // URL contract) are no longer parsed here — ManageSubview and
@@ -74,8 +74,22 @@ export default async function EventsPage({
   // on this Server Component's props reliably propagating down through
   // already-mounted client-component layers on a same-route navigation.
   // See both components for the full rationale.
-  const { tab } = await searchParams;
-  const initialTab = tab === "manage" ? "manage" : tab === "lessons" ? "lessons" : "upcoming";
+  const sp = await searchParams;
+  const initialTab = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";
+
+  // Phase 34F-C: optional ?checkout=success&program=<uuid> return from
+  // Stripe Checkout — see eventCheckoutActions.ts/CalendarShell.tsx's own
+  // identical-shaped params for the established convention. Never mutates
+  // any financial state itself; ProgramEnrollmentCard's own fetchPaymentStat
+  // es effect (already fresh on this hard-navigation page load) shows
+  // authoritative, freshly-fetched payment state regardless of this param's
+  // presence — this is only used to strip the one-time query string from
+  // the URL bar (EventsUpcomingClient's own effect).
+  const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;
+  const programParam  = typeof sp.program === "string" ? sp.program : null;
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const initialCheckoutProgramId =
+    checkoutParam === "success" && programParam && uuidRe.test(programParam) ? programParam : null;
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -215,6 +229,7 @@ export default async function EventsPage({
       leaveEventAction={leaveEventAction.bind(null, clubId)}
       acceptWaitlistOfferAction={acceptWaitlistOfferAction.bind(null, clubId)}
       declineWaitlistOfferAction={declineWaitlistOfferAction.bind(null, clubId)}
+      initialCheckoutProgramId={initialCheckoutProgramId}
     />
   );
 

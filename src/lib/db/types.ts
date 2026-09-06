@@ -3883,6 +3883,118 @@ export type Database = {
         Args: { p_event_id: string; p_club_id: string };
         Returns: { payment_id: string }[];
       };
+      get_program_payment_for_checkout: {
+        // Phase 34F-C. authenticated-grant, pure read — the whole-program-
+        // enrollment sibling of get_event_payment_for_checkout above,
+        // hardcoded to domain_type = 'program_enrollment'. Requires the
+        // caller's CURRENT role to be exactly 'member', the parent
+        // Program's enrollment_model to be exactly 'program', the
+        // Program's CURRENT status to be IN ('active','completed') and not
+        // archived (the locked eligibility allowlist — never the broader
+        // "status <> 'cancelled'" predicate), and the caller's own
+        // program_enrollments row (matched by roster identity) to be
+        // exactly 'enrolled' before returning a row at all —
+        // waitlisted/offered/cancelled enrollments and a
+        // cancelled/draft/archived Program are all structurally
+        // unreachable. No event_starts_at-equivalent field: the return
+        // route is the flat /events page, not date-navigated like
+        // /calendar.
+        Args: { p_program_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      open_program_payment_checkout_attempt: {
+        // Phase 34F-C. service_role only. Atomic program-aware wrapper
+        // around open_payment_checkout_attempt below — closes the TOCTOU
+        // race between get_program_payment_for_checkout's own read and
+        // this, the actual attempt-opening step. Locks the programs row
+        // FIRST, re-verifies enrollment_model='program', status IN
+        // ('active','completed'), not archived, AND the caller's own
+        // (p_actor_id-resolved) program_enrollments row is still
+        // 'enrolled' UNDER that lock, resolves the current payment_id
+        // fresh, then delegates entirely to open_payment_checkout_attempt
+        // for everything else — never duplicates that function's own
+        // algorithm. Same Returns shape as the Event/Lesson/Reservation
+        // siblings.
+        Args: {
+          p_program_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_program_checkout_attempt_and_open_fresh: {
+        // Phase 34F-C. service_role only. Atomic program-aware wrapper
+        // around supersede_checkout_attempt_and_open_fresh below — the
+        // SAME race closed at the primary attempt-open call site (open_
+        // program_payment_checkout_attempt above) exists identically here.
+        // Locks the programs row, re-verifies enrollment_model/status/
+        // archived + enrollment enrolled, resolves payment_id fresh, then
+        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
+        // Same Returns shape.
+        Args: {
+          p_program_id:        string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      list_program_blocking_checkout_attempts: {
+        // Phase 34F-C. service_role only, read-only. Program-level batch
+        // preflight for the cancel_program fan-out stale-Checkout guard —
+        // for every CURRENTLY 'enrolled' program_enrollments row on the
+        // Program, reports that enrollment's latest payment id if (and
+        // only if) it has a genuinely blocking attempt (status='open' AND
+        // a bound Stripe Checkout Session), the same predicate list_event_
+        // blocking_checkout_attempts (0161) uses. Returns payment_id
+        // ONLY — never a Stripe session id or any enrollment identity/PII.
+        Args: { p_program_id: string; p_club_id: string };
+        Returns: { payment_id: string }[];
+      };
       open_payment_checkout_attempt: {
         // Phase 34D-D1 (correction round 4). service_role only.
         // Re-derives amount owed and eligibility fresh from the payments

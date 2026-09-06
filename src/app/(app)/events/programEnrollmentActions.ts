@@ -22,6 +22,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import {
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -132,27 +136,59 @@ export async function getMemberPrograms(
   const clubTimezone = club.timezone;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
 
-  const { data: programsData, error: programsErr } = await supabase
-    .from("programs")
-    .select(`
-      id, title, description, starts_on, ends_on, price_amount_cents,
-      event_types(key, label, color)
-    `)
-    .eq("club_id", clubId)
-    .eq("enrollment_model", "program")
-    .eq("status", "active")
-    .is("archived_at", null)
-    .gte("ends_on", today)
-    .order("starts_on", { ascending: true });
+  // Phase 34F-C: two branches unioned below.
+  //   1. "active" — the pre-existing browsable/joinable set, unchanged.
+  //   2. "completed" — NOT ordinarily browsable (never joinable, often past
+  //      ends_on), but a completed, non-archived program the caller is
+  //      still 'enrolled' in must still surface here so its own Pay Now
+  //      action has a card to live on — the locked product decision that
+  //      "Completed Program with legitimate outstanding balance DOES
+  //      retain Pay Now" (get_program_payment_for_checkout, 0163, allows
+  //      status IN ('active','completed')). The completed branch is
+  //      filtered down to only the caller's own enrolled programs AFTER
+  //      the enrollment read below — fetched broadly here (no ends_on
+  //      filter; completion is a lifecycle transition, not a date, and a
+  //      completed program may have run its course long before "today").
+  const [activeResult, completedResult] = await Promise.all([
+    supabase
+      .from("programs")
+      .select(`
+        id, title, description, starts_on, ends_on, price_amount_cents,
+        event_types(key, label, color)
+      `)
+      .eq("club_id", clubId)
+      .eq("enrollment_model", "program")
+      .eq("status", "active")
+      .is("archived_at", null)
+      .gte("ends_on", today)
+      .order("starts_on", { ascending: true }),
+    supabase
+      .from("programs")
+      .select(`
+        id, title, description, starts_on, ends_on, price_amount_cents,
+        event_types(key, label, color)
+      `)
+      .eq("club_id", clubId)
+      .eq("enrollment_model", "program")
+      .eq("status", "completed")
+      .is("archived_at", null),
+  ]);
 
-  if (programsErr) {
+  if (activeResult.error) {
     // Log the real Postgres/PostgREST error server-side for debugging; the
     // UI only ever sees a stable, generic message — never raw database text.
-    console.error("[getMemberPrograms] failed to load programs:", programsErr);
+    console.error("[getMemberPrograms] failed to load programs:", activeResult.error);
+    return { error: PROGRAMS_LOAD_ERROR };
+  }
+  if (completedResult.error) {
+    console.error("[getMemberPrograms] failed to load completed programs:", completedResult.error);
     return { error: PROGRAMS_LOAD_ERROR };
   }
 
-  const rawPrograms = (programsData ?? []) as unknown as RawMemberProgramRow[];
+  const activePrograms    = (activeResult.data ?? []) as unknown as RawMemberProgramRow[];
+  const completedPrograms = (completedResult.data ?? []) as unknown as RawMemberProgramRow[];
+  const completedProgramIds = new Set(completedPrograms.map(p => p.id));
+  const rawPrograms = [...activePrograms, ...completedPrograms];
   if (rawPrograms.length === 0) return { programs: [] };
 
   const programIds = rawPrograms.map(p => p.id);
@@ -218,17 +254,24 @@ export async function getMemberPrograms(
     enrollmentByProgram.set(e.program_id, { id: e.id, status: e.status, offer_expires_at: e.offer_expires_at });
   }
 
-  const programs: MemberProgramCard[] = rawPrograms.map(p => ({
-    id:            p.id,
-    title:         p.title,
-    description:   p.description,
-    event_type:    p.event_types,
-    starts_on:     p.starts_on,
-    ends_on:       p.ends_on,
-    rules:         rulesByProgram.get(p.id) ?? [],
-    my_enrollment: enrollmentByProgram.get(p.id) ?? null,
-    price_amount_cents: p.price_amount_cents,
-  }));
+  // Phase 34F-C: a completed-branch program is only ever surfaced here when
+  // the caller has an actual 'enrolled' row for it — never merely because
+  // they were once waitlisted/offered/cancelled, and never for a completed
+  // program they have no history with at all (that program was fetched
+  // broadly above only to make this per-program enrollment check possible).
+  const programs: MemberProgramCard[] = rawPrograms
+    .filter(p => !completedProgramIds.has(p.id) || enrollmentByProgram.get(p.id)?.status === "enrolled")
+    .map(p => ({
+      id:            p.id,
+      title:         p.title,
+      description:   p.description,
+      event_type:    p.event_types,
+      starts_on:     p.starts_on,
+      ends_on:       p.ends_on,
+      rules:         rulesByProgram.get(p.id) ?? [],
+      my_enrollment: enrollmentByProgram.get(p.id) ?? null,
+      price_amount_cents: p.price_amount_cents,
+    }));
 
   return { programs };
 }
@@ -278,7 +321,35 @@ export async function leaveProgram(params: {
   if (!guard.ok) return { error: { message: guard.error } };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("leave_program", { p_program_id: params.p_program_id });
+
+  // Phase 34F-C — resolve the caller's own current Program payment (if
+  // any) BEFORE attempting the leave, so a subsequent open_checkout_
+  // requires_resolution failure (raised by leave_program's own
+  // pre-mutation guard, 0163) can be resolved without a second round-trip
+  // to discover which payment was blocking. get_program_payment_for_
+  // checkout only ever returns a row for an ENROLLED Member with an actual
+  // obligation — exactly the one case leave_program's guard could ever
+  // find something to invalidate; a waitlisted/offered leave resolves no
+  // row here and never needs resolution. Mirrors leaveEvent's identical
+  // pattern (calendar/actions.ts) exactly.
+  const { data: paymentRow } = await supabase.rpc("get_program_payment_for_checkout", {
+    p_program_id: params.p_program_id,
+  });
+  const paymentId = paymentRow?.[0]?.payment_id ?? null;
+
+  let { data, error } = await supabase.rpc("leave_program", { p_program_id: params.p_program_id });
+
+  // Phase 34F-C — a bound, potentially still-payable Stripe Checkout
+  // Session is open for the caller's own Program payment — resolve it via
+  // Stripe (never a silent local override) before safely retrying exactly
+  // once, mirroring leaveEvent's own established resolve-then-retry
+  // pattern.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && paymentId) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("leave_program", { p_program_id: params.p_program_id }));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   revalidatePath("/events");
