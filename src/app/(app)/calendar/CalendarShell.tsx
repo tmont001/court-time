@@ -7,6 +7,12 @@ import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
+// Phase 34F-D — the SAME canonical Member Lesson detail component
+// /my-schedule?tab=lessons already uses (LessonsClient -> LessonRequestDetail).
+// Reused verbatim here, not reimplemented: no second Lesson payment path,
+// one canonical Member Lesson Pay Now action regardless of entry surface.
+import LessonRequestDetail from "@/app/(app)/lessons/LessonRequestDetail";
+import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
 import { createReservation, adminCreateMemberReservation, cancelMemberReservation } from "./actions";
@@ -397,6 +403,10 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [creatingEvent, setCreatingEvent] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [creatingBlock, setCreatingBlock]             = useState(false);
+  // Phase 34F-D — the owning Member's own Lesson detail, opened from a
+  // clicked pro_lesson block on this page. Reuses LessonRequestDetail
+  // verbatim (imported above) rather than a second implementation.
+  const [selectedLessonRequest, setSelectedLessonRequest] = useState<LessonRequestRow | null>(null);
 
   // Phase 34D-D1 — returning from Stripe Checkout: fetch and auto-open the
   // reservation's own detail sheet directly by id (independent of whatever
@@ -1010,6 +1020,26 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     }
   }
 
+  // Phase 34F-D — a Member clicking their OWN pro_lesson block on /calendar.
+  // Resolves the full LessonRequestRow via the SAME RPC (get_my_lesson_
+  // requests) /my-schedule's own page.tsx already calls — never a raw
+  // lesson_requests table read reimplementing that RPC's own enrichment
+  // (pro/court names) or its own server-side identity scoping. The RPC
+  // (SECURITY DEFINER, 0112) resolves the caller's own identity itself
+  // (auth.uid() plus their own current roster identity) and only ever
+  // returns rows belonging to that caller — a different Member's lesson
+  // can structurally never be returned here regardless of which
+  // reservation id is passed in, so "isOwn" below is a UX pre-filter
+  // (which block is even clickable), not the security boundary; the
+  // boundary is the RPC's own scoping.
+  async function handleOpenMemberLesson(reservationId: string) {
+    const { data, error } = await supabase.rpc("get_my_lesson_requests");
+    if (error || !data) return;
+    const allLessons = data as LessonRequestRow[];
+    const match = allLessons.find(r => r.linked_reservation_id === reservationId);
+    if (match) setSelectedLessonRequest(match);
+  }
+
   // Phase 33G2: Admin/Pro → Lesson creation from a selected Calendar
   // court/time slot, reusing the existing staff Lesson-booking flow at
   // /admin/lessons (AdminRequestLessonSheet) rather than building a second
@@ -1501,17 +1531,35 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                             (isAdmin || (userRole === "pro" && isOwn)) &&
                             res.status === "confirmed" &&
                             new Date(res.starts_at) > new Date();
+                          // Phase 34F-D — the owning Member may open their OWN lesson's detail
+                          // (assigned Pro, schedule/status, payment badge, Pay Now when
+                          // eligible) via the SAME LessonRequestDetail component /my-schedule
+                          // already uses — no second Lesson payment implementation. Unlike
+                          // canManageLesson above, not restricted to future-only: a past,
+                          // still-unpaid confirmed lesson must remain viewable/payable exactly
+                          // like every other domain in this app (no time-based payment
+                          // cutoff). Reservation-level status is always 'confirmed' here in
+                          // the first place — the calendar's own reservations fetch only ever
+                          // requests status in ('pending','confirmed'), so a cancelled lesson
+                          // reservation never reaches this render branch at all.
+                          const canViewOwnLesson = userRole === "member" && isOwn && res.status === "confirmed";
+                          const isLessonClickable = canManageLesson || canViewOwnLesson;
+                          const handleLessonClick = canManageLesson
+                            ? () => handleManageLesson(res.id)
+                            : canViewOwnLesson
+                              ? () => handleOpenMemberLesson(res.id)
+                              : undefined;
                           return (
                             <div
                               key={res.id}
-                              role={canManageLesson ? "button" : undefined}
-                              tabIndex={canManageLesson ? 0 : undefined}
-                              onClick={canManageLesson ? () => handleManageLesson(res.id) : undefined}
-                              onKeyDown={canManageLesson ? (e) => {
-                                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleManageLesson(res.id); }
+                              role={isLessonClickable ? "button" : undefined}
+                              tabIndex={isLessonClickable ? 0 : undefined}
+                              onClick={handleLessonClick}
+                              onKeyDown={isLessonClickable ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleLessonClick?.(); }
                               } : undefined}
                               className={`absolute rounded text-[10px] font-semibold px-1.5 overflow-hidden flex items-start pt-1 bg-violet-50 border border-violet-300 text-violet-800 dark:bg-violet-950/40 dark:border-violet-700 dark:text-violet-200 ${
-                                canManageLesson ? "cursor-pointer" : "pointer-events-none"
+                                isLessonClickable ? "cursor-pointer" : "pointer-events-none"
                               } ${justChangedIds.has(res.id) ? "ct-calendar-item-settle" : ""}`}
                               style={blockPos}
                             >
@@ -1812,6 +1860,27 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
               ? async () => cancelMemberReservation(selectedReservation.id, clubId)
               : undefined
           }
+        />
+      )}
+
+      {/* ── Member's own Lesson detail (Phase 34F-D) ─────────────────────── */}
+      {selectedLessonRequest && (
+        <LessonRequestDetail
+          request={selectedLessonRequest}
+          userId={userId}
+          clubId={clubId}
+          clubTimezone={clubTimezone}
+          currency={currency}
+          // LessonRequestDetail's own internal mutations (withdraw/accept/
+          // decline/cancel) call router.refresh() then this onClose — that
+          // refreshes /calendar's own Server Component tree, but this
+          // page's client-side `reservations` array is fetched separately
+          // (a client-side effect keyed on refreshTick, not SSR props), so
+          // it needs its own bump here too — otherwise a just-cancelled
+          // lesson's block could keep showing stale until the next
+          // unrelated refetch. Harmless on a plain (non-mutating) close as
+          // well — just re-fetches the same day's already-current data.
+          onClose={() => { setSelectedLessonRequest(null); setRefreshTick(t => t + 1); }}
         />
       )}
 

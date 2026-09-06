@@ -116,7 +116,7 @@ export default function PaymentDetailSheet({
   }
   if (row.recordPaymentBlocked && isPaymentOpenForRecording(row.state)) {
     reviewNotes.push(
-      "The parent Event was cancelled, so Record Payment is withheld here — the balance above remains " +
+      `${row.lifecycleLabel ?? "This booking was cancelled"}, so Record Payment is withheld here — the balance above remains ` +
       "historical truth and is never automatically waived or voided. Use Refund if money was already collected and should be returned.",
     );
   }

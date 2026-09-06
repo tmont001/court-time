@@ -225,12 +225,18 @@ export default async function AdminPaymentsPage() {
     // cancellation never mutates amount_paid_cents/status). Null when the
     // domain row is active or has no cancellation concept at all.
     let lifecycleLabel: string | null = null;
-    // Runtime QA polish — true only for a cancelled parent Event (event_
-    // participant/event_guest below); withholds the Record Payment action
-    // without touching any financial data. Default false for every other
-    // domain — this pass deliberately does not extend the same treatment
-    // to Reservation/Lesson/Program, which keep their existing behavior
-    // unchanged.
+    // Runtime QA polish (34F-B), extended to Reservation/Lesson/Program
+    // (34F-D) — true for a cancelled Reservation, a cancelled Lesson, a
+    // cancelled parent Event (event_participant/event_guest below), or a
+    // cancelled parent Program (program_enrollment below); withholds the
+    // Record Payment action without touching any financial data (locked
+    // cross-domain principle: domain cancellation suppresses NEW
+    // collection actions, it never fabricates a refund/waiver/void or
+    // mutates amount_due_cents/amount_paid_cents). Program is the one
+    // domain where completion is explicitly NOT treated like cancellation:
+    // a completed Program's debt remains legitimately collectible (the
+    // service was delivered), so recordPaymentBlocked stays false there —
+    // only status === 'cancelled' sets it true.
     let recordPaymentBlocked = false;
 
     if (p.domain_type === "reservation") {
@@ -241,6 +247,11 @@ export default async function AdminPaymentsPage() {
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/calendar";
       lifecycleLabel = reservationLifecycleLabel(r.status);
+      // 34F-D — a cancelled Reservation may still show a historical Unpaid/
+      // Paid financial state, but must not invite a NEW collection action.
+      // Refund (independent, gated elsewhere on refundableCents/dispute
+      // state only) is entirely unaffected by this flag.
+      recordPaymentBlocked = r.status === "cancelled";
     } else if (p.domain_type === "lesson_request") {
       const r = lessonRequestById.get(p.domain_id);
       if (!r) continue;
@@ -249,6 +260,13 @@ export default async function AdminPaymentsPage() {
       identityName = p.roster_member_id ? rosterName.get(p.roster_member_id) ?? "Unknown" : "Unknown";
       href = "/admin/lessons";
       lifecycleLabel = lessonRequestLifecycleLabel(r.status);
+      // 34F-D — same reasoning as Reservation above. declined/withdrawn
+      // are pre-confirmation terminal states that can never have a payment
+      // obligation in the first place (obligations are only ever created
+      // once a lesson reaches 'confirmed') — cancelled is the only
+      // post-obligation terminal status, so it is the only one checked
+      // here.
+      recordPaymentBlocked = r.status === "cancelled";
     } else if (p.domain_type === "event_participant") {
       const r = eventParticipantById.get(p.domain_id);
       if (!r) continue;
@@ -309,6 +327,15 @@ export default async function AdminPaymentsPage() {
       // cancelling individual enrollment rows, which are intentionally
       // preserved (may remain enrolled/waitlisted/offered).
       lifecycleLabel = programEnrollmentLifecycleLabel(prog?.status, r.status);
+      // 34F-D correction — Program cancellation must suppress NEW
+      // collection actions exactly like Reservation/Lesson/Event above;
+      // completion must NOT (the service was delivered and the debt
+      // remains legitimately collectible — the same reason complete_
+      // program itself carries no stale-Checkout guard, 34F-C). Keyed off
+      // the PARENT Program's own status, never the enrollment child row's
+      // own status (which is intentionally preserved through cancellation)
+      // and never the payment's own financial status.
+      recordPaymentBlocked = prog?.status === "cancelled";
     }
 
     const disputesForPayment = disputesByPaymentId.get(p.id) ?? [];

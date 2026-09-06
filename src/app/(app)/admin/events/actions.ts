@@ -830,13 +830,35 @@ export async function updateEventAdmin(params: {
   // get_event_delivery_context — never a raw notifications SELECT, which
   // matters even more here than for a single-recipient dispatch since a
   // material edit can notify many participants in one call.
-  for (const { notification_id } of notifications) {
-    try {
-      await dispatchEventNotification(supabase, notification_id);
-    } catch {
-      // Email/SMS dispatch must never block edit success or surface to the user.
-    }
-  }
+  //
+  // Phase 34F-D (performance) — dispatched in PARALLEL, not sequentially
+  // awaited one at a time. Root cause of the reported "editing one
+  // generated Program session's court/time is noticeably slow": a
+  // whole-program session's own event_participants includes every
+  // currently enrolled Member (materialized by _materialize_program_
+  // member_into_future_events, 0113), so a court/time edit's own
+  // update_event notification loop (0161) can produce one notification per
+  // enrolled Member — tens of recipients for a real class/clinic roster,
+  // versus the handful an ordinary Event edit usually notifies. Each
+  // dispatchEventNotification call does its own network-bound SMS/email
+  // send; awaited one at a time, this Server Action's total latency scaled
+  // linearly with roster size and blocked the Save action the whole time.
+  // Each dispatch is fully independent (its own DB read + its own SMS/
+  // email attempt, no shared state, no ordering dependency between
+  // recipients) and already isolates its own failure — parallelizing
+  // changes nothing about error handling or which notifications are sent,
+  // only how long the Admin waits for Save to resolve. Never touches the
+  // Program-level Checkout invariant: this loop only ever sends
+  // notifications, no payment/domain mutation happens here at all.
+  await Promise.all(
+    notifications.map(async ({ notification_id }) => {
+      try {
+        await dispatchEventNotification(supabase, notification_id);
+      } catch {
+        // Email/SMS dispatch must never block edit success or surface to the user.
+      }
+    }),
+  );
 
   revalidatePath("/calendar");
   revalidatePath("/events");

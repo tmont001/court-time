@@ -31,7 +31,7 @@ const DETAIL_SHEET_PATH = "src/components/PaymentDetailSheet.tsx";
 // Paid + cancelled keeps Refund
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("recordPaymentBlocked — computed server-side, true ONLY for a cancelled parent Event's participant/guest payment", () => {
+describe("recordPaymentBlocked — computed server-side, true for a cancelled parent Event's participant/guest payment (34F-B; Reservation/Lesson's own analogous behavior is covered in recordPaymentCrossDomain.regression.test.ts, 34F-D)", () => {
   const src = () => readSource(PAGE_PATH);
 
   it("1. event_participant: recordPaymentBlocked is set from the PARENT Event's own status ('cancelled'), never from the participant row's own status or the payment's own financial status", () => {
@@ -54,17 +54,13 @@ describe("recordPaymentBlocked — computed server-side, true ONLY for a cancell
     expect(block).toContain('recordPaymentBlocked = ev?.status === "cancelled";');
   });
 
-  it("3. defaults to false for every other domain (reservation, lesson_request, program_enrollment) — this pass does not extend the treatment there", () => {
+  it("3. defaults to false. program_enrollment now ALSO sets it (34F-D correction), keyed on the PARENT Program's own status — see recordPaymentCrossDomain.regression.test.ts for the full completed-vs-cancelled coverage", () => {
     const s = src();
     expect(s).toContain("let recordPaymentBlocked = false;");
-    const reservationIdx = s.indexOf('if (p.domain_type === "reservation") {');
-    const lessonIdx = s.indexOf('} else if (p.domain_type === "lesson_request") {');
-    const reservationBlock = s.slice(reservationIdx, lessonIdx);
-    expect(reservationBlock).not.toMatch(/recordPaymentBlocked/);
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    expect(programBlock).not.toMatch(/recordPaymentBlocked\s*=/);
+    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
   });
 
   it("propagated into AdminPaymentRow and consumed by BOTH the list-view Record Payment button and PaymentDetailSheet's canRecordPayment — never touching isPaymentOpenForRecording's own domain-neutral financial check", () => {
@@ -103,7 +99,7 @@ describe("recordPaymentBlocked — computed server-side, true ONLY for a cancell
     const s = readSource(DETAIL_SHEET_PATH);
     const idx = s.indexOf("if (row.recordPaymentBlocked && isPaymentOpenForRecording(row.state)) {");
     expect(idx).toBeGreaterThan(-1);
-    const block = s.slice(idx, s.indexOf("}", s.indexOf("reviewNotes.push", idx)) + 1);
+    const block = s.slice(idx, s.indexOf("reviewNotes.push", idx) + 2000);
     expect(block).toMatch(/never automatically waived or voided/);
   });
 });
@@ -153,10 +149,13 @@ describe("Event payment context includes start/end time (club timezone), matchin
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 11 — Reservation/Lesson/Program payment actions are unaffected
+// 11 — isPaymentOpenForRecording itself stays domain-neutral across every
+// domain, including Program (now corrected — see
+// recordPaymentCrossDomain.regression.test.ts for the full completed-vs-
+// cancelled Program coverage).
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("11. Reservation/Lesson/Program Record Payment eligibility is unaffected by this correction", () => {
+describe("11. isPaymentOpenForRecording stays domain-neutral — no lifecycle parameter was ever added to the shared financial check itself, for any domain including Program", () => {
   it("isPaymentOpenForRecording itself (the shared, domain-neutral financial check every domain's Record Payment button uses) is untouched — no lifecycle parameter was added to it", () => {
     const s = readSource("src/lib/payments.ts");
     const fnStart = s.indexOf("export function isPaymentOpenForRecording(");
@@ -166,14 +165,11 @@ describe("11. Reservation/Lesson/Program Record Payment eligibility is unaffecte
     expect(fn).not.toMatch(/lifecycle|cancelled|recordPaymentBlocked/i);
   });
 
-  it("recordPaymentBlocked defaults to false for reservation/lesson_request/program_enrollment rows, so `!row.recordPaymentBlocked` is always true for them — the added condition is a structural no-op outside Events", () => {
+  it("program_enrollment now sets recordPaymentBlocked from the PARENT Program's own status — the lifecycle gating lives entirely in page.tsx's own recordPaymentBlocked computation, never inside isPaymentOpenForRecording", () => {
     const s = readSource(PAGE_PATH);
-    // Already proven above that these three branches never assign
-    // recordPaymentBlocked = true; re-asserted here as the explicit
-    // "Reservation/Lesson/Program unaffected" requirement.
-    const reservationIdx = s.indexOf('if (p.domain_type === "reservation") {');
-    const lessonEndIdx = s.indexOf('} else if (p.domain_type === "event_participant") {');
-    const reservationAndLessonBlock = s.slice(reservationIdx, lessonEndIdx);
-    expect(reservationAndLessonBlock).not.toMatch(/recordPaymentBlocked\s*=\s*true|recordPaymentBlocked\s*=\s*ev/);
+    const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
+    const rowsPushIdx = s.indexOf("rows.push({");
+    const programBlock = s.slice(programIdx, rowsPushIdx);
+    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
   });
 });

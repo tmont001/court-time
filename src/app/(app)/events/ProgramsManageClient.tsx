@@ -489,8 +489,26 @@ export default function ProgramsManageClient({
                         </button>
                       </>
                     ) : (
-                      // status is 'cancelled' or 'completed', not yet archived
+                      // status is 'cancelled' or 'completed', not yet archived.
+                      // Phase 34F-D fix: a completed (or cancelled) Program is
+                      // historical, not erased — staff must still be able to
+                      // VIEW its roster (enrollment status, payment state/
+                      // history) here. get_program_roster (0092, unmodified)
+                      // already has no status restriction of its own; the
+                      // Roster button itself was the only thing withholding
+                      // access. ProgramRosterSheet is told this Program's own
+                      // status (programStatus below) and switches itself to
+                      // read-only for anything other than 'active' — no
+                      // enrollment/removal action is exposed, and Member Pay
+                      // Now eligibility is untouched (governed entirely by
+                      // the already-proven Program Checkout RPCs, not by
+                      // anything in this sheet).
                       <>
+                        {p.enrollment_model === "program" && (
+                          <button onClick={() => setViewingRoster(p)} className={ACTION_BUTTON_SECONDARY}>
+                            Roster
+                          </button>
+                        )}
                         {!confirmingArchive && (
                           <button
                             disabled={isUpdating}
@@ -587,6 +605,7 @@ export default function ProgramsManageClient({
         <ProgramRosterSheet
           programId={viewingRoster.id}
           programTitle={viewingRoster.title}
+          programStatus={viewingRoster.status}
           clubId={clubId}
           clubTimezone={clubTimezone}
           userRole={userRole}

@@ -73,6 +73,18 @@ interface MemberOption {
 interface Props {
   programId:     string;
   programTitle:  string;
+  // Phase 34F-D — the parent Program's own current lifecycle status
+  // (ProgramListRow["status"]). Optional/undefined is treated as "active"
+  // (no prior caller passed this before this checkpoint, and no existing
+  // call site regresses). Drives isReadOnly below — a completed or
+  // cancelled Program's roster is historical: still fully viewable (roster
+  // list, enrollment status, payment state/history), but enrollment-
+  // changing actions (Add Member, Remove, Force Confirm) no longer make
+  // sense and are hidden. Record Payment is deliberately NOT gated by this
+  // — that follows its own, already-correct financial-lifecycle rules
+  // (unaffected by this checkpoint for Programs; see 34F-D's own STOP
+  // report), never this roster-membership concept.
+  programStatus?: "draft" | "active" | "cancelled" | "completed";
   // The club this sheet's page was rendered for (the caller's active
   // club) — passed to the write actions as expectedClubId for the
   // stale-club preflight guard (Phase 26F1 pattern).
@@ -110,10 +122,26 @@ function rowKey(row: ProgramRosterRow): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function ProgramRosterSheet({ programId, programTitle, clubId, clubTimezone, userRole, onClose }: Props) {
+export default function ProgramRosterSheet({ programId, programTitle, programStatus, clubId, clubTimezone, userRole, onClose }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
   const canRecordPayment = isOperator(userRole);
+  // Phase 34F-D — see the Props comment above. add_program_member/add_
+  // program_roster_member already independently re-enforce this same
+  // 'active'-only rule server-side via _program_is_enrollable (0091); this
+  // is a UI-eligibility mirror (avoids offering an action that would just
+  // come back as program_not_enrollable), not the authorization boundary.
+  const isReadOnly = programStatus !== undefined && programStatus !== "active";
+  // 34F-D correction — a SEPARATE, lifecycle-specific predicate from
+  // isReadOnly above: cancellation must suppress the Record Payment action
+  // (the club cancelled the service; historical Unpaid may stay visible,
+  // but Court Time should not encourage collecting the original fee), but
+  // completion must NOT (the service was delivered and the debt remains
+  // legitimately collectible — matching /admin/payments' own identical
+  // parent-Program-status rule, and complete_program's own deliberate lack
+  // of a stale-Checkout guard, 34F-C). Gating Record Payment on isReadOnly
+  // would have incorrectly suppressed it for a completed Program too.
+  const recordPaymentLifecycleBlocked = programStatus === "cancelled";
 
   // ── Roster state ──────────────────────────────────────────────────────────
   const [rows, setRows]               = useState<ProgramRosterRow[]>([]);
@@ -399,7 +427,22 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
 
         {!loading && !error && (
           <div className="ct-content-settle">
-            {/* ── Add Member ──────────────────────────────────────────── */}
+            {/* Phase 34F-D — this Program is historical (completed/
+                cancelled), not erased: the roster below is still fully
+                viewable (status, payment state/history), but enrollment-
+                changing actions no longer apply. */}
+            {isReadOnly && (
+              <p className="mb-4 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                This program is {programStatus} — the roster is shown for reference only.
+              </p>
+            )}
+
+            {/* ── Add Member — hidden once this Program is no longer
+                'active' (completed/cancelled/draft): the roster below stays
+                fully viewable, but adding a new enrollment no longer makes
+                sense and would just fail server-side (program_not_
+                enrollable) anyway. */}
+            {!isReadOnly && (
             <div className="mb-5">
               {!addMemberOpen ? (
                 <button onClick={openAddMember} className={ACTION_BUTTON_SECONDARY}>
@@ -472,6 +515,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                 </div>
               )}
             </div>
+            )}
 
             {rows.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-4">No enrollments yet.</p>
@@ -507,7 +551,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                                 <p className="text-xs text-gray-400 dark:text-gray-500 truncate">{row.email}</p>
                               )}
                             </div>
-                            {!isConfirming && (
+                            {!isReadOnly && !isConfirming && (
                               <button
                                 disabled={isUpdating}
                                 onClick={() => setConfirmingRemoveId(key)}
@@ -517,7 +561,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </button>
                             )}
                           </div>
-                          {isConfirming && (
+                          {!isReadOnly && isConfirming && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2">
                               <p className="text-xs text-red-700 dark:text-red-400 flex-1 min-w-0">
                                 Remove {displayName(row)} from this program?
@@ -542,11 +586,14 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                           {/* Payment state — Phase 34C. Whole Program
                               enrollment obligation only. Admin/Staff only
                               for Record Payment (never Pro). Renders
-                              nothing when there is no payment row. */}
+                              nothing when there is no payment row. Badge/
+                              history stay visible regardless of lifecycle
+                              (34F-D) — only the Record Payment action
+                              itself is withheld for a cancelled Program. */}
                           {paymentStateByRowKey.get(key) && (
                             <div className="mt-1.5 flex flex-col sm:flex-row sm:items-center gap-2">
                               <PaymentStateBadge state={paymentStateByRowKey.get(key)} />
-                              {canRecordPayment && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
+                              {canRecordPayment && !recordPaymentLifecycleBlocked && isPaymentOpenForRecording(paymentStateByRowKey.get(key)) && (
                                 <button
                                   onClick={() => setRecordPaymentTarget({ rowKey: key, title: displayName(row) })}
                                   className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
@@ -606,7 +653,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                                 )
                               )}
                             </div>
-                            {!isConfirming && (
+                            {!isReadOnly && !isConfirming && (
                               <div className="ml-3 flex items-center gap-2 shrink-0">
                                 {/* Phase 33D2b: staff-managed lifecycle for
                                     an enrollee (no-account or claimed) who
@@ -628,7 +675,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </div>
                             )}
                           </div>
-                          {isConfirming && (
+                          {!isReadOnly && isConfirming && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2">
                               <p className="text-xs text-red-700 dark:text-red-400 flex-1 min-w-0">
                                 Remove {displayName(row)}&apos;s offer for this program?
@@ -689,7 +736,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                             <span className="ml-3 shrink-0 text-xs font-semibold text-amber-600 dark:text-amber-400">
                               #{index + 1}
                             </span>
-                            {!isConfirming && (
+                            {!isReadOnly && !isConfirming && (
                               <div className="ml-2 flex items-center gap-2 shrink-0">
                                 {/* Phase 33D2b: staff can seat a waitlisted
                                     enrollee directly, matching Force Confirm
@@ -711,7 +758,7 @@ export default function ProgramRosterSheet({ programId, programTitle, clubId, cl
                               </div>
                             )}
                           </div>
-                          {isConfirming && (
+                          {!isReadOnly && isConfirming && (
                             <div className="mt-2 flex items-center gap-2 flex-wrap bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-lg px-3 py-2">
                               <p className="text-xs text-red-700 dark:text-red-400 flex-1 min-w-0">
                                 Remove {displayName(row)} from the waitlist?
