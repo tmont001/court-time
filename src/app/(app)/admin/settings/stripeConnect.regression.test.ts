@@ -496,7 +496,11 @@ describe("Activation UI — stale 'coming in a future update' copy removed (requ
   it("PaymentTrackingSection's online-payments toggle is genuinely enable-able (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to", () => {
     const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
     expect(src).toContain("const stripeReady = isCourtTimePaymentsSelectable(stripeReadiness);");
-    expect(src).toContain("const onlineDisabled = !trackingOn || !stripeReady;");
+    // Phase 34G-A2: onlineDisabled also requires `connected` (Court Time
+    // Payments is now commercially locked to Connected) — added alongside
+    // the pre-existing trackingOn/stripeReady conditions, never replacing
+    // them.
+    expect(src).toContain("const onlineDisabled = !trackingOn || !connected || !stripeReady;");
     // Never unconditionally disabled — that would be the pre-34D-C, "Coming
     // Soon" behavior this fix's copy update would otherwise still contradict.
     expect(src).not.toMatch(/onlineDisabled\s*=\s*true\s*;/);
@@ -545,7 +549,7 @@ describe("Hybrid payments UX — online toggle disabled states (requirements 9-1
 
   it("online toggle disabled while tracking OFF", () => {
     const s = src();
-    expect(s).toContain("const onlineDisabled = !trackingOn || !stripeReady;");
+    expect(s).toContain("const onlineDisabled = !trackingOn || !connected || !stripeReady;");
     expect(s).toContain('? "Turn on payment tracking first."');
   });
 
@@ -557,14 +561,15 @@ describe("Hybrid payments UX — online toggle disabled states (requirements 9-1
     expect(s).toContain("NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, \"ready\">]");
   });
 
-  it("Stripe-ready + tracking ON allows online activation", () => {
+  it("Stripe-ready + tracking ON + Connected allows online activation", () => {
     const s = src();
     // handleOnlineToggle only blocks on (isPending || !trackingOn), and
-    // separately on (!onlineOn && !stripeReady) — i.e. turning ON
-    // specifically requires stripeReady, but is otherwise unblocked once
-    // tracking is on.
+    // separately on (!onlineOn && (!connected || !stripeReady)) — i.e.
+    // turning ON specifically requires BOTH connected and stripeReady
+    // (34G-A2 added connected alongside the pre-existing stripeReady
+    // check), but is otherwise unblocked once tracking is on.
     expect(s).toContain("if (isPending || !trackingOn) return;");
-    expect(s).toContain("if (!onlineOn && !stripeReady) return;");
+    expect(s).toContain("if (!onlineOn && (!connected || !stripeReady)) return;");
     expect(s).toContain("submitMode(nextModeForOnlineToggle(mode, !onlineOn));");
   });
 });

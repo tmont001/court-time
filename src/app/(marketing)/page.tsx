@@ -249,7 +249,7 @@ export default async function MarketingHomePage() {
             },
             {
               title: 'Transparent pricing',
-              body: 'One flat price for your whole club, published on our pricing page, with no per-member fee.',
+              body: 'A flat price per plan for your whole club, published on our pricing page, with no per-member fee.',
             },
           ].map((point, i) => (
             <MarketingReveal

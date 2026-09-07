@@ -71,6 +71,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   payment_not_open_for_checkout: "This balance can't be paid online right now — it may already be resolved.",
   no_balance_due: "This lesson has no balance due.",
   court_time_payments_not_available: "Online payments aren't available right now. Please try again later.",
+  // Phase 34G-A2 — the atomic attempt-opening wrapper's own live
+  // member_self_service check (raised at open_payment_checkout_attempt /
+  // supersede_checkout_attempt_and_open_fresh, 0164) found the club no
+  // longer Connected between the eligibility read above and this step —
+  // e.g. an operator downgrade completed concurrently. Never a
+  // client-triggerable condition to distinguish further.
+  capability_not_available: "Online payments are no longer available for this club.",
   stripe_connect_not_ready: "Online payments aren't available right now. Please try again later.",
   stale_attempt_environment_mismatch: "Online payments aren't available right now. Please try again later.",
   db_not_configured: "Something went wrong. Please try again.",
@@ -238,7 +245,7 @@ export async function createLessonCheckoutAction(
   if (resolveError || !resolvedRows || resolvedRows.length === 0) {
     const key =
       resolveError?.message.match(
-        /lesson_not_found|lesson_not_confirmed|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|stale_attempt_environment_mismatch|invalid_arguments/,
+        /capability_not_available|lesson_not_found|lesson_not_confirmed|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|stale_attempt_environment_mismatch|invalid_arguments/,
       )?.[0] ?? "";
     if (!ERROR_MESSAGES[key]) {
       // Unrecognized error (or zero rows with no error at all) — the
@@ -327,7 +334,7 @@ export async function createLessonCheckoutAction(
     if (supersedeError || !supersededRows || supersededRows.length === 0) {
       const key =
         supersedeError?.message.match(
-          /lesson_not_found|lesson_not_confirmed|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|checkout_attempt_not_found|invalid_arguments/,
+          /capability_not_available|lesson_not_found|lesson_not_confirmed|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|checkout_attempt_not_found|invalid_arguments/,
         )?.[0] ?? "";
       if (!ERROR_MESSAGES[key]) {
         logUnexpectedLessonCheckoutError("supersede_lesson_checkout_attempt_and_open_fresh", requestId, supersedeError);

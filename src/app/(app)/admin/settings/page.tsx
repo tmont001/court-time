@@ -27,6 +27,10 @@ export default async function AdminSettingsPage() {
 
   const supabase = await createClient();
   const clubId = profile?.club_id ?? "";
+  // Phase 34G-A2 — already resolved by getAuthProfile() for every caller
+  // (current_club_has_capability RPC, 0122); no new query. Read-only here
+  // — see the Operating Model section below.
+  const memberSelfService = profile?.memberSelfService ?? false;
 
   const [settingsResult, clubResult, eventTypesResult, lessonTypesResult, stripeConnectResult] = await Promise.all([
     supabase
@@ -92,6 +96,41 @@ export default async function AdminSettingsPage() {
         </Link>
       </div>
       <div className="px-4 py-6 space-y-6 md:max-w-2xl md:mx-auto dark:text-gray-100">
+
+        {/* ── Operating Model (Phase 34G-A2) ── */}
+        {/* Read-only — sourced from the same profile.memberSelfService value
+            every capability check already uses (src/lib/supabase/user.ts,
+            current_club_has_capability RPC, 0122). No tier-mutation control
+            lives here or anywhere in-app; changing tier remains a
+            service_role-only operator action (set_club_tier_for_operator,
+            reachable only via scripts/grant-club-entitlement.mjs). This is
+            purely a clarity aid so an Admin isn't left guessing why, e.g.,
+            Court Time Payments requires Connected below. */}
+        <section className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Operating Model
+          </p>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {memberSelfService ? "Connected" : "Staff-Managed"}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {memberSelfService
+                  ? "Staff-Managed features plus Member self-service (accounts, self-booking, signup, and requests)."
+                  : "Full staff/operational functionality. Member self-service is not included on this plan."}
+              </p>
+            </div>
+            <span className="shrink-0 inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+              {memberSelfService ? "Connected" : "Staff-Managed"}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Contact us to change your plan.
+          </p>
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
 
         {/* ── Club Branding ── */}
         <section className="space-y-3">
@@ -175,6 +214,7 @@ export default async function AdminSettingsPage() {
               clubId={clubId}
               currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
               stripeReadiness={stripeReadiness}
+              connected={memberSelfService}
             />
           </div>
 

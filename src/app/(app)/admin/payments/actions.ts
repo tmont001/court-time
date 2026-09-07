@@ -22,6 +22,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_payment_mode: "Invalid payment tracking mode.",
   court_time_payments_not_available: "Court Time Payments isn't available yet.",
   stripe_connect_not_ready: "Connect a Stripe account with an active status before turning on Court Time Payments.",
+  // Phase 34G-A2: Court Time Payments is commercially locked to Connected —
+  // activate_court_time_payments (0164) raises the same capability_not_
+  // available error every other member_self_service gate already raises
+  // (0123) when the club is Staff-Managed.
+  capability_not_available: "Court Time Payments requires the Connected plan. Contact us to upgrade.",
   club_not_found:       "Something went wrong. Please try again.",
   payment_not_found:    "That payment could not be found.",
   invalid_payment_amount: "Enter a valid amount greater than zero.",
@@ -154,7 +159,7 @@ export async function updateClubPaymentModeAction(
       p_actor_id: user.id,
     });
     if (error) {
-      const key = error.message.match(/stripe_connect_not_ready|invalid_arguments|club_not_found/)?.[0] ?? "";
+      const key = error.message.match(/capability_not_available|stripe_connect_not_ready|invalid_arguments|club_not_found/)?.[0] ?? "";
       return { error: ERROR_MESSAGES[key] ?? "Failed to update payment tracking mode." };
     }
 

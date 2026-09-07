@@ -59,7 +59,7 @@ const ROLES = [
   },
   {
     name: "Members",
-    summary: "Reserve courts, join events, manage waitlists, and request lessons.",
+    summary: "Reserve courts, join events, manage waitlists, and request lessons — with Connected.",
   },
 ];
 

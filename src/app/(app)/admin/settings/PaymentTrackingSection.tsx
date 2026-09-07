@@ -83,10 +83,18 @@ export default function PaymentTrackingSection({
   clubId,
   currentMode,
   stripeReadiness,
+  connected,
 }: {
   clubId: string;
   currentMode: PaymentMode;
   stripeReadiness: ConnectUIState;
+  // Phase 34G-A2 — Court Time Payments is commercially locked to
+  // Connected (member_self_service). Sourced from the same profile.
+  // memberSelfService value every other capability check already uses
+  // (src/lib/supabase/user.ts) — never a new read. Purely a UX pre-check:
+  // activate_court_time_payments (0164) independently re-enforces this
+  // exact rule server-side regardless of what this prop says.
+  connected: boolean;
 }) {
   // The ONE piece of client-side state representing payment_mode — both
   // toggles below are derived from it on every render, never tracked
@@ -137,19 +145,22 @@ export default function PaymentTrackingSection({
 
   function handleOnlineToggle() {
     if (isPending || !trackingOn) return;
-    if (!onlineOn && !stripeReady) return;
+    if (!onlineOn && (!connected || !stripeReady)) return;
     // activate_court_time_payments itself independently re-derives and
-    // re-validates Stripe readiness server-side — the stripeReady check
-    // above is only a UX convenience, never the authorization boundary.
-    // Turning online payments off never needs confirmation — it only
-    // stops NEW obligations from being online-payable; tracking itself
-    // (and offline recording) is unaffected.
+    // re-validates BOTH Connected (34G-A2) and Stripe readiness server-
+    // side — the connected/stripeReady checks above are only a UX
+    // convenience, never the authorization boundary. Turning online
+    // payments off never needs confirmation — it only stops NEW
+    // obligations from being online-payable; tracking itself (and offline
+    // recording) is unaffected.
     submitMode(nextModeForOnlineToggle(mode, !onlineOn));
   }
 
-  const onlineDisabled = !trackingOn || !stripeReady;
+  const onlineDisabled = !trackingOn || !connected || !stripeReady;
   const onlineDisabledReason = !trackingOn
     ? "Turn on payment tracking first."
+    : !connected
+    ? "Court Time Payments requires the Connected plan. Contact us to upgrade."
     : !stripeReady
     ? NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, "ready">]
     : null;
