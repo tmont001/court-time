@@ -74,16 +74,44 @@ export interface PaymentEventHistoryItem {
   notes: string | null;
   occurredAt: string;
   isReversed: boolean;
+  // Phase 34G-C1 additions — every field already existed on payment_events
+  // (0143/0150/0153); this widens the read model to expose them, never a
+  // schema/RPC/migration change.
+  //
+  // What THIS event itself reverses (null unless eventType is
+  // 'reverse_payment_event') — distinct from isReversed above, which
+  // means "some OTHER event reverses this one."
+  reversesEventId: string | null;
+  // Manual reference (check #/terminal receipt #) for manual events; the
+  // raw Stripe Checkout Session/Refund id for online events. The UI layer
+  // — never this read model — is responsible for only ever rendering the
+  // online case inside a collapsed "Transaction details" disclosure
+  // (locked scope: raw Stripe ids must not appear prominently).
+  externalReference: string | null;
+  actorId: string | null;
+  // Resolved via ONE batched profiles lookup below (never per-event) —
+  // null for every event with a null actorId (structurally always true
+  // for online_payment_recorded/online_refund_recorded, since there is no
+  // human actor for a Stripe webhook — never fabricated here).
+  actorName: string | null;
 }
 
 // Phase 34E-E — read-only chronological ledger for the payment-detail
 // surface. payment_events already carries an Admin/Staff club-scoped
 // SELECT policy (payment_events_select_admin_staff, 0143) — a plain
 // authenticated read, no privileged client, no new RPC, no migration.
-// Deliberately excludes external_reference (raw Stripe/manual reference
-// ids) from this list surface — see this feature's own locked scope
-// ("avoid exposing raw Stripe IDs as primary UI"). Never mutates
-// anything; historical events are never rewritten.
+// Never mutates anything; historical events are never rewritten.
+//
+// Phase 34G-C1 — now also fetches external_reference/actor_id (previously
+// deliberately excluded) and resolves actor_id to a display name via ONE
+// additional batched profiles query (never per-event) — the same
+// `select("id, first_name, last_name").in("id", ids)` join
+// page.tsx already uses for pro names, confirming profiles already grants
+// Admin/Staff same-club read access; no new RLS/migration required.
+// Raw Stripe ids (external_reference on an online event) still never
+// appear in a "primary" surface — that rule now lives at the DISPLAY
+// layer (PaymentDetailSheet's own Transaction-details disclosure), not by
+// omitting the field from this read model.
 export async function fetchPaymentEventHistory(
   paymentId: string,
   expectedClubId: string,
@@ -97,7 +125,7 @@ export async function fetchPaymentEventHistory(
 
   const { data, error } = await supabase
     .from("payment_events")
-    .select("id, event_type, amount_cents, method, notes, occurred_at, reverses_event_id")
+    .select("id, event_type, amount_cents, method, external_reference, notes, actor_id, occurred_at, reverses_event_id")
     .eq("payment_id", paymentId)
     .eq("club_id", expectedClubId)
     .order("occurred_at", { ascending: true })
@@ -110,6 +138,21 @@ export async function fetchPaymentEventHistory(
   // rewrite of the historical event itself.
   const reversedIds = new Set(rows.map(r => r.reverses_event_id).filter((id): id is string => id !== null));
 
+  // Batched actor-name resolution — ONE query for every distinct actor_id
+  // on this single payment's own history (at most a handful of rows),
+  // never a per-event lookup.
+  const actorIds = [...new Set(rows.map(r => r.actor_id).filter((id): id is string => id !== null))];
+  const actorNameById = new Map<string, string>();
+  if (actorIds.length > 0) {
+    const { data: actors } = await supabase
+      .from("profiles")
+      .select("id, first_name, last_name")
+      .in("id", actorIds);
+    for (const a of actors ?? []) {
+      actorNameById.set(a.id, [a.first_name, a.last_name].filter(Boolean).join(" ") || "Staff");
+    }
+  }
+
   return {
     data: rows.map(r => ({
       id: r.id,
@@ -119,6 +162,10 @@ export async function fetchPaymentEventHistory(
       notes: r.notes,
       occurredAt: r.occurred_at,
       isReversed: reversedIds.has(r.id),
+      reversesEventId: r.reverses_event_id,
+      externalReference: r.external_reference,
+      actorId: r.actor_id,
+      actorName: r.actor_id ? actorNameById.get(r.actor_id) ?? null : null,
     })),
   };
 }

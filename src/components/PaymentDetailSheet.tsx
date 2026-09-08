@@ -21,6 +21,7 @@ import {
   formatPaymentEventLabel,
   toneClassName,
 } from "@/lib/payments";
+import { formatEventProvenanceLabel } from "@/lib/paymentProvenance";
 import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
 import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
 import { fetchPaymentEventHistory, type PaymentEventHistoryItem } from "@/app/(app)/admin/payments/actions";
@@ -213,26 +214,109 @@ export default function PaymentDetailSheet({
             <p className="text-xs text-gray-400 dark:text-gray-500">No ledger events yet.</p>
           )}
           {!historyError && history !== null && history.length > 0 && (
-            <ul className="space-y-2">
-              {[...history].reverse().map(item => (
-                <li key={item.id} className="flex items-start justify-between gap-3 text-xs">
-                  <div className="min-w-0">
-                    <p className="text-gray-700 dark:text-gray-300 font-medium">
-                      {formatPaymentEventLabel(item.eventType)}
-                      {item.isReversed && <span className="text-gray-400 dark:text-gray-500"> (reversed)</span>}
-                    </p>
-                    <p className="text-gray-400 dark:text-gray-500 mt-0.5">
-                      {formatHistoryTimestamp(item.occurredAt, clubTimezone)}
-                      {item.method ? ` · ${item.method.replace(/_/g, " ")}` : ""}
-                    </p>
-                  </div>
-                  {item.amountCents !== null && (
-                    <span className={`shrink-0 font-medium ${item.isReversed ? "text-gray-400 dark:text-gray-500 line-through" : "text-gray-700 dark:text-gray-300"}`}>
-                      {formatMoney(item.amountCents, resolvedCurrency)}
-                    </span>
-                  )}
-                </li>
-              ))}
+            <ul className="space-y-3">
+              {[...history].reverse().map(item => {
+                // Phase 34G-C1 — per-event provenance, actor, reference,
+                // and notes. Canonical source is event_type/method only —
+                // never payment_mode_at_creation (this component never
+                // reads that field at all).
+                const sourceLabel = formatEventProvenanceLabel(item.eventType, item.method);
+                // Phase 34G-C1 correction — "manual" is an event_type
+                // classification, never a presence/absence-of-method
+                // inference. refund_recorded's own method column is
+                // legitimately nullable (0143/0153) — a manual/offline
+                // refund with no method recorded is still a manual event,
+                // and its external_reference (e.g. "Check #1234") is still
+                // human-entered bookkeeping data that must render.
+                const isManualEvent = item.eventType === "manual_payment_recorded" || item.eventType === "refund_recorded";
+                const isOnlineEventWithReference =
+                  (item.eventType === "online_payment_recorded" || item.eventType === "online_refund_recorded") &&
+                  !!item.externalReference;
+                const isReversalEntry = item.eventType === "reverse_payment_event" && !!item.reversesEventId;
+                // Phase 34G-C1 correction — actor_id exists on every
+                // ledger event (obligation_created, waived, void, etc.,
+                // not only manual money-movement ones), so actorName
+                // presence alone is not sufficient to show "Recorded by."
+                // Locked per-event-type semantics: manual money-movement
+                // events get "Recorded by," a correction gets "Corrected
+                // by," online events never have a human actor at all
+                // (actorName is structurally null there), and every other
+                // ledger event type gets no new actor attribution in this
+                // checkpoint — even if actor_id happens to be populated.
+                const actorAttributionLabel =
+                  item.actorName && (item.eventType === "manual_payment_recorded" || item.eventType === "refund_recorded")
+                    ? `Recorded by ${item.actorName}`
+                    : item.actorName && item.eventType === "reverse_payment_event"
+                    ? `Corrected by ${item.actorName}`
+                    : null;
+
+                return (
+                  <li key={item.id} className="text-xs">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-gray-700 dark:text-gray-300 font-medium">
+                          {formatPaymentEventLabel(item.eventType)}
+                          {item.isReversed && <span className="text-gray-400 dark:text-gray-500"> (reversed)</span>}
+                        </p>
+                        <p className="text-gray-400 dark:text-gray-500 mt-0.5">
+                          {formatHistoryTimestamp(item.occurredAt, clubTimezone)}
+                        </p>
+                      </div>
+                      {item.amountCents !== null && (
+                        <span className={`shrink-0 font-medium ${item.isReversed ? "text-gray-400 dark:text-gray-500 line-through" : "text-gray-700 dark:text-gray-300"}`}>
+                          {formatMoney(item.amountCents, resolvedCurrency)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Never Stripe/Manual for obligation/waiver/void/
+                        reversal events — formatEventProvenanceLabel
+                        already returns null for those. */}
+                    {sourceLabel && (
+                      <p className="text-gray-500 dark:text-gray-400 mt-0.5">{sourceLabel}</p>
+                    )}
+
+                    {/* Never fabricated for a webhook-driven Stripe event
+                        (actorName is structurally null there), and never
+                        shown for a non-money-movement ledger event even
+                        when actor_id happens to be populated — see
+                        actorAttributionLabel's own comment above. */}
+                    {actorAttributionLabel && (
+                      <p className="text-gray-500 dark:text-gray-400 mt-0.5">{actorAttributionLabel}</p>
+                    )}
+
+                    {/* Manual reference (check #/terminal receipt #) shown
+                        directly — human-entered bookkeeping data, not
+                        infrastructure. */}
+                    {isManualEvent && item.externalReference && (
+                      <p className="text-gray-500 dark:text-gray-400 mt-0.5">Reference: {item.externalReference}</p>
+                    )}
+
+                    {isReversalEntry && (
+                      <p className="text-gray-500 dark:text-gray-400 mt-0.5">Corrects a previous payment entry</p>
+                    )}
+
+                    {item.notes && (
+                      <p className="text-gray-400 dark:text-gray-500 mt-0.5 italic">{item.notes}</p>
+                    )}
+
+                    {/* Advanced/support-only — raw Stripe id, collapsed by
+                        default, only for online events, only when a
+                        reference actually exists. Never a Stripe API
+                        call, never a PaymentIntent/Charge lookup. */}
+                    {isOnlineEventWithReference && (
+                      <details className="mt-1">
+                        <summary className="text-gray-400 dark:text-gray-500 cursor-pointer select-none">
+                          Transaction details
+                        </summary>
+                        <p className="text-gray-400 dark:text-gray-500 mt-1">
+                          Stripe reference: <span className="font-mono">{item.externalReference}</span>
+                        </p>
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

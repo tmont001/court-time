@@ -13,6 +13,8 @@ import {
   eventGuestLifecycleLabel,
   programEnrollmentLifecycleLabel,
 } from "./paymentContext";
+import { deriveEffectiveCollectionSummary, type ProvenanceLedgerEvent } from "@/lib/paymentProvenance";
+import { fetchAllRowsExhaustively } from "@/lib/supabase/exhaustiveRange";
 
 // Phase 34C consolidation — the canonical Admin/Staff operational surface
 // for "who owes money, for what, how much, and can I record a payment" —
@@ -214,6 +216,69 @@ export default async function AdminPaymentsPage() {
     disputesByPaymentId.set(d.payment_id, existing);
   }
 
+  // Phase 34G-C1 — reversal-aware compact source summary ("Stripe" /
+  // "Manual · Cash" / "Manual · Multiple" / "Mixed" / no badge). Bulk-
+  // fetched for every displayed payment in ONE tenant-scoped query,
+  // exhaustively paginated (never a single unbounded .select() — up to
+  // 500 payments can collectively carry well over 1000 relevant events).
+  // Filtered to ONLY the three event_types that can affect this
+  // computation (the two collection types plus reverse_payment_event,
+  // which is the only event_type that can invalidate a collection event) —
+  // refund events are irrelevant here by design (deriveEffectiveCollection
+  // Summary's own example G: a refund never rewrites the original
+  // collection channel), which also keeps this query's row volume down.
+  // Same club_id-scoped, Admin/Staff-only read as every other query on
+  // this page (payment_events_select_admin_staff, 0143) — no service-role
+  // client, no new RPC, no migration.
+  const sourceSummaryByPaymentId = new Map<string, string>();
+  if (paymentIds.length > 0) {
+    const { rows: provenanceEventRows, error: provenanceError } = await fetchAllRowsExhaustively<{
+      id: string;
+      payment_id: string;
+      event_type: string;
+      method: string | null;
+      reverses_event_id: string | null;
+    }>(async (offset, limit) => {
+      const result = await supabase
+        .from("payment_events")
+        .select("id, payment_id, event_type, method, reverses_event_id")
+        .eq("club_id", clubId)
+        .in("payment_id", paymentIds)
+        // Written as literal strings (not spread from COLLECTION_EVENT_TYPES)
+        // so this stays a plain, readable filter list — COLLECTION_EVENT_TYPES
+        // stays a plain Set<string> for the pure helper's own membership
+        // checks, never reused here. The `as any` is a narrow, pre-existing-
+        // pattern workaround (mirrors this same file's own lesson_requests
+        // cast above): src/lib/db/types.ts's hand-maintained event_type
+        // union predates migrations 0150/0153 and is missing
+        // online_payment_recorded/online_refund_recorded, even though both
+        // are valid values under payment_events' own CHECK constraint —
+        // a generated-types staleness issue, not a runtime concern, and out
+        // of scope to regenerate in this checkpoint.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"] as any)
+        .range(offset, offset + limit - 1);
+      return { data: result.data, error: result.error };
+    });
+    if (provenanceError) {
+      // Fail-safe, matching the refundable/dispute queries' own pattern
+      // immediately above — a failure here must never fabricate a source
+      // label; it must simply leave the badge absent, logged server-side.
+      console.error("[payment-provenance] bulk source-summary read failed", { message: provenanceError });
+    } else {
+      const eventsByPayment = new Map<string, ProvenanceLedgerEvent[]>();
+      for (const r of provenanceEventRows) {
+        const list = eventsByPayment.get(r.payment_id) ?? [];
+        list.push({ id: r.id, eventType: r.event_type, method: r.method, reversesEventId: r.reverses_event_id });
+        eventsByPayment.set(r.payment_id, list);
+      }
+      for (const [paymentId, events] of eventsByPayment) {
+        const summary = deriveEffectiveCollectionSummary(events);
+        if (summary) sourceSummaryByPaymentId.set(paymentId, summary);
+      }
+    }
+  }
+
   const rows: AdminPaymentRow[] = [];
   for (const p of latestPayments) {
     let title: string | null = null;
@@ -363,6 +428,10 @@ export default async function AdminPaymentsPage() {
         evidenceDueBy: currentDispute.evidence_due_by,
       },
       disputeBlocksRefund: disputesForPayment.some(d => !d.is_charge_refundable),
+      // Phase 34G-C1 — see the bulk query above. Null when no effective
+      // (non-reversed) collection event exists yet for this payment —
+      // rendered as no badge, never a fabricated default.
+      sourceSummary: sourceSummaryByPaymentId.get(p.id) ?? null,
       state: {
         domain_id: p.domain_id,
         current_payment_id: p.id,

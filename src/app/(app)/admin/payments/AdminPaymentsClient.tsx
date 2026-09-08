@@ -55,6 +55,13 @@ export interface AdminPaymentRow {
   // it never misleadingly offers a call that Stripe would reject; Stripe
   // itself remains authoritative for any race after page render.
   disputeBlocksRefund: boolean;
+  // Phase 34G-C1 — reversal-aware compact collection-source summary
+  // ("Stripe" / "Manual · Cash" / "Manual · Multiple" / "Mixed"), derived
+  // server-side from payment_events (never from payment_mode_at_creation
+  // or amount_paid_cents alone — see src/lib/paymentProvenance.ts). Null
+  // when there is no effective (non-reversed) collection event yet —
+  // renders no badge, never a fabricated default.
+  sourceSummary: string | null;
   state: PaymentStateRow;
   sortKey: string;
 }
@@ -175,6 +182,16 @@ export default function AdminPaymentsClient({
                     </span>
                   )}
                   <PaymentStateBadge state={row.state} />
+                  {/* Phase 34G-C1 — collection-source provenance, kept
+                      deliberately neutral/informational: never Court Time
+                      brand green, never Stripe-readiness green. This
+                      answers "was this Stripe or manual," not a
+                      success/commercial state. */}
+                  {row.sourceSummary && (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                      {row.sourceSummary}
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
