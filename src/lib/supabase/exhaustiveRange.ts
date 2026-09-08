@@ -44,3 +44,49 @@ export async function fetchAllRowsExhaustively<T>(
 
   return { rows, error: null };
 }
+
+// Phase 34G-C2 correction — a large `.in(<column>, ids)` clause carries two
+// independent truncation risks: (1) a single query can still silently cap
+// at PostgREST's default row limit even when the ID list is small (the
+// exact risk fetchAllRowsExhaustively above already solves), and (2) an
+// arbitrarily large ID list sent in ONE query can itself be unreasonable
+// (URL/query-plan size) regardless of how many rows come back. This helper
+// solves both together: it de-duplicates and splits `ids` into bounded
+// chunks, exhaustively pages EACH chunk via fetchAllRowsExhaustively, and
+// accumulates every row across every chunk.
+//
+// Fails EXPLICITLY and IMMEDIATELY on any chunk/page error — never returns
+// a partial result as if it were a success. Financial export data must
+// never silently ship a truncated read; the caller is expected to check
+// `error` and discard `rows` entirely when it is non-null (rows accumulated
+// before the failing chunk are still returned alongside the error purely
+// for diagnostic/logging purposes, never for display or export).
+export async function fetchRowsByIdsExhaustively<T>(
+  ids: string[],
+  fetchChunkPage: (
+    chunkIds: string[],
+    offset: number,
+    limit: number,
+  ) => Promise<{ data: T[] | null; error: { message: string } | null }>,
+  options: { chunkSize?: number; pageSize?: number } = {},
+): Promise<ExhaustiveRangeResult<T>> {
+  const chunkSize = options.chunkSize ?? 200;
+  const uniqueIds = [...new Set(ids)];
+  const rows: T[] = [];
+
+  for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+    const chunkIds = uniqueIds.slice(i, i + chunkSize);
+    const chunkResult = await fetchAllRowsExhaustively<T>(
+      (offset, limit) => fetchChunkPage(chunkIds, offset, limit),
+      options.pageSize,
+    );
+    if (chunkResult.error) {
+      // Stop immediately — do not attempt further chunks, and the caller
+      // must treat `rows` here as informational only, never usable output.
+      return { rows, error: chunkResult.error };
+    }
+    rows.push(...chunkResult.rows);
+  }
+
+  return { rows, error: null };
+}

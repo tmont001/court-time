@@ -62,32 +62,43 @@ export interface ProvenanceLedgerEvent {
   eventType: string;
   method: string | null;
   reversesEventId: string | null;
+  // Phase 34G-C2 — optional: only needed by callers that also want the
+  // most recent effective collection event's own timestamp (Outstanding
+  // Balances' "Last Payment Date" column, via
+  // deriveLastEffectiveCollectionDate below). 34G-C1's own list-summary
+  // caller never sets this — omitting it entirely is valid and harmless.
+  occurredAt?: string;
 }
 
 // Takes ALL relevant ledger events for ONE payment (at minimum, every
 // manual_payment_recorded/online_payment_recorded/reverse_payment_event
 // row — extra event types are harmless to include, since only collection-
-// type rows are ever inspected) and derives the compact list-row summary.
+// type rows are ever inspected) and returns the reversal-aware "effective"
+// collection-event subset — factored out of deriveEffectiveCollectionSummary
+// (34G-C1) so any caller that needs more than the compact label (e.g.
+// 34G-C2's Outstanding Balances export, which also needs the most recent
+// effective event's own occurred_at) reuses the EXACT same reversal-
+// exclusion logic rather than reimplementing it.
 //
 // A collection event (manual_payment_recorded/online_payment_recorded)
 // that has been targeted by a valid reverse_payment_event (i.e. some OTHER
-// event's reversesEventId points at it) is excluded from the "effective"
-// set entirely — it never contributes to the summary, exactly like a
-// correction that undid a data-entry mistake. Refund events are not
-// collection events at all and never appear in this set — a refund never
-// rewrites what channel originally collected the money.
-//
+// event's reversesEventId points at it) is excluded entirely — it never
+// contributes, exactly like a correction that undid a data-entry mistake.
+// Refund events are not collection events at all and never appear in this
+// set — a refund never rewrites what channel originally collected the
+// money.
+export function deriveEffectiveCollectionEvents(events: ProvenanceLedgerEvent[]): ProvenanceLedgerEvent[] {
+  const reversedIds = new Set(
+    events.map(e => e.reversesEventId).filter((id): id is string => id !== null),
+  );
+  return events.filter(e => COLLECTION_EVENT_TYPES.has(e.eventType) && !reversedIds.has(e.id));
+}
+
 // Returns null when there is no effective collection event at all — the
 // caller must render no source badge rather than inventing provenance
 // (e.g. from amount_paid_cents alone).
 export function deriveEffectiveCollectionSummary(events: ProvenanceLedgerEvent[]): string | null {
-  const reversedIds = new Set(
-    events.map(e => e.reversesEventId).filter((id): id is string => id !== null),
-  );
-
-  const effective = events.filter(
-    e => COLLECTION_EVENT_TYPES.has(e.eventType) && !reversedIds.has(e.id),
-  );
+  const effective = deriveEffectiveCollectionEvents(events);
   if (effective.length === 0) return null;
 
   const hasOnline = effective.some(e => e.eventType === "online_payment_recorded");
@@ -102,4 +113,19 @@ export function deriveEffectiveCollectionSummary(events: ProvenanceLedgerEvent[]
   if (hasOnline) return "Stripe";
   if (manualMethods.size === 1) return `Manual · ${methodLabel([...manualMethods][0])}`;
   return "Manual · Multiple";
+}
+
+// Phase 34G-C2 — the occurred_at of the most recent EFFECTIVE (non-
+// reversed) collection event, for Outstanding Balances' "Last Payment
+// Date" column. Reuses deriveEffectiveCollectionEvents exactly — never
+// "latest event" naively. A refunded Stripe payment's original collection
+// event is still effective (a refund doesn't reverse the collection event
+// itself), so its date still counts here; a reversed collection event does
+// not. Returns null when there is no effective collection event, or when
+// none of them carry an occurredAt (caller omitted it) — never fabricated.
+export function deriveLastEffectiveCollectionDate(events: ProvenanceLedgerEvent[]): string | null {
+  const effective = deriveEffectiveCollectionEvents(events);
+  const dates = effective.map(e => e.occurredAt).filter((d): d is string => !!d);
+  if (dates.length === 0) return null;
+  return dates.reduce((latest, d) => (d > latest ? d : latest));
 }

@@ -12,6 +12,11 @@ import {
   eventParticipantLifecycleLabel,
   eventGuestLifecycleLabel,
   programEnrollmentLifecycleLabel,
+  isReservationCollectible,
+  isLessonRequestCollectible,
+  isEventParticipantCollectible,
+  isEventGuestCollectible,
+  isProgramEnrollmentCollectible,
 } from "./paymentContext";
 import { deriveEffectiveCollectionSummary, type ProvenanceLedgerEvent } from "@/lib/paymentProvenance";
 import { fetchAllRowsExhaustively } from "@/lib/supabase/exhaustiveRange";
@@ -316,7 +321,7 @@ export default async function AdminPaymentsPage() {
       // Paid financial state, but must not invite a NEW collection action.
       // Refund (independent, gated elsewhere on refundableCents/dispute
       // state only) is entirely unaffected by this flag.
-      recordPaymentBlocked = r.status === "cancelled";
+      recordPaymentBlocked = !isReservationCollectible(r.status);
     } else if (p.domain_type === "lesson_request") {
       const r = lessonRequestById.get(p.domain_id);
       if (!r) continue;
@@ -331,7 +336,7 @@ export default async function AdminPaymentsPage() {
       // once a lesson reaches 'confirmed') — cancelled is the only
       // post-obligation terminal status, so it is the only one checked
       // here.
-      recordPaymentBlocked = r.status === "cancelled";
+      recordPaymentBlocked = !isLessonRequestCollectible(r.status);
     } else if (p.domain_type === "event_participant") {
       const r = eventParticipantById.get(p.domain_id);
       if (!r) continue;
@@ -359,7 +364,7 @@ export default async function AdminPaymentsPage() {
       // Payment eligibility, computed here (not via string-matching
       // lifecycleLabel) so it stays correct even if that label's copy
       // changes later.
-      recordPaymentBlocked = ev?.status === "cancelled";
+      recordPaymentBlocked = !isEventParticipantCollectible(ev?.status, r.status);
     } else if (p.domain_type === "event_guest") {
       const r = eventGuestById.get(p.domain_id);
       if (!r) continue;
@@ -378,7 +383,7 @@ export default async function AdminPaymentsPage() {
       // Same reasoning as event_participant immediately above — a guest's
       // manual-mode payment (the only mode a guest can ever have, 0149)
       // must not encourage fee collection for a cancelled Event either.
-      recordPaymentBlocked = ev?.status === "cancelled";
+      recordPaymentBlocked = !isEventGuestCollectible(ev?.status);
     } else {
       const r = programEnrollmentById.get(p.domain_id);
       if (!r) continue;
@@ -400,7 +405,7 @@ export default async function AdminPaymentsPage() {
       // the PARENT Program's own status, never the enrollment child row's
       // own status (which is intentionally preserved through cancellation)
       // and never the payment's own financial status.
-      recordPaymentBlocked = prog?.status === "cancelled";
+      recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);
     }
 
     const disputesForPayment = disputesByPaymentId.get(p.id) ?? [];

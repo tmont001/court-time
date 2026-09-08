@@ -38,7 +38,10 @@ describe("Reservation Record Payment — recordPaymentBlocked computed from rese
     const idx = s.indexOf('if (p.domain_type === "reservation") {');
     const nextIdx = s.indexOf('} else if (p.domain_type === "lesson_request") {');
     const block = s.slice(idx, nextIdx);
-    expect(block).toContain('recordPaymentBlocked = r.status === "cancelled";');
+    // Phase 34G-C2 correction (Issue 2) — extracted into a named, reusable
+    // predicate (paymentContext.ts's isReservationCollectible) so the
+    // Outstanding Balances CSV export can reuse the exact same gate.
+    expect(block).toContain("recordPaymentBlocked = !isReservationCollectible(r.status);");
     // Only reservations.status drives this — never the payment's own
     // financial status, never a client-supplied value.
     expect(block).not.toMatch(/recordPaymentBlocked = p\.status/);
@@ -50,7 +53,7 @@ describe("Reservation Record Payment — recordPaymentBlocked computed from rese
     const nextIdx = s.indexOf('} else if (p.domain_type === "lesson_request") {');
     const block = s.slice(idx, nextIdx);
     expect(block).toContain("lifecycleLabel = reservationLifecycleLabel(r.status);");
-    expect(block).toContain('recordPaymentBlocked = r.status === "cancelled";');
+    expect(block).toContain("recordPaymentBlocked = !isReservationCollectible(r.status);");
   });
 
   it("reservationLifecycleLabel itself only returns non-null for 'cancelled' — the ONLY reservation status recordPaymentBlocked can ever key off matches the only status this app's own reservations.status CHECK constraint recognizes as terminal (pending/confirmed/cancelled)", () => {
@@ -108,7 +111,7 @@ describe("Lesson Record Payment — recordPaymentBlocked computed from lesson_re
     const idx = s.indexOf('} else if (p.domain_type === "lesson_request") {');
     const nextIdx = s.indexOf('} else if (p.domain_type === "event_participant") {');
     const block = s.slice(idx, nextIdx);
-    expect(block).toContain('recordPaymentBlocked = r.status === "cancelled";');
+    expect(block).toContain("recordPaymentBlocked = !isLessonRequestCollectible(r.status);");
     expect(block).not.toMatch(/recordPaymentBlocked = p\.status/);
   });
 
@@ -118,7 +121,7 @@ describe("Lesson Record Payment — recordPaymentBlocked computed from lesson_re
     const nextIdx = s.indexOf('} else if (p.domain_type === "event_participant") {');
     const block = s.slice(idx, nextIdx);
     expect(block).toContain("lifecycleLabel = lessonRequestLifecycleLabel(r.status);");
-    expect(block).toContain('recordPaymentBlocked = r.status === "cancelled";');
+    expect(block).toContain("recordPaymentBlocked = !isLessonRequestCollectible(r.status);");
   });
 
   it("declined/withdrawn are deliberately NOT checked — both are pre-confirmation terminal states that can never carry a payment obligation in the first place (obligations are only ever created once a lesson reaches 'confirmed'), so only 'cancelled' (the sole POST-obligation terminal status) needs the check", () => {
@@ -177,7 +180,7 @@ describe("cross-domain matrix sanity — Event participant/guest unchanged; Prog
     const idx = s.indexOf('} else if (p.domain_type === "event_participant") {');
     const nextIdx = s.indexOf('} else if (p.domain_type === "event_guest") {');
     const block = s.slice(idx, nextIdx);
-    expect(block).toContain('recordPaymentBlocked = ev?.status === "cancelled";');
+    expect(block).toContain("recordPaymentBlocked = !isEventParticipantCollectible(ev?.status, r.status);");
   });
 
   it("program_enrollment now keys recordPaymentBlocked off the PARENT Program's own status, never the enrollment child row's own status (intentionally preserved through cancellation) and never the payment's own financial status", () => {
@@ -185,7 +188,7 @@ describe("cross-domain matrix sanity — Event participant/guest unchanged; Prog
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
     expect(programBlock).not.toMatch(/recordPaymentBlocked = r\.status/);
     expect(programBlock).not.toMatch(/recordPaymentBlocked = p\.status/);
   });
@@ -205,9 +208,12 @@ describe("Program Record Payment — /admin/payments correctly distinguishes act
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    // The predicate itself: only 'cancelled' ever sets it true — 'active'
-    // (like 'completed') falls through to false.
-    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
+    // Phase 34G-C2 correction (Issue 2) — the cancelled-family predicate
+    // itself now lives in paymentContext.ts's isProgramEnrollmentCollectible
+    // (only 'cancelled' ever sets it false — 'active'/'completed' fall
+    // through to collectible/true); page.tsx just negates that call. See
+    // the next test for the extracted predicate's own source-level proof.
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
   });
 
   it("2. completed Program + unpaid enrollment: recordPaymentBlocked evaluates false — the service was delivered and the debt remains legitimately collectible, matching complete_program's own deliberate lack of a stale-Checkout guard (34F-C)", () => {
@@ -215,10 +221,21 @@ describe("Program Record Payment — /admin/payments correctly distinguishes act
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    // 'completed' is structurally excluded from the predicate — the ONLY
-    // string compared against is 'cancelled'.
+    // 'completed' never appears alongside recordPaymentBlocked in page.tsx
+    // at all — the actual comparison now lives entirely in the extracted
+    // predicate (paymentContext.ts), checked below.
     expect(programBlock).not.toMatch(/recordPaymentBlocked\s*=.*completed/);
-    expect(programBlock).toContain('=== "cancelled"');
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
+
+    // The extracted predicate itself: only 'cancelled' is ever compared —
+    // 'completed' is structurally excluded, so a completed Program is
+    // always collectible.
+    const predicateSrc = readSource("src/app/(app)/admin/payments/paymentContext.ts");
+    const fnStart = predicateSrc.indexOf("export function isProgramEnrollmentCollectible(");
+    const fnEnd = predicateSrc.indexOf("\n}", fnStart) + 2;
+    const fn = predicateSrc.slice(fnStart, fnEnd);
+    expect(fn).not.toMatch(/completed/);
+    expect(fn).toContain('!== "cancelled"');
   });
 
   it("3. cancelled Program + unpaid enrollment: recordPaymentBlocked evaluates true — Record Payment is withheld, mirroring Reservation/Lesson/Event's own identical treatment", () => {
@@ -226,7 +243,7 @@ describe("Program Record Payment — /admin/payments correctly distinguishes act
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
   });
 
   it("4. cancelled + paid Program: Refund gating never references recordPaymentBlocked — proven generically above (shared code path for every domain, including program_enrollment)", () => {
@@ -242,7 +259,7 @@ describe("Program Record Payment — /admin/payments correctly distinguishes act
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
     const labelIdx = programBlock.indexOf("lifecycleLabel = programEnrollmentLifecycleLabel(prog?.status, r.status);");
-    const blockedIdx = programBlock.indexOf('recordPaymentBlocked = prog?.status === "cancelled";');
+    const blockedIdx = programBlock.indexOf("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
     expect(labelIdx).toBeGreaterThan(-1);
     expect(blockedIdx).toBeGreaterThan(labelIdx);
   });

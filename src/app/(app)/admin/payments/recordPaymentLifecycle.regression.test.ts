@@ -39,7 +39,13 @@ describe("recordPaymentBlocked — computed server-side, true for a cancelled pa
     const idx = s.indexOf('} else if (p.domain_type === "event_participant") {');
     const nextIdx = s.indexOf('} else if (p.domain_type === "event_guest") {');
     const block = s.slice(idx, nextIdx);
-    expect(block).toContain('recordPaymentBlocked = ev?.status === "cancelled";');
+    // Phase 34G-C2 correction (Issue 2) — the cancelled-family check was
+    // extracted into a named, reusable predicate (paymentContext.ts's
+    // isEventParticipantCollectible), so the Outstanding Balances CSV
+    // export can reuse the EXACT same gate. See isEventParticipantCollectible's
+    // own test in paymentContext.test.ts for the underlying predicate's
+    // genuine behavioral coverage.
+    expect(block).toContain("recordPaymentBlocked = !isEventParticipantCollectible(ev?.status, r.status);");
     // Never derived from the payment's own status/amounts, and never from
     // the participant row's own (intentionally preserved) status.
     expect(block).not.toMatch(/recordPaymentBlocked = r\.status/);
@@ -51,7 +57,7 @@ describe("recordPaymentBlocked — computed server-side, true for a cancelled pa
     const idx = s.indexOf('} else if (p.domain_type === "event_guest") {');
     const nextIdx = s.indexOf("} else {", idx);
     const block = s.slice(idx, nextIdx);
-    expect(block).toContain('recordPaymentBlocked = ev?.status === "cancelled";');
+    expect(block).toContain("recordPaymentBlocked = !isEventGuestCollectible(ev?.status);");
   });
 
   it("3. defaults to false. program_enrollment now ALSO sets it (34F-D correction), keyed on the PARENT Program's own status — see recordPaymentCrossDomain.regression.test.ts for the full completed-vs-cancelled coverage", () => {
@@ -60,7 +66,7 @@ describe("recordPaymentBlocked — computed server-side, true for a cancelled pa
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
   });
 
   it("propagated into AdminPaymentRow and consumed by BOTH the list-view Record Payment button and PaymentDetailSheet's canRecordPayment — never touching isPaymentOpenForRecording's own domain-neutral financial check", () => {
@@ -170,6 +176,6 @@ describe("11. isPaymentOpenForRecording stays domain-neutral — no lifecycle pa
     const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
     const rowsPushIdx = s.indexOf("rows.push({");
     const programBlock = s.slice(programIdx, rowsPushIdx);
-    expect(programBlock).toContain('recordPaymentBlocked = prog?.status === "cancelled";');
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
   });
 });

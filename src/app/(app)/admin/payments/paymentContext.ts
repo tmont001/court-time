@@ -91,6 +91,62 @@ export function programEnrollmentLifecycleLabel(
   return null;
 }
 
+// Phase 34G-C2 correction (Issue 2) — the SAME cancelled-family gate that
+// already governs whether Record Payment may be offered, extracted out of
+// page.tsx's own inline per-domain checks (previously duplicated 5x with
+// no shared function) so the Outstanding Balances CSV export can reuse the
+// EXACT existing definition of "currently collectible" rather than
+// inventing a competing one. Completion is never blocking — only a
+// cancelled-family lifecycle status is (mirrors the locked invariant:
+// cancellation suppresses NEW collection actions; completion does not,
+// since a delivered service's debt remains legitimately collectible).
+//
+// Final runtime-QA correction — event_participant/program_enrollment now
+// check BOTH the parent's status AND the child registration/enrollment's
+// own status: a cancelled/withdrawn CHILD row is not collectible merely
+// because its parent Event/Program remains active (the earlier single-
+// argument versions only ever checked the parent, which let a cancelled
+// registration/enrollment's still-unpaid financial fact leak into
+// Outstanding Balances even though eventParticipantLifecycleLabel/
+// programEnrollmentLifecycleLabel already correctly showed "Registration
+// Cancelled"/"Enrollment Cancelled" for the very same row — an
+// inconsistency this closes). Domain lifecycle stays entirely separate
+// from financial history: the unpaid financial fact remains visible under
+// /admin/payments → All; only NEW collection (Record Payment) and
+// Outstanding Balances membership are suppressed.
+export function isReservationCollectible(status: string): boolean {
+  return status !== "cancelled";
+}
+
+// declined/withdrawn are pre-confirmation terminal states that can never
+// carry a payment obligation in the first place (obligations are only
+// ever created once a lesson reaches 'confirmed') — checked explicitly
+// anyway so this predicate is correct on its own terms, not merely by
+// accident of when obligations happen to be created.
+export function isLessonRequestCollectible(status: string): boolean {
+  return status !== "cancelled" && status !== "declined" && status !== "withdrawn";
+}
+
+export function isEventParticipantCollectible(
+  eventStatus: string | undefined,
+  participantStatus: string,
+): boolean {
+  return eventStatus !== "cancelled" && participantStatus !== "cancelled";
+}
+
+// event_guests has no lifecycle status column of its own that this
+// predicate needs — the parent Event's own status remains the only signal.
+export function isEventGuestCollectible(eventStatus: string | undefined): boolean {
+  return eventStatus !== "cancelled";
+}
+
+export function isProgramEnrollmentCollectible(
+  programStatus: string | undefined,
+  enrollmentStatus: string,
+): boolean {
+  return programStatus !== "cancelled" && enrollmentStatus !== "cancelled";
+}
+
 // External review correction — financial-history timestamps must use the
 // CLUB's timezone, exactly like the booking-context time range above,
 // never the browser/device timezone. "Aug 28, 1:29 PM" — a useful

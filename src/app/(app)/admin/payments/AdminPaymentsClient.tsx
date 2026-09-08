@@ -12,6 +12,7 @@ import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from 
 import { formatMoney } from "@/lib/money";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
 import PaymentDetailSheet from "@/components/PaymentDetailSheet";
+import PaymentExportMenu from "./PaymentExportMenu";
 
 export interface AdminPaymentDispute {
   status: string;
@@ -144,6 +145,7 @@ export default function AdminPaymentsClient({
           placeholder="Search by name…"
           className="w-full sm:flex-1 ct-input text-base md:text-sm"
         />
+        <PaymentExportMenu clubId={clubId} clubTimezone={clubTimezone} />
       </div>
 
       {filtered.length === 0 ? (
