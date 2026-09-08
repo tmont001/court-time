@@ -7,8 +7,11 @@
 // The single 3-value enum (club_settings.payment_mode) is unchanged by
 // this checkpoint; these functions are the ONE place the "Payment
 // tracking" / "Online payments" UI concepts are derived from and mapped
-// back onto it, so PaymentTrackingSection's two toggles can never
-// independently drift out of sync with each other or with the real value.
+// back onto it. Phase 34G-B split the two toggles into sibling components
+// (PaymentTrackingSection, CourtTimePaymentsSection) — both still derive
+// from and mutate the SAME enum via these SAME functions, never a second
+// independently-tracked representation, so they cannot drift out of sync
+// with each other or with the real value.
 //
 // Locked mapping (from the Phase 34D-D3 audit):
 //   none                  = tracking OFF, online OFF

@@ -1,13 +1,18 @@
 "use client";
 
 // Phase 34D-A — Admin-only Stripe Connect onboarding entry point. Clearly
-// separate from PaymentTrackingSection above it: that section controls
-// whether Court Time tracks balances at all (none/manual/court_time_
-// payments); this section is the connected-account plumbing. Since
-// Phase 34D-C, PaymentTrackingSection's own court_time_payments option
-// becomes selectable exactly when this section's own state below is
-// "ready" (card_payments_status = active) — both read the identical
-// server-derived state, computed once in AdminSettingsPage.
+// separate from PaymentTrackingSection: that section controls whether
+// Court Time tracks balances at all; this section is the connected-
+// account plumbing. Since Phase 34D-C, and split into its own
+// CourtTimePaymentsSection at Phase 34G-B, then grouped together under one
+// "Online Payments" heading at 34G-B's hierarchy correction (rendered
+// directly above CourtTimePaymentsSection, inside the single top-level
+// "Payments" settings section — see page.tsx), Court Time Payments' own
+// online-payments option becomes selectable exactly when THIS section's
+// own state is "ready" (card_payments_status = active) — both read the
+// identical server-derived state, computed once in AdminSettingsPage. The
+// grouping itself now communicates the dependency, so copy avoids
+// "above"/"below" cross-references.
 //
 // Accounts v2 readiness model: Stripe reports per-capability status
 // (active/pending/restricted/unsupported) rather than v1's charges_
@@ -96,15 +101,22 @@ export default function StripeConnectSection({
       >
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            {state === "ready" ? "Ready for payments"
+            {state === "ready" ? "Stripe account ready"
               : state === "pending" ? "Pending review"
               : state === "action_required" ? "Onboarding incomplete"
               : state === "unsupported" ? "Needs attention"
               : "Not connected"}
           </p>
           {state === "ready" && (
+            // Phase 34G-B (readability correction) — never "Connected": now
+            // that Connected is an official Court Time subscription/
+            // Operating Model name, reusing it here as the Stripe readiness
+            // badge is ambiguous ("Connected plan" vs "Stripe connected").
+            // This badge communicates Stripe infrastructure readiness only
+            // — CourtTimePaymentsSection remains solely responsible for
+            // explaining the commercial plan requirement.
             <span className="text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:text-green-400">
-              Connected
+              Stripe ready
             </span>
           )}
           {state === "pending" && (
@@ -120,7 +132,7 @@ export default function StripeConnectSection({
         </div>
         <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
           {state === "ready"
-            ? "Stripe has confirmed this club can accept payments. Turn on Court Time Payments above to let Members pay online."
+            ? "Stripe has confirmed this account can accept card payments. Court Time Payments uses this Stripe account for online Member payments when enabled."
             : state === "pending"
             ? "Stripe is reviewing this account. This can take a little while — no action is needed right now."
             : state === "action_required"

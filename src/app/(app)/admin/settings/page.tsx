@@ -9,6 +9,7 @@ import EventTypesSection from "./EventTypesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
+import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
 import LessonTypesSection from "./LessonTypesSection";
@@ -105,7 +106,18 @@ export default async function AdminSettingsPage() {
             service_role-only operator action (set_club_tier_for_operator,
             reachable only via scripts/grant-club-entitlement.mjs). This is
             purely a clarity aid so an Admin isn't left guessing why, e.g.,
-            Court Time Payments requires Connected below. */}
+            Court Time Payments requires Connected below.
+            Phase 34G-B (readability correction) — plan pills now say
+            "Staff-Managed Plan"/"Connected Plan" (never bare "Connected"),
+            explicitly naming them as plans so neither can be mistaken for
+            infrastructure/status terminology (see StripeConnectSection's
+            own "Stripe ready" badge, deliberately never "Connected"
+            either). Staff-Managed uses neutral slate/gray styling — it is
+            a legitimate paid product, never styled as a warning/disabled
+            state. Connected reuses the existing Tailwind green tokens
+            already used elsewhere on this page for a "ready"/positive
+            state (StripeConnectSection's own "ready" card) rather than
+            introducing a new one-off brand color. */}
         <section className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Operating Model
@@ -117,17 +129,82 @@ export default async function AdminSettingsPage() {
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                 {memberSelfService
-                  ? "Staff-Managed features plus Member self-service (accounts, self-booking, signup, and requests)."
+                  ? "Everything in Staff-Managed, plus Member self-service for accounts, court booking, signup, and lesson requests."
                   : "Full staff/operational functionality. Member self-service is not included on this plan."}
               </p>
             </div>
-            <span className="shrink-0 inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-              {memberSelfService ? "Connected" : "Staff-Managed"}
+            <span
+              className={`shrink-0 inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide border ${
+                memberSelfService
+                  ? "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600"
+              }`}
+            >
+              {memberSelfService ? "Connected Plan" : "Staff-Managed Plan"}
             </span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Contact us to change your plan.
+            Plan changes are managed by Court Time.{" "}
+            <Link href="/pricing" className="text-accent hover:underline">
+              Compare plans
+            </Link>{" "}
+            or{" "}
+            <Link href="/contact" className="text-accent hover:underline">
+              contact us
+            </Link>{" "}
+            to switch.
           </p>
+        </section>
+
+        <hr className="border-gray-100 dark:border-gray-800" />
+
+        {/* ── Payments ── */}
+        {/* Phase 34G-B (hierarchy correction): ONE top-level Payments
+            section, not three unrelated ones — a club operator experiences
+            this as a single workflow. Two visually distinct groups inside
+            it: Payment Tracking (the base balance-tracking layer), then
+            Online Payments (Stripe Account infrastructure, followed by the
+            Court Time Payments feature that depends on it — grouped so the
+            dependency is visually obvious without "above"/"below" copy).
+            Each of the three components below still derives from and
+            mutates its own independent source of truth exactly as before
+            this correction — this is a visual/IA change only, no state
+            logic was recombined. Operational balances/Record Payment stay
+            entirely on /admin/payments — nothing here duplicates that. */}
+        <section className="space-y-4">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Payments
+          </p>
+
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Choose whether Court Time tracks balances for new bookings. Existing payment history
+              is never hidden or rewritten by this setting — it only affects what happens going
+              forward.
+            </p>
+            <PaymentTrackingSection
+              clubId={clubId}
+              currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
+            />
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">
+              Online Payments
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Stripe securely handles card processing and payouts. Court Time Payments is the
+              optional feature that uses your connected Stripe account to let Members pay
+              online — available once your club is Connected.
+            </p>
+            <StripeConnectSection clubId={clubId} initialStatus={stripeStatus} configured={stripeConfigured} />
+            <CourtTimePaymentsSection
+              clubId={clubId}
+              currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
+              stripeReadiness={stripeReadiness}
+              connected={memberSelfService}
+            />
+          </div>
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />
@@ -184,50 +261,6 @@ export default async function AdminSettingsPage() {
             currency={currency}
             defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
           />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Payments ── */}
-        {/* Phase 34D-D3: three conceptually separate but related controls
-            under one "Payments" heading — Payment tracking (whether
-            balances are created at all), Online payments (whether Members
-            can pay those balances through Stripe — PaymentTrackingSection
-            itself renders this AND an Offline payments explainer, despite
-            the component's historical name), and the Stripe account
-            connection/readiness status below. Each answers exactly one
-            question and none of them duplicate each other's copy.
-            Operational balances/Record Payment stay entirely on
-            /admin/payments — nothing here duplicates that. */}
-        <section className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Payments
-          </p>
-
-          <div className="space-y-2">
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Choose whether Court Time tracks balances for new bookings and whether Members can
-              pay those balances online through Stripe. Existing payment history is never hidden
-              or rewritten by these settings — they only affect what happens going forward.
-            </p>
-            <PaymentTrackingSection
-              clubId={clubId}
-              currentMode={(settings?.payment_mode ?? "none") as "none" | "manual" | "court_time_payments"}
-              stripeReadiness={stripeReadiness}
-              connected={memberSelfService}
-            />
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 pt-2">
-              Stripe account
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Connect and verify your club&apos;s Stripe account. Once Stripe reports ready, turn on
-              Court Time Payments above to let Members pay online.
-            </p>
-            <StripeConnectSection clubId={clubId} initialStatus={stripeStatus} configured={stripeConfigured} />
-          </div>
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />

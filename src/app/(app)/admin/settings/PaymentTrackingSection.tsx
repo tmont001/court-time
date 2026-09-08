@@ -5,47 +5,56 @@
 // additional role gating is needed here beyond the RPC's own Admin check.
 //
 // Phase 34D-D3 — restructured from a single mutually-exclusive None /
-// Manual / Court Time Payments selector into two conceptually separate
-// ON/OFF controls (Payment Tracking, Online Payments) plus a
-// non-interactive Offline Payments explainer — WITHOUT changing the
-// underlying domain model. club_settings.payment_mode remains the exact
-// same single 3-value enum it always was; both toggles below are pure
-// DERIVED views of that one value (`mode` is the only client-side state
-// that represents it — never a second, independently-tracked boolean that
-// could drift), and every mutation still goes through the exact same two
-// RPCs this component already called before this restructure:
-// update_club_payment_mode (none/manual) and activate_court_time_payments
-// (court_time_payments, Stripe-readiness-gated, unchanged). The 34D-D3
-// audit found record_manual_payment was ALREADY independent of
-// payment_mode/payment_mode_at_creation — offline recording was never
-// actually gated by the old selector, only presented as if it were, which
-// is the sole defect this restructure corrects.
+// Manual / Court Time Payments selector into a two-value ON/OFF control —
+// WITHOUT changing the underlying domain model. club_settings.payment_mode
+// remains the exact same single 3-value enum it always was; the toggle
+// below is a pure DERIVED view of that one value (`mode` is the only
+// client-side state that represents it), and its mutation still goes
+// through the exact same RPC this component already called before this
+// restructure: update_club_payment_mode (none/manual).
 //
-// Locked mapping (from the audit, unchanged):
-//   none                  = tracking OFF, online OFF
-//   manual                = tracking ON,  online OFF
-//   court_time_payments   = tracking ON,  online ON
+// Phase 34G-B — this component is now responsible ONLY for the base
+// tracking layer (Payment Tracking on/off). The online-payment layer
+// (Court Time Payments) is its own sibling component, CourtTimePaymentsSection,
+// grouped with StripeConnectSection under the same top-level "Payments"
+// settings section (Payment Tracking, then an "Online Payments" group
+// containing Stripe Account then Court Time Payments — see page.tsx).
+// Both PaymentTrackingSection and CourtTimePaymentsSection derive from and
+// mutate the SAME single club_settings.payment_mode enum via the SAME
+// shared helpers (@/lib/paymentModeToggle) and the SAME Server Action
+// (updateClubPaymentModeAction) — never a second, independently-tracked
+// representation. Because they are two separate client component
+// instances, each resyncs its own local `mode` state from the
+// `currentMode` prop whenever it changes (see the useEffect below) — this
+// is what keeps them from drifting out of sync with EACH OTHER after the
+// OTHER section's own mutation: updateClubPaymentModeAction always calls
+// revalidatePath("/admin/settings") on success, which re-renders this
+// Server Component page and pushes a fresh `currentMode` prop into BOTH
+// sibling client components, not only the one that mutated.
+//
+// Phase 34G-B (hierarchy correction) — the former standalone "Offline
+// payments" card is removed. It visually matched the toggle card above it
+// but had no toggle of its own, reading as a second configurable mode
+// when it was purely informational. Its useful content (manual payments
+// remain recordable regardless of this toggle) is now a single compact
+// helper line INSIDE the Payment Tracking card itself — see the render
+// below.
+//
+// Locked mapping (from the 34D-D3 audit, unchanged):
+//   none                  = tracking OFF
+//   manual                = tracking ON
+//   court_time_payments   = tracking ON (Court Time Payments' own on/off
+//                            state is CourtTimePaymentsSection's concern,
+//                            not this component's)
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { updateClubPaymentModeAction } from "@/app/(app)/admin/payments/actions";
-import { isCourtTimePaymentsSelectable, type ConnectUIState } from "@/lib/stripe/connectConfig";
 import DisablePaymentTrackingConfirmModal from "@/components/DisablePaymentTrackingConfirmModal";
 import {
-  isOnlinePaymentsOn,
   isPaymentTrackingOn,
-  nextModeForOnlineToggle,
   nextModeForTrackingToggle,
   type PaymentMode,
 } from "@/lib/paymentModeToggle";
-
-// Mirrors StripeConnectSection's own wording for each non-ready state, so
-// an Admin sees the same story in both places on this page.
-const NOT_READY_COPY: Record<Exclude<ConnectUIState, "ready">, string> = {
-  not_connected: "Connect a Stripe account below first.",
-  pending: "Stripe is still reviewing your account.",
-  action_required: "Finish Stripe setup below before turning this on.",
-  unsupported: "Your Stripe account needs attention before this can be enabled.",
-};
 
 function ToggleSwitch({
   checked,
@@ -82,40 +91,31 @@ function ToggleSwitch({
 export default function PaymentTrackingSection({
   clubId,
   currentMode,
-  stripeReadiness,
-  connected,
 }: {
   clubId: string;
   currentMode: PaymentMode;
-  stripeReadiness: ConnectUIState;
-  // Phase 34G-A2 — Court Time Payments is commercially locked to
-  // Connected (member_self_service). Sourced from the same profile.
-  // memberSelfService value every other capability check already uses
-  // (src/lib/supabase/user.ts) — never a new read. Purely a UX pre-check:
-  // activate_court_time_payments (0164) independently re-enforces this
-  // exact rule server-side regardless of what this prop says.
-  connected: boolean;
 }) {
-  // The ONE piece of client-side state representing payment_mode — both
-  // toggles below are derived from it on every render, never tracked
-  // independently, so they can never drift out of sync with each other or
-  // with the actual enum value.
+  // The ONE piece of client-side state representing payment_mode for THIS
+  // component's own view of it — resynced from the server-confirmed prop
+  // whenever it changes (see the module header comment above for why).
   const [mode, setMode] = useState<PaymentMode>(currentMode);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [confirmingDisableTracking, setConfirmingDisableTracking] = useState(false);
 
+  useEffect(() => {
+    setMode(currentMode);
+  }, [currentMode]);
+
   const trackingOn = isPaymentTrackingOn(mode);
-  const onlineOn = isOnlinePaymentsOn(mode);
-  const stripeReady = isCourtTimePaymentsSelectable(stripeReadiness);
 
   function submitMode(next: PaymentMode) {
     setStatus(null);
     startTransition(async () => {
       const result = await updateClubPaymentModeAction(next, clubId);
       if (result.error) {
-        // Never optimistically flips — `mode` (and therefore both derived
-        // toggles) stays exactly where it was before this attempt.
+        // Never optimistically flips — `mode` stays exactly where it was
+        // before this attempt.
         setStatus({ type: "error", message: result.error });
       } else {
         setMode(next);
@@ -143,28 +143,6 @@ export default function PaymentTrackingSection({
     submitMode(nextModeForTrackingToggle(mode, false));
   }
 
-  function handleOnlineToggle() {
-    if (isPending || !trackingOn) return;
-    if (!onlineOn && (!connected || !stripeReady)) return;
-    // activate_court_time_payments itself independently re-derives and
-    // re-validates BOTH Connected (34G-A2) and Stripe readiness server-
-    // side — the connected/stripeReady checks above are only a UX
-    // convenience, never the authorization boundary. Turning online
-    // payments off never needs confirmation — it only stops NEW
-    // obligations from being online-payable; tracking itself (and offline
-    // recording) is unaffected.
-    submitMode(nextModeForOnlineToggle(mode, !onlineOn));
-  }
-
-  const onlineDisabled = !trackingOn || !connected || !stripeReady;
-  const onlineDisabledReason = !trackingOn
-    ? "Turn on payment tracking first."
-    : !connected
-    ? "Court Time Payments requires the Connected plan. Contact us to upgrade."
-    : !stripeReady
-    ? NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, "ready">]
-    : null;
-
   return (
     <div className="space-y-3">
       {/* Payment tracking */}
@@ -185,44 +163,17 @@ export default function PaymentTrackingSection({
             onClick={handleTrackingToggle}
           />
         </div>
-      </div>
-
-      {/* Online payments */}
-      <div
-        className={`rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5 ${
-          onlineDisabled ? "opacity-60" : ""
-        }`}
-      >
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Court Time Payments</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {onlineOn
-                ? "Members can pay tracked balances online through Stripe."
-                : "Members cannot pay balances online. Staff can still record payments received outside Court Time."}
-            </p>
-          </div>
-          <ToggleSwitch
-            checked={onlineOn}
-            disabled={isPending || onlineDisabled}
-            label="Court Time Payments"
-            onClick={handleOnlineToggle}
-          />
-        </div>
-        {onlineDisabledReason && (
-          <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">{onlineDisabledReason}</p>
-        )}
-      </div>
-
-      {/* Offline payments — informational only, never a toggle. Always
-          true whenever a tracked balance exists — never gated by mode or
-          payment_mode_at_creation (see this file's own header comment). */}
-      <div className="rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40 px-4 py-3.5">
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Offline payments</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          {trackingOn
-            ? "Cash, check, card terminal, bank transfer, digital wallet, and other payments can still be recorded by Admins/Staff whenever Court Time is tracking a balance."
-            : "Existing tracked balances can still be resolved, but new bookings will not create balances."}
+        {/* Compact helper line, folded in from the former standalone
+            "Offline payments" card — informational only, never a toggle.
+            Always true whenever a tracked balance exists — never gated by
+            mode or payment_mode_at_creation (see this file's own header
+            comment). Deliberately unconditional on trackingOn: existing
+            balances remain recordable even after tracking is turned off,
+            and this line must never imply that manual payment history
+            disappears. */}
+        <p className="mt-2 text-[11px] text-gray-400 dark:text-gray-500">
+          Manual payments supported: Cash, check, card terminal, bank transfer, digital wallet,
+          and other payments can be recorded by Admins/Staff.
         </p>
       </div>
 

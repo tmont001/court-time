@@ -26,6 +26,7 @@ const M0156_PATH = "supabase/migrations/0156_stripe_dispute_visibility.sql";
 const GRANT_SCRIPT_PATH = "scripts/grant-club-entitlement.mjs";
 const PAYMENTS_ACTIONS_PATH = "src/app/(app)/admin/payments/actions.ts";
 const PAYMENT_TRACKING_SECTION_PATH = "src/app/(app)/admin/settings/PaymentTrackingSection.tsx";
+const COURT_TIME_PAYMENTS_SECTION_PATH = "src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx";
 const SETTINGS_PAGE_PATH = "src/app/(app)/admin/settings/page.tsx";
 
 function getBootstrapFn(migrationText: string): string {
@@ -230,9 +231,9 @@ describe("12. activate_court_time_payments fails closed for a Staff-Managed club
     expect(s).toContain("error.message.match(/capability_not_available|stripe_connect_not_ready|invalid_arguments|club_not_found/)");
   });
 
-  it("PaymentTrackingSection's online-payments toggle is pre-emptively disabled with the same reason when the club is not Connected, so an Admin is never sent to hit this server error unnecessarily", () => {
-    const s = readSource(PAYMENT_TRACKING_SECTION_PATH);
-    expect(s).toContain("const onlineDisabled = !trackingOn || !connected || !stripeReady;");
+  it("CourtTimePaymentsSection's online-payments toggle is pre-emptively disabled with the same reason when the club is not Connected, so an Admin is never sent to hit this server error unnecessarily (moved from PaymentTrackingSection at Phase 34G-B)", () => {
+    const s = readSource(COURT_TIME_PAYMENTS_SECTION_PATH);
+    expect(s).toContain("const onlineDisabled = isPending || (!onlineOn && (!trackingOn || !connected || !stripeReady));");
     expect(s).toContain('"Court Time Payments requires the Connected plan. Contact us to upgrade."');
   });
 
@@ -375,7 +376,7 @@ describe("15. no Admin-facing tier-mutation UI or Server Action is introduced â€
   });
 
   it("set_club_tier_for_operator is never actually CALLED (no .rpc(\"set_club_tier_for_operator\" invocation) from any in-app TypeScript file this checkpoint touches â€” a documentation mention explaining tier mutation stays privileged is not a call", () => {
-    for (const path of [SETTINGS_PAGE_PATH, PAYMENTS_ACTIONS_PATH, PAYMENT_TRACKING_SECTION_PATH]) {
+    for (const path of [SETTINGS_PAGE_PATH, PAYMENTS_ACTIONS_PATH, PAYMENT_TRACKING_SECTION_PATH, COURT_TIME_PAYMENTS_SECTION_PATH]) {
       const s = readSource(path);
       expect(s).not.toMatch(/\.rpc\(\s*["']set_club_tier_for_operator["']/);
     }

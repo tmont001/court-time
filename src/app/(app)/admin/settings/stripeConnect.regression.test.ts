@@ -483,8 +483,17 @@ describe("Activation UI — stale 'coming in a future update' copy removed (requ
   it("StripeConnectSection's 'ready' state no longer claims activation is coming in a future update", () => {
     const src = readSource("src/app/(app)/admin/settings/StripeConnectSection.tsx");
     expect(src).not.toMatch(/coming in a future update/i);
-    // Points the Admin at the actual control instead.
-    expect(src).toMatch(/Turn on Court Time Payments above/);
+    // Points the Admin at the actual control instead. Phase 34G-B
+    // (readability correction): the ready-state copy now describes Stripe
+    // infrastructure readiness and names Court Time Payments as the
+    // separate feature that uses it — no "above"/"below" (visually
+    // grouped under "Online Payments") and no "Connected"/"upgrade"
+    // wording inside the Stripe-readiness status itself.
+    expect(src).toContain(
+      "Stripe has confirmed this account can accept card payments. Court Time Payments uses this Stripe account for online Member payments when enabled.",
+    );
+    expect(src).not.toMatch(/Turn on Court Time Payments above/);
+    expect(src).not.toMatch(/Turn on Court Time Payments below/);
   });
 
   it("the admin/settings page's Payments section intro no longer claims activation isn't available yet", () => {
@@ -493,14 +502,16 @@ describe("Activation UI — stale 'coming in a future update' copy removed (requ
     expect(src).not.toMatch(/Court Time Payments itself isn/i);
   });
 
-  it("PaymentTrackingSection's online-payments toggle is genuinely enable-able (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to", () => {
-    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+  it("CourtTimePaymentsSection's online-payments toggle is genuinely enable-able (not hardcoded disabled) once Stripe reports ready — the real activation control this copy now correctly points to (moved from PaymentTrackingSection at Phase 34G-B)", () => {
+    const src = readSource("src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx");
     expect(src).toContain("const stripeReady = isCourtTimePaymentsSelectable(stripeReadiness);");
     // Phase 34G-A2: onlineDisabled also requires `connected` (Court Time
     // Payments is now commercially locked to Connected) — added alongside
     // the pre-existing trackingOn/stripeReady conditions, never replacing
-    // them.
-    expect(src).toContain("const onlineDisabled = !trackingOn || !connected || !stripeReady;");
+    // them. Phase 34G-B: onlineDisabled now only gates the ON direction —
+    // isPending alone gates OFF (see the "ON -> OFF remains available"
+    // describe block below).
+    expect(src).toContain("const onlineDisabled = isPending || (!onlineOn && (!trackingOn || !connected || !stripeReady));");
     // Never unconditionally disabled — that would be the pre-34D-C, "Coming
     // Soon" behavior this fix's copy update would otherwise still contradict.
     expect(src).not.toMatch(/onlineDisabled\s*=\s*true\s*;/);
@@ -529,12 +540,14 @@ describe("Activation UI — failed activation never falsely shows ACTIVE (requir
     expect(successBranch).toContain("setMode(next);");
   });
 
-  it("both toggles are derived purely from the current `mode` state, never from isPending/optimistic UI — so a still-in-flight or failed mutation can never render either toggle as ON when it isn't", () => {
-    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    expect(src).toContain("const trackingOn = isPaymentTrackingOn(mode);");
-    expect(src).toContain("const onlineOn = isOnlinePaymentsOn(mode);");
-    expect(src).not.toMatch(/trackingOn\s*=.*isPending/);
-    expect(src).not.toMatch(/onlineOn\s*=.*isPending/);
+  it("both toggles are derived purely from the current `mode` state, never from isPending/optimistic UI — so a still-in-flight or failed mutation can never render either toggle as ON when it isn't. Phase 34G-B: the two toggles now live in separate sibling components, each still deriving only from its own local `mode`", () => {
+    const trackingSrc = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+    expect(trackingSrc).toContain("const trackingOn = isPaymentTrackingOn(mode);");
+    expect(trackingSrc).not.toMatch(/trackingOn\s*=.*isPending/);
+
+    const onlineSrc = readSource("src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx");
+    expect(onlineSrc).toContain("const onlineOn = isOnlinePaymentsOn(mode);");
+    expect(onlineSrc).not.toMatch(/onlineOn\s*=.*isPending/);
   });
 });
 
@@ -545,40 +558,92 @@ describe("Activation UI — failed activation never falsely shows ACTIVE (requir
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Hybrid payments UX — online toggle disabled states (requirements 9-11)", () => {
-  const src = () => readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
+  const src = () => readSource("src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx");
 
-  it("online toggle disabled while tracking OFF", () => {
+  it("online toggle disabled while tracking OFF (turning ON is blocked; the toggle is currently off in this state, so this is the ON-direction gate)", () => {
     const s = src();
-    expect(s).toContain("const onlineDisabled = !trackingOn || !connected || !stripeReady;");
-    expect(s).toContain('? "Turn on payment tracking first."');
+    expect(s).toContain("const onlineDisabled = isPending || (!onlineOn && (!trackingOn || !connected || !stripeReady));");
+    expect(s).toContain('? "Turn on Payment Tracking first."');
   });
 
-  it("online toggle disabled while Stripe is not ready", () => {
+  it("online toggle disabled while Stripe is not ready AND currently off (the ON-direction gate) — surfaces the exact per-state reason via NOT_READY_COPY, matching StripeConnectSection's own wording", () => {
     const s = src();
-    // Same onlineDisabled expression covers both conditions; the
-    // not-ready branch surfaces the exact per-state reason via
-    // NOT_READY_COPY, matching StripeConnectSection's own wording.
     expect(s).toContain("NOT_READY_COPY[stripeReadiness as Exclude<ConnectUIState, \"ready\">]");
   });
 
   it("Stripe-ready + tracking ON + Connected allows online activation", () => {
     const s = src();
-    // handleOnlineToggle only blocks on (isPending || !trackingOn), and
-    // separately on (!onlineOn && (!connected || !stripeReady)) — i.e.
-    // turning ON specifically requires BOTH connected and stripeReady
-    // (34G-A2 added connected alongside the pre-existing stripeReady
-    // check), but is otherwise unblocked once tracking is on.
-    expect(s).toContain("if (isPending || !trackingOn) return;");
-    expect(s).toContain("if (!onlineOn && (!connected || !stripeReady)) return;");
-    expect(s).toContain("submitMode(nextModeForOnlineToggle(mode, !onlineOn));");
+    // handleOnlineToggle checks isPending first (both directions), then
+    // branches on onlineOn: the OFF path (already on) submits
+    // unconditionally; the ON path (currently off) additionally requires
+    // trackingOn/connected/stripeReady before submitting.
+    expect(s).toContain("if (isPending) return;");
+    expect(s).toContain("if (!trackingOn || !connected || !stripeReady) return;");
+    expect(s).toContain("submitMode(nextModeForOnlineToggle(mode, true));");
+  });
+});
+
+describe("Phase 34G-B REQUIRED FIX — ON -> OFF remains available even when Stripe has degraded (requirements 3-4 of the 34G-B test list)", () => {
+  const src = () => readSource("src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx");
+
+  it("handleOnlineToggle's OFF branch (onlineOn === true) submits unconditionally — it is checked and returned BEFORE any trackingOn/connected/stripeReady gate, and gates on nothing but isPending", () => {
+    const s = src();
+    const fnStart = s.indexOf("function handleOnlineToggle() {");
+    const fnEnd = s.indexOf("\n  }\n", fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
+    const offBranchStart = fnBody.indexOf("if (onlineOn) {");
+    const offBranchEnd = fnBody.indexOf("return;\n    }", offBranchStart);
+    const offBranch = fnBody.slice(offBranchStart, offBranchEnd);
+    expect(offBranchStart).toBeGreaterThan(-1);
+    expect(offBranch).toContain("submitMode(nextModeForOnlineToggle(mode, false));");
+    expect(offBranch).not.toMatch(/trackingOn|connected|stripeReady/);
+    // The ON-direction gate (trackingOn/connected/stripeReady) appears
+    // strictly AFTER the OFF branch's own early return.
+    const onGateIdx = fnBody.indexOf("if (!trackingOn || !connected || !stripeReady) return;");
+    expect(onGateIdx).toBeGreaterThan(offBranchEnd);
+  });
+
+  it("the ToggleSwitch's disabled prop is NOT unconditionally tied to stripeReady/connected when the toggle is already ON — onlineDisabled only folds those into the ON-direction (!onlineOn) branch of its own expression", () => {
+    const s = src();
+    expect(s).toContain("const onlineDisabled = isPending || (!onlineOn && (!trackingOn || !connected || !stripeReady));");
+    // When onlineOn is true, the right-hand `(!onlineOn && ...)` term is
+    // always false by construction — onlineDisabled reduces to isPending
+    // alone in that case. This is the exact fix: the pre-34G-B expression
+    // was `!trackingOn || !connected || !stripeReady` with no onlineOn
+    // gate at all, so it stayed true (disabled) regardless of onlineOn.
+    expect(s).not.toMatch(/const onlineDisabled = !trackingOn \|\| !connected \|\| !stripeReady;/);
+  });
+
+  it("a degraded-Stripe-while-ON state renders a distinct amber warning note, separate from the disabled-reason note shown only when currently off", () => {
+    const s = src();
+    expect(s).toContain("const degradedWhileOnReason = onlineOn && !stripeReady ? STRIPE_DEGRADED_WHILE_ON_COPY : null;");
+    expect(s).toContain("const STRIPE_DEGRADED_WHILE_ON_COPY =");
+    // Locked meaning (34G-B, updated at the hierarchy correction): reports
+    // the issue, says Members can't start NEW online payments, and points
+    // at both remedies — resolve Stripe, or turn Court Time Payments off.
+    // No "above"/"below" — Stripe Account and Court Time Payments are now
+    // visually grouped together under "Online Payments."
+    expect(s).toMatch(/Stripe reported an issue with this account\. Members can't start new online payments right now\. Resolve the Stripe issue, or turn Court Time Payments off\./);
+    expect(s).not.toMatch(/Resolve the Stripe issue above/);
+  });
+
+  it("does not weaken the server-side activation gate — activate_court_time_payments is never called directly from this component; the ON path still goes through the same updateClubPaymentModeAction Server Action as every other mode transition", () => {
+    const s = src();
+    expect(s).not.toMatch(/\.rpc\(\s*["']activate_court_time_payments["']/);
+    expect(s).toContain("await updateClubPaymentModeAction(next, clubId)");
   });
 });
 
 describe("Hybrid payments UX — failed mutation does not falsely flip displayed state (requirement 12)", () => {
-  it("submitMode's error branch never calls setMode — already proven in detail by the 'Activation UI — failed activation never falsely shows ACTIVE' describe block above; this test confirms the SAME submitMode function now backs BOTH toggles, not two independently-drifting copies", () => {
-    const src = readSource("src/app/(app)/admin/settings/PaymentTrackingSection.tsx");
-    expect(countOccurrences(src, "function submitMode(next: PaymentMode) {")).toBe(1);
-    expect(countOccurrences(src, "await updateClubPaymentModeAction(next, clubId)")).toBe(1);
+  it("submitMode's error branch never calls setMode — already proven in detail by the 'Activation UI — failed activation never falsely shows ACTIVE' describe block above. Phase 34G-B: PaymentTrackingSection and CourtTimePaymentsSection are now separate components, each with its OWN submitMode calling the SAME shared Server Action (updateClubPaymentModeAction) — this confirms neither file duplicates a second, independently-drifting mutation path", () => {
+    for (const path of [
+      "src/app/(app)/admin/settings/PaymentTrackingSection.tsx",
+      "src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx",
+    ]) {
+      const src = readSource(path);
+      expect(countOccurrences(src, "function submitMode(next: PaymentMode) {")).toBe(1);
+      expect(countOccurrences(src, "await updateClubPaymentModeAction(next, clubId)")).toBe(1);
+    }
   });
 });
 

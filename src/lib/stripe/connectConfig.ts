@@ -153,8 +153,9 @@ export function deriveConnectUIState(
   }
 }
 
-// Phase 34D-C — the ONE place that decides whether PaymentTrackingSection
-// may let an Admin select court_time_payments. Deliberately a single
+// Phase 34D-C — the ONE place that decides whether CourtTimePaymentsSection
+// (split from PaymentTrackingSection at Phase 34G-B) may let an Admin turn
+// Court Time Payments on. Deliberately a single
 // exported predicate (not re-derived inline) so the UI gate and any
 // future caller agree by construction: "ready" (card_payments_status =
 // active for the current server environment) is the only selectable
