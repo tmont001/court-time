@@ -86,7 +86,7 @@ export default function ComparisonTable() {
               </th>
               <th
                 scope="col"
-                className="px-3 py-3 text-xs font-bold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/80 border-x-2 border-gray-900 dark:border-gray-100"
+                className="px-3 py-3 text-xs font-bold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-800/80 border-x-2 border-brand"
               >
                 Connected
               </th>

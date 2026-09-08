@@ -384,12 +384,13 @@ describe("15. Operating Model plan pills explicitly name themselves as plans, wi
     expect(pillBlock).not.toMatch(/amber|red|opacity-/);
   });
 
-  it("the Connected pill uses the existing green Tailwind tokens (the same family already used by StripeConnectSection's own 'ready' treatment) rather than a hardcoded one-off color", () => {
+  it("Phase 34G-C3 supersedes this pill's original color choice — the Connected pill now applies the shared, token-backed .ct-brand-pill CSS class (globals.css, sourced from --ct-brand/--ct-brand-tint) rather than the generic Tailwind green scale, since this pill represents a Court Time commercial PRODUCT identity, not a status/readiness signal. StripeConnectSection's own 'Stripe ready' badge (a genuine readiness signal) is untouched and still uses the plain Tailwind green scale — see src/lib/courtTimeBrand.regression.test.ts for that distinction's own dedicated coverage, including proof that no #2F6B4F/#5EBA92 literal remains in this file (a correction pass moved the color values out of this JSX call site and into the centralized .ct-brand-pill definition).", () => {
     const s = readSource(PAGE_PATH);
     const pillStart = s.indexOf("rounded-full text-[10px] font-semibold uppercase tracking-wide border");
     const pillBlock = s.slice(pillStart, pillStart + 400);
-    expect(pillBlock).toMatch(/bg-green-50 dark:bg-green-900\/20 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800/);
-    expect(pillBlock).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    expect(pillBlock).toMatch(/"ct-brand-pill"/);
+    expect(pillBlock).not.toMatch(/bg-green-50 dark:bg-green-900\/20 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800/);
+    expect(pillBlock).not.toMatch(/#2F6B4F|#5EBA92/);
   });
 
   it("Staff-Managed is never described with inferior/incomplete language — its own description remains the neutral, complete-feature-set statement", () => {

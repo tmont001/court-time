@@ -114,10 +114,19 @@ export default async function AdminSettingsPage() {
             own "Stripe ready" badge, deliberately never "Connected"
             either). Staff-Managed uses neutral slate/gray styling — it is
             a legitimate paid product, never styled as a warning/disabled
-            state. Connected reuses the existing Tailwind green tokens
-            already used elsewhere on this page for a "ready"/positive
-            state (StripeConnectSection's own "ready" card) rather than
-            introducing a new one-off brand color. */}
+            state.
+            Phase 34G-C3 (brand identity, corrected) — Connected Plan now
+            uses the dedicated Court Time brand-green identity via the
+            shared .ct-brand-pill CSS class (globals.css) rather than the
+            generic Tailwind green scale: this pill represents a Court Time
+            commercial PRODUCT identity, not a status/readiness signal —
+            StripeConnectSection's "Stripe ready" badge below stays on the
+            semantic green scale unchanged, since readiness IS a status
+            signal. .ct-brand-pill exists specifically because Tailwind
+            can't apply an opacity modifier to a var()-backed named color
+            at build time — it centralizes the brand color source values
+            (--ct-brand/--ct-brand-tint) in one token-backed CSS rule
+            instead of repeating literal hex at this JSX call site. */}
         <section className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
             Operating Model
@@ -136,7 +145,7 @@ export default async function AdminSettingsPage() {
             <span
               className={`shrink-0 inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide border ${
                 memberSelfService
-                  ? "bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800"
+                  ? "ct-brand-pill"
                   : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600"
               }`}
             >

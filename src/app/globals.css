@@ -9,8 +9,50 @@
    the OS media query. Prior to Phase 21H, @media (prefers-color-scheme: dark)
    was used here, which caused --surface to disagree with Tailwind's dark:
    classes when the user's OS preference and manual toggle differed. */
-:root                { --accent: #374151; --surface: #f4f5f6; color-scheme: light; } /* graphite / base defaults */
-.dark                { --accent: #d1d5db; --surface: #11161f; color-scheme: dark;  }
+:root                { --accent: #374151; --surface: #f4f5f6; color-scheme: light; --ct-brand: #2F6B4F; --ct-brand-hover: #285B43; --ct-brand-tint: #5EBA92; } /* graphite / base defaults */
+.dark                { --accent: #d1d5db; --surface: #11161f; color-scheme: dark; --ct-brand: #2F6B4F; --ct-brand-hover: #285B43; --ct-brand-tint: #5EBA92; }
+
+/* ── Court Time brand identity token (Phase 34G-C3) ──────────────────────────
+   A SEPARATE, Court-Time-owned identity color — distinct from --accent
+   (the per-club theme color every .theme-* preset below controls). No
+   .theme-* rule may ever redefine --ct-brand*: club themes own --accent,
+   Court Time owns --ct-brand, and these two identities must never merge.
+   --ct-brand is the canonical #2F6B4F, used as-is for solid fills (CTA
+   button backgrounds) — it reads fine as a filled background against both
+   light and dark page backgrounds, so it does not need a light/dark swap
+   the way --accent does. --ct-brand-hover is one narrow darkening
+   derivative for the same solid-fill buttons' hover state. --ct-brand-tint
+   is one narrow lightening derivative, needed ONLY because the base
+   #2F6B4F does not have enough contrast to use directly as TEXT/a border
+   on a dark background (~2.9:1, below the 3:1 minimum) — used exclusively
+   for that dark-mode text/border legibility case, never as a general
+   third brand color. This is intentionally the full, minimal set: no
+   broader brand color scale exists or is planned. */
+
+/* Never place a --ct-brand* declaration inside a .theme-* rule below. */
+
+/* Court Time brand pill — the one shared, token-backed treatment for a
+   restrained Court Time commercial-identity badge (e.g. the "Connected
+   Plan" pill on /admin/settings). Centralizes the brand color source
+   values here rather than repeating literal hex in individual JSX call
+   sites; every use just applies the .ct-brand-pill class alongside its own
+   layout classes (padding/radius/text-size/border stay Tailwind utilities
+   at the call site, unchanged). Never redefined inside a .theme-* rule. */
+.ct-brand-pill {
+  /* Runtime visual QA correction — light mode strengthened from 10%/30% to
+     15%/40% (background/border); the original read too washed out, closer
+     to a generic pale status badge than the Court Time brand green used in
+     marketing. Still translucent/subtle, never a solid badge. Text stays
+     the full, unmixed --ct-brand. */
+  background-color: color-mix(in srgb, var(--ct-brand) 15%, transparent);
+  color: var(--ct-brand);
+  border-color: color-mix(in srgb, var(--ct-brand) 40%, transparent);
+}
+.dark .ct-brand-pill {
+  background-color: color-mix(in srgb, var(--ct-brand) 20%, transparent);
+  color: var(--ct-brand-tint);
+  border-color: color-mix(in srgb, var(--ct-brand-tint) 40%, transparent);
+}
 
 .theme-graphite           { --accent: #374151; --surface: #f4f5f6; }
 .dark .theme-graphite     { --accent: #d1d5db; --surface: #11161f; }
