@@ -8,7 +8,7 @@ import {
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
   ACTION_BUTTON_WARNING_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
-} from "@/lib/actionButtonStyles";
+} from "@/components/styles/actionButtonStyles";
 import {
   createEventType,
   updateEventType,

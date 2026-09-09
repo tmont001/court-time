@@ -94,8 +94,14 @@ function localMidnightToUTC(dateStr: string, timeZone: string): number {
 /**
  * Advance a "YYYY-MM-DD" string by exactly one calendar day.
  * Uses Date.UTC arithmetic — no local or IANA timezone involved.
+ *
+ * Exported (Phase 34G-C2) for callers that need to convert a club-local
+ * inclusive [from, to] calendar-date range into a half-open UTC instant
+ * range — e.g. localDateTimeToUTC(nextCalendarDay(toDateStr), 0, 0, tz) as
+ * the exclusive upper bound, mirroring getZonedDayBoundsUTC's own internal
+ * use of this same function.
  */
-function nextCalendarDay(dateStr: string): string {
+export function nextCalendarDay(dateStr: string): string {
   const [y, m, d] = dateStr.split("-").map(Number);
   const next = new Date(Date.UTC(y, m - 1, d + 1)); // JS Date normalises month/day overflow
   const ny   = next.getUTCFullYear();

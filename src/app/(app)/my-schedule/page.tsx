@@ -225,6 +225,17 @@ export default async function MySchedulePage({
   const tab      = typeof sp.tab === "string" ? sp.tab : "upcoming";
   const autoOpen = sp.request === "1";
 
+  // Phase 34F-A: optional ?checkout=success&lesson=<uuid> return from
+  // Stripe Checkout — mirrors calendar/page.tsx's own identical
+  // initialCheckoutReservationId derivation. Never mutates any financial
+  // state itself; only tells LessonsClient which request to reopen so the
+  // Member immediately sees authoritative, freshly-fetched payment state.
+  const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;
+  const lessonParam   = typeof sp.lesson === "string" ? sp.lesson : null;
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const initialCheckoutLessonId =
+    checkoutParam === "success" && lessonParam && uuidRe.test(lessonParam) ? lessonParam : null;
+
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
 
@@ -900,6 +911,7 @@ export default async function MySchedulePage({
               prosError={prosError}
               autoOpen={autoOpen && !prosError && pros.length > 0 && profile?.memberSelfService !== false}
               canRequestNew={profile?.memberSelfService !== false}
+              initialCheckoutLessonId={initialCheckoutLessonId}
             />
           )}
 

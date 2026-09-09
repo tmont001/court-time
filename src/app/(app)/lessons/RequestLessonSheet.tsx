@@ -160,7 +160,7 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
     >
       {/* Step: choose pro */}
       {step === "pro" && (
-        <div className="space-y-2">
+        <div className="ct-content-settle space-y-2">
           <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wide mb-3">
             Choose a pro
           </p>
@@ -187,7 +187,7 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
 
       {/* Step: choose duration */}
       {step === "duration" && (
-        <div>
+        <div className="ct-content-settle">
           {noLessonTypeAvailable ? (
             <p className="text-xs text-amber-600 dark:text-amber-400 mb-4">
               No lesson types are available for online booking right now — contact the club directly.
@@ -267,7 +267,7 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
 
       {/* Step: details */}
       {step === "details" && (
-        <div className="space-y-4">
+        <div className="ct-content-settle space-y-4">
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
               Preferred court (optional)
@@ -323,7 +323,7 @@ export default function RequestLessonSheet({ pros, courts, lessonTypes, currency
 
       {/* Step: review */}
       {step === "review" && selectedPro && (
-        <div className="space-y-4">
+        <div className="ct-content-settle space-y-4">
           <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
             <div className="px-4 py-2.5 flex justify-between text-sm">
               <span className="text-gray-500 dark:text-gray-400">Pro</span>

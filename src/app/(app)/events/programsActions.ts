@@ -19,7 +19,49 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { createPrivilegedClient } from "@/lib/supabase/privileged";
+import {
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 import type { Json } from "@/lib/db/types";
+
+// Phase 34F-C — bounded batch resolution shared by BOTH Program-level
+// fan-out guards: cancel_program AND archive_program (correction round —
+// archive_program's own guard closes the gap where a completed Program's
+// still-open Checkout, deliberately never invalidated by complete_program,
+// could otherwise survive archiving even though get_program_payment_for_
+// checkout's own eligibility already blocks NEW Pay Now once archived_at
+// is set). Lists every currently-blocking (bound + open) Checkout attempt
+// across all currently-enrolled Members on the Program via the
+// service-role-only list_program_blocking_checkout_attempts RPC (0163) —
+// the ONE generic Program-level listing primitive, reused by both callers
+// below rather than duplicated — then resolves each via the SAME generic
+// resolveBlockingCheckoutBeforeMutation helper Event's own resolveAllBlocki
+// ngEventCheckouts (calendar/actions.ts) already uses — never a duplicated
+// Stripe resolution algorithm. Returns false (never retry) on any
+// resolution failure — the caller must leave the Program exactly as it was
+// rather than risk charging for a cancelled/archived Program.
+async function resolveAllBlockingProgramCheckouts(
+  programId: string,
+  clubId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const privileged = createPrivilegedClient();
+  if (!privileged) return { ok: false, error: "Something went wrong. Please try again." };
+
+  const { data: blockingRows, error: listError } = await privileged.rpc(
+    "list_program_blocking_checkout_attempts",
+    { p_program_id: programId, p_club_id: clubId },
+  );
+  if (listError) return { ok: false, error: "Something went wrong. Please try again." };
+
+  for (const { payment_id } of blockingRows ?? []) {
+    const resolved = await resolveBlockingCheckoutBeforeMutation(payment_id, clubId);
+    if (!resolved.ok) return { ok: false, error: resolved.error };
+  }
+
+  return { ok: true };
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -339,7 +381,29 @@ export async function cancelProgram(params: {
   if (!guard.ok) return { error: { message: guard.error } };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("cancel_program", rpcParams);
+  let { data, error } = await supabase.rpc("cancel_program", rpcParams);
+
+  // Phase 34F-C — Program cancellation fan-out guard: cancel_program's own
+  // pre-mutation loop (0163) raises open_checkout_requires_resolution if
+  // ANY currently-enrolled Member has a bound, possibly-still-payable
+  // Stripe Checkout Session, rolling back the WHOLE cancellation before it
+  // touches anything. Rather than force the Admin through one attempt-at-
+  // a-time retries, resolve every currently-known blocking attempt for the
+  // Program in one bounded pass (resolveAllBlockingProgramCheckouts —
+  // lists via the service-role preflight RPC, resolves each via the
+  // existing generic per-payment helper, never a duplicated Stripe
+  // algorithm), then retry cancel_program once. If a NEW payable Session
+  // raced into existence during that pass, this fails closed a second time
+  // and one more bounded resolve+retry pass runs — never an unbounded
+  // loop. On any resolution failure, the Program is left exactly as it was
+  // rather than risk charging for a cancelled Program. Mirrors cancelEvent
+  // (calendar/actions.ts) exactly.
+  for (let attempt = 0; attempt < 2 && error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION); attempt++) {
+    const resolved = await resolveAllBlockingProgramCheckouts(params.p_program_id, expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("cancel_program", rpcParams));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   revalidatePath("/events");
@@ -377,7 +441,26 @@ export async function archiveProgram(params: {
   if (!guard.ok) return { error: { message: guard.error } };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("archive_program", rpcParams);
+  let { data, error } = await supabase.rpc("archive_program", rpcParams);
+
+  // Phase 34F-C (correction round) — Program archive fan-out guard:
+  // archive_program's own pre-mutation loop (0163) raises open_checkout_
+  // requires_resolution if ANY currently-enrolled Member has a bound,
+  // possibly-still-payable Stripe Checkout Session, rolling back the WHOLE
+  // archive before it touches anything. A completed Program can genuinely
+  // reach here still carrying such a Session — complete_program
+  // deliberately never invalidates one, since the debt (and the Checkout
+  // meant to collect it) remains legitimate after completion. Archiving is
+  // the first lifecycle mutation on that branch that must close it out.
+  // Uses the SAME bounded resolve-then-retry orchestration as
+  // cancelProgram above, reusing the identical shared helper — never a
+  // duplicated Stripe algorithm.
+  for (let attempt = 0; attempt < 2 && error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION); attempt++) {
+    const resolved = await resolveAllBlockingProgramCheckouts(params.p_program_id, expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("archive_program", rpcParams));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   revalidatePath("/events");

@@ -12,6 +12,12 @@ const config: Config = {
       // Event-type colors reserved for future use
       colors: {
         accent: "var(--accent)",
+        // Phase 34G-C3 — Court Time's own brand identity color, SEPARATE
+        // from `accent` (the per-club theme color). Never redefined by any
+        // .theme-* preset — see globals.css's own comment on --ct-brand.
+        brand: "var(--ct-brand)",
+        "brand-hover": "var(--ct-brand-hover)",
+        "brand-tint": "var(--ct-brand-tint)",
         "event-lesson": "#3B7DD8",
         "event-clinic": "#2E9B5E",
         "event-social": "#E68433",

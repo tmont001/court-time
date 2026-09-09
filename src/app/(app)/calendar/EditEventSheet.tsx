@@ -581,7 +581,7 @@ export default function EditEventSheet({
         {isAdmin ? (
           <div>
             <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-              Event Price <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
+              Price for future sign-ups <span className="normal-case text-gray-400 dark:text-gray-500">(optional)</span>
             </label>
             <div className="mt-1.5 relative w-32">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-base md:text-sm">
@@ -598,8 +598,8 @@ export default function EditEventSheet({
               />
             </div>
             <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-              Changes apply to new participants and guests. Existing participant and guest price
-              snapshots are unchanged. Leave blank for no price.
+              Existing participants and guests keep the price they joined at. This only
+              changes what future sign-ups pay. Leave blank for no price.
             </p>
             {priceError && <p className="mt-1 text-xs text-red-500">{priceError}</p>}
           </div>

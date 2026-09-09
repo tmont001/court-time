@@ -6,7 +6,7 @@ import { formatLessonUnitPrice } from "@/lib/money";
 import {
   ACTION_BUTTON_SECONDARY_COMPACT,
   ACTION_BUTTON_WARNING_COMPACT,
-} from "@/lib/actionButtonStyles";
+} from "@/components/styles/actionButtonStyles";
 import { upsertLessonType, archiveLessonType } from "./lessonTypesActions";
 
 type PricingBasis = "flat" | "hourly";

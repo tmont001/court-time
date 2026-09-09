@@ -5,8 +5,22 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
-import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import RefundPaymentSheet from "@/components/RefundPaymentSheet";
+import { isPaymentOpenForRecording, toneClassName, type PaymentStateRow } from "@/lib/payments";
+import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
+import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
+import { formatMoney } from "@/lib/money";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
+import PaymentDetailSheet from "@/components/PaymentDetailSheet";
+import PaymentExportMenu from "./PaymentExportMenu";
+
+export interface AdminPaymentDispute {
+  status: string;
+  reason: string;
+  amountCents: number;
+  currency: string;
+  evidenceDueBy: string | null;
+}
 
 export interface AdminPaymentRow {
   key: string;
@@ -15,6 +29,40 @@ export interface AdminPaymentRow {
   identityName: string;
   dateLabel: string | null;
   href: string;
+  // Phase 34E-E — the underlying domain's OWN lifecycle state (e.g.
+  // "Booking Cancelled"), entirely independent from payment/financial
+  // status. Null when the domain row is active or has no cancellation
+  // concept at all (e.g. event_guest).
+  lifecycleLabel: string | null;
+  // Runtime QA polish — true only for a cancelled parent Event
+  // (event_participant/event_guest). Withholds the Record Payment action
+  // (list row + PaymentDetailSheet) without touching amount_due_cents/
+  // amount_paid_cents/status — Unpaid/Partially Paid remains visible as
+  // historical financial truth, and Refund (for an already-Paid payment)
+  // is completely unaffected by this flag. Always false for every other
+  // domain in this pass.
+  recordPaymentBlocked: boolean;
+  // Phase 34E-B — how much of this payment's ONLINE (Stripe) money is
+  // still refundable. Never derived from state.current_amount_paid_cents,
+  // which nets manual money in too (locked decision 1).
+  refundableCents: number;
+  // Phase 34E-C — the most recent Stripe dispute for this payment, if
+  // any. INFORMATIONAL ONLY — never derived from or fed back into
+  // state/refundableCents. Admin/Staff-only data (page.tsx never fetches
+  // this for a Member/Pro-facing surface).
+  dispute: AdminPaymentDispute | null;
+  // True when ANY dispute on this payment currently reports Stripe's own
+  // is_charge_refundable = false — used only to hide the Refund action so
+  // it never misleadingly offers a call that Stripe would reject; Stripe
+  // itself remains authoritative for any race after page render.
+  disputeBlocksRefund: boolean;
+  // Phase 34G-C1 — reversal-aware compact collection-source summary
+  // ("Stripe" / "Manual · Cash" / "Manual · Multiple" / "Mixed"), derived
+  // server-side from payment_events (never from payment_mode_at_creation
+  // or amount_paid_cents alone — see src/lib/paymentProvenance.ts). Null
+  // when there is no effective (non-reversed) collection event yet —
+  // renders no badge, never a fabricated default.
+  sourceSummary: string | null;
   state: PaymentStateRow;
   sortKey: string;
 }
@@ -30,18 +78,39 @@ const DOMAIN_LABEL: Record<AdminPaymentRow["domainType"], string> = {
 type Filter = "outstanding" | "all";
 
 export default function AdminPaymentsClient({
-  rows, clubId, currency,
+  rows, clubId, currency, clubTimezone, truncated, isAdmin,
 }: {
   rows: AdminPaymentRow[];
   clubId: string;
   currency: string;
+  clubTimezone: string;
+  // G-D1 — true when the server query hit page.tsx's own MAX_ROWS cap
+  // (interactive-list-only; the cap itself is unchanged this checkpoint).
+  // Never implies data was deleted — only that older payments aren't
+  // shown in THIS list; Export remains the complete, uncapped source.
+  truncated?: boolean;
+  // G-D1 QA correction — server-derived (page.tsx's own isAdmin(profile.
+  // role), the same predicate the rest of the app uses for Admin-only
+  // authority). UI-only: gates whether the Refund action is ever
+  // RENDERED, here and in PaymentDetailSheet. The real authorization
+  // boundary remains createOnlineRefundAction's own server-side
+  // `profile.role !== "admin"` check (refundActions.ts), unchanged and
+  // untouched by this — hiding the button never substitutes for it.
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("outstanding");
   const [query, setQuery]   = useState("");
   const [recordTarget, setRecordTarget] = useState<AdminPaymentRow | null>(null);
+  const [refundTarget, setRefundTarget] = useState<AdminPaymentRow | null>(null);
+  const [detailTarget, setDetailTarget] = useState<AdminPaymentRow | null>(null);
 
   const filtered = useMemo(() => {
+    // Locked semantics (runtime QA correction) — Outstanding means
+    // "balances the member still owes": unpaid/partially_paid only. A
+    // fully paid, Stripe-refundable transaction belongs on All, never
+    // Outstanding — Refund remains reachable there via row.refundableCents
+    // (see the Refund button's own, separate render condition below).
     let list = filter === "outstanding" ? rows.filter(r => isPaymentOpenForRecording(r.state)) : rows;
     const q = query.trim().toLowerCase();
     if (q) {
@@ -89,7 +158,14 @@ export default function AdminPaymentsClient({
           placeholder="Search by name…"
           className="w-full sm:flex-1 ct-input text-base md:text-sm"
         />
+        <PaymentExportMenu clubId={clubId} clubTimezone={clubTimezone} />
       </div>
+
+      {truncated && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 mb-4">
+          Showing the 500 most recent payments. Use Export for complete payment history.
+        </p>
+      )}
 
       {filtered.length === 0 ? (
         <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
@@ -113,16 +189,55 @@ export default function AdminPaymentsClient({
                   </p>
                 </Link>
               </div>
+              {row.dispute && (
+                <DisputeBadge dispute={row.dispute} />
+              )}
               <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <PaymentStateBadge state={row.state} />
-                {isPaymentOpenForRecording(row.state) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Phase 34E-E — domain lifecycle (e.g. "Booking
+                      Cancelled") is always its own, visually distinct
+                      pill, never merged into the financial-status badge. */}
+                  {row.lifecycleLabel && (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                      {row.lifecycleLabel}
+                    </span>
+                  )}
+                  <PaymentStateBadge state={row.state} />
+                  {/* Phase 34G-C1 — collection-source provenance, kept
+                      deliberately neutral/informational: never Court Time
+                      brand green, never Stripe-readiness green. This
+                      answers "was this Stripe or manual," not a
+                      success/commercial state. */}
+                  {row.sourceSummary && (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                      {row.sourceSummary}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <button
-                    onClick={() => setRecordTarget(row)}
-                    className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
+                    onClick={() => setDetailTarget(row)}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 motion-safe:transition-colors motion-safe:duration-100"
                   >
-                    Record Payment
+                    Details
                   </button>
-                )}
+                  {isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
+                    <button
+                      onClick={() => setRefundTarget(row)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                    >
+                      Refund
+                    </button>
+                  )}
+                  {isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (
+                    <button
+                      onClick={() => setRecordTarget(row)}
+                      className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
+                    >
+                      Record Payment
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -141,6 +256,49 @@ export default function AdminPaymentsClient({
           onRecorded={() => { setRecordTarget(null); router.refresh(); }}
         />
       )}
+
+      {refundTarget && (
+        <RefundPaymentSheet
+          paymentId={refundTarget.state.current_payment_id}
+          clubId={clubId}
+          refundableCents={refundTarget.refundableCents}
+          currency={refundTarget.state.current_currency || currency}
+          title={refundTarget.identityName}
+          onClose={() => setRefundTarget(null)}
+          onRefunded={() => { setRefundTarget(null); router.refresh(); }}
+        />
+      )}
+
+      {detailTarget && (
+        <PaymentDetailSheet
+          row={detailTarget}
+          clubId={clubId}
+          currency={currency}
+          clubTimezone={clubTimezone}
+          isAdmin={isAdmin}
+          onClose={() => setDetailTarget(null)}
+          // Detail is read-only — any actual mutation hands off to the
+          // SAME existing 34E-B/34C sheets, closing Detail first so only
+          // one sheet is ever open at a time.
+          onRequestRefund={() => { setRefundTarget(detailTarget); setDetailTarget(null); }}
+          onRequestRecordPayment={() => { setRecordTarget(detailTarget); setDetailTarget(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+// Phase 34E-C — compact, informational-only dispute line. Court Time
+// never submits evidence or manages the dispute here; the club uses
+// Stripe directly for that (locked scope). Kept deliberately minimal —
+// broad payment-status visual polish is 34G-C.
+function DisputeBadge({ dispute }: { dispute: AdminPaymentDispute }) {
+  const presentation = presentDisputeStatus(dispute.status);
+  return (
+    <p
+      className={`mt-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${disputeToneClassName(presentation.tone)}`}
+    >
+      {presentation.label} · {formatMoney(dispute.amountCents, dispute.currency)} · {formatDisputeReason(dispute.reason)}
+    </p>
   );
 }

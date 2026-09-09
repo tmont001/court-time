@@ -142,6 +142,56 @@ export type Database = {
           }
         ];
       };
+      payment_disputes: {
+        // Phase 34E-C — informational Stripe dispute state, entirely
+        // separate from payment_events/payment_refund_attempts. Read-only
+        // for `authenticated` (club-scoped Admin/Staff SELECT policy);
+        // every write goes through process_stripe_dispute_webhook_event
+        // (service-role only, via the webhook Route Handler).
+        Row: {
+          id: string;
+          club_id: string;
+          payment_id: string;
+          source_checkout_attempt_id: string;
+          stripe_dispute_id: string;
+          stripe_charge_id: string;
+          stripe_payment_intent_id: string;
+          stripe_account_id: string;
+          livemode: boolean;
+          amount_cents: number;
+          currency: string;
+          // Stripe's raw dispute status string — deliberately untyped
+          // beyond `string` (no CHECK at the DB layer either); see
+          // disputeConfig.ts's own presentDisputeStatus for the UI's safe
+          // known-value-plus-fallback mapping.
+          status: string;
+          reason: string;
+          evidence_due_by: string | null;
+          is_charge_refundable: boolean;
+          stripe_created_at: string;
+          last_synced_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [
+          {
+            foreignKeyName: "payment_disputes_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payment_disputes_payment_id_club_id_fkey";
+            columns: ["payment_id", "club_id"];
+            isOneToOne: false;
+            referencedRelation: "payments";
+            referencedColumns: ["id", "club_id"];
+          }
+        ];
+      };
       payment_events: {
         // Phase 34C — append-only canonical ledger. UI code should never
         // write here directly; always via record_manual_payment /
@@ -1798,6 +1848,50 @@ export type Database = {
           court_count: number;
           status: string;
           created_by: string;
+          created_at: string;
+          updated_at: string;
+        };
+      };
+      create_event_with_price_override: {
+        // Phase 34F-B (pre-commit correction). Admin-only, authenticated
+        // grant, service-role NOT required (unlike the Checkout attempt
+        // wrappers — this never touches Stripe/payment_checkout_attempts,
+        // only events/audit_log, matching create_event's/set_event_price_
+        // override's own authenticated-grant convention). Atomically
+        // composes the existing, unmodified create_event and
+        // set_event_price_override inside ONE transaction — see the
+        // migration's own header for the full race this closes.
+        // p_price_amount_cents is nullable: null = explicit "no price"
+        // override, 0 = explicit Free, positive = custom price. "Use the
+        // Event Type default" is a DIFFERENT path entirely (plain
+        // create_event, no override call at all) — never expressed
+        // through this function.
+        Args: {
+          p_event_type_id: string;
+          p_title: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_court_ids: string[];
+          p_price_amount_cents: number | null;
+          p_description?: string | null;
+          p_capacity?: number | null;
+          p_notes?: string | null;
+          p_member_joinable?: boolean;
+        };
+        Returns: {
+          id: string;
+          club_id: string;
+          event_type_id: string;
+          title: string;
+          description: string | null;
+          starts_at: string;
+          ends_at: string;
+          capacity: number;
+          court_count: number;
+          status: string;
+          created_by: string;
+          member_joinable: boolean;
+          price_amount_cents: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -3469,6 +3563,791 @@ export type Database = {
             status: string;
           }[];
         }[];
+      };
+      get_club_stripe_connect_status: {
+        // Phase 34D-A. service_role only — never callable from an
+        // authenticated browser session (so no client can pick its own
+        // p_livemode). Scoped to one (club, Stripe mode) pair. Never
+        // returns the raw Stripe account id — only the derived readiness
+        // signal. Accounts v2: card_payments_status is Stripe's own
+        // capability status vocabulary (active/pending/restricted/
+        // unsupported), not a locally-invented enum.
+        Args: { p_club_id: string; p_livemode: boolean };
+        Returns: {
+          connected:             boolean;
+          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
+          last_synced_at:        string | null;
+        }[];
+      };
+      get_club_stripe_account_ref: {
+        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
+        // mode) pair — a club may have both a test-mode and a live-mode
+        // connected account.
+        Args: { p_club_id: string; p_livemode: boolean };
+        Returns: string | null;
+      };
+      upsert_club_stripe_account: {
+        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
+        // mode) pair via the unique(club_id, livemode) constraint.
+        Args: {
+          p_club_id:              string;
+          p_stripe_account_id:    string;
+          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
+          p_actor_id:             string;
+          p_livemode:             boolean;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          stripe_account_id:     string;
+          livemode:              boolean;
+          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
+          last_synced_at:        string | null;
+          created_by:            string | null;
+          created_at:            string;
+          updated_at:            string;
+        };
+      };
+      process_stripe_connect_account_event: {
+        // Phase 34D-B. service_role only — never callable from an
+        // authenticated browser session. The one atomic entry point for
+        // Stripe Connect account lifecycle events: deduplicates on
+        // p_stripe_event_id (a genuine duplicate is a clean no-op —
+        // already_processed: true), then updates club_stripe_accounts.
+        // card_payments_status/last_synced_at only for the row matching
+        // BOTH stripe_account_id and livemode. Never creates a new
+        // club_stripe_accounts row and never touches any row for a
+        // different account/mode. If no row matches, the call THROWS
+        // (stripe_account_not_found) and rolls back — including the event
+        // receipt insert — so the caller (the webhook route) surfaces a
+        // 500 and Stripe's own retry can succeed later once the account
+        // mapping exists; an unmatched event is never silently/
+        // permanently recorded as handled.
+        Args: {
+          p_stripe_event_id:      string;
+          p_event_type:           string;
+          p_livemode:             boolean;
+          p_stripe_account_id:    string;
+          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
+      activate_court_time_payments: {
+        // Phase 34D-C. service_role only — never callable from an
+        // authenticated browser session (so no client can supply its own
+        // p_livemode to bypass the readiness gate). The ONLY path to
+        // court_time_payments: requires a club_stripe_accounts row
+        // matching BOTH p_club_id and p_livemode with card_payments_status
+        // = 'active'; otherwise throws stripe_connect_not_ready. On
+        // success, updates club_settings.payment_mode exactly like
+        // update_club_payment_mode's own none/manual path (same audit_log
+        // action name).
+        Args: { p_club_id: string; p_livemode: boolean; p_actor_id: string };
+        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
+      };
+      get_reservation_payment_for_checkout: {
+        // Phase 34D-D1. authenticated-grant, pure read. Requires the
+        // caller's CURRENT role to be exactly 'member' (raises
+        // insufficient_role otherwise — an Admin/Staff/Pro with a roster
+        // identity must not pass), then returns at most one row: the
+        // CALLER's own latest payment obligation for a reservation —
+        // independently re-derived via current_user_roster_member_id(),
+        // never trusting a client-supplied identity. Hardcoded to
+        // domain_type = 'reservation', so Event Guest is structurally
+        // unreachable. payment_mode_at_creation lets the caller enforce
+        // that an obligation created under 'manual' stays manual-only
+        // forever, even if the club later enables Court Time Payments.
+        Args: { p_reservation_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      get_lesson_payment_for_checkout: {
+        // Phase 34F-A (rewritten after external review). authenticated-
+        // grant, pure read — the lesson_request sibling of get_
+        // reservation_payment_for_checkout above, hardcoded to domain_type
+        // = 'lesson_request'. Requires the caller's CURRENT role to be
+        // exactly 'member' AND the lesson_request's CURRENT status to be
+        // exactly 'confirmed' (server-derived, never trusted from the
+        // client) before returning a row at all — a cancelled/declined/
+        // withdrawn/pending/proposed lesson is structurally unreachable.
+        // Unlike get_reservation_payment_for_checkout, this DOES check
+        // lifecycle status: Court Time has no cancellation-fee model, so a
+        // cancelled lesson's (still-preserved, still Admin-resolvable)
+        // obligation must not remain Member-Checkout-payable. Also
+        // verifies the lesson_request's own club_id matches the resolved
+        // payment's club_id. Independently re-derives the caller's own
+        // roster identity via current_user_roster_member_id(), never
+        // trusting a client-supplied identity.
+        Args: { p_request_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      open_lesson_payment_checkout_attempt: {
+        // Phase 34F-A (external review correction, BLOCKER 1). service_
+        // role only. Atomic lesson-aware wrapper around open_payment_
+        // checkout_attempt below — closes the TOCTOU race between get_
+        // lesson_payment_for_checkout's own read and this, the actual
+        // attempt-opening step. Locks the lesson_requests row FIRST,
+        // re-verifies status = 'confirmed' UNDER that lock (raises
+        // lesson_not_found / lesson_not_confirmed otherwise), resolves the
+        // current payment_id fresh, then delegates entirely to open_
+        // payment_checkout_attempt for everything else — never duplicates
+        // that function's own algorithm. Same Returns shape.
+        Args: {
+          p_request_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_lesson_checkout_attempt_and_open_fresh: {
+        // Phase 34F-A (external review correction, BLOCKER 1). service_
+        // role only. Atomic lesson-aware wrapper around supersede_
+        // checkout_attempt_and_open_fresh below — the SAME race closed at
+        // the primary attempt-open call site (open_lesson_payment_
+        // checkout_attempt above) exists identically here: the out-of-
+        // process Stripe round-trip between the two calls cannot hold a DB
+        // lock. Locks the lesson_requests row, re-verifies status =
+        // 'confirmed', resolves payment_id fresh, then delegates entirely
+        // to supersede_checkout_attempt_and_open_fresh. Same Returns
+        // shape.
+        Args: {
+          p_request_id:        string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      get_event_payment_for_checkout: {
+        // Phase 34F-B. authenticated-grant, pure read — the event_
+        // participant sibling of get_lesson_payment_for_checkout above,
+        // hardcoded to domain_type = 'event_participant'. Requires the
+        // caller's CURRENT role to be exactly 'member', the parent Event's
+        // CURRENT status to be exactly 'scheduled' and not archived, and
+        // the caller's own event_participants row (matched by roster
+        // identity) to be exactly 'confirmed' before returning a row at
+        // all — waitlisted/offered/cancelled participants and a
+        // cancelled/archived Event are all structurally unreachable.
+        // event_starts_at is additionally returned so callers can build a
+        // date-aware /calendar return URL, mirroring get_reservation_
+        // payment_for_checkout's own reservationDateISO need. No guest
+        // path — event_guest has no roster identity to match.
+        Args: { p_event_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+          event_starts_at:          string | null;
+        }[];
+      };
+      open_event_payment_checkout_attempt: {
+        // Phase 34F-B. service_role only. Atomic event-aware wrapper
+        // around open_payment_checkout_attempt below — closes the TOCTOU
+        // race between get_event_payment_for_checkout's own read and this,
+        // the actual attempt-opening step. Locks the events row FIRST,
+        // re-verifies the Event is scheduled/non-archived AND the caller's
+        // own (p_actor_id-resolved) event_participants row is still
+        // 'confirmed' UNDER that lock, resolves the current payment_id
+        // fresh, then delegates entirely to open_payment_checkout_attempt
+        // for everything else — never duplicates that function's own
+        // algorithm. Same Returns shape as the Lesson/Reservation
+        // siblings.
+        Args: {
+          p_event_id:          string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_event_checkout_attempt_and_open_fresh: {
+        // Phase 34F-B. service_role only. Atomic event-aware wrapper
+        // around supersede_checkout_attempt_and_open_fresh below — the
+        // SAME race closed at the primary attempt-open call site (open_
+        // event_payment_checkout_attempt above) exists identically here.
+        // Locks the events row, re-verifies scheduled/non-archived +
+        // participant confirmed, resolves payment_id fresh, then
+        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
+        // Same Returns shape.
+        Args: {
+          p_event_id:          string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      list_event_blocking_checkout_attempts: {
+        // Phase 34F-B. service_role only, read-only. Event-level batch
+        // preflight for the cancel_event / update_event fan-out stale-
+        // Checkout guard — for every CURRENTLY confirmed participant on
+        // the Event, reports that participant's latest payment id if (and
+        // only if) it has a genuinely blocking attempt (status='open' AND
+        // a bound Stripe Checkout Session), the same predicate get_
+        // blocking_checkout_attempt_for_payment (0151) uses for the
+        // single-payment case. Returns payment_id ONLY — never a Stripe
+        // session id or any participant identity/PII.
+        Args: { p_event_id: string; p_club_id: string };
+        Returns: { payment_id: string }[];
+      };
+      get_program_payment_for_checkout: {
+        // Phase 34F-C. authenticated-grant, pure read — the whole-program-
+        // enrollment sibling of get_event_payment_for_checkout above,
+        // hardcoded to domain_type = 'program_enrollment'. Requires the
+        // caller's CURRENT role to be exactly 'member', the parent
+        // Program's enrollment_model to be exactly 'program', the
+        // Program's CURRENT status to be IN ('active','completed') and not
+        // archived (the locked eligibility allowlist — never the broader
+        // "status <> 'cancelled'" predicate), and the caller's own
+        // program_enrollments row (matched by roster identity) to be
+        // exactly 'enrolled' before returning a row at all —
+        // waitlisted/offered/cancelled enrollments and a
+        // cancelled/draft/archived Program are all structurally
+        // unreachable. No event_starts_at-equivalent field: the return
+        // route is the flat /events page, not date-navigated like
+        // /calendar.
+        Args: { p_program_id: string };
+        Returns: {
+          payment_id:               string;
+          club_id:                  string;
+          amount_due_cents:         number;
+          amount_paid_cents:        number;
+          currency:                 string;
+          status:                   string;
+          payment_mode_at_creation: string;
+        }[];
+      };
+      open_program_payment_checkout_attempt: {
+        // Phase 34F-C. service_role only. Atomic program-aware wrapper
+        // around open_payment_checkout_attempt below — closes the TOCTOU
+        // race between get_program_payment_for_checkout's own read and
+        // this, the actual attempt-opening step. Locks the programs row
+        // FIRST, re-verifies enrollment_model='program', status IN
+        // ('active','completed'), not archived, AND the caller's own
+        // (p_actor_id-resolved) program_enrollments row is still
+        // 'enrolled' UNDER that lock, resolves the current payment_id
+        // fresh, then delegates entirely to open_payment_checkout_attempt
+        // for everything else — never duplicates that function's own
+        // algorithm. Same Returns shape as the Event/Lesson/Reservation
+        // siblings.
+        Args: {
+          p_program_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_program_checkout_attempt_and_open_fresh: {
+        // Phase 34F-C. service_role only. Atomic program-aware wrapper
+        // around supersede_checkout_attempt_and_open_fresh below — the
+        // SAME race closed at the primary attempt-open call site (open_
+        // program_payment_checkout_attempt above) exists identically here.
+        // Locks the programs row, re-verifies enrollment_model/status/
+        // archived + enrollment enrolled, resolves payment_id fresh, then
+        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
+        // Same Returns shape.
+        Args: {
+          p_program_id:        string;
+          p_stale_attempt_id:  string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      list_program_blocking_checkout_attempts: {
+        // Phase 34F-C. service_role only, read-only. Program-level batch
+        // preflight for the cancel_program fan-out stale-Checkout guard —
+        // for every CURRENTLY 'enrolled' program_enrollments row on the
+        // Program, reports that enrollment's latest payment id if (and
+        // only if) it has a genuinely blocking attempt (status='open' AND
+        // a bound Stripe Checkout Session), the same predicate list_event_
+        // blocking_checkout_attempts (0161) uses. Returns payment_id
+        // ONLY — never a Stripe session id or any enrollment identity/PII.
+        Args: { p_program_id: string; p_club_id: string };
+        Returns: { payment_id: string }[];
+      };
+      open_payment_checkout_attempt: {
+        // Phase 34D-D1 (correction round 4). service_role only.
+        // Re-derives amount owed and eligibility fresh from the payments
+        // row under a row lock — never trusts an earlier caller-side
+        // read. Returns action='ready' when an existing OPEN attempt is
+        // reused as-is (amount, currency, connected Stripe account, AND
+        // livemode ALL match, and its bound Session's own Stripe-reported
+        // expiration — stripe_session_expires_at — is still in the
+        // future, or it has no bound Session yet) or a fresh attempt was
+        // opened (including when a stale UNBOUND attempt was safely
+        // superseded locally — no remote Stripe artifact existed for it).
+        // Returns action='must_expire_remote' — mutating NOTHING — when an
+        // existing OPEN attempt needs replacing but already has a bound
+        // Session that may still be genuinely payable at Stripe: the
+        // caller MUST retrieve/expire it via Stripe (in the STALE
+        // attempt's own stripe_account_id context) before calling
+        // supersede_checkout_attempt_and_open_fresh. Raises
+        // stale_attempt_environment_mismatch (never returns
+        // 'must_expire_remote') when the stale bound attempt's own
+        // livemode differs from the current one — that Session cannot be
+        // safely addressed by the current Stripe API key at all.
+        Args: {
+          p_payment_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "must_expire_remote";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      supersede_checkout_attempt_and_open_fresh: {
+        // Phase 34D-D1 (correction round 4). service_role only. Called
+        // ONLY after the Server Action has confirmed via Stripe (using
+        // the stale attempt's own stripe_account_id context) that its
+        // bound Session is no longer payable. Re-validates payment
+        // eligibility fresh (state may have changed during the Stripe
+        // round-trip) and re-checks the stale attempt is STILL 'open' at
+        // this exact moment — if something else resolved it in the
+        // meantime (most notably the webhook completing it), returns
+        // action='already_completed' with that row and creates NO new
+        // attempt. Otherwise marks the stale attempt 'expired' and opens
+        // a fresh one carrying the current stripe_account_id/livemode, in
+        // the same transaction — action='ready'.
+        Args: {
+          p_stale_attempt_id:  string;
+          p_payment_id:        string;
+          p_club_id:           string;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_actor_id:          string;
+        };
+        Returns: {
+          action:                     "ready" | "already_completed";
+          id:                         string;
+          payment_id:                 string;
+          club_id:                    string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string | null;
+          stripe_session_expires_at:  string | null;
+          stripe_payment_intent_id:   string | null;
+          amount_expected_cents:      number;
+          currency_expected:          string;
+          status:                     "open" | "completed" | "expired" | "canceled";
+          created_by:                 string | null;
+          created_at:                 string;
+          updated_at:                 string;
+        }[];
+      };
+      record_checkout_session_created: {
+        // Phase 34D-D1. service_role only. Stores the Stripe Checkout
+        // Session id AND Stripe's own authoritative expires_at returned
+        // by the create call onto its attempt row — REQUIRED to succeed
+        // before the Server Action may return a checkout URL
+        // (process_stripe_payment_event finds an attempt solely by this
+        // id). Fails loudly (throws) rather than silently affecting zero
+        // rows: checkout_attempt_not_found for an unknown attempt,
+        // checkout_attempt_not_open for a canceled/expired/completed
+        // attempt, checkout_session_mismatch for an already-stored
+        // DIFFERENT session id. Binding the SAME session id again onto a
+        // still-open attempt (a Server Action retry) is idempotent
+        // success.
+        Args: {
+          p_attempt_id: string;
+          p_stripe_checkout_session_id: string;
+          p_stripe_session_expires_at: string;
+        };
+        Returns: void;
+      };
+      process_stripe_payment_event: {
+        // Phase 34D-D1 (correction round 4). service_role only. The one
+        // atomic payment-reconciliation RPC for checkout.session.completed.
+        // Dedupes via stripe_event_receipts (shared with 0148's Connect
+        // lifecycle events). Canonical lock order: locates the payment_id
+        // via a non-locking lookup, locks payments FIRST, then re-reads/
+        // locks the attempt row and revalidates it (matching
+        // open_payment_checkout_attempt / supersede_checkout_attempt_
+        // and_open_fresh's own payments-first lock order — avoids a
+        // deadlock opportunity). Immutable-identity validation (connected
+        // account, livemode, currency, amount) runs BEFORE the
+        // completed-attempt no-op — every mismatch raises, rolling back
+        // the just-inserted receipt too, so a valid Stripe payment Court
+        // Time cannot safely reconcile is always retryable rather than
+        // permanently dropped. Deliberately NOT gated on the local
+        // payment's current status — once Stripe has genuinely collected
+        // money against a matched attempt, it is recorded regardless of
+        // what happened locally since the Session was created (manual
+        // payment, price change, waiver, void); _recompute_payment_rollup
+        // reflects that real money correctly. p_stripe_payment_intent_id
+        // is NULLABLE — Stripe documents Checkout Session.payment_intent
+        // as nullable even for a paid mode=payment Session, so a
+        // genuinely paid, signature-verified Session must never be
+        // dropped merely because it's absent; p_stripe_checkout_session_id
+        // (required) is this function's real immutable reconciliation
+        // identity. A completed attempt's PaymentIntent is only checked
+        // for conflict when BOTH the stored and incoming ids are non-null
+        // and differ. On success, marks the attempt completed, stores the
+        // (possibly null) PaymentIntent id, and inserts a single
+        // online_payment_recorded payment_events row whose
+        // external_reference is the Checkout SESSION id (always
+        // non-null) — atomically.
+        Args: {
+          p_stripe_event_id:            string;
+          p_event_type:                 string;
+          p_livemode:                   boolean;
+          p_stripe_account_id:          string;
+          p_stripe_checkout_session_id: string;
+          p_stripe_payment_intent_id:   string | null;
+          p_amount_total_cents:         number;
+          p_currency:                   string;
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
+      get_blocking_checkout_attempt_for_payment: {
+        // Phase 34E-A. service_role only. Read-only. Called by a Server
+        // Action immediately after its own mutation RPC (record_manual_
+        // payment / waive_payment / void_payment_obligation / record_
+        // refund / reverse_payment_event / update_member_reservation /
+        // admin_update_member_lesson) raised open_checkout_requires_
+        // resolution, to fetch the Stripe identity of the bound, open
+        // attempt it must resolve via Stripe before safely retrying.
+        // Returns zero rows if already resolved in the interim.
+        Args: {
+          p_payment_id: string;
+          p_club_id:    string;
+        };
+        Returns: {
+          id:                         string;
+          stripe_account_id:          string;
+          livemode:                   boolean;
+          stripe_checkout_session_id: string;
+        }[];
+      };
+      expire_blocking_checkout_attempt: {
+        // Phase 34E-A. service_role only. Called ONLY after the Server
+        // Action has independently confirmed via Stripe that the blocking
+        // attempt's bound Session is no longer payable (already expired,
+        // or just actively expired). Re-verifies the attempt is STILL
+        // 'open' under a fresh lock before marking it 'expired' —
+        // returns action='already_completed' (mutating nothing) if the
+        // webhook resolved it in the interim; the caller must stop and
+        // never retry its competing local mutation in that case.
+        Args: {
+          p_attempt_id: string;
+          p_payment_id: string;
+          p_club_id:    string;
+        };
+        Returns: {
+          action: "proceed" | "already_completed";
+        }[];
+      };
+      open_payment_refund_attempt: {
+        // Phase 34E-B. service_role only. Resolves the payment's own
+        // latest COMPLETED online payment_checkout_attempts row as
+        // trusted refund provenance, computes that attempt's own
+        // Stripe-refundable ceiling, and either reuses an existing
+        // unresolved ('pending', unbound) attempt for this payment WHEN
+        // THE REQUESTED AMOUNT MATCHES (double-submit / retry-after-
+        // uncertainty safety — never mints a second Stripe idempotency
+        // key for what may be the same in-flight request), raises
+        // pending_refund_amount_mismatch before any Stripe call when a
+        // DIFFERENT amount is requested against that same unresolved
+        // attempt (correction pass — never silently substitutes the old
+        // amount), or opens a fresh one.
+        Args: {
+          p_payment_id:             string;
+          p_club_id:                string;
+          p_requested_amount_cents: number;
+          p_actor_id:               string;
+          p_admin_reason?:          string | null;
+        };
+        Returns: {
+          id:                          string;
+          payment_id:                  string;
+          club_id:                     string;
+          source_checkout_attempt_id:  string;
+          stripe_account_id:           string;
+          livemode:                    boolean;
+          stripe_checkout_session_id:  string | null;
+          stripe_payment_intent_id:    string | null;
+          requested_amount_cents:      number;
+          status:                      "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          currency:                    string;
+        }[];
+      };
+      mark_refund_attempt_local_failure: {
+        // Phase 34E-B. service_role only. Only for a failure BEFORE any
+        // Stripe API call was ever made (e.g. no PaymentIntent could be
+        // resolved) — raises refund_already_submitted_to_stripe if a
+        // Stripe Refund id is already bound.
+        Args: {
+          p_refund_attempt_id: string;
+          p_failure_reason:    string | null;
+        };
+        Returns: void;
+      };
+      backfill_refund_attempt_payment_intent: {
+        // Phase 34E-B (correction pass). service_role only, narrow.
+        // Called BEFORE stripe.refunds.create() whenever the source
+        // Checkout attempt's own stripe_payment_intent_id was null and
+        // had to be resolved fresh via a trusted Session retrieve —
+        // persists it onto BOTH the refund attempt and its source
+        // Checkout attempt so it is never merely held in memory. Raises
+        // payment_intent_mismatch if a DIFFERENT PaymentIntent is already
+        // stored; a repeat call with the SAME value is a no-op.
+        Args: {
+          p_refund_attempt_id:        string;
+          p_stripe_payment_intent_id: string;
+        };
+        Returns: void;
+      };
+      bind_stripe_refund_result: {
+        // Phase 34E-B. service_role only. Called by the Server Action
+        // immediately after its own stripe.refunds.create() call
+        // returns — reconciles from that response's CURRENT state via
+        // the shared internal helper, which is terminal-state-safe
+        // (correction pass): 'succeeded'/'failed'/'canceled' are never
+        // regressed by a later call reporting anything else. p_refund_
+        // attempt_id is trusted directly for RESOLUTION (a same-request,
+        // server-generated value); p_stripe_payment_intent_id is passed
+        // through for VALIDATION only against trusted stored provenance.
+        Args: {
+          p_refund_attempt_id: string;
+          p_stripe_refund_id:  string;
+          p_status:            "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          p_amount_cents:      number;
+          p_stripe_account_id: string;
+          p_livemode:          boolean;
+          p_currency:          string;
+          p_failure_reason?:   string | null;
+          p_stripe_payment_intent_id?: string | null;
+        };
+        Returns: void;
+      };
+      process_stripe_refund_webhook_event: {
+        // Phase 34E-B (correction pass). service_role only. The
+        // asynchronous webhook path for refund.created/refund.updated/
+        // refund.failed. Dedupes on Stripe's own event id (stripe_event_
+        // receipts, reused unchanged), then reconciles from the CURRENT
+        // Stripe-retrieved Refund state the Route Handler passes in
+        // (never a trusted event-payload snapshot) — never assumes a
+        // particular event type implies a particular status.
+        // Resolution is ALWAYS by p_stripe_payment_intent_id/account/
+        // livemode provenance matching, never by p_refund_attempt_id
+        // directly — that value (sourced from the Refund's own metadata,
+        // a forgeable client-set field) is used ONLY as a candidate to
+        // verify against the independently-resolved truth; a mismatch
+        // raises refund_attempt_provenance_mismatch. matched: false in
+        // the return value means genuinely foreign, safely ignored.
+        Args: {
+          p_stripe_event_id:           string;
+          p_event_type:                string;
+          p_livemode:                  boolean;
+          p_stripe_account_id:         string;
+          p_stripe_refund_id:          string;
+          p_refund_attempt_id:         string | null;
+          p_stripe_payment_intent_id:  string | null;
+          p_status:                    "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          p_amount_cents:              number;
+          p_currency:                  string;
+          p_failure_reason?:           string | null;
+        };
+        Returns: {
+          already_processed: boolean;
+          matched:            boolean;
+        }[];
+      };
+      get_online_refundable_amount_for_payments: {
+        // Phase 34E-B. authenticated (Admin/Staff role-checked
+        // internally) — pure ledger read, no Stripe identity/livemode
+        // involved. The one sanctioned read path for "how much online
+        // money is still Stripe-refundable" for a batch of payments.
+        Args: {
+          p_payment_ids: string[];
+        };
+        Returns: {
+          payment_id:       string;
+          refundable_cents: number;
+          currency:         string;
+        }[];
+      };
+      process_stripe_dispute_webhook_event: {
+        // Phase 34E-C. service_role only. The webhook path for charge.
+        // dispute.created/updated/closed/funds_withdrawn/funds_reinstated.
+        // Dedupes on Stripe's own event id (stripe_event_receipts, reused
+        // unchanged), then reconciles from the CURRENT Stripe-retrieved
+        // Dispute state the Route Handler passes in (never a trusted
+        // event-payload snapshot). A dispute is never Court-Time-
+        // initiated — resolution is ALWAYS by verified account/livemode/
+        // PaymentIntent provenance against a completed Court Time
+        // Checkout attempt, never by metadata (disputes carry none).
+        // Returns a plain boolean (matched) — deliberately NOT a
+        // RETURNS TABLE function, sidestepping the 0153/0154/0155
+        // OUT-variable ambiguity class by construction. false means
+        // genuinely foreign/unmatched, safely ignored. INFORMATIONAL
+        // ONLY: never touches payments.amount_paid_cents or any
+        // payment/refund ledger event.
+        Args: {
+          p_stripe_event_id:          string;
+          p_event_type:               string;
+          p_livemode:                 boolean;
+          p_stripe_account_id:        string;
+          p_stripe_dispute_id:        string;
+          p_stripe_charge_id:         string;
+          p_stripe_payment_intent_id: string | null;
+          p_amount_cents:             number;
+          p_currency:                 string;
+          p_status:                   string;
+          p_reason:                   string;
+          p_evidence_due_by:          string | null;
+          p_is_charge_refundable:     boolean;
+          p_stripe_created_at:        string;
+        };
+        Returns: boolean;
       };
       upsert_lesson_type: {
         Args: {

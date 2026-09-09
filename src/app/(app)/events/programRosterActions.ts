@@ -20,6 +20,11 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import {
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 
 export type ProgramEnrollmentStatus = "enrolled" | "waitlisted" | "offered" | "cancelled";
 
@@ -68,7 +73,36 @@ export async function removeProgramMember(params: {
   if (!guard.ok) return { error: { message: guard.error } };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("remove_program_member", rpcParams);
+
+  // Phase 34F-C — resolve the target enrollment's own current payment (if
+  // any) BEFORE attempting the removal, so a subsequent open_checkout_
+  // requires_resolution failure (raised by remove_program_member's own
+  // pre-mutation guard, 0163) can be resolved without a second round-trip
+  // to discover which payment was blocking. Mirrors adminRemoveParticipant's
+  // identical pattern (admin/events/actions.ts) exactly.
+  const { data: enrollmentRow } = await supabase
+    .from("program_enrollments")
+    .select("id")
+    .eq("program_id", params.p_program_id)
+    .eq("profile_id", params.p_profile_id)
+    .in("status", ["enrolled", "waitlisted", "offered"])
+    .maybeSingle();
+
+  let { data, error } = await supabase.rpc("remove_program_member", rpcParams);
+
+  // Phase 34F-C — a bound, potentially still-payable Stripe Checkout
+  // Session is open for this enrollment's Program payment — resolve it via
+  // Stripe before safely retrying exactly once, mirroring
+  // adminRemoveParticipant's own established resolve-then-retry pattern.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && enrollmentRow) {
+    const { data: states } = await fetchPaymentStates("program_enrollment", [enrollmentRow.id]);
+    const paymentId = states?.[0]?.current_payment_id ?? null;
+    if (!paymentId) return { error: { code: error.code, message: error.message } };
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("remove_program_member", rpcParams));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   revalidatePath("/events");
@@ -117,11 +151,37 @@ export async function removeProgramRosterMember(params: {
   if (!guard.ok) return { error: { message: guard.error } };
 
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("remove_program_roster_member", {
+
+  // Phase 34F-C — same single-enrollment stale-Checkout resolution as
+  // removeProgramMember above, keyed by roster_member_id instead of
+  // profile_id.
+  const { data: enrollmentRow } = await supabase
+    .from("program_enrollments")
+    .select("id")
+    .eq("program_id", params.p_program_id)
+    .eq("roster_member_id", params.p_roster_member_id)
+    .in("status", ["enrolled", "waitlisted", "offered"])
+    .maybeSingle();
+
+  let { data, error } = await supabase.rpc("remove_program_roster_member", {
     p_program_id:        params.p_program_id,
     p_expected_club_id:  params.expectedClubId,
     p_roster_member_id:  params.p_roster_member_id,
   });
+
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION) && enrollmentRow) {
+    const { data: states } = await fetchPaymentStates("program_enrollment", [enrollmentRow.id]);
+    const paymentId = states?.[0]?.current_payment_id ?? null;
+    if (!paymentId) return { error: { code: error.code, message: error.message } };
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: { message: resolved.error } };
+    ({ data, error } = await supabase.rpc("remove_program_roster_member", {
+      p_program_id:        params.p_program_id,
+      p_expected_club_id:  params.expectedClubId,
+      p_roster_member_id:  params.p_roster_member_id,
+    }));
+  }
+
   if (error) return { error: { code: error.code, message: error.message } };
 
   revalidatePath("/events");

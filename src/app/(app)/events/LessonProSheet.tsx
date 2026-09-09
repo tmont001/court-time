@@ -12,7 +12,7 @@ import { localDateTimeToUTC } from "@/lib/timezone";
 import { formatLessonUnitPrice, calculateLessonTotalCents, formatOperatorPrice } from "@/lib/money";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 import {
   proposeLessonTime,
   declineLessonRequest,
@@ -687,6 +687,7 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
             p_ends_at:              endsAt.toISOString(),
             p_court_id:             courtId || null,
             member_id:              request.member_id,
+            expectedClubId:         clubId,
           }))}
           onCancel={() => { setMode(null); setError(""); }}
         />

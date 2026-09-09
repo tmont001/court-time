@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import EventCardClient from "./EventCardClient";
 import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
@@ -77,6 +77,13 @@ interface Props {
   leaveEventAction:            (formData: FormData) => Promise<void>;
   acceptWaitlistOfferAction:   (formData: FormData) => Promise<void>;
   declineWaitlistOfferAction:  (formData: FormData) => Promise<void>;
+  // Phase 34F-C: optional ?checkout=success&program=<uuid> return from
+  // Stripe Checkout. Never mutates any financial state on its own —
+  // ProgramEnrollmentCard's own fetchPaymentStates/eligibility effects
+  // already show authoritative, freshly-fetched state on this hard-
+  // navigation page load regardless; this is used only to strip the
+  // one-time query string from the URL bar below.
+  initialCheckoutProgramId?:   string | null;
 }
 
 export default function EventsUpcomingClient({
@@ -95,10 +102,32 @@ export default function EventsUpcomingClient({
   leaveEventAction,
   acceptWaitlistOfferAction,
   declineWaitlistOfferAction,
+  initialCheckoutProgramId,
 }: Props) {
   const router = useRouter();
   const [searchQuery,      setSearchQuery]      = useState("");
   const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
+
+  // Phase 34F-C (flicker regression precedent — LessonsClient.tsx /
+  // CalendarShell.tsx) — strip ?checkout=&program= from the URL once this
+  // client component has mounted, so a later browser refresh never re-runs
+  // any success/cancel-specific behavior. Deliberately uses the raw
+  // History API (window.history.replaceState), NOT next/navigation's
+  // router.replace: /events's own page.tsx reads searchParams directly
+  // (tab/checkout/program), so router.replace with a changed search-param
+  // set would force Next.js to re-render/re-fetch the entire Server
+  // Component tree for this route immediately after Stripe's hard-
+  // navigation redirect already rendered the page once — the exact
+  // double-flash regression LessonsClient.tsx's own identical comment
+  // documents. No detail sheet exists to auto-open here (unlike /calendar
+  // /my-schedule): ProgramEnrollmentCard is already inline on this page
+  // for every program the caller has a stake in, so nothing else is
+  // needed beyond cleaning the URL bar.
+  useEffect(() => {
+    if (!initialCheckoutProgramId) return;
+    window.history.replaceState(null, "", "/events");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Phase 34C — positive-price Join confirmation. Only ever set when
   // price_amount_cents > 0; Free/unpriced events keep the existing

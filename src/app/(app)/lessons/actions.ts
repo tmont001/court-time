@@ -15,6 +15,12 @@ import {
   lessonAdminRequestedTemplate,
   rosterOperationalEmailTemplate,
 } from "@/lib/email-templates";
+import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
+import {
+  CHECKOUT_STILL_PROCESSING_MESSAGE,
+  OPEN_CHECKOUT_REQUIRES_RESOLUTION,
+  resolveBlockingCheckoutBeforeMutation,
+} from "@/lib/stripe/checkoutInvalidation";
 
 // Phase 33E3: shared date/time formatter for no-account lesson operational
 // email bodies — resolves the club's IANA timezone (clubs.timezone,
@@ -350,16 +356,39 @@ export async function proposeLessonTime(params: {
   p_ends_at:               string;
   p_court_id?:             string | null;
   member_id:               string | null;
+  expectedClubId:          string;
 }): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("propose_lesson_time", {
+  const rpcArgs = {
     p_request_id:           params.p_request_id,
     p_expected_updated_at:  params.p_expected_updated_at,
     p_starts_at:            params.p_starts_at,
     p_ends_at:              params.p_ends_at,
     p_court_id:             params.p_court_id ?? null,
-  });
+  };
+
+  let { error } = await supabase.rpc("propose_lesson_time", rpcArgs);
+
+  // Phase 34F-A: a confirmed, obligation-bearing lesson is about to
+  // transition to 'proposed' (a reschedule) while a bound, potentially
+  // still-payable Stripe Checkout Session is open for it — resolve it via
+  // Stripe (never a silent local override) before safely retrying once.
+  // Mirrors adminUpdateMemberLessonAction/cancelLesson's own identical
+  // handshake exactly.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("lesson_request", [params.p_request_id]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to propose a new time." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+
+    ({ error } = await supabase.rpc("propose_lesson_time", rpcArgs));
+  }
 
   if (error) return { error: mapLessonError(error.message) };
 
@@ -427,10 +456,30 @@ export async function cancelLesson(params: {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("cancel_lesson", {
+  let { data, error } = await supabase.rpc("cancel_lesson", {
     p_request_id: params.requestId,
     p_reason:     params.reason ?? null,
   });
+
+  // Phase 34F-A: this cancellation is about to invalidate/flag the
+  // lesson's current payment obligation's open Checkout attempt (0159)
+  // while a bound, potentially still-payable Stripe Checkout Session is
+  // open — resolve it via Stripe (never a silent local override) before
+  // safely retrying once. Mirrors adminUpdateMemberLessonAction's own
+  // identical handshake exactly.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("lesson_request", [params.requestId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to cancel lesson." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+
+    ({ data, error } = await supabase.rpc("cancel_lesson", {
+      p_request_id: params.requestId,
+      p_reason:     params.reason ?? null,
+    }));
+  }
 
   if (error) return { error: mapLessonError(error.message) };
 
@@ -723,7 +772,7 @@ export async function adminUpdateMemberLessonAction(
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.rpc("admin_update_member_lesson", {
+  const rpcArgs = {
     p_request_id:          params.requestId,
     p_expected_club_id:    params.expectedClubId,
     p_expected_updated_at: params.expectedUpdatedAt,
@@ -734,7 +783,24 @@ export async function adminUpdateMemberLessonAction(
     p_ends_at:              params.endsAt,
     p_lesson_type_id:      params.lessonTypeId ?? null,
     p_member_note:         params.memberNote   ?? null,
-  });
+  };
+
+  let { data, error } = await supabase.rpc("admin_update_member_lesson", rpcArgs);
+
+  // Phase 34E-A: this edit is about to change the priced amount or
+  // reassign the Member while a bound, potentially still-payable Stripe
+  // Checkout Session is open for the current obligation — resolve it via
+  // Stripe (never a silent local override) before safely retrying once.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("lesson_request", [params.requestId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to update lesson." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+
+    ({ data, error } = await supabase.rpc("admin_update_member_lesson", rpcArgs));
+  }
 
   if (error) return { error: mapLessonError(error.message) };
 
@@ -843,6 +909,8 @@ function mapLessonError(msg: string): string {
     // Phase 34C consolidation
     lesson_type_required:           "Please choose a lesson type.",
     lesson_price_not_configured:    "This lesson type isn't priced online yet — contact the club directly to book it.",
+    // Phase 34E-A
+    open_checkout_requires_resolution: CHECKOUT_STILL_PROCESSING_MESSAGE,
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

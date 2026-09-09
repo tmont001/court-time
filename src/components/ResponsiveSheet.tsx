@@ -32,14 +32,22 @@
 //   `pointerType === "touch"`, so real touch input always goes through the
 //   native listeners exclusively, never both paths at once.
 //
-//   Two-layer mobile panel: an outer wrapper owns the ct-sheet-enter entrance
-//   animation, fixed positioning, z-index, and max-height; a separate inner
-//   panel (the drag-handle strip + header + scrollable body, holding
-//   panelRef and dialog semantics) owns the direct drag `transform`. These
-//   are two different DOM elements, so the entrance animation (even with
-//   fill-mode `both` retaining its ending transform) can never compete with
-//   the drag transform for the same element's `transform` property — no
-//   animation-cancellation workaround is needed.
+//   Two-layer panel, at every viewport: an outer wrapper owns the entrance
+//   animation (ct-sheet-modal-enter / ct-sheet-panel-enter — itself CSS-
+//   switching keyframes at the md: breakpoint) plus fixed positioning and
+//   z-index; a separate inner element (holding panelRef, dialog semantics,
+//   visual chrome, and max-height) owns the direct drag `transform`. These
+//   MUST stay two different DOM elements: a CSS animation's fill-mode
+//   `both`/`forwards` keeps driving `transform` on its element with higher
+//   cascade priority than a same-element inline style for as long as that
+//   animation class stays applied (i.e. permanently, since the class is
+//   never removed post-entrance) — so if the entrance-animation class and
+//   panelRef ever end up on the same node, the CSS animation's `transform`
+//   silently wins over applyTransform()'s inline writes during a drag,
+//   producing exactly the "doesn't track the finger smoothly" symptom
+//   (Runtime QA, 34F-A round 2) rather than a hard failure. Splitting the
+//   two concerns onto separate elements removes the conflict by
+//   construction — no animation-cancellation workaround is needed.
 //
 //   `active={false}` (e.g. EventDetailSheet while EventRosterSheet is open
 //   on top of it) suspends this sheet's own Escape/focus-trap/backdrop/drag
@@ -141,16 +149,47 @@ const DISMISS_VELOCITY = 0.5; // px/ms (~500px/s) — a quick flick dismisses ev
 const MOVE_THRESHOLD    = 6;  // px — minimal dead-zone, just enough to distinguish vertical vs horizontal intent
 const DISMISS_ANIM_MS   = 200;
 
-const SHEET_MAX_HEIGHT = "calc(100dvh - env(safe-area-inset-bottom, 0px) - 1.5rem)";
+// Runtime QA — the mobile-vs-desktop safe-area-aware max-height calc() and
+// the mobile-vs-desktop entrance-animation keyframe switch are the two
+// pieces of the mobile/desktop presentation that genuinely cannot be
+// expressed as plain Tailwind utility classes — both now live as the
+// small, breakpoint-gated CSS classes ct-sheet-modal-max-h / ct-sheet-
+// panel-max-h / ct-sheet-modal-enter / ct-sheet-panel-enter in globals.css
+// (reusing the existing ct-sheet-enter-keyframes / ct-modal-enter-
+// keyframes / ct-panel-enter-keyframes @keyframes verbatim). Everything
+// else that used to differ between the old isDesktop-branched trees is
+// now a plain `md:` Tailwind class directly in this file's own JSX — see
+// the render section below.
 
 export default function ResponsiveSheet(props: Props) {
   const { onClose, variant = "modal", size = "default", mobileBackdropZ = 40, mobilePanelZ = 50 } = props;
   const enabled = props.mobileInteraction === "draggable";
   const active  = enabled ? (props as DraggableSheetProps).active ?? true : true;
 
-  const [isDesktop, setIsDesktop] = useState<boolean>(
-    () => typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
-  );
+  // Hydration-stable by construction: SSR has no `window`, so the server
+  // ALWAYS renders the mobile variant. The lazy initializer that used to
+  // live here (`typeof window !== "undefined" && window.matchMedia(...)`)
+  // ran a SECOND time on the client's own first (hydrating) render — and
+  // by then `window` genuinely exists in the browser, so on any real
+  // desktop-width client it evaluated to `true` while the server's own
+  // render had already committed to `false`. React detects that server/
+  // client markup divergence and discards + regenerates the entire
+  // subtree client-side (a full, visible teardown-and-rebuild) rather
+  // than a clean hydration. Runtime QA traced this exactly: SSR rendered
+  // the mobile bottom-sheet markup, the client's first render computed
+  // the desktop modal markup for the SAME component instance.
+  //
+  // The fix: never branch on `typeof window`/matchMedia during ANY
+  // render (server OR the client's first/hydrating render) — only in an
+  // effect, which by definition runs after the browser has already
+  // committed and reconciled the first render against the server HTML.
+  // The existing effect immediately below already does exactly this
+  // correction (setIsDesktop(mq.matches) + a change listener) — this is
+  // the ONLY line that needed to change. A genuinely-desktop browser
+  // still renders the mobile variant for one frame before flipping,
+  // which is imperceptible and categorically safer than a hydration-
+  // mismatch tree regeneration.
+  const [isDesktop, setIsDesktop] = useState<boolean>(false);
 
   useEffect(() => {
     const mq      = window.matchMedia("(min-width: 768px)");
@@ -534,7 +573,22 @@ export default function ResponsiveSheet(props: Props) {
     return () => window.removeEventListener("resize", handleResize);
   }, [enabled, resetDrag]);
 
-  // ── Render: "draggable" mode ────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
+  // Runtime QA fix — this component used to branch its ENTIRE structural
+  // tree on `isDesktop` (a value that can only be known for certain after
+  // hydration). Every render path below is now hydration-stable BY
+  // CONSTRUCTION: exactly one DOM tree per (mobileInteraction, variant)
+  // combination, identical on the server and the client's first render,
+  // with `md:`-prefixed Tailwind classes (matching the same 768px
+  // breakpoint the old JS check used) choosing the mobile-vs-desktop
+  // PRESENTATION — never React state, never a second copy of `children`.
+  // `isDesktop` still exists and is still read below, but ONLY to gate
+  // POST-HYDRATION behavioral logic that has no CSS equivalent at all
+  // (whether the native touch-drag listeners attach) — never to select
+  // which JSX gets returned.
+
+  const closeButtonClassName =
+    "hidden md:flex absolute top-4 right-4 z-10 w-8 h-8 items-center justify-center rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 text-lg leading-none";
 
   if (enabled) {
     const { header, children, label } = props as DraggableSheetProps;
@@ -547,49 +601,67 @@ export default function ResponsiveSheet(props: Props) {
       inert: !active,
     };
 
-    if (!isDesktop) {
+    // Drag-handle strip — present in the DOM at every viewport (never a
+    // second mobile-only copy), CSS-hidden at the desktop breakpoint
+    // (md:hidden) rather than only ever rendered when isDesktop is
+    // (post-hydration) false. `aria-hidden` already marked it decorative
+    // before this fix; `md:hidden` additionally removes it from layout
+    // and from the focus-trap's own getFocusable() query (which filters
+    // on offsetParent !== null, already excluding display:none elements)
+    // at desktop, matching its previous complete absence there exactly.
+    const handleStrip = (
+      <div
+        ref={handleStripRef}
+        className="md:hidden shrink-0 flex justify-center py-3 touch-none select-none cursor-grab active:cursor-grabbing"
+        style={{ touchAction: "none" }}
+        aria-hidden="true"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+      >
+        <div className="ct-handlebar" />
+      </div>
+    );
+
+    // Desktop close button — present in the DOM at every viewport, CSS-
+    // hidden below the desktop breakpoint (the inverse of the handle
+    // strip above) rather than only ever rendered when isDesktop is true.
+    const closeButton = (
+      <button onClick={closeOnce} aria-label="Close" className={closeButtonClassName}>
+        ×
+      </button>
+    );
+
+    if (variant === "panel") {
       return (
         <>
+          <div ref={backdropRef} className="fixed inset-0 bg-black/30" style={{ zIndex: mobileBackdropZ }} inert={!active} />
+          {/* Positioning wrapper — mobile: bottom-anchored, matching the
+              modal variant's own mobile treatment exactly (a full-width
+              bottom sheet). Desktop: items-stretch + justify-end makes the
+              panel a full-height right-edge sidebar, matching the original
+              fixed right-0 top-0 bottom-0 positioning exactly, without a
+              second DOM tree. Covers the full viewport at every breakpoint,
+              so it — not the backdrop below it — is the actual "click
+              outside closes" target (self-target-check below); the
+              backdrop's own onClick would be unreachable dead code either
+              way, since this wrapper always sits on top of it. */}
           <div
-            ref={backdropRef}
-            className="fixed inset-0 bg-black/30"
-            style={{ zIndex: mobileBackdropZ }}
-            onClick={active ? closeOnce : undefined}
-          />
-          {/* Outer wrapper — owns the entrance animation, fixed positioning,
-              z-index, and max-height ONLY. Never receives a drag transform,
-              so it can't compete with the inner panel for `transform`. */}
-          <div
-            className="ct-sheet-enter fixed bottom-0 left-0 right-0"
-            style={{ zIndex: mobilePanelZ, maxHeight: SHEET_MAX_HEIGHT }}
-            onClick={(e) => e.stopPropagation()}
+            className="ct-sheet-panel-enter fixed inset-0 flex items-end justify-center md:items-stretch md:justify-end"
+            style={{ zIndex: mobilePanelZ }}
+            inert={!active}
+            onClick={(e) => { if (active && e.target === e.currentTarget) closeOnce(); }}
           >
-            {/* Inner panel — owns the drag transform, visual chrome, and
-                dialog semantics. */}
             <div
               ref={panelRef}
               {...dialogA11y}
-              className="flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl overflow-hidden"
-              style={{ maxHeight: SHEET_MAX_HEIGHT }}
+              className="ct-sheet-panel-max-h relative flex flex-col w-full md:w-[440px] md:max-w-[90vw] bg-white dark:bg-gray-800 rounded-t-2xl md:rounded-none shadow-xl md:shadow-2xl overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
             >
-              {/* Dedicated, non-interactive drag-handle strip — the ONLY
-                  element that owns the gesture. Spans the full panel width
-                  for a comfortable grab target. Nothing interactive lives
-                  here, so header controls below are never intercepted. */}
-              <div
-                ref={handleStripRef}
-                className="shrink-0 flex justify-center py-3 touch-none select-none cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                aria-hidden="true"
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerCancel}
-              >
-                <div className="ct-handlebar" />
-              </div>
-              {/* Header — ordinary interactive content, no drag listeners. */}
-              <div className="shrink-0 px-6 pb-3">{header}</div>
+              {closeButton}
+              {handleStrip}
+              <div className="shrink-0 px-6 pb-3 md:pt-5 md:pr-10">{header}</div>
               <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-8">
                 {children}
               </div>
@@ -599,155 +671,90 @@ export default function ResponsiveSheet(props: Props) {
       );
     }
 
-    // ── Desktop: right-side panel ───────────────────────────────────────
-    if (variant === "panel") {
-      return (
-        <>
-          {/* Phase 33G3 fix: inert when inactive — a suspended (active=false)
-              sheet nested beneath another open sheet must not go on
-              intercepting backdrop clicks meant for the sheet layered above
-              it. Previously only the panel itself (ref={panelRef}) got
-              inert; this full-viewport backdrop div did not, so — for a
-              modal-variant parent suspending a panel-variant child, or vice
-              versa — whichever one sits at the higher z-index while inactive
-              silently absorbed clicks meant for the other. */}
-          <div className="fixed inset-0 bg-black/30 z-40" inert={!active} onClick={active ? closeOnce : undefined} />
-          <div
-            ref={panelRef}
-            {...dialogA11y}
-            className="ct-panel-enter fixed right-0 top-0 bottom-0 z-50 w-[440px] max-w-[90vw] bg-white dark:bg-gray-800 shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              onClick={closeOnce}
-              aria-label="Close"
-              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 text-lg leading-none"
-            >
-              ×
-            </button>
-            <div className="shrink-0 px-6 pt-5 pb-3 md:pr-10">{header}</div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">{children}</div>
-          </div>
-        </>
-      );
-    }
-
-    // ── Desktop: centered modal ──────────────────────────────────────────
-    const maxWidthClass = size === "wide" ? "max-w-2xl" : "max-w-lg";
+    // ── modal (default) variant ───────────────────────────────────────────
+    const maxWidthClass = size === "wide" ? "md:max-w-2xl" : "md:max-w-lg";
     return (
       <>
-        <div className="fixed inset-0 bg-black/30 z-40" inert={!active} />
-        {/* Phase 33G3 fix: this full-viewport z-50 wrapper is the actual
-            backdrop-click target for the modal variant (it catches clicks
-            outside the panel box via the inner box's stopPropagation) —
-            previously it had no `inert`, so while suspended (active=false,
-            e.g. EventDetailSheet with EventRosterSheet open on top of it on
-            desktop) it kept absorbing clicks meant for whatever sheet was
-            actually layered above it, since z-50 here beats that other
-            sheet's own z-40 backdrop regardless of DOM order. */}
+        <div ref={backdropRef} className="fixed inset-0 bg-black/30" style={{ zIndex: mobileBackdropZ }} inert={!active} />
+        {/* Positioning wrapper — mobile: bottom-anchored (items-end); at
+            md: switches to items-center + p-4, which is exactly the
+            original desktop centered-modal wrapper's own alignment.
+            justify-center is a no-op at mobile width (the child is
+            already w-full, filling the wrapper) and only becomes visually
+            meaningful once md:max-w-lg/2xl caps the child's width. */}
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          className="ct-sheet-modal-enter fixed inset-0 flex items-end justify-center md:items-center md:p-4"
+          style={{ zIndex: mobilePanelZ }}
           inert={!active}
-          onClick={active ? closeOnce : undefined}
+          onClick={(e) => { if (active && e.target === e.currentTarget) closeOnce(); }}
         >
           <div
             ref={panelRef}
             {...dialogA11y}
-            className={`ct-modal-enter relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${maxWidthClass} max-h-[85vh] flex flex-col overflow-hidden`}
+            className={`ct-sheet-modal-max-h relative flex flex-col w-full ${maxWidthClass} bg-white dark:bg-gray-800 rounded-t-2xl md:rounded-2xl shadow-xl md:shadow-2xl overflow-hidden`}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={closeOnce}
-              aria-label="Close"
-              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 text-lg leading-none"
-            >
-              ×
-            </button>
-            <div className="shrink-0 px-6 pt-5 pb-3 md:pr-10">{header}</div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-8">{children}</div>
+            {closeButton}
+            {handleStrip}
+            <div className="shrink-0 px-6 pb-3 md:pt-5 md:pr-10">{header}</div>
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-8">
+              {children}
+            </div>
           </div>
         </div>
       </>
     );
   }
 
-  // ── Render: "static" mode — unchanged from before Phase 29B1 ───────────
+  // ── Render: "static" mode ──────────────────────────────────────────────
+  // No active consumer as of this fix (every one of ResponsiveSheet's 29
+  // current call sites passes mobileInteraction="draggable") — kept
+  // correct and hydration-stable for API completeness, mirroring the
+  // draggable-mode restructuring above exactly, minus the drag handle and
+  // active/inert suspend semantics static mode never had.
 
   const { children } = props as StaticSheetProps;
-
-  if (!isDesktop) {
-    return (
-      <>
-        <div
-          className="fixed inset-0 bg-black/30"
-          style={{ zIndex: mobileBackdropZ }}
-          onClick={onClose}
-        />
-        <div
-          className="ct-sheet-enter fixed bottom-0 left-0 right-0 flex flex-col bg-white dark:bg-gray-800 rounded-t-2xl shadow-xl overflow-hidden"
-          style={{
-            zIndex: mobilePanelZ,
-            maxHeight: "calc(100dvh - env(safe-area-inset-bottom, 0px) - 1.5rem)",
-          }}
-          onClick={e => e.stopPropagation()}
-        >
-          {children}
-        </div>
-      </>
-    );
-  }
-
-  // ── Desktop: right-side panel ─────────────────────────────────────────────
+  const staticCloseButton = (
+    <button onClick={onClose} aria-label="Close" className={closeButtonClassName}>
+      ×
+    </button>
+  );
 
   if (variant === "panel") {
     return (
       <>
-        <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
+        <div className="fixed inset-0 bg-black/30" style={{ zIndex: mobileBackdropZ }} />
         <div
-          className="ct-panel-enter fixed right-0 top-0 bottom-0 z-50 w-[440px] max-w-[90vw] bg-white dark:bg-gray-800 shadow-2xl flex flex-col overflow-hidden"
-          onClick={e => e.stopPropagation()}
+          className="fixed inset-0 flex items-end justify-center md:items-stretch md:justify-end"
+          style={{ zIndex: mobilePanelZ }}
+          onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-          {/* Desktop close button — top-right corner */}
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 text-lg leading-none"
+          <div
+            className="ct-sheet-panel-enter ct-sheet-panel-max-h relative flex flex-col w-full md:w-[440px] md:max-w-[90vw] bg-white dark:bg-gray-800 rounded-t-2xl md:rounded-none shadow-xl md:shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
           >
-            ×
-          </button>
-          {children}
+            {staticCloseButton}
+            {children}
+          </div>
         </div>
       </>
     );
   }
 
-  // ── Desktop: centered modal ───────────────────────────────────────────────
-  // Issue 3 fix: onClick={onClose} on the centering div catches backdrop
-  // clicks (outside the modal box). The inner modal div's stopPropagation
-  // prevents those clicks from reaching the centering div.
-
-  const maxWidthClass = size === "wide" ? "max-w-2xl" : "max-w-lg";
-
+  const maxWidthClass = size === "wide" ? "md:max-w-2xl" : "md:max-w-lg";
   return (
     <>
-      <div className="fixed inset-0 bg-black/30 z-40" />
-      {/* Centering wrapper — click anywhere outside modal box closes it */}
+      <div className="fixed inset-0 bg-black/30" style={{ zIndex: mobileBackdropZ }} />
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        onClick={onClose}
+        className="fixed inset-0 flex items-end justify-center md:items-center md:p-4"
+        style={{ zIndex: mobilePanelZ }}
+        onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         <div
-          className={`ct-modal-enter relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${maxWidthClass} max-h-[85vh] flex flex-col overflow-hidden`}
-          onClick={e => e.stopPropagation()}
+          className={`ct-sheet-modal-enter ct-sheet-modal-max-h relative flex flex-col w-full ${maxWidthClass} bg-white dark:bg-gray-800 rounded-t-2xl md:rounded-2xl shadow-xl md:shadow-2xl overflow-hidden`}
+          onClick={(e) => e.stopPropagation()}
         >
-          {/* Desktop close button — top-right corner */}
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 motion-safe:transition-colors motion-safe:duration-100 text-lg leading-none"
-          >
-            ×
-          </button>
+          {staticCloseButton}
           {children}
         </div>
       </div>

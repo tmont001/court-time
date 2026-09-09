@@ -6,6 +6,7 @@ import EventRosterVisual from "../components/product-visuals/EventRosterVisual";
 import LessonWorkflowVisual from "../components/product-visuals/LessonWorkflowVisual";
 import MemberDirectoryVisual from "../components/product-visuals/MemberDirectoryVisual";
 import ReportingVisual from "../components/product-visuals/ReportingVisual";
+import { MARKETING_CTA_PRIMARY_COLOR } from "../marketingButtonStyles";
 
 export const metadata: Metadata = {
   title: "Features — Court Time",
@@ -59,7 +60,7 @@ const ROLES = [
   },
   {
     name: "Members",
-    summary: "Reserve courts, join events, manage waitlists, and request lessons.",
+    summary: "Reserve courts, join events, manage waitlists, and request lessons — with Connected.",
   },
 ];
 
@@ -95,7 +96,7 @@ export default function FeaturesPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               href="/contact"
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+              className={`w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-semibold ${MARKETING_CTA_PRIMARY_COLOR} motion-safe:transition-colors motion-safe:duration-150`}
             >
               Request a pilot
             </Link>
@@ -214,7 +215,7 @@ export default function FeaturesPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
               href="/contact"
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150"
+              className={`w-full sm:w-auto px-6 py-3 rounded-xl text-sm font-semibold ${MARKETING_CTA_PRIMARY_COLOR} motion-safe:transition-colors motion-safe:duration-150`}
             >
               Request a pilot
             </Link>

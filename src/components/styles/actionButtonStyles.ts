@@ -20,6 +20,23 @@
 // inline inside a dense list row (a name/price next to a row of small
 // status pills), where the full px-3 py-2 size would be disproportionate.
 // Still a real bordered/tinted button, never a bare text link.
+//
+// Phase 34G-D1 — relocated from src/lib/actionButtonStyles.ts to this
+// path (src/components/**, already covered by Tailwind's content scan)
+// after a production-CSS audit confirmed several of the class strings
+// below (hover:brightness-110, disabled:opacity-40, disabled:pointer-
+// events-none, and the green/blue/amber focus-visible ring colors on the
+// POSITIVE/INFO/WARNING compact variants) were silently absent from
+// compiled production CSS: src/lib/** is NOT in tailwind.config.ts's
+// content globs, so a class string that lives ONLY there — and isn't
+// coincidentally duplicated verbatim in an already-scanned file — never
+// gets generated. Widening the content glob to all of src/lib/** was
+// tried and reverted (unrelated blast radius, activating unrelated
+// class strings elsewhere in src/lib); this relocation is the narrow
+// fix instead, mirroring the identical precedent already established for
+// src/app/(marketing)/marketingButtonStyles.ts. No exported class string
+// below was changed — this move only restores classes that were always
+// intended to compile.
 
 const BASE =
   "px-3 py-2 rounded-lg text-xs font-semibold " +

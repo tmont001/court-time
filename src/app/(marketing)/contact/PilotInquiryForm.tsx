@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useActionState, useState } from "react";
 import { submitPilotInquiryAction } from "./actions";
 import { initialPilotInquiryState, type PilotInquiryState } from "./formState";
+import { MARKETING_CTA_PRIMARY_COLOR } from "../marketingButtonStyles";
 
 const FACILITY_TYPES: { value: string; label: string }[] = [
   { value: "private_club", label: "Private club" },
@@ -364,7 +365,7 @@ export default function PilotInquiryForm() {
       <button
         type="submit"
         disabled={isPending}
-        className="w-full py-3 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-semibold hover:bg-gray-700 dark:hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed motion-safe:transition-all motion-safe:duration-150"
+        className={`w-full py-3 rounded-xl text-sm font-semibold ${MARKETING_CTA_PRIMARY_COLOR} disabled:opacity-50 disabled:cursor-not-allowed motion-safe:transition-all motion-safe:duration-150`}
       >
         {isPending ? "Submitting…" : "Request a pilot"}
       </button>

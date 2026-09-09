@@ -5,6 +5,10 @@
 // compact action-button treatment instead of inventing a second one. This
 // file now just re-exports from there — every existing import path in
 // /events keeps working unchanged.
+//
+// Phase 34G-D1 — re-export source updated to src/components/styles/
+// actionButtonStyles.ts (relocated off src/lib/, which Tailwind's content
+// scan never covered — see that file's own header comment for why).
 
 export {
   ACTION_BUTTON_PRIMARY,
@@ -16,4 +20,4 @@ export {
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
   ACTION_BUTTON_INFO_COMPACT,
-} from "@/lib/actionButtonStyles";
+} from "@/components/styles/actionButtonStyles";

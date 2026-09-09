@@ -1,0 +1,184 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+// Runtime QA (34F-B polish, post-runtime-QA-pass) — regression coverage for
+// two related /admin/payments corrections, using this repository's
+// established source-inspection style (see paymentContext.test.ts for the
+// GENUINE behavioral coverage of the pure helpers these corrections reuse
+// — dateTimeRangeLabel is imported and called directly there, not
+// re-tested via source-inspection here).
+//
+// 1. A cancelled Event's participant/guest payment must not encourage
+//    staff to collect the original fee: Record Payment is withheld while
+//    the Unpaid/Partially Paid balance stays visible as historical
+//    financial truth (no waive/void/refund/mutation of any kind), and a
+//    Paid payment's Refund action is completely unaffected.
+// 2. Event context on /admin/payments (row + Detail sheet) now shows the
+//    full start/end time range, matching Reservation/Lesson's own
+//    dateTimeRangeLabel convention, not just a bare date.
+
+function readSource(relativePath: string): string {
+  return readFileSync(join(process.cwd(), relativePath), "utf-8");
+}
+
+const PAGE_PATH = "src/app/(app)/admin/payments/page.tsx";
+const CLIENT_PATH = "src/app/(app)/admin/payments/AdminPaymentsClient.tsx";
+const DETAIL_SHEET_PATH = "src/components/PaymentDetailSheet.tsx";
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 1/2/3 — cancelled Event withholds Record Payment; active Event keeps it;
+// Paid + cancelled keeps Refund
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("recordPaymentBlocked — computed server-side, true for a cancelled parent Event's participant/guest payment (34F-B; Reservation/Lesson's own analogous behavior is covered in recordPaymentCrossDomain.regression.test.ts, 34F-D)", () => {
+  const src = () => readSource(PAGE_PATH);
+
+  it("1. event_participant: recordPaymentBlocked is set from the PARENT Event's own status ('cancelled'), never from the participant row's own status or the payment's own financial status", () => {
+    const s = src();
+    const idx = s.indexOf('} else if (p.domain_type === "event_participant") {');
+    const nextIdx = s.indexOf('} else if (p.domain_type === "event_guest") {');
+    const block = s.slice(idx, nextIdx);
+    // Phase 34G-C2 correction (Issue 2) — the cancelled-family check was
+    // extracted into a named, reusable predicate (paymentContext.ts's
+    // isEventParticipantCollectible), so the Outstanding Balances CSV
+    // export can reuse the EXACT same gate. See isEventParticipantCollectible's
+    // own test in paymentContext.test.ts for the underlying predicate's
+    // genuine behavioral coverage.
+    expect(block).toContain("recordPaymentBlocked = !isEventParticipantCollectible(ev?.status, r.status);");
+    // Never derived from the payment's own status/amounts, and never from
+    // the participant row's own (intentionally preserved) status.
+    expect(block).not.toMatch(/recordPaymentBlocked = r\.status/);
+    expect(block).not.toMatch(/recordPaymentBlocked = p\.status/);
+  });
+
+  it("2. event_guest gets the identical treatment for the identical reason (a guest's manual-mode payment is the only kind a guest can ever have, 0149) — symmetry, not a gap", () => {
+    const s = src();
+    const idx = s.indexOf('} else if (p.domain_type === "event_guest") {');
+    const nextIdx = s.indexOf("} else {", idx);
+    const block = s.slice(idx, nextIdx);
+    expect(block).toContain("recordPaymentBlocked = !isEventGuestCollectible(ev?.status);");
+  });
+
+  it("3. defaults to false. program_enrollment now ALSO sets it (34F-D correction), keyed on the PARENT Program's own status — see recordPaymentCrossDomain.regression.test.ts for the full completed-vs-cancelled coverage", () => {
+    const s = src();
+    expect(s).toContain("let recordPaymentBlocked = false;");
+    const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
+    const rowsPushIdx = s.indexOf("rows.push({");
+    const programBlock = s.slice(programIdx, rowsPushIdx);
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
+  });
+
+  it("propagated into AdminPaymentRow and consumed by BOTH the list-view Record Payment button and PaymentDetailSheet's canRecordPayment — never touching isPaymentOpenForRecording's own domain-neutral financial check", () => {
+    const s = src();
+    expect(s).toContain("recordPaymentBlocked,");
+
+    const clientSrc = readSource(CLIENT_PATH);
+    expect(clientSrc).toContain("isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked");
+
+    const detailSrc = readSource(DETAIL_SHEET_PATH);
+    expect(detailSrc).toContain("const canRecordPayment = isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked;");
+  });
+
+  it("does not gate Refund at all — canRefund is computed independently, from isOnlineRefundEligible/disputeBlocksRefund (plus the G-D1 isAdmin UI-visibility gate) only, never referencing recordPaymentBlocked. A Paid, cancelled Event keeps its Refund action (for an Admin).", () => {
+    const detailSrc = readSource(DETAIL_SHEET_PATH);
+    // G-D1 QA correction — the pure eligibility fact now lives in
+    // isRefundEligible (canRefund additionally gates on isAdmin, a
+    // UI-only render decision — never the authorization boundary).
+    const eligibleIdx = detailSrc.indexOf("const isRefundEligible =");
+    const canRecordIdx = detailSrc.indexOf("const canRecordPayment =");
+    const canRefundBlock = detailSrc.slice(eligibleIdx, canRecordIdx);
+    expect(canRefundBlock).not.toMatch(/recordPaymentBlocked/);
+    expect(canRefundBlock).toContain("isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund");
+
+    const clientSrc = readSource(CLIENT_PATH);
+    const refundButtonIdx = clientSrc.indexOf("isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    expect(refundButtonIdx).toBeGreaterThan(-1);
+    // The Refund button's own render condition never mentions recordPaymentBlocked.
+    const refundBlock = clientSrc.slice(refundButtonIdx, refundButtonIdx + 300);
+    expect(refundBlock).not.toMatch(/recordPaymentBlocked/);
+  });
+
+  it("no financial mutation is introduced anywhere in this correction — page.tsx never calls waive_payment/void_payment_obligation/record_refund, and recordPaymentBlocked is derived purely from ev.status, never written back to payments", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/waive_payment|void_payment_obligation|record_refund/);
+  });
+
+  it("PaymentDetailSheet surfaces an explanatory review note only when Record Payment would otherwise have been open — never fabricated for an already-unopenable payment (paid/refunded/etc.)", () => {
+    const s = readSource(DETAIL_SHEET_PATH);
+    const idx = s.indexOf("if (row.recordPaymentBlocked && isPaymentOpenForRecording(row.state)) {");
+    expect(idx).toBeGreaterThan(-1);
+    const block = s.slice(idx, s.indexOf("reviewNotes.push", idx) + 2000);
+    expect(block).toMatch(/never automatically waived or voided/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4/5 — Event context includes start/end time, club timezone, historical
+// for cancelled Events
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("Event payment context includes start/end time (club timezone), matching Reservation/Lesson's own convention", () => {
+  const src = () => readSource(PAGE_PATH);
+
+  it("4. event_participant and event_guest both use dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone) — never the old bare-date-only shortDate helper, which no longer exists in this file", () => {
+    const s = src();
+    const participantIdx = s.indexOf('} else if (p.domain_type === "event_participant") {');
+    const guestIdx = s.indexOf('} else if (p.domain_type === "event_guest") {');
+    const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
+    const participantBlock = s.slice(participantIdx, guestIdx);
+    const guestBlock = s.slice(guestIdx, programIdx);
+    expect(participantBlock).toContain("dateLabel = ev ? dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone) : null;");
+    expect(guestBlock).toContain("dateLabel = ev ? dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone) : null;");
+    expect(s).not.toMatch(/function shortDate/);
+  });
+
+  it("5. dateTimeRangeLabel is called with the SAME clubTimezone variable Reservation/Lesson already use — never a hardcoded zone, never the browser's own local zone", () => {
+    const s = src();
+    expect(s).toContain("dateTimeRangeLabel(r.starts_at, r.ends_at, clubTimezone)"); // reservation, pre-existing
+    expect(s).toContain("dateTimeRangeLabel(r.proposed_starts_at, r.proposed_ends_at, clubTimezone)"); // lesson, pre-existing
+    // Both new Event call sites use the identical clubTimezone symbol.
+    const occurrences = s.split("dateTimeRangeLabel(ev.starts_at, ev.ends_at, clubTimezone)").length - 1;
+    expect(occurrences).toBe(2);
+  });
+
+  it("the events query now selects ends_at (previously only starts_at/status) — required for the range label to have an end time at all", () => {
+    const s = src();
+    expect(s).toContain('supabase.from("events").select("id, title, starts_at, ends_at, status")');
+  });
+
+  it("a cancelled Event still shows its ORIGINALLY scheduled time — starts_at/ends_at are never mutated by cancel_event (confirmed elsewhere: cancel_event only ever sets events.status/updated_at), so this is genuinely historical context, not a live schedule", () => {
+    const cancelEventMigration = readSource("supabase/migrations/0136_staff_event_operational_authorization.sql");
+    const fnStart = cancelEventMigration.indexOf("CREATE OR REPLACE FUNCTION public.cancel_event(p_event_id uuid)");
+    const fnEnd = cancelEventMigration.indexOf("$function$;", fnStart);
+    const fn = cancelEventMigration.slice(fnStart, fnEnd);
+    expect(fn).toContain("update public.events\n    set status = 'cancelled', updated_at = now()");
+    expect(fn).not.toMatch(/starts_at\s*=|ends_at\s*=/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 11 — isPaymentOpenForRecording itself stays domain-neutral across every
+// domain, including Program (now corrected — see
+// recordPaymentCrossDomain.regression.test.ts for the full completed-vs-
+// cancelled Program coverage).
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("11. isPaymentOpenForRecording stays domain-neutral — no lifecycle parameter was ever added to the shared financial check itself, for any domain including Program", () => {
+  it("isPaymentOpenForRecording itself (the shared, domain-neutral financial check every domain's Record Payment button uses) is untouched — no lifecycle parameter was added to it", () => {
+    const s = readSource("src/lib/payments.ts");
+    const fnStart = s.indexOf("export function isPaymentOpenForRecording(");
+    const fnEnd = s.indexOf("\n}", fnStart) + 2;
+    const fn = s.slice(fnStart, fnEnd);
+    expect(fn).toContain("row: PaymentStateRow | null | undefined");
+    expect(fn).not.toMatch(/lifecycle|cancelled|recordPaymentBlocked/i);
+  });
+
+  it("program_enrollment now sets recordPaymentBlocked from the PARENT Program's own status — the lifecycle gating lives entirely in page.tsx's own recordPaymentBlocked computation, never inside isPaymentOpenForRecording", () => {
+    const s = readSource(PAGE_PATH);
+    const programIdx = s.indexOf("} else {\n      const r = programEnrollmentById.get");
+    const rowsPushIdx = s.indexOf("rows.push({");
+    const programBlock = s.slice(programIdx, rowsPushIdx);
+    expect(programBlock).toContain("recordPaymentBlocked = !isProgramEnrollmentCollectible(prog?.status, r.status);");
+  });
+});

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { MARKETING_CTA_PRIMARY_COLOR } from "../marketingButtonStyles";
 
 const MOBILE_MENU_ID = "marketing-mobile-menu";
 
@@ -66,7 +67,7 @@ export default function MarketingNav() {
         {/* Wordmark */}
         <Link
           href="/"
-          className="shrink-0 text-sm font-semibold text-gray-900 dark:text-gray-100 tracking-tight hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
+          className="shrink-0 text-sm font-semibold text-gray-900 dark:text-gray-100 tracking-tight hover:text-brand motion-safe:transition-colors motion-safe:duration-150"
         >
           Court Time
         </Link>
@@ -107,7 +108,7 @@ export default function MarketingNav() {
         <div className="flex sm:hidden items-center gap-2">
           <Link
             href="/contact"
-            className="px-3 py-1.5 rounded-lg bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs font-semibold whitespace-nowrap hover:bg-gray-700 dark:hover:bg-gray-300 motion-safe:transition-colors motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:focus-visible:ring-gray-500"
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap ${MARKETING_CTA_PRIMARY_COLOR} motion-safe:transition-colors motion-safe:duration-150`}
           >
             Request a pilot
           </Link>

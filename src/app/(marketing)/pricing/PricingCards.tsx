@@ -1,185 +1,63 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { PLANS, type Plan } from "./planData";
+import { STANDARD_TIERS, type StandardTier } from "./planData";
 
-// Reduced-motion is checked once on mount and on change, so programmatic
-// Prev/Next scrolling can skip the smooth-scroll behavior when the visitor
-// has asked for it — matches the site's existing prefers-reduced-motion
-// conventions elsewhere (MarketingReveal, the product-visual loops).
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    const mql = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
-  return reduced;
-}
+// Phase 34G-A2 — simplified from a 3-card horizontal-scroll rail (Founding
+// Club / Starter / Club) to a plain 2-column grid: Staff-Managed and
+// Connected are the only two standard, purchasable tiers now. Founding
+// Club is rendered separately (FoundingOfferBanner) as a promotional offer,
+// not a third card among equals — no rail/carousel machinery is needed for
+// just two cards.
 
-function PlanCard({ plan }: { plan: Plan }) {
+// Phase 34G-C3 — Connected gets a modest, restrained Court Time brand-green
+// treatment (border + filled primary CTA) instead of the prior graphite/
+// black-white "highlighted" emphasis — communicating "more capable"
+// without a badge or loud promotional styling. Staff-Managed is completely
+// untouched: neutral gray border, neutral outlined CTA — a legitimate,
+// complete plan in its own right, never styled as inferior.
+function TierCard({ tier, highlighted }: { tier: StandardTier; highlighted?: boolean }) {
   return (
     <div
       className={`h-full flex flex-col rounded-2xl bg-white dark:bg-gray-800 p-6 ${
-        plan.isCurrent
-          ? "border-2 border-gray-900 dark:border-gray-100 shadow-xl"
+        highlighted
+          ? "border-2 border-brand shadow-xl"
           : "border border-gray-200 dark:border-gray-700"
       }`}
     >
-      {/* Badge — text-based, not color-only */}
-      <span
-        className={`self-start inline-block px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wide mb-4 ${
-          plan.isCurrent
-            ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900"
-            : "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400"
-        }`}
-      >
-        {plan.badgeLabel}
-      </span>
+      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{tier.name}</h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{tier.tagline}</p>
 
-      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{plan.name}</h3>
-
-      <p className="mt-3">
-        <span className="text-3xl font-bold text-gray-900 dark:text-gray-100">{plan.monthly}</span>
+      <p className="mt-4">
+        <span className="text-3xl font-bold text-gray-900 dark:text-gray-100">{tier.monthly}</span>
         <span className="text-sm font-medium text-gray-500 dark:text-gray-400"> / month</span>
       </p>
       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-        or <span className="font-semibold text-gray-700 dark:text-gray-300">{plan.annual} / year</span> — {plan.annualNote}
+        or <span className="font-semibold text-gray-700 dark:text-gray-300">{tier.annual} / year</span> — {tier.annualNote}
       </p>
 
-      <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 space-y-1.5 text-xs text-gray-500 dark:text-gray-400">
-        <p><span className="text-gray-700 dark:text-gray-300 font-medium">Scale:</span> {plan.intendedScale}</p>
-        <p><span className="text-gray-700 dark:text-gray-300 font-medium">Onboarding:</span> {plan.onboarding}</p>
-        <p><span className="text-gray-700 dark:text-gray-300 font-medium">Support:</span> {plan.support}</p>
-        <p><span className="text-gray-700 dark:text-gray-300 font-medium">No per-member fee</span></p>
-      </div>
-
-      <p className="mt-4 text-xs text-gray-500 dark:text-gray-400 flex-1">{plan.availabilityNote}</p>
+      <p className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
+        No per-member fee
+      </p>
 
       <Link
-        href={plan.ctaHref}
-        className={`mt-5 block w-full text-center py-3 rounded-xl text-sm font-semibold motion-safe:transition-all motion-safe:duration-150 ${
-          plan.isCurrent
-            ? "bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-300 active:scale-[0.98]"
-            : "border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-500 dark:hover:border-gray-400"
-        }`}
+        href={tier.ctaHref}
+        className={
+          highlighted
+            ? "mt-5 block w-full text-center py-3 rounded-xl text-sm font-semibold bg-brand text-white hover:bg-brand-hover motion-safe:transition-all motion-safe:duration-150"
+            : "mt-5 block w-full text-center py-3 rounded-xl text-sm font-semibold border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-gray-500 dark:hover:border-gray-400 motion-safe:transition-all motion-safe:duration-150"
+        }
       >
-        {plan.ctaLabel}
+        {tier.ctaLabel}
       </Link>
-
-      {plan.extraNotes && (
-        <p className="mt-3 text-center text-[11px] text-gray-400 dark:text-gray-500 leading-relaxed">
-          {plan.extraNotes.join(" · ")}
-        </p>
-      )}
     </div>
   );
 }
 
 export default function PricingCards() {
-  const railRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const reducedMotion = usePrefersReducedMotion();
-
-  // Track which card is most visible in the rail so the indicator and the
-  // Prev/Next disabled states stay correct whether the visitor swiped,
-  // scrolled, or used the buttons.
-  useEffect(() => {
-    const rail = railRef.current;
-    if (!rail) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-            const idx = cardRefs.current.findIndex((el) => el === entry.target);
-            if (idx !== -1) setActiveIndex(idx);
-          }
-        }
-      },
-      { root: rail, threshold: [0.6] }
-    );
-
-    cardRefs.current.forEach((el) => el && observer.observe(el));
-    return () => observer.disconnect();
-  }, []);
-
-  function goTo(index: number) {
-    const target = cardRefs.current[index];
-    if (!target) return;
-    target.scrollIntoView({
-      behavior: reducedMotion ? "auto" : "smooth",
-      inline: "center",
-      block: "nearest",
-    });
-  }
-
   return (
-    <div>
-      {/* Plan rail — horizontally scrollable + snapping on mobile/tablet, a plain 3-column grid at lg+ */}
-      <div
-        ref={railRef}
-        role="region"
-        aria-label="Pricing plans"
-        tabIndex={0}
-        className="flex lg:grid lg:grid-cols-3 gap-4 overflow-x-auto lg:overflow-visible snap-x snap-mandatory lg:snap-none pb-2 -mx-4 px-4 lg:mx-0 lg:px-0 hide-scrollbar"
-      >
-        {PLANS.map((plan, i) => (
-          <div
-            key={plan.id}
-            ref={(el) => { cardRefs.current[i] = el; }}
-            className="shrink-0 w-[86%] sm:w-[70%] md:w-[55%] lg:w-auto snap-center"
-          >
-            <PlanCard plan={plan} />
-          </div>
-        ))}
-      </div>
-
-      {/* Prev/Next + indicator — mobile/tablet only; the desktop grid needs no navigation */}
-      <div className="lg:hidden flex items-center justify-center gap-4 mt-4">
-        <button
-          type="button"
-          onClick={() => goTo(activeIndex - 1)}
-          disabled={activeIndex === 0}
-          aria-label="Previous plan"
-          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30 disabled:pointer-events-none motion-safe:transition-colors motion-safe:duration-100 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:focus-visible:ring-gray-500"
-        >
-          ‹
-        </button>
-
-        <div className="flex items-center gap-2">
-          <span
-            aria-live="polite"
-            className="text-xs text-gray-500 dark:text-gray-400 tabular-nums"
-          >
-            {activeIndex + 1} of {PLANS.length}
-          </span>
-          <span className="flex items-center gap-1" aria-hidden="true">
-            {PLANS.map((plan, i) => (
-              <span
-                key={plan.id}
-                className={`w-1.5 h-1.5 rounded-full ${
-                  i === activeIndex ? "bg-gray-900 dark:bg-gray-100" : "bg-gray-300 dark:bg-gray-600"
-                }`}
-              />
-            ))}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => goTo(activeIndex + 1)}
-          disabled={activeIndex === PLANS.length - 1}
-          aria-label="Next plan"
-          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30 disabled:pointer-events-none motion-safe:transition-colors motion-safe:duration-100 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:focus-visible:ring-gray-500"
-        >
-          ›
-        </button>
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {STANDARD_TIERS.map((tier) => (
+        <TierCard key={tier.id} tier={tier} highlighted={tier.id === "connected"} />
+      ))}
     </div>
   );
 }

@@ -18,12 +18,13 @@ import {
   type EnrollmentResult,
 } from "./programEnrollmentActions";
 import { mapProgramError } from "./programErrors";
-import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE, ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "./actionButtonStyles";
 import PriceSummary from "@/components/PriceSummary";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import ProgramEnrollConfirmModal from "@/components/ProgramEnrollConfirmModal";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
-import type { PaymentStateRow } from "@/lib/payments";
+import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
+import { getProgramCheckoutEligibilityAction, createProgramCheckoutAction } from "./programCheckoutActions";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,43 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, enrollment?.id]);
+
+  // Phase 34F-C — Program Checkout eligibility, mirroring EventDetailSheet's
+  // identical two-effect pattern exactly. get_program_payment_for_checkout
+  // (0163) independently re-verifies enrollment_model='program', the caller
+  // owns this enrollment, status='enrolled', and the parent Program's own
+  // status IN ('active','completed') + not archived — this local `status
+  // === "enrolled"` gate only decides whether to even attempt the read;
+  // createProgramCheckoutAction always re-derives eligibility fresh itself
+  // and is never trusted from this state alone.
+  const [checkoutEligible, setCheckoutEligible] = useState(false);
+  const [checkoutLoading, setCheckoutLoading]   = useState(false);
+  const [checkoutError, setCheckoutError]       = useState<string | null>(null);
+  useEffect(() => {
+    if (status !== "enrolled") {
+      setCheckoutEligible(false);
+      return;
+    }
+    getProgramCheckoutEligibilityAction(program.id, clubId).then(({ eligible }) => {
+      setCheckoutEligible(eligible);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program.id, status]);
+
+  async function handlePayNow() {
+    setCheckoutLoading(true);
+    setCheckoutError(null);
+    const result = await createProgramCheckoutAction(program.id, clubId);
+    if (result.error) {
+      setCheckoutError(result.error);
+      setCheckoutLoading(false);
+      return;
+    }
+    if (result.url) {
+      // External Stripe-hosted destination — a plain browser navigation.
+      window.location.href = result.url;
+    }
+  }
 
   const offerExpiresAt = status === "offered" ? enrollment!.offer_expires_at : null;
   // Point-in-time check at render/interaction time — matches the existing
@@ -232,7 +270,30 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
         breakdown={program.price_amount_cents !== null ? "for the full program" : null}
         className="mt-0.5"
       />
-      {status === "enrolled" && <PaymentStateBadge state={paymentState} className="mt-1" />}
+      {/* Phase 34F-C — the ONE canonical Program Pay Now action (locked to
+          this card, never /my-schedule, /calendar, or any Admin surface).
+          Renders only for the owning Member's own 'enrolled' whole-program
+          enrollment (status === "enrolled" already encodes ownership +
+          confirmation) — never for waitlisted/offered, another Member, or
+          an Admin/Staff/Pro. checkoutEligible independently re-verifies
+          the Program's own lifecycle (active OR completed, not archived)
+          via get_program_payment_for_checkout — a completed Program with a
+          genuine outstanding balance still shows Pay Now here. */}
+      {status === "enrolled" && paymentState && (
+        <div className="mt-1 flex flex-col sm:flex-row sm:items-center gap-2">
+          <PaymentStateBadge state={paymentState} />
+          {checkoutEligible && isPaymentOpenForRecording(paymentState) && (
+            <button
+              disabled={checkoutLoading}
+              onClick={handlePayNow}
+              className={`${ACTION_BUTTON_PRIMARY_COMPACT_TOUCH} disabled:opacity-50`}
+            >
+              {checkoutLoading ? "Redirecting…" : "Pay Now"}
+            </button>
+          )}
+        </div>
+      )}
+      {checkoutError && <p className="text-xs text-red-600 dark:text-red-400 mt-1">{checkoutError}</p>}
 
       {/* Offer deadline */}
       {status === "offered" && !offerExpired && offerExpiresAt && (
