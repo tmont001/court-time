@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import { resolveReportRange, type ReportRange } from "./dateRange";
+import { logReportingRpcFailure } from "./reportingDiagnostics";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -257,6 +258,13 @@ export default async function AdminReportsPage({
       supabase.rpc("get_waitlist_demand", rpcArgs),
       supabase.rpc("get_member_engagement_summary", rpcArgs),
     ]);
+
+  logReportingRpcFailure("get_reporting_overview", overviewResult.error);
+  logReportingRpcFailure("get_court_utilization", courtsResult.error);
+  logReportingRpcFailure("get_reservation_summary", reservationsResult.error);
+  logReportingRpcFailure("get_event_program_summary", eventProgramResult.error);
+  logReportingRpcFailure("get_waitlist_demand", waitlistResult.error);
+  logReportingRpcFailure("get_member_engagement_summary", engagementResult.error);
 
   const overviewRows = (overviewResult.data ?? []) as OverviewRow[];
   const overview = overviewRows[0] ?? null;
