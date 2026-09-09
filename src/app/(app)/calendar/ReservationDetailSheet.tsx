@@ -17,7 +17,7 @@ import {
   getReservationCheckoutEligibilityAction,
   createReservationCheckoutAction,
 } from "./reservationCheckoutActions";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

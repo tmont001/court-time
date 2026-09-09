@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 import { triggerCsvDownload } from "@/lib/downloadBlob";
 import { defaultCurrentMonthRange } from "./exportLogic";
 import { exportPaymentActivityCsv } from "./exportActions";

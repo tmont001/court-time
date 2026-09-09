@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
-import { isOperator } from "@/lib/auth/roles";
+import { isOperator, isAdmin } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import AdminPaymentsClient, { type AdminPaymentRow } from "./AdminPaymentsClient";
 import type { PaymentStateRow } from "@/lib/payments";
@@ -41,6 +41,15 @@ export default async function AdminPaymentsPage() {
   const profile = await getAuthProfile();
   if (!profile || !isOperator(profile.role)) redirect("/calendar");
 
+  // G-D1 QA correction — Refund is intentionally Admin-only (the server-
+  // side guard in refundActions.ts is unchanged and remains the real
+  // authorization boundary); this is UI-only visibility so Staff, who
+  // pass the isOperator gate above but are not Admin, are never shown an
+  // action they cannot perform. Reuses the SAME isAdmin(role) predicate
+  // the rest of the app already uses for Admin-only authority — never a
+  // duplicate/parallel authorization mechanism.
+  const isAdminRole = isAdmin(profile.role);
+
   const clubId = profile.club_id ?? "";
   const supabase = await createClient();
 
@@ -79,6 +88,14 @@ export default async function AdminPaymentsPage() {
     updated_at: string;
   };
   const rawPayments = (paymentsResult.data ?? []) as RawPaymentRow[];
+  // G-D1 — a full page (exactly MAX_ROWS rows returned) means the query
+  // may have truncated older payments; a short page means it definitely
+  // did not. This is the same "full page implies maybe more" heuristic
+  // fetchAllRowsExhaustively already uses, applied here only to decide
+  // whether to show an informational notice — this page's own cap is
+  // intentionally unchanged (§9 of the correction spec), and the CSV
+  // exports remain the exhaustive, uncapped source of complete data.
+  const truncated = rawPayments.length === MAX_ROWS;
   const latestByDomain = new Map<string, RawPaymentRow>();
   for (const p of rawPayments) {
     const key = `${p.domain_type}:${p.domain_id}`;
@@ -457,7 +474,7 @@ export default async function AdminPaymentsPage() {
       <Header screenTitle="Payments" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-3xl md:mx-auto">
-          <AdminPaymentsClient rows={rows} clubId={clubId} currency={currency} clubTimezone={clubTimezone} />
+          <AdminPaymentsClient rows={rows} clubId={clubId} currency={currency} clubTimezone={clubTimezone} truncated={truncated} isAdmin={isAdminRole} />
         </div>
       </div>
     </>

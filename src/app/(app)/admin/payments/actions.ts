@@ -8,6 +8,7 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { getStripeContext } from "@/lib/stripe/server";
 import { isAuthorizedToConnectStripe } from "@/lib/stripe/connectConfig";
+import { isOperator } from "@/lib/auth/roles";
 import {
   CHECKOUT_STILL_PROCESSING_MESSAGE,
   OPEN_CHECKOUT_REQUIRES_RESOLUTION,
@@ -119,15 +120,25 @@ export async function fetchPaymentEventHistory(
   const guard = await assertActiveClub(expectedClubId);
   if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
 
+  // G-D1 correction — mirrors exportActions.ts's own established pattern:
+  // expectedClubId (checked above) is a stale-context preflight only,
+  // never the authoritative financial tenant identity. An explicit
+  // application-layer Admin/Staff gate is added here too (RLS remains a
+  // backstop, not the only role boundary) — Member and non-staff Pro are
+  // both blocked before this ever reaches a query.
+  const profile = await getAuthProfile();
+  if (!profile) return { error: ERROR_MESSAGES.not_authenticated };
+  if (!isOperator(profile.role)) return { error: ERROR_MESSAGES.insufficient_role };
+  const clubId = profile.club_id;
+  if (!clubId) return { error: ERROR_MESSAGES.insufficient_role };
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
   const { data, error } = await supabase
     .from("payment_events")
     .select("id, event_type, amount_cents, method, external_reference, notes, actor_id, occurred_at, reverses_event_id")
     .eq("payment_id", paymentId)
-    .eq("club_id", expectedClubId)
+    .eq("club_id", clubId)
     .order("occurred_at", { ascending: true })
     .order("created_at", { ascending: true });
   if (error) return { error: "Failed to load payment history." };

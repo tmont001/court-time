@@ -16,7 +16,7 @@ import {
 import type { ClubPro } from "@/app/(app)/lessons/actions";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import type { PaymentStateRow } from "@/lib/payments";
-import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/components/styles/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

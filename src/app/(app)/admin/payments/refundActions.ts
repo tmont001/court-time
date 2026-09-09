@@ -138,6 +138,14 @@ export async function createOnlineRefundAction(
     return { error: ERROR_MESSAGES.insufficient_role };
   }
 
+  // G-D1 correction — expectedClubId is a stale-context preflight ONLY
+  // (checked above via assertActiveClub). The authoritative financial
+  // tenant identity for every DB/RPC/Stripe-metadata operation below is
+  // the server-derived profile.club_id, never the client-supplied value —
+  // matching exportActions.ts's own established pattern exactly.
+  const clubId = profile.club_id;
+  if (!clubId) return { error: ERROR_MESSAGES.db_not_configured };
+
   const context = getStripeContext();
   if (!context) return { error: ERROR_MESSAGES.court_time_payments_not_available };
 
@@ -146,7 +154,7 @@ export async function createOnlineRefundAction(
 
   const { data: attemptRows, error: openError } = await privileged.rpc("open_payment_refund_attempt", {
     p_payment_id: params.paymentId,
-    p_club_id: expectedClubId,
+    p_club_id: clubId,
     p_requested_amount_cents: params.amountCents,
     p_actor_id: user.id,
     p_admin_reason: params.reason || null,
@@ -243,7 +251,7 @@ export async function createOnlineRefundAction(
         metadata: buildRefundMetadata({
           refundAttemptId: attempt.id,
           paymentId: params.paymentId,
-          clubId: expectedClubId,
+          clubId,
         }),
       },
       {

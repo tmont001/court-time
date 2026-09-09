@@ -10,7 +10,7 @@ import { isPaymentOpenForRecording, toneClassName, type PaymentStateRow } from "
 import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
 import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
 import { formatMoney } from "@/lib/money";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 import PaymentDetailSheet from "@/components/PaymentDetailSheet";
 import PaymentExportMenu from "./PaymentExportMenu";
 
@@ -78,12 +78,25 @@ const DOMAIN_LABEL: Record<AdminPaymentRow["domainType"], string> = {
 type Filter = "outstanding" | "all";
 
 export default function AdminPaymentsClient({
-  rows, clubId, currency, clubTimezone,
+  rows, clubId, currency, clubTimezone, truncated, isAdmin,
 }: {
   rows: AdminPaymentRow[];
   clubId: string;
   currency: string;
   clubTimezone: string;
+  // G-D1 — true when the server query hit page.tsx's own MAX_ROWS cap
+  // (interactive-list-only; the cap itself is unchanged this checkpoint).
+  // Never implies data was deleted — only that older payments aren't
+  // shown in THIS list; Export remains the complete, uncapped source.
+  truncated?: boolean;
+  // G-D1 QA correction — server-derived (page.tsx's own isAdmin(profile.
+  // role), the same predicate the rest of the app uses for Admin-only
+  // authority). UI-only: gates whether the Refund action is ever
+  // RENDERED, here and in PaymentDetailSheet. The real authorization
+  // boundary remains createOnlineRefundAction's own server-side
+  // `profile.role !== "admin"` check (refundActions.ts), unchanged and
+  // untouched by this — hiding the button never substitutes for it.
+  isAdmin: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("outstanding");
@@ -148,6 +161,12 @@ export default function AdminPaymentsClient({
         <PaymentExportMenu clubId={clubId} clubTimezone={clubTimezone} />
       </div>
 
+      {truncated && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 mb-4">
+          Showing the 500 most recent payments. Use Export for complete payment history.
+        </p>
+      )}
+
       {filtered.length === 0 ? (
         <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
           {filter === "outstanding" ? "No outstanding balances." : "No payments to show."}
@@ -202,7 +221,7 @@ export default function AdminPaymentsClient({
                   >
                     Details
                   </button>
-                  {isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
+                  {isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
                     <button
                       onClick={() => setRefundTarget(row)}
                       className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
@@ -256,6 +275,7 @@ export default function AdminPaymentsClient({
           clubId={clubId}
           currency={currency}
           clubTimezone={clubTimezone}
+          isAdmin={isAdmin}
           onClose={() => setDetailTarget(null)}
           // Detail is read-only — any actual mutation hands off to the
           // SAME existing 34E-B/34C sheets, closing Detail first so only

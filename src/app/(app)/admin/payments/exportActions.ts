@@ -82,7 +82,12 @@ async function resolveExportContext(expectedClubId: string): Promise<{ error: st
     .eq("id", clubId)
     .single();
   if (clubError || !clubRow || !clubRow.timezone) {
-    console.error("[export] club metadata read failed", { club_id: clubId, message: clubError?.message ?? "missing row or timezone" });
+    // G-D1 — normalized to the established {club_id, code, message} shape.
+    console.error("[export] club metadata read failed", {
+      club_id: clubId,
+      code: clubError?.code ?? null,
+      message: clubError?.message ?? "missing row or timezone",
+    });
     return { error: ERROR_MESSAGES.load_failed };
   }
   // Slug is non-financial, cosmetic filename metadata only — a defensive
@@ -141,7 +146,10 @@ export async function exportOutstandingBalancesCsv(
     },
   );
   if (paymentsError) {
-    console.error("[export] outstanding balances payments read failed", { club_id: clubId, message: paymentsError });
+    // G-D1 — normalized {club_id, code, message} shape. fetchAllRowsExhaustively's
+    // own error contract is always a plain string (no separate code), so
+    // code is always null here — never a raw PostgREST error object.
+    console.error("[export] outstanding balances payments read failed", { club_id: clubId, code: null, message: paymentsError });
     return { error: ERROR_MESSAGES.load_failed };
   }
 
@@ -171,7 +179,7 @@ export async function exportOutstandingBalancesCsv(
   }));
   const domainContextResult = await hydrateExportDomainContext(supabase, domainInputs, clubTimezone);
   if (isHydrationFailure(domainContextResult)) {
-    console.error("[export] outstanding balances domain hydration failed", { club_id: clubId, message: domainContextResult.error });
+    console.error("[export] outstanding balances domain hydration failed", { club_id: clubId, code: null, message: domainContextResult.error });
     return { error: ERROR_MESSAGES.load_failed };
   }
   const domainContextByPaymentId = domainContextResult;
@@ -207,7 +215,7 @@ export async function exportOutstandingBalancesCsv(
     // Financial export data must never ship from a partially-failed read
     // (Issue 3) — abort the whole export rather than silently omit
     // Source/Last Payment Date for an unknown subset of rows.
-    console.error("[export] outstanding balances provenance read failed", { club_id: clubId, message: provenanceError });
+    console.error("[export] outstanding balances provenance read failed", { club_id: clubId, code: null, message: provenanceError });
     return { error: ERROR_MESSAGES.load_failed };
   }
   const eventsByPayment = new Map<string, ProvenanceLedgerEvent[]>();
@@ -325,7 +333,7 @@ export async function exportPaymentActivityCsv(
     },
   );
   if (eventsError) {
-    console.error("[export] payment activity events read failed", { club_id: clubId, message: eventsError });
+    console.error("[export] payment activity events read failed", { club_id: clubId, code: null, message: eventsError });
     return { error: ERROR_MESSAGES.load_failed };
   }
 
@@ -363,7 +371,7 @@ export async function exportPaymentActivityCsv(
     if (targetError) {
       // Financial export data must never ship a guessed reversal amount
       // from a partially-failed lookup (Issue 3) — abort the whole export.
-      console.error("[export] payment activity reversal-target read failed", { club_id: clubId, message: targetError });
+      console.error("[export] payment activity reversal-target read failed", { club_id: clubId, code: null, message: targetError });
       return { error: ERROR_MESSAGES.load_failed };
     }
     for (const t of targetRows) targetEventById.set(t.id, { eventType: t.event_type, amountCents: t.amount_cents });
@@ -408,7 +416,7 @@ export async function exportPaymentActivityCsv(
     return { data: result.data, error: result.error };
   });
   if (paymentsLookupError) {
-    console.error("[export] payment activity parent-payment read failed", { club_id: clubId, message: paymentsLookupError });
+    console.error("[export] payment activity parent-payment read failed", { club_id: clubId, code: null, message: paymentsLookupError });
     return { error: ERROR_MESSAGES.load_failed };
   }
   const paymentById = new Map(paymentRows.map(p => [p.id, p]));
@@ -418,7 +426,7 @@ export async function exportPaymentActivityCsv(
   }));
   const domainContextResult = await hydrateExportDomainContext(supabase, domainInputs, clubTimezone);
   if (isHydrationFailure(domainContextResult)) {
-    console.error("[export] payment activity domain hydration failed", { club_id: clubId, message: domainContextResult.error });
+    console.error("[export] payment activity domain hydration failed", { club_id: clubId, code: null, message: domainContextResult.error });
     return { error: ERROR_MESSAGES.load_failed };
   }
   const domainContextByPaymentId = domainContextResult;
@@ -441,7 +449,7 @@ export async function exportPaymentActivityCsv(
       return { data: result.data, error: result.error };
     });
     if (actorsError) {
-      console.error("[export] payment activity actor lookup failed", { club_id: clubId, message: actorsError });
+      console.error("[export] payment activity actor lookup failed", { club_id: clubId, code: null, message: actorsError });
       return { error: ERROR_MESSAGES.load_failed };
     }
     for (const a of actors) {

@@ -263,14 +263,19 @@ describe("Q. Admin/Staff-only authorization is unchanged — Members and non-sta
     expect(s).toContain("if (!profile || !isOperator(profile.role)) redirect(\"/calendar\");");
   });
 
-  it("fetchPaymentEventHistory still uses assertActiveClub + authenticated-session checks, unchanged from before this checkpoint", () => {
+  it("fetchPaymentEventHistory still uses assertActiveClub + an authenticated-session check", () => {
     const s = readSource(ACTIONS_PATH);
     const fnStart = s.indexOf("export async function fetchPaymentEventHistory(");
     const fnEnd = s.indexOf("\nexport async function updateClubPaymentModeAction");
     const fn = s.slice(fnStart, fnEnd);
     expect(fn).toContain("const guard = await assertActiveClub(expectedClubId);");
     expect(fn).toContain("if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };");
-    expect(fn).toContain("if (!user) return { error: ERROR_MESSAGES.not_authenticated };");
+    // Phase 34G-D1 correction — authentication is now checked via
+    // getAuthProfile() (which itself resolves null for an unauthenticated
+    // caller) as part of the new explicit Admin/Staff role gate, rather
+    // than a separate bare supabase.auth.getUser() check — see
+    // productionHardening.regression.test.ts's own D/E/F coverage.
+    expect(fn).toContain("if (!profile) return { error: ERROR_MESSAGES.not_authenticated };");
   });
 
   it("the bulk source-summary query in page.tsx never trusts a client-supplied club id — clubId is the same server-resolved profile.club_id every other query on this page already uses", () => {

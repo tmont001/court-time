@@ -15,7 +15,7 @@ import EventJoinConfirmModal from "@/components/EventJoinConfirmModal";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/lib/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 import { getEventCheckoutEligibilityAction, createEventCheckoutAction } from "./eventCheckoutActions";
 
 // ─── Types (same shape as CalendarShell; redefined here to avoid circular import) ─

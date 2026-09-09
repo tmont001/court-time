@@ -481,7 +481,11 @@ describe("Export control lives in the SAME toolbar row as Outstanding/All + Sear
     const tabsIdx = s.indexOf("Outstanding", toolbarIdx);
     const searchInputIdx = s.indexOf('placeholder="Search by name…"', toolbarIdx);
     const exportMenuIdx = s.indexOf("<PaymentExportMenu", toolbarIdx);
-    const toolbarCloseIdx = s.indexOf("</div>\n\n      {filtered.length", toolbarIdx);
+    // G-D1 added a conditional {truncated && (...)} notice between the
+    // toolbar's own closing </div> and the {filtered.length...} block —
+    // find the toolbar's closing tag directly rather than assuming it's
+    // immediately followed by {filtered.length.
+    const toolbarCloseIdx = s.indexOf("</div>", exportMenuIdx);
     expect(tabsIdx).toBeGreaterThan(toolbarIdx);
     expect(searchInputIdx).toBeGreaterThan(tabsIdx);
     expect(exportMenuIdx).toBeGreaterThan(searchInputIdx);

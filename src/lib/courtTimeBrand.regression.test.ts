@@ -27,7 +27,11 @@ const FOUNDING_BANNER_PATH = "src/app/(marketing)/pricing/FoundingOfferBanner.ts
 const SETTINGS_PAGE_PATH = "src/app/(app)/admin/settings/page.tsx";
 const STRIPE_CONNECT_SECTION_PATH = "src/app/(app)/admin/settings/StripeConnectSection.tsx";
 const PAYMENTS_LIB_PATH = "src/lib/payments.ts";
-const ACTION_BUTTON_STYLES_PATH = "src/lib/actionButtonStyles.ts";
+// Phase 34G-D1 — relocated off src/lib/ (Tailwind never scanned it) to
+// src/components/styles/ — see src/app/(app)/admin/payments/
+// productionHardening.regression.test.ts for the dedicated coverage of
+// that move itself; this file's own references just need the new path.
+const ACTION_BUTTON_STYLES_PATH = "src/components/styles/actionButtonStyles.ts";
 
 const THEME_NAMES = ["graphite", "cobalt", "teal", "sage", "plum", "rose", "terracotta", "gold"];
 

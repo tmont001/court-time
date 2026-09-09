@@ -423,8 +423,10 @@ describe("Attempt safety — double-click / retry cannot create unsafe competing
     const branchEnd = s.indexOf('.rpc(\n      "supersede_checkout_attempt_and_open_fresh"');
     const preSupersedeBlock = s.slice(branchStart, branchEnd);
     // Both the retrieve and expire calls are wrapped in their own
-    // try/catch that returns an error rather than falling through.
-    expect(countOccurrences(preSupersedeBlock, "catch {")).toBeGreaterThanOrEqual(2);
+    // try/catch that returns an error rather than falling through. G-D1
+    // added sanitized diagnostic logging to each catch, so the bare
+    // "catch {" form became "catch (err) {" — matched more loosely here.
+    expect(countOccurrences(preSupersedeBlock, "catch (err) {")).toBeGreaterThanOrEqual(2);
     expect(preSupersedeBlock).toContain("return { error: ERROR_MESSAGES.stripe_error };");
   });
 
@@ -472,7 +474,9 @@ describe("payments/events webhook route — signature verification and shape", (
 
   it("returns 400 for a missing signature", () => {
     const s = src();
-    const block = s.slice(s.indexOf("if (!signature)"), s.indexOf("if (!signature)") + 80);
+    // G-D1 widened this block from a single-line `if (!signature) return
+    // ...;` to a multi-line form with sanitized diagnostic logging added.
+    const block = s.slice(s.indexOf("if (!signature)"), s.indexOf("if (!signature)") + 160);
     expect(block).toContain("status: 400");
   });
 
@@ -493,7 +497,8 @@ describe("payments/events webhook route — signature verification and shape", (
 
   it("returns 400 on a signature-verification failure, never trusting the body", () => {
     const s = src();
-    const tryBlock = s.slice(s.indexOf("try {\n    event ="), s.indexOf("try {\n    event =") + 300);
+    // G-D1 widened the catch block with sanitized diagnostic logging.
+    const tryBlock = s.slice(s.indexOf("try {\n    event ="), s.indexOf("try {\n    event =") + 650);
     expect(tryBlock).toContain("catch");
     expect(tryBlock).toContain("status: 400");
   });

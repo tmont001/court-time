@@ -35,12 +35,19 @@ import type { AdminPaymentRow } from "@/app/(app)/admin/payments/AdminPaymentsCl
 const REFUND_EVENT_TYPES = new Set(["refund_recorded", "online_refund_recorded"]);
 
 export default function PaymentDetailSheet({
-  row, clubId, currency, clubTimezone, onClose, onRequestRefund, onRequestRecordPayment,
+  row, clubId, currency, clubTimezone, isAdmin, onClose, onRequestRefund, onRequestRecordPayment,
 }: {
   row: AdminPaymentRow;
   clubId: string;
   currency: string;
   clubTimezone: string;
+  // G-D1 QA correction — server-derived, threaded through from page.tsx's
+  // own isAdmin(profile.role) via AdminPaymentsClient. UI-only: gates
+  // whether Refund is ever rendered here. The real authorization boundary
+  // remains the refund Server Action's own server-side admin-only check
+  // in refundActions.ts, unchanged by this — this component still never
+  // calls it directly, only hands off via onRequestRefund.
+  isAdmin: boolean;
   onClose: () => void;
   onRequestRefund: () => void;
   onRequestRecordPayment: () => void;
@@ -79,7 +86,17 @@ export default function PaymentDetailSheet({
           resolvedCurrency,
         );
 
-  const canRefund = isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund;
+  // G-D1 QA correction — isRefundEligible is the actual, isAdmin-
+  // independent FACT (still used for the informational review-note text
+  // below, which must stay financially accurate for Staff too — "no
+  // refundable balance" must never be shown when a balance genuinely IS
+  // refundable, merely because Staff can't act on it). canRefund adds the
+  // isAdmin gate on top and is used ONLY to decide whether the Refund
+  // BUTTON renders — never the authorization boundary, which stays
+  // server-side/unchanged (the refund Server Action's own admin-only
+  // check, refundActions.ts).
+  const isRefundEligible = isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund;
+  const canRefund = isAdmin && isRefundEligible;
   // Runtime QA polish — a cancelled parent Event withholds Record Payment
   // eligibility without touching row.state at all (no waive/void/refund,
   // no amount_due_cents/amount_paid_cents mutation) — the balance stays
@@ -99,7 +116,7 @@ export default function PaymentDetailSheet({
       `${formatMoney(overpaidCents, resolvedCurrency)} more than owed. Court Time never refunds this automatically.`,
     );
     reviewNotes.push(
-      canRefund
+      isRefundEligible
         ? "Refund is available for the Stripe-collected portion, if appropriate."
         : "No Stripe-refundable balance currently remains for this payment.",
     );

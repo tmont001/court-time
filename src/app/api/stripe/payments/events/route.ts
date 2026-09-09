@@ -34,17 +34,58 @@ import { isRefundStatus, isSupportedRefundWebhookEventType } from "@/lib/stripe/
 import { isSupportedDisputeWebhookEventType } from "@/lib/stripe/disputeConfig";
 import type Stripe from "stripe";
 
+// G-D1 — sanitized server-side diagnostic logging for FAILURE paths only
+// (this route previously had none at all), mirroring the logUnexpected*
+// Error helper pattern already used by every Server-Action-side payment
+// flow (e.g. refundActions.ts's logUnexpectedRefundError). Logs only
+// {stage, event_id, stripe_account_id, code, message} — NEVER the raw
+// request body, the Stripe-Signature header, the webhook signing secret,
+// the API secret, a full Stripe Event/Refund/Dispute object, or any
+// card/customer PII. A signature-verification failure has no trustworthy
+// event_id yet (the payload isn't verified at that point) — stage plus a
+// sanitized error code/message only in that case. Purely additive:
+// return values/HTTP status codes on every path are unchanged.
+function logWebhookFailure(
+  stage: string,
+  details: { eventId?: string | null; stripeAccountId?: string | null; err?: unknown } = {},
+) {
+  const err = details.err;
+  const code =
+    err && typeof err === "object" && "code" in err ? ((err as { code?: unknown }).code ?? null) : null;
+  const message =
+    err instanceof Error
+      ? err.message
+      : err && typeof err === "object" && "message" in err
+        ? ((err as { message?: unknown }).message ?? null)
+        : null;
+  console.error(`[webhook:payments-events] ${stage}`, {
+    event_id: details.eventId ?? null,
+    stripe_account_id: details.stripeAccountId ?? null,
+    code,
+    message,
+  });
+}
+
 export async function POST(request: Request) {
   // Our own configuration, not the caller's fault if missing — Stripe
   // should retry once it's fixed, so 500 rather than 4xx.
   const webhookSecret = process.env.STRIPE_PAYMENTS_WEBHOOK_SECRET;
-  if (!webhookSecret) return new NextResponse(null, { status: 500 });
+  if (!webhookSecret) {
+    logWebhookFailure("missing_webhook_secret");
+    return new NextResponse(null, { status: 500 });
+  }
 
   const context = getStripeContext();
-  if (!context) return new NextResponse(null, { status: 500 });
+  if (!context) {
+    logWebhookFailure("missing_stripe_context");
+    return new NextResponse(null, { status: 500 });
+  }
 
   const signature = request.headers.get("stripe-signature");
-  if (!signature) return new NextResponse(null, { status: 400 });
+  if (!signature) {
+    logWebhookFailure("missing_signature_header");
+    return new NextResponse(null, { status: 400 });
+  }
 
   // Raw body, never request.json() first — re-serializing JSON can change
   // the exact bytes Stripe signed, breaking verification.
@@ -53,9 +94,12 @@ export async function POST(request: Request) {
   let event: Stripe.Event;
   try {
     event = context.client.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch {
+  } catch (err) {
     // Invalid signature or malformed payload — never trust anything
-    // inside it.
+    // inside it. No trustworthy event_id exists at this point (the
+    // payload has not been verified), so only the stage + sanitized
+    // error is logged — never the raw body or signature header.
+    logWebhookFailure("signature_verification_failed", { err });
     return new NextResponse(null, { status: 400 });
   }
 
@@ -104,6 +148,7 @@ export async function POST(request: Request) {
     // legitimate skip — returning 200 here would tell Stripe delivery
     // succeeded while Court Time recorded nothing for a real payment.
     // Fail retryably instead.
+    logWebhookFailure("checkout_session_missing_amount_or_currency", { eventId: event.id, stripeAccountId });
     return new NextResponse(null, { status: 500 });
   }
 
@@ -118,7 +163,10 @@ export async function POST(request: Request) {
     typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
   const privileged = createPrivilegedClient();
-  if (!privileged) return new NextResponse(null, { status: 500 });
+  if (!privileged) {
+    logWebhookFailure("missing_privileged_client", { eventId: event.id, stripeAccountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   const { error } = await privileged.rpc("process_stripe_payment_event", {
     p_stripe_event_id: event.id,
@@ -130,7 +178,10 @@ export async function POST(request: Request) {
     p_amount_total_cents: session.amount_total,
     p_currency: session.currency,
   });
-  if (error) return new NextResponse(null, { status: 500 });
+  if (error) {
+    logWebhookFailure("process_stripe_payment_event", { eventId: event.id, stripeAccountId, err: error });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Handled (first delivery, applied) or safely no-op (duplicate delivery)
   // — both are a successfully processed valid Stripe event from Stripe's
@@ -161,7 +212,10 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
   }
 
   const context = getStripeContext();
-  if (!context) return new NextResponse(null, { status: 500 });
+  if (!context) {
+    logWebhookFailure("missing_stripe_context", { eventId: event.id, stripeAccountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Current-state retrieve (correction pass) — in the event's own
   // verified connected-account context, never a caller-derived one.
@@ -172,9 +226,10 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
       {},
       { stripeAccount: stripeAccountId },
     );
-  } catch {
+  } catch (err) {
     // Cannot safely confirm the current state — retryable, not a
     // legitimate skip.
+    logWebhookFailure("refund_retrieve_failed", { eventId: event.id, stripeAccountId, err });
     return new NextResponse(null, { status: 500 });
   }
 
@@ -182,6 +237,7 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
     // A Refund object missing one of Stripe's five documented statuses
     // at this point is a data anomaly, not a legitimate skip — fail
     // retryably.
+    logWebhookFailure("refund_status_unrecognized", { eventId: event.id, stripeAccountId });
     return new NextResponse(null, { status: 500 });
   }
 
@@ -191,7 +247,10 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
   const refundAttemptId = refund.metadata?.court_time_refund_attempt_id ?? null;
 
   const privileged = createPrivilegedClient();
-  if (!privileged) return new NextResponse(null, { status: 500 });
+  if (!privileged) {
+    logWebhookFailure("missing_privileged_client", { eventId: event.id, stripeAccountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   const { error } = await privileged.rpc("process_stripe_refund_webhook_event", {
     p_stripe_event_id: event.id,
@@ -206,7 +265,10 @@ async function handleRefundEvent(event: Stripe.Event): Promise<NextResponse> {
     p_currency: refund.currency,
     p_failure_reason: refund.failure_reason ?? null,
   });
-  if (error) return new NextResponse(null, { status: 500 });
+  if (error) {
+    logWebhookFailure("process_stripe_refund_webhook_event", { eventId: event.id, stripeAccountId, err: error });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Either reconciled (a genuine Court Time charge, whether Court-Time-
   // or Dashboard-initiated) or genuinely foreign (matched: false, no
@@ -241,7 +303,10 @@ async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
   }
 
   const context = getStripeContext();
-  if (!context) return new NextResponse(null, { status: 500 });
+  if (!context) {
+    logWebhookFailure("missing_stripe_context", { eventId: event.id, stripeAccountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Current-state retrieve (mirrors handleRefundEvent) — in the event's
   // own verified connected-account context, never a caller-derived one.
@@ -252,9 +317,10 @@ async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
       {},
       { stripeAccount: stripeAccountId },
     );
-  } catch {
+  } catch (err) {
     // Cannot safely confirm the current state — retryable, not a
     // legitimate skip.
+    logWebhookFailure("dispute_retrieve_failed", { eventId: event.id, stripeAccountId, err });
     return new NextResponse(null, { status: 500 });
   }
 
@@ -272,9 +338,10 @@ async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
       const charge = await context.client.charges.retrieve(chargeId, {}, { stripeAccount: stripeAccountId });
       paymentIntentId =
         typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id ?? null;
-    } catch {
+    } catch (err) {
       // Cannot safely confirm the current state — retryable, not a
       // legitimate skip.
+      logWebhookFailure("dispute_charge_retrieve_failed", { eventId: event.id, stripeAccountId, err });
       return new NextResponse(null, { status: 500 });
     }
   }
@@ -286,7 +353,10 @@ async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
   const evidenceDueBy = dueBy ? new Date(dueBy * 1000).toISOString() : null;
 
   const privileged = createPrivilegedClient();
-  if (!privileged) return new NextResponse(null, { status: 500 });
+  if (!privileged) {
+    logWebhookFailure("missing_privileged_client", { eventId: event.id, stripeAccountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   const { error } = await privileged.rpc("process_stripe_dispute_webhook_event", {
     p_stripe_event_id: event.id,
@@ -307,7 +377,10 @@ async function handleDisputeEvent(event: Stripe.Event): Promise<NextResponse> {
     p_is_charge_refundable: dispute.is_charge_refundable,
     p_stripe_created_at: new Date(dispute.created * 1000).toISOString(),
   });
-  if (error) return new NextResponse(null, { status: 500 });
+  if (error) {
+    logWebhookFailure("process_stripe_dispute_webhook_event", { eventId: event.id, stripeAccountId, err: error });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Either reconciled (a genuine Court Time charge) or genuinely foreign
   // (matched: false, no PaymentIntent/account/livemode match) — both are

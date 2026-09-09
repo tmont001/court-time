@@ -150,7 +150,10 @@ describe("a genuinely foreign/unmatched dispute is safely ignored, never raised 
     const fnBody = src.slice(fnStart);
     const rpcCallIdx = fnBody.indexOf('privileged.rpc("process_stripe_dispute_webhook_event"');
     const afterRpc = fnBody.slice(rpcCallIdx);
-    expect(afterRpc).toContain("if (error) return new NextResponse(null, { status: 500 });");
+    // Phase 34G-D1 — widened from a single-line `if (error) return ...;`
+    // to a multi-line form with sanitized diagnostic logging added; the
+    // HTTP status behavior itself (500 on error) is unchanged.
+    expect(afterRpc).toMatch(/if \(error\) \{[\s\S]*?status: 500[\s\S]*?\}/);
     expect(afterRpc).toContain("return new NextResponse(null, { status: 200 });");
   });
 });
@@ -540,9 +543,9 @@ describe("known dispute states render with the locked hierarchy; unknown states 
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Refund action: unchanged for non-disputed payments, hidden only when Stripe reports the charge is not refundable", () => {
-  it("the Refund button condition is isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund — additive, not a replacement of the 34E-B gate", () => {
+  it("the Refund button condition is isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund — additive, not a replacement of the 34E-B gate (G-D1 additionally prepends a UI-only isAdmin visibility gate, never the authorization boundary)", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
-    expect(src).toContain("{isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    expect(src).toContain("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
   });
 
   it("disputeBlocksRefund is computed from is_charge_refundable = false on ANY dispute for the payment — Stripe's own live signal, never re-derived locally", () => {

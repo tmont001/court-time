@@ -67,9 +67,13 @@ describe("domain lifecycle and payment status render as two SEPARATE, independen
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Refund action is gated ONLY by real Stripe-refundable provenance, never by booking lifecycle", () => {
-  it("requirement 5: the Refund button's render condition never references lifecycleLabel — a cancelled+Paid booking with real refundable money still shows Refund", () => {
+  it("requirement 5: the Refund button's render condition never references lifecycleLabel — a cancelled+Paid booking with real refundable money still shows Refund (to an Admin)", () => {
     const src = readSource(CLIENT_PATH);
-    const idx = src.indexOf("{isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // G-D1 QA correction — isAdmin is a UI-only render gate (never the
+    // authorization boundary), prepended ahead of the pre-existing
+    // eligibility condition — see productionHardening.regression.test.ts
+    // for the dedicated Admin-visible/Staff-hidden coverage of that gate.
+    const idx = src.indexOf("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(idx).toBeGreaterThan(0);
     const block = src.slice(idx, src.indexOf("Refund\n", idx));
     expect(block).not.toMatch(/lifecycleLabel/);
@@ -195,7 +199,12 @@ describe("tenant/role scoping remains intact for the new history read path", () 
     const fnEnd = src.indexOf("export async function updateClubPaymentModeAction(", fnStart);
     const fnBody = src.slice(fnStart, fnEnd);
     expect(fnBody).toContain('.eq("payment_id", paymentId)');
-    expect(fnBody).toContain('.eq("club_id", expectedClubId)');
+    // Phase 34G-D1 correction — club_id now comes from the server-derived
+    // `clubId` (profile.club_id), never the client-supplied expectedClubId
+    // — see productionHardening.regression.test.ts's own dedicated D/E/F
+    // coverage of this exact correction.
+    expect(fnBody).toContain('.eq("club_id", clubId)');
+    expect(fnBody).not.toMatch(/\.eq\("club_id",\s*expectedClubId\)/);
   });
 
   it("/admin/payments remains gated by the SAME isOperator(profile.role) check — Member/Pro still redirected, unchanged by this feature", () => {

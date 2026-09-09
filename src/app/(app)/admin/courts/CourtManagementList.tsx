@@ -9,7 +9,7 @@ import {
   ACTION_BUTTON_POSITIVE_COMPACT,
   ACTION_BUTTON_WARNING_COMPACT,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
-} from "@/lib/actionButtonStyles";
+} from "@/components/styles/actionButtonStyles";
 
 type Court = {
   id: string;

@@ -36,6 +36,9 @@
 import "server-only";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { getStripeContext } from "@/lib/stripe/server";
+import { getAuthProfile } from "@/lib/supabase/user";
+import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
 export const CHECKOUT_STILL_PROCESSING_MESSAGE =
   "An online payment is already processing or completed. Refresh the payment before making another change.";
@@ -62,10 +65,39 @@ export type ResolveBlockingCheckoutResult =
   | { ok: true }
   | { ok: false; code: string; error: string };
 
+// G-D1 correction — made STRUCTURALLY safe rather than trusting every
+// caller's own convention. `expectedClubId` is used ONLY for the
+// stale-context preflight (assertActiveClub) below; the authoritative
+// club identity threaded into both privileged RPC calls
+// (get_blocking_checkout_attempt_for_payment/expire_blocking_checkout_
+// attempt) is always the server-derived profile.club_id, resolved fresh
+// inside this function. This means every one of this helper's ~10 call
+// sites across the app is now protected regardless of whether it happens
+// to pass expectedClubId (client-supplied) or a server-derived value —
+// closing the systematic pattern-deviation the audit flagged, without a
+// 10+ call-site rewrite. No circular dependency: @/lib/supabase/user has
+// no Stripe imports, and this module is never imported by it.
+//
+// getAuthProfile() is React.cache()-memoized per request, so calling it
+// here — after the caller's own, now-redundant assertActiveClub check —
+// is not a new network round trip and introduces no N+1/auth-loop
+// regression; every existing call site already resolves the identical
+// profile earlier in the same request.
 export async function resolveBlockingCheckoutBeforeMutation(
   paymentId: string,
-  clubId: string,
+  expectedClubId: string,
 ): Promise<ResolveBlockingCheckoutResult> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) {
+    return { ok: false, code: STALE_CLUB_CONTEXT_ERROR, error: STALE_CLUB_MESSAGE };
+  }
+
+  const profile = await getAuthProfile();
+  const clubId = profile?.club_id;
+  if (!clubId) {
+    return { ok: false, code: RESOLUTION_FAILED_CODE, error: RESOLUTION_FAILED_MESSAGE };
+  }
+
   const context = getStripeContext();
   if (!context) return { ok: false, code: RESOLUTION_FAILED_CODE, error: RESOLUTION_FAILED_MESSAGE };
 

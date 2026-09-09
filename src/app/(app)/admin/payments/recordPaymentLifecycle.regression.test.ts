@@ -80,16 +80,19 @@ describe("recordPaymentBlocked — computed server-side, true for a cancelled pa
     expect(detailSrc).toContain("const canRecordPayment = isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked;");
   });
 
-  it("does not gate Refund at all — canRefund is computed independently, from isOnlineRefundEligible/disputeBlocksRefund only, never referencing recordPaymentBlocked. A Paid, cancelled Event keeps its Refund action.", () => {
+  it("does not gate Refund at all — canRefund is computed independently, from isOnlineRefundEligible/disputeBlocksRefund (plus the G-D1 isAdmin UI-visibility gate) only, never referencing recordPaymentBlocked. A Paid, cancelled Event keeps its Refund action (for an Admin).", () => {
     const detailSrc = readSource(DETAIL_SHEET_PATH);
-    const canRefundIdx = detailSrc.indexOf("const canRefund =");
+    // G-D1 QA correction — the pure eligibility fact now lives in
+    // isRefundEligible (canRefund additionally gates on isAdmin, a
+    // UI-only render decision — never the authorization boundary).
+    const eligibleIdx = detailSrc.indexOf("const isRefundEligible =");
     const canRecordIdx = detailSrc.indexOf("const canRecordPayment =");
-    const canRefundLine = detailSrc.slice(canRefundIdx, canRecordIdx);
-    expect(canRefundLine).not.toMatch(/recordPaymentBlocked/);
-    expect(canRefundLine).toContain("isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund");
+    const canRefundBlock = detailSrc.slice(eligibleIdx, canRecordIdx);
+    expect(canRefundBlock).not.toMatch(/recordPaymentBlocked/);
+    expect(canRefundBlock).toContain("isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund");
 
     const clientSrc = readSource(CLIENT_PATH);
-    const refundButtonIdx = clientSrc.indexOf("isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    const refundButtonIdx = clientSrc.indexOf("isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(refundButtonIdx).toBeGreaterThan(-1);
     // The Refund button's own render condition never mentions recordPaymentBlocked.
     const refundBlock = clientSrc.slice(refundButtonIdx, refundButtonIdx + 300);

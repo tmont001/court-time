@@ -70,6 +70,27 @@ const ERROR_MESSAGES: Record<string, string> = {
   payment_processing: "Your payment is already being processed. Please check back in a moment.",
 };
 
+// G-D1 — this was the one Member checkout flow that never received the
+// sanitized unexpected-error logging eventCheckoutActions.ts/
+// lessonCheckoutActions.ts/programCheckoutActions.ts all already carry
+// (mirrors logUnexpectedEventCheckoutError exactly). Server-side
+// observability only, never user-facing. Logs only a reservation id, the
+// failing stage, and a sanitized error code/message — never Stripe
+// objects, auth information, metadata blobs, or secrets. The
+// Member-facing message returned alongside this call is unchanged — this
+// is additive logging only, never a UX change.
+function logUnexpectedReservationCheckoutError(
+  stage: string,
+  reservationId: string,
+  err: { message?: string; code?: string } | null,
+) {
+  console.error(`[reservation-checkout] ${stage}`, {
+    reservation_id: reservationId,
+    code: err?.code ?? null,
+    message: err?.message ?? null,
+  });
+}
+
 // Cheap, read-only — used only to decide whether the Pay Now button
 // renders at all. Never consulted by createReservationCheckoutAction as
 // authority for the actual money-relevant step, which always re-derives
@@ -167,7 +188,8 @@ export async function createReservationCheckoutAction(
   let account;
   try {
     account = await context.client.v2.core.accounts.retrieve(stripeAccountId, CONNECT_ACCOUNT_RETRIEVE_PARAMS);
-  } catch {
+  } catch (err) {
+    logUnexpectedReservationCheckoutError("connected_account_retrieve", reservationId, err as { message?: string; code?: string });
     return { error: ERROR_MESSAGES.stripe_error };
   }
 
@@ -198,6 +220,9 @@ export async function createReservationCheckoutAction(
       resolveError?.message.match(
         /capability_not_available|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|stale_attempt_environment_mismatch|invalid_arguments/,
       )?.[0] ?? "";
+    if (!ERROR_MESSAGES[key]) {
+      logUnexpectedReservationCheckoutError("open_payment_checkout_attempt", reservationId, resolveError);
+    }
     return { error: ERROR_MESSAGES[key] ?? "Something went wrong. Please try again." };
   }
   // Loosely typed (action: string) since this local is reassigned below
@@ -229,9 +254,10 @@ export async function createReservationCheckoutAction(
         {},
         { stripeAccount: attempt.stripe_account_id },
       );
-    } catch {
+    } catch (err) {
       // Cannot safely query the old Session — do not create a
       // replacement.
+      logUnexpectedReservationCheckoutError("stale_session_retrieve", reservationId, err as { message?: string; code?: string });
       return { error: ERROR_MESSAGES.stripe_error };
     }
 
@@ -250,9 +276,10 @@ export async function createReservationCheckoutAction(
           {},
           { stripeAccount: attempt.stripe_account_id },
         );
-      } catch {
+      } catch (err) {
         // Cannot safely expire the old Session — do not create a
         // replacement.
+        logUnexpectedReservationCheckoutError("stale_session_expire", reservationId, err as { message?: string; code?: string });
         return { error: ERROR_MESSAGES.stripe_error };
       }
     }
@@ -275,6 +302,9 @@ export async function createReservationCheckoutAction(
         supersedeError?.message.match(
           /capability_not_available|not_online_payable|payment_not_open_for_checkout|no_balance_due|payment_not_found|checkout_attempt_not_found|invalid_arguments/,
         )?.[0] ?? "";
+      if (!ERROR_MESSAGES[key]) {
+        logUnexpectedReservationCheckoutError("supersede_checkout_attempt_and_open_fresh", reservationId, supersedeError);
+      }
       return { error: ERROR_MESSAGES[key] ?? "Something went wrong. Please try again." };
     }
     const superseded = supersededRows[0];
@@ -319,7 +349,8 @@ export async function createReservationCheckoutAction(
         {},
         { stripeAccount: stripeAccountId },
       );
-    } catch {
+    } catch (err) {
+      logUnexpectedReservationCheckoutError("checkout_session_reuse_retrieve", reservationId, err as { message?: string; code?: string });
       return { error: ERROR_MESSAGES.stripe_error };
     }
     if (session.status !== "open") {
@@ -348,11 +379,17 @@ export async function createReservationCheckoutAction(
           idempotencyKey: buildReservationCheckoutIdempotencyKey(attempt.id),
         },
       );
-    } catch {
+    } catch (err) {
+      logUnexpectedReservationCheckoutError("checkout_session_create", reservationId, err as { message?: string; code?: string });
       return { error: ERROR_MESSAGES.stripe_error };
     }
 
-    if (!session.url || session.expires_at == null) return { error: ERROR_MESSAGES.stripe_error };
+    if (!session.url || session.expires_at == null) {
+      logUnexpectedReservationCheckoutError("checkout_session_create", reservationId, {
+        message: `session missing url/expires_at (url=${!!session.url}, expires_at=${session.expires_at})`,
+      });
+      return { error: ERROR_MESSAGES.stripe_error };
+    }
 
     // REQUIRED, not best-effort: process_stripe_payment_event (0150) finds
     // an attempt SOLELY by stripe_checkout_session_id — a Member must
@@ -375,11 +412,17 @@ export async function createReservationCheckoutAction(
         bindError.message.match(
           /checkout_attempt_not_found|checkout_attempt_not_open|checkout_session_mismatch|invalid_arguments/,
         )?.[0] ?? "";
+      if (!ERROR_MESSAGES[key]) {
+        logUnexpectedReservationCheckoutError("record_checkout_session_created", reservationId, bindError);
+      }
       return { error: ERROR_MESSAGES[key] ?? "Something went wrong. Please try again." };
     }
   }
 
-  if (!session.url) return { error: ERROR_MESSAGES.stripe_error };
+  if (!session.url) {
+    logUnexpectedReservationCheckoutError("final_session_url_check", reservationId, null);
+    return { error: ERROR_MESSAGES.stripe_error };
+  }
 
   return { url: session.url };
 }

@@ -949,12 +949,15 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
     expect(isOutstanding({ openForRecording: true })).toBe(true);
   });
 
-  it("a paid, refund-eligible row still renders Refund on the \"All\" tab — the button's own condition is independent of the tab filter", () => {
+  it("a paid, refund-eligible row still renders Refund on the \"All\" tab (for an Admin) — the button's own condition is independent of the tab filter", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
     // Phase 34E-C added !row.disputeBlocksRefund alongside the original
     // 34E-B condition — still never isPaymentOpenForRecording, and still
-    // independent of the Outstanding/All tab filter.
-    const btnIdx = src.indexOf("{isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // independent of the Outstanding/All tab filter. G-D1 QA correction
+    // prepended isAdmin as a UI-only render gate (never the authorization
+    // boundary) — see productionHardening.regression.test.ts for that
+    // gate's own dedicated coverage.
+    const btnIdx = src.indexOf("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(btnIdx).toBeGreaterThan(0);
     const btnBlock = src.slice(btnIdx, src.indexOf("Refund\n", btnIdx));
     expect(btnBlock).not.toMatch(/isPaymentOpenForRecording/);

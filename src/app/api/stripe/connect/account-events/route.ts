@@ -37,17 +37,55 @@ import {
   SUPPORTED_ACCOUNT_LIFECYCLE_EVENT_TYPES,
 } from "@/lib/stripe/connectConfig";
 
+// G-D1 — sanitized server-side diagnostic logging for FAILURE paths only
+// (this route previously had none at all), mirroring payments/events/
+// route.ts's own logWebhookFailure. Logs only {stage, event_id,
+// stripe_account_id, code, message} — NEVER the raw request body, the
+// Stripe-Signature header, the webhook signing secret, the API secret, or
+// a full Stripe Event/Account object. A signature-verification failure
+// has no trustworthy event_id yet — stage plus a sanitized error only.
+// Purely additive: return values/HTTP status codes are unchanged.
+function logWebhookFailure(
+  stage: string,
+  details: { eventId?: string | null; stripeAccountId?: string | null; err?: unknown } = {},
+) {
+  const err = details.err;
+  const code =
+    err && typeof err === "object" && "code" in err ? ((err as { code?: unknown }).code ?? null) : null;
+  const message =
+    err instanceof Error
+      ? err.message
+      : err && typeof err === "object" && "message" in err
+        ? ((err as { message?: unknown }).message ?? null)
+        : null;
+  console.error(`[webhook:connect-account-events] ${stage}`, {
+    event_id: details.eventId ?? null,
+    stripe_account_id: details.stripeAccountId ?? null,
+    code,
+    message,
+  });
+}
+
 export async function POST(request: Request) {
   // Our own configuration, not the caller's fault if missing — Stripe
   // should retry once it's fixed, so 500 rather than 4xx.
   const webhookSecret = process.env.STRIPE_CONNECT_ACCOUNT_WEBHOOK_SECRET;
-  if (!webhookSecret) return new NextResponse(null, { status: 500 });
+  if (!webhookSecret) {
+    logWebhookFailure("missing_webhook_secret");
+    return new NextResponse(null, { status: 500 });
+  }
 
   const context = getStripeContext();
-  if (!context) return new NextResponse(null, { status: 500 });
+  if (!context) {
+    logWebhookFailure("missing_stripe_context");
+    return new NextResponse(null, { status: 500 });
+  }
 
   const signature = request.headers.get("stripe-signature");
-  if (!signature) return new NextResponse(null, { status: 400 });
+  if (!signature) {
+    logWebhookFailure("missing_signature_header");
+    return new NextResponse(null, { status: 400 });
+  }
 
   // Raw body, never request.json() first — re-serializing JSON can change
   // the exact bytes Stripe signed, breaking verification.
@@ -56,9 +94,10 @@ export async function POST(request: Request) {
   let notification;
   try {
     notification = context.client.parseEventNotification(rawBody, signature, webhookSecret);
-  } catch {
+  } catch (err) {
     // Invalid signature or malformed payload — never trust anything
-    // inside it.
+    // inside it. No trustworthy event_id exists at this point.
+    logWebhookFailure("signature_verification_failed", { err });
     return new NextResponse(null, { status: 400 });
   }
 
@@ -81,7 +120,8 @@ export async function POST(request: Request) {
   let event;
   try {
     event = await notification.fetchEvent();
-  } catch {
+  } catch (err) {
+    logWebhookFailure("fetch_event_failed", { eventId: notification.id ?? null, err });
     return new NextResponse(null, { status: 500 });
   }
 
@@ -95,12 +135,16 @@ export async function POST(request: Request) {
   let account;
   try {
     account = await context.client.v2.core.accounts.retrieve(accountId, CONNECT_ACCOUNT_RETRIEVE_PARAMS);
-  } catch {
+  } catch (err) {
+    logWebhookFailure("account_retrieve_failed", { eventId: event.id, stripeAccountId: accountId, err });
     return new NextResponse(null, { status: 500 });
   }
 
   const privileged = createPrivilegedClient();
-  if (!privileged) return new NextResponse(null, { status: 500 });
+  if (!privileged) {
+    logWebhookFailure("missing_privileged_client", { eventId: event.id, stripeAccountId: accountId });
+    return new NextResponse(null, { status: 500 });
+  }
 
   const { error } = await privileged.rpc("process_stripe_connect_account_event", {
     p_stripe_event_id: event.id,
@@ -109,7 +153,10 @@ export async function POST(request: Request) {
     p_stripe_account_id: accountId,
     p_card_payments_status: extractCardPaymentsStatus(account),
   });
-  if (error) return new NextResponse(null, { status: 500 });
+  if (error) {
+    logWebhookFailure("process_stripe_connect_account_event", { eventId: event.id, stripeAccountId: accountId, err: error });
+    return new NextResponse(null, { status: 500 });
+  }
 
   // Handled (first delivery, applied) or safely no-op (duplicate delivery,
   // or a verified event for an account Court Time doesn't know about) —
