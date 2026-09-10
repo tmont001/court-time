@@ -205,7 +205,6 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
       .rpc("get_event_roster", { p_event_id: eventId })
       .then(({ data, error: rpcError }) => {
         if (rpcError) {
-          // eslint-disable-next-line no-console
           console.error("[EventRosterSheet] get_event_roster failed:", rpcError.message);
           setError("Unable to load roster. Please try again.");
         } else {
@@ -346,7 +345,6 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
 
     const { data, error } = await supabase.rpc("get_event_eligible_members", { p_event_id: eventId });
     if (error) {
-      // eslint-disable-next-line no-console
       console.error("[EventRosterSheet] get_event_eligible_members failed:", error.message);
     }
 

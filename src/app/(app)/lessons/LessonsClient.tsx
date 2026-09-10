@@ -147,7 +147,6 @@ export default function LessonsClient({
       if (!cancelled && data) setPaymentStates(new Map(data.map(p => [p.domain_id, p])));
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRequests]);
 
   // Strip ?request=1 from the URL after auto-opening so a browser refresh does

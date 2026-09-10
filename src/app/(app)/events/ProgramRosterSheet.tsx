@@ -203,7 +203,6 @@ export default function ProgramRosterSheet({ programId, programTitle, programSta
       .rpc("get_program_roster", { p_program_id: programId })
       .then(({ data, error: rpcError }) => {
         if (rpcError) {
-          // eslint-disable-next-line no-console
           console.error("[ProgramRosterSheet] get_program_roster failed:", rpcError.message);
           setError("Unable to load roster. Please try again.");
         } else {

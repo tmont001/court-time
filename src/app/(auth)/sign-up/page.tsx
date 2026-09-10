@@ -1,6 +1,14 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import SignUpForm from "./SignUpForm";
+
+// (auth)/layout.tsx already sets robots: noindex for this whole group —
+// title only, no description/OpenGraph needed for a page that's never
+// meant to appear in search results or link previews.
+export const metadata: Metadata = {
+  title: "Sign Up — Court Time",
+};
 
 // Only /join/<32-char-hex> is a permitted redirect destination.
 const SAFE_REDIRECT_RE = /^\/join\/[0-9a-f]{32}$/;
