@@ -16,6 +16,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_court_order: "Invalid court order. Please reload and try again.",
   // Phase 34B
   invalid_rate:         "Rate must be zero or a positive amount.",
+  // Admin UX Checkpoint 2A: moved from admin/settings/actions.ts along with
+  // BookingRulesForm/updateBookingRules — same update_club_settings RPC,
+  // same validation, same messages.
+  invalid_booking_window:      "Booking window must be between 1 and 365 days.",
+  invalid_cancellation_window: "Cancellation window must be between 0 and 168 hours.",
+  invalid_grace_period:        "Grace period must be between 0 and 60 minutes.",
+  invalid_offer_window:        "Waitlist offer window must be between 1 and 72 hours.",
 };
 
 function revalidateCourts() {
@@ -153,5 +160,38 @@ export async function deleteCourt(courtId: string, expectedClubId: string): Prom
   }
 
   revalidateCourts();
+  return {};
+}
+
+// Admin UX Checkpoint 2A: moved verbatim from admin/settings/actions.ts
+// along with BookingRulesForm — same update_club_settings RPC call, same
+// validation, same behavior. Unlike this file's other actions, it does not
+// call assertActiveClub — preserved exactly as it was, not changed to match
+// this file's sibling convention.
+export async function updateBookingRules(
+  formData: FormData
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const bookingDays      = Number(formData.get("booking_window_days"));
+  const cancelHours      = Number(formData.get("cancellation_window_hours"));
+  const graceMins        = Number(formData.get("cancellation_grace_minutes"));
+  const offerWindowHours = Number(formData.get("waitlist_offer_window_hours"));  // Phase 18C
+
+  const { error } = await supabase.rpc("update_club_settings", {
+    p_booking_window_days:         bookingDays,
+    p_cancellation_window_hours:   cancelHours,
+    p_cancellation_grace_minutes:  graceMins,
+    p_waitlist_offer_window_hours: offerWindowHours,  // Phase 18C
+  });
+
+  if (error) {
+    const key = error.message.match(/invalid_\w+|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save settings." };
+  }
+
+  revalidatePath("/", "layout");
   return {};
 }

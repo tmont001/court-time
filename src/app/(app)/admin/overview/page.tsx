@@ -448,7 +448,7 @@ export default async function AdminOverviewPage() {
                 <SetupRow label="Club name"           done={clubName.length > 0}        href="/admin/settings" />
                 <SetupRow label="Timezone"            done={!!club?.timezone}            href="/admin/settings" />
                 <SetupRow label="Active court"        done={activeCourtsCount > 0}      href="/admin/courts" />
-                <SetupRow label="Operating hours"     done={operatingHoursCount > 0}    href="/admin/settings" />
+                <SetupRow label="Operating hours"     done={operatingHoursCount > 0}    href="/admin/courts?tab=hours" />
                 <SetupRow label="Active event type"   done={activeTypesCount > 0}       href="/admin/settings" />
                 <SetupRow label="Additional admin or pro" done={additionalStaffCount > 0} href="/admin/members" />
                 <SetupRow

@@ -13,9 +13,6 @@ import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
 import LessonTypesSection from "./LessonTypesSection";
-import BookingRulesForm from "./BookingRulesForm";
-import OperatingHoursEditor from "./OperatingHoursEditor";
-import DateOverridesEditor from "./DateOverridesEditor";
 import DeliveryDiagnosticsSection from "./DeliveryDiagnosticsSection";
 import AnnouncementsSection from "./AnnouncementsSection";
 
@@ -36,7 +33,7 @@ export default async function AdminSettingsPage() {
   const [settingsResult, clubResult, eventTypesResult, lessonTypesResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select("booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours, currency, default_court_hourly_rate_cents, payment_mode")
+      .select("currency, default_court_hourly_rate_cents, payment_mode")
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -283,53 +280,6 @@ export default async function AdminSettingsPage() {
             Flat price per lesson type. Changing a price only affects lessons booked after the change.
           </p>
           <LessonTypesSection currency={currency} initialTypes={lessonTypes} />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Booking Rules ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Booking Rules
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Changes take effect immediately for all members.
-          </p>
-          <BookingRulesForm
-            bookingWindowDays={settings?.booking_window_days ?? 14}
-            cancellationWindowHours={settings?.cancellation_window_hours ?? 24}
-            cancellationGraceMinutes={settings?.cancellation_grace_minutes ?? 5}
-            waitlistOfferWindowHours={settings?.waitlist_offer_window_hours ?? 2}
-          />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Operating Hours ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Operating Hours
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Changes take effect immediately for new bookings. Existing reservations are not affected.
-          </p>
-          <OperatingHoursEditor clubId={clubId} />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Special Closures ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Special Closures
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Override hours for a specific date. Existing reservations are not cancelled or modified.
-          </p>
-          <DateOverridesEditor
-            clubId={clubId}
-            clubTimezone={club?.timezone ?? "America/New_York"}
-          />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />

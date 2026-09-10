@@ -91,9 +91,6 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
       "── Event Types ──",
       "── Pricing ──",
       "── Lesson Types ──",
-      "── Booking Rules ──",
-      "── Operating Hours ──",
-      "── Special Closures ──",
       "── Member Announcements ──",
     ];
     let lastIdx = -1;
@@ -102,6 +99,19 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
       expect(idx, `${marker} missing`).toBeGreaterThan(lastIdx);
       lastIdx = idx;
     }
+  });
+
+  // Admin UX Checkpoint 2A: Booking Rules, Operating Hours, and Special
+  // Closures moved to /admin/courts (Hours & Closures / Booking Rules
+  // tabs) — this page no longer renders any of the three.
+  it("Booking Rules, Operating Hours, and Special Closures no longer appear on /admin/settings — relocated to /admin/courts", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/── Booking Rules ──/);
+    expect(s).not.toMatch(/── Operating Hours ──/);
+    expect(s).not.toMatch(/── Special Closures ──/);
+    expect(s).not.toContain("BookingRulesForm");
+    expect(s).not.toContain("OperatingHoursEditor");
+    expect(s).not.toContain("DateOverridesEditor");
   });
 });
 
