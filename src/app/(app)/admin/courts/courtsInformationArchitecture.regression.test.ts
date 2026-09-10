@@ -147,26 +147,16 @@ describe("6. /admin/settings no longer renders those three sections", () => {
     expect(s).not.toContain("waitlist_offer_window_hours");
   });
 
-  it("no other Settings section (Pricing, Branding, Timezone, Payments, Operating Model) was touched or reordered by the Courts move", () => {
-    // Event Types, Lesson Types, Member Announcements, and Delivery
-    // Diagnostics are deliberately excluded from this list — later,
-    // separate Admin UX checkpoints (Events + Lessons IA; Communications)
-    // relocated all four out of Settings entirely; those checkpoints' own
-    // tests (settingsInformationArchitecture.regression.test.ts,
-    // communicationsInformationArchitecture.regression.test.ts) cover that
-    // fact. This test's own concern is narrower: nothing the COURTS move
-    // touched was affected.
-    const s = readSource(SETTINGS_PAGE_PATH);
-    for (const marker of [
-      "── Operating Model",
-      "── Payments ──",
-      "── Club Branding ──",
-      "── Club Timezone ──",
-      "── Pricing ──",
-    ]) {
-      expect(s, `${marker} missing — an unrelated section was affected`).toContain(marker);
-    }
-  });
+  // A marker-existence check for the other Settings sections (Pricing,
+  // Branding, Timezone, Payments, Operating Model) previously lived here,
+  // asserting the Courts move alone didn't touch/reorder them. Removed:
+  // a later, legitimate checkpoint (Admin IA Checkpoint 5, Final Club
+  // Settings Regroup) intentionally restructured those sections into three
+  // visual groups with different heading markup — this test's own narrow
+  // concern (nothing the COURTS move touched) can no longer be
+  // distinguished from that later, correct change using string markers.
+  // See settingsInformationArchitecture.regression.test.ts for the current,
+  // authoritative structure of /admin/settings.
 });
 
 describe("7. existing Court management actions/RPCs are unchanged", () => {

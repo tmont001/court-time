@@ -34,48 +34,148 @@ const PAYMENT_TRACKING_SECTION_PATH = "src/app/(app)/admin/settings/PaymentTrack
 const STRIPE_CONNECT_SECTION_PATH = "src/app/(app)/admin/settings/StripeConnectSection.tsx";
 const COURT_TIME_PAYMENTS_SECTION_PATH = "src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx";
 const ANNOUNCEMENTS_SECTION_PATH = "src/app/(app)/admin/communications/AnnouncementsSection.tsx";
+const OVERVIEW_PAGE_PATH = "src/app/(app)/admin/overview/page.tsx";
+
+// Admin IA Checkpoint 5 — Final Club Settings Regroup. Every subsection
+// label below shares the exact same className string
+// ("text-xs font-semibold uppercase tracking-wider text-gray-500
+// dark:text-gray-400") at the exact same indentation — this helper locates
+// one unambiguously by requiring the label text to be the very next line
+// after that class string closes.
+function subsectionMarker(label: string): string {
+  return `text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">\n              ${label}\n            </p>`;
+}
+
+const GROUP_CLUB_PROFILE = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Club Profile</h2>';
+const GROUP_PRICING_PAYMENTS = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Pricing & Payments</h2>';
+const GROUP_PLAN_ACCESS = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Plan & Access</h2>';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1-3 — ONE top-level Payments section; Payment Tracking before Online
-//        Payments; Online Payments groups Stripe Account before Court
-//        Time Payments
+// 1-11 — the final three-group Club Settings IA (Admin IA Checkpoint 5)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("1-3. /admin/settings has ONE top-level Payments section, with Payment Tracking before an Online Payments group that orders Stripe Account before Court Time Payments", () => {
-  it("exactly one top-level '── Payments ──' section marker exists — no separate top-level Payment Tracking / Stripe Account / Court Time Payments sections remain", () => {
+describe("1. /admin/settings remains Admin-only", () => {
+  it("the page gate is unchanged: unauthenticated -> /sign-in, non-admin -> /calendar", () => {
     const s = readSource(PAGE_PATH);
-    const paymentsMarkers = s.match(/── Payments ──/g) ?? [];
-    expect(paymentsMarkers.length).toBe(1);
-    expect(s).not.toMatch(/── Payment Tracking ──/);
-    expect(s).not.toMatch(/── Stripe Account ──/);
-    expect(s).not.toMatch(/── Court Time Payments ──/);
+    expect(s).toContain('if (!user) redirect("/sign-in");');
+    expect(s).toContain('if (profile?.role !== "admin") redirect("/calendar");');
+  });
+});
+
+describe("2. page title is 'Club Settings'", () => {
+  it("Header screenTitle reads 'Club Settings', not bare 'Settings'", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).toContain('<Header screenTitle="Club Settings" />');
+  });
+});
+
+describe("17-19. existing Settings actions/RPC behavior is unchanged; no migration; no payment-domain mutation", () => {
+  it("17. actions.ts still exports the same six functions, calling the same RPCs with the same argument shapes", () => {
+    const s = readSource("src/app/(app)/admin/settings/actions.ts");
+    expect(s).toContain('supabase.rpc("update_club_timezone", { p_timezone: timezone });');
+    expect(s).toContain('supabase.rpc("update_club_name", { p_name: clubName });');
+    expect(s).toContain("supabase.rpc(\"update_club_pricing\", {");
+    expect(s).toContain('supabase.rpc("update_club_theme", { p_theme_key: themeKey });');
+    expect(s).toContain('.from("club-logos")');
   });
 
-  it("Operating Model precedes Payments, which precedes Club Branding (the first of the unchanged remaining sections)", () => {
-    const s = readSource(PAGE_PATH);
-    const operatingModelIdx = s.indexOf("── Operating Model");
-    const paymentsIdx = s.indexOf("── Payments ──");
-    const clubBrandingIdx = s.indexOf("── Club Branding ──");
-    expect(operatingModelIdx).toBeGreaterThan(-1);
-    expect(paymentsIdx).toBeGreaterThan(operatingModelIdx);
-    expect(clubBrandingIdx).toBeGreaterThan(paymentsIdx);
+  it("18. no new RPC surface was introduced — actions.ts calls exactly the four pre-existing RPCs, nothing added (indirect, non-migration-ceiling evidence this checkpoint is presentation/IA-only)", () => {
+    // Deliberately not a "highest migration === N" check — see this file's
+    // own header comment on why that pattern is invalid across checkpoints.
+    const s = readSource("src/app/(app)/admin/settings/actions.ts");
+    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(4);
   });
 
-  it("within the Payments section, PaymentTrackingSection is rendered before the 'Online Payments' subheading, which precedes StripeConnectSection, which precedes CourtTimePaymentsSection", () => {
+  it("19. no payment-domain mutation was introduced — page.tsx itself performs no .rpc( or mutation, only reads plus prop-passing to unchanged child components", () => {
     const s = readSource(PAGE_PATH);
-    const paymentsIdx = s.indexOf("── Payments ──");
-    const nextSectionIdx = s.indexOf("── Club Branding ──");
-    const paymentsBlock = s.slice(paymentsIdx, nextSectionIdx);
+    expect(s).not.toMatch(/\.rpc\(/);
+    expect(s).not.toMatch(/\.update\(|\.insert\(|\.delete\(/);
+  });
+});
 
-    const trackingIdx = paymentsBlock.indexOf("<PaymentTrackingSection");
-    // Search for the actual "Online Payments" HEADING starting from
-    // trackingIdx — the section's own explanatory JSX comment (above the
-    // <section> itself) also mentions "Online Payments" in prose, which
-    // would otherwise be found first and falsely appear to precede
-    // PaymentTrackingSection.
-    const onlinePaymentsHeadingIdx = paymentsBlock.indexOf("Online Payments", trackingIdx);
-    const stripeIdx = paymentsBlock.indexOf("<StripeConnectSection");
-    const courtTimeIdx = paymentsBlock.indexOf("<CourtTimePaymentsSection");
+describe("3-4. exactly three top-level visual groups exist, in the locked order: Club Profile, Pricing & Payments, Plan & Access", () => {
+  it("all three group headings exist exactly once each", () => {
+    const s = readSource(PAGE_PATH);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
+    expect(s).toContain(GROUP_CLUB_PROFILE);
+    expect(s).toContain(GROUP_PRICING_PAYMENTS);
+    expect(s).toContain(GROUP_PLAN_ACCESS);
+  });
+
+  it("group order is Club Profile, then Pricing & Payments, then Plan & Access", () => {
+    const s = readSource(PAGE_PATH);
+    const clubProfileIdx = s.indexOf(GROUP_CLUB_PROFILE);
+    const pricingPaymentsIdx = s.indexOf(GROUP_PRICING_PAYMENTS);
+    const planAccessIdx = s.indexOf(GROUP_PLAN_ACCESS);
+    expect(clubProfileIdx).toBeGreaterThan(-1);
+    expect(pricingPaymentsIdx).toBeGreaterThan(clubProfileIdx);
+    expect(planAccessIdx).toBeGreaterThan(pricingPaymentsIdx);
+  });
+
+  it("no tabs, accordions (<details>), or subroutes were introduced — one flat page", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/searchParams/);
+    expect(s).not.toMatch(/<details/);
+    expect(s).not.toMatch(/\?tab=/);
+  });
+});
+
+describe("5-6. Branding and Timezone are under Club Profile", () => {
+  it("Branding and Timezone subsection labels both appear between the Club Profile heading and the Pricing & Payments heading", () => {
+    const s = readSource(PAGE_PATH);
+    const groupStart = s.indexOf(GROUP_CLUB_PROFILE);
+    const groupEnd = s.indexOf(GROUP_PRICING_PAYMENTS);
+    const group = s.slice(groupStart, groupEnd);
+    expect(group).toContain(subsectionMarker("Branding"));
+    expect(group).toContain(subsectionMarker("Timezone"));
+    expect(group).toContain("<ClubBrandingSection");
+    expect(group).toContain("<ClubTimezoneSection");
+  });
+
+  it("Branding precedes Timezone within Club Profile", () => {
+    const s = readSource(PAGE_PATH);
+    const brandingIdx = s.indexOf(subsectionMarker("Branding"));
+    const timezoneIdx = s.indexOf(subsectionMarker("Timezone"));
+    expect(brandingIdx).toBeGreaterThan(-1);
+    expect(timezoneIdx).toBeGreaterThan(brandingIdx);
+  });
+});
+
+describe("7-10. Pricing, Payment Tracking, Stripe Account, and Court Time Payments are all under Pricing & Payments", () => {
+  function pricingPaymentsGroup(): string {
+    const s = readSource(PAGE_PATH);
+    const groupStart = s.indexOf(GROUP_PRICING_PAYMENTS);
+    const groupEnd = s.indexOf(GROUP_PLAN_ACCESS);
+    return s.slice(groupStart, groupEnd);
+  }
+
+  it("the Pricing subsection (PricingSettingsForm) is inside the Pricing & Payments group", () => {
+    const group = pricingPaymentsGroup();
+    expect(group).toContain(subsectionMarker("Pricing"));
+    expect(group).toContain("<PricingSettingsForm");
+  });
+
+  it("the Payments subsection (Payment Tracking, Stripe Account, Court Time Payments) is inside the Pricing & Payments group, with Pricing preceding it", () => {
+    const group = pricingPaymentsGroup();
+    expect(group).toContain(subsectionMarker("Payments"));
+    expect(group).toContain("<PaymentTrackingSection");
+    expect(group).toContain("<StripeConnectSection");
+    expect(group).toContain("<CourtTimePaymentsSection");
+
+    const pricingLabelIdx = group.indexOf(subsectionMarker("Pricing"));
+    const paymentsLabelIdx = group.indexOf(subsectionMarker("Payments"));
+    expect(paymentsLabelIdx).toBeGreaterThan(pricingLabelIdx);
+  });
+
+  it("within Payments, Payment Tracking precedes the Online Payments subgroup, which orders Stripe Account before Court Time Payments (unchanged internal ordering)", () => {
+    const group = pricingPaymentsGroup();
+    const trackingIdx = group.indexOf("<PaymentTrackingSection");
+    // The section's own explanatory JSX comment also mentions "Online
+    // Payments" in prose above the marker itself — search from trackingIdx
+    // onward so the actual heading, not the comment, is what's found.
+    const onlinePaymentsHeadingIdx = group.indexOf("Online Payments", trackingIdx);
+    const stripeIdx = group.indexOf("<StripeConnectSection");
+    const courtTimeIdx = group.indexOf("<CourtTimePaymentsSection");
 
     expect(trackingIdx).toBeGreaterThan(-1);
     expect(onlinePaymentsHeadingIdx).toBeGreaterThan(trackingIdx);
@@ -83,25 +183,32 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
     expect(courtTimeIdx).toBeGreaterThan(stripeIdx);
   });
 
-  it("the remaining settings sections (Club Branding through Pricing) are unchanged in relative order and content, and are not relocated by this checkpoint", () => {
+  it("no separate top-level Pricing/Payment Tracking/Stripe Account/Court Time Payments group headings exist — each is a Pricing & Payments SUBSECTION, not its own group", () => {
     const s = readSource(PAGE_PATH);
-    const order = [
-      "── Club Branding ──",
-      "── Club Timezone ──",
-      "── Pricing ──",
-    ];
-    let lastIdx = -1;
-    for (const marker of order) {
-      const idx = s.indexOf(marker);
-      expect(idx, `${marker} missing`).toBeGreaterThan(lastIdx);
-      lastIdx = idx;
-    }
+    expect(s).not.toMatch(/<h2[^>]*>Pricing<\/h2>/);
+    expect(s).not.toMatch(/<h2[^>]*>Payments<\/h2>/);
+    expect(s).not.toMatch(/<h2[^>]*>Payment Tracking<\/h2>/);
+    expect(s).not.toMatch(/<h2[^>]*>Stripe Account<\/h2>/);
+    expect(s).not.toMatch(/<h2[^>]*>Court Time Payments<\/h2>/);
   });
+});
 
-  // Admin UX Checkpoint 2A: Booking Rules, Operating Hours, and Special
-  // Closures moved to /admin/courts (Hours & Closures / Booking Rules
-  // tabs) — this page no longer renders any of the three.
-  it("Booking Rules, Operating Hours, and Special Closures no longer appear on /admin/settings — relocated to /admin/courts", () => {
+describe("11. Operating Model is under Plan & Access", () => {
+  it("the Operating Model subsection label and its read-only card are inside the Plan & Access group, which is the last group on the page", () => {
+    const s = readSource(PAGE_PATH);
+    const groupStart = s.indexOf(GROUP_PLAN_ACCESS);
+    expect(groupStart).toBeGreaterThan(-1);
+    const group = s.slice(groupStart);
+    expect(group).toContain(subsectionMarker("Operating Model"));
+    expect(group).toContain("memberSelfService");
+    // Plan & Access is the final group — no fourth h2 heading follows it.
+    expect(group.indexOf(GROUP_CLUB_PROFILE)).toBe(-1);
+    expect(group.indexOf(GROUP_PRICING_PAYMENTS)).toBe(-1);
+  });
+});
+
+describe("12-16. Courts, Event Types, Lesson Types, Announcements, and Delivery Diagnostics are not reintroduced", () => {
+  it("Booking Rules, Operating Hours, and Special Closures (Courts) remain absent", () => {
     const s = readSource(PAGE_PATH);
     expect(s).not.toMatch(/── Booking Rules ──/);
     expect(s).not.toMatch(/── Operating Hours ──/);
@@ -111,15 +218,62 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
     expect(s).not.toContain("DateOverridesEditor");
   });
 
-  // Admin UX Checkpoint 3: Event Types moved to /events (Admin-only
-  // "Event Types" tab) and Lesson Types moved to /admin/lessons
-  // (Admin-only "Lesson Types" tab) — this page no longer renders either.
-  it("Event Types and Lesson Types no longer appear on /admin/settings — relocated to Events/Lessons", () => {
+  it("Event Types and Lesson Types remain absent", () => {
     const s = readSource(PAGE_PATH);
     expect(s).not.toMatch(/── Event Types ──/);
     expect(s).not.toMatch(/── Lesson Types ──/);
     expect(s).not.toContain("EventTypesSection");
     expect(s).not.toContain("LessonTypesSection");
+  });
+
+  it("Member Announcements and Delivery Diagnostics remain absent", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/── Member Announcements ──/);
+    expect(s).not.toMatch(/── Delivery diagnostics ──/i);
+    expect(s).not.toContain("AnnouncementsSection");
+    expect(s).not.toContain("DeliveryDiagnosticsSection");
+  });
+
+  it("exactly three group headings exist — no fourth/fifth group for any relocated domain re-emerged", () => {
+    const s = readSource(PAGE_PATH);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
+  });
+});
+
+describe("stale-link cleanup: Overview's Email/SMS delivery setup rows point at Communications Diagnostics, not Settings", () => {
+  it("the Email delivery and SMS delivery setup-checklist rows link to /admin/communications?tab=diagnostics — that data no longer lives on /admin/settings", () => {
+    const s = readSource(OVERVIEW_PAGE_PATH);
+    expect(s).toContain('<SetupRow label="Email delivery"      done={emailConfigured}            href="/admin/communications?tab=diagnostics" optional />');
+    expect(s).toContain('<SetupRow label="SMS delivery"        done={smsConfigured}              href="/admin/communications?tab=diagnostics" optional />');
+  });
+
+  it("the Overview quick-links row now reads 'Club Settings', matching the page's new title and SideNav's existing label", () => {
+    const s = readSource(OVERVIEW_PAGE_PATH);
+    expect(s).toContain('<Link href="/admin/settings" className="ct-row-interactive">\n                    Club Settings');
+  });
+});
+
+describe("stale-copy cleanup: Pricing no longer references a 'below' court-rate override that moved to /admin/courts", () => {
+  it("PricingSettingsForm's helper copy names the Courts page instead of a stale 'below' reference", () => {
+    const s = readSource("src/app/(app)/admin/settings/PricingSettingsForm.tsx");
+    expect(s).toContain("their own rate on the Courts page regardless.");
+    expect(s).not.toMatch(/their own rate below regardless/);
+  });
+});
+
+describe("20. responsive grouping stacks vertically at every width — no horizontal-only layout at narrow widths", () => {
+  it("the page's outer container and every group are plain vertical flex/space-y stacks — no grid/flex-row wrapping the groups themselves", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).toContain('<div className="px-4 py-6 space-y-8 md:max-w-2xl md:mx-auto dark:text-gray-100">');
+    // Each of the three <section> groups uses space-y (vertical stacking),
+    // never a grid or flex-row at the group level.
+    expect((s.match(/<section className="space-y-4">/g) ?? []).length).toBe(3);
+  });
+
+  it("no group or subsection wraps its content in a multi-column grid at any breakpoint", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/grid-cols-[2-9]/);
+    expect(s).not.toMatch(/md:grid-cols|lg:grid-cols|sm:grid-cols/);
   });
 });
 
@@ -127,7 +281,7 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
 // 4 — standalone Offline Payments card no longer exists
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("4. the standalone Offline Payments card is removed", () => {
+describe("34G-B/4. the standalone Offline Payments card is removed", () => {
   it("PaymentTrackingSection no longer renders an 'Offline payments' heading or its own bordered card", () => {
     const s = readSource(PAYMENT_TRACKING_SECTION_PATH);
     expect(s).not.toMatch(/Offline payments<\/p>/);
@@ -145,7 +299,7 @@ describe("4. the standalone Offline Payments card is removed", () => {
 // 5 — manual-payment explanatory copy remains present
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("5. manual-payment explanatory copy remains present, folded into the Payment Tracking card as compact helper content", () => {
+describe("34G-B/5. manual-payment explanatory copy remains present, folded into the Payment Tracking card as compact helper content", () => {
   it("the manual-payments-supported helper line exists, unconditional on trackingOn, and never implies manual payment history disappears", () => {
     const s = readSource(PAYMENT_TRACKING_SECTION_PATH);
     expect(s).toMatch(/Manual payments supported: Cash, check, card terminal, bank transfer, digital wallet,\s*\n\s*and other payments can be recorded by Admins\/Staff\./);
@@ -166,7 +320,7 @@ describe("5. manual-payment explanatory copy remains present, folded into the Pa
 // 6 — Payment Tracking toggle behavior unchanged
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("6. Payment Tracking toggle behavior is unchanged by the hierarchy correction", () => {
+describe("34G-B/6. Payment Tracking toggle behavior is unchanged by the hierarchy correction", () => {
   it("handleTrackingToggle still requires confirmation to turn OFF and submits immediately to turn ON", () => {
     const s = readSource(PAYMENT_TRACKING_SECTION_PATH);
     expect(s).toContain("setConfirmingDisableTracking(true);");
@@ -185,7 +339,7 @@ describe("6. Payment Tracking toggle behavior is unchanged by the hierarchy corr
 // 7 — Court Time Payments ON-gating unchanged
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("7. Court Time Payments ON-gating (trackingOn && connected && stripeReady && not pending) is unchanged", () => {
+describe("34G-B/7. Court Time Payments ON-gating (trackingOn && connected && stripeReady && not pending) is unchanged", () => {
   it("OFF -> ON (currently off) is blocked unless trackingOn && connected && stripeReady", () => {
     const s = readSource(COURT_TIME_PAYMENTS_SECTION_PATH);
     expect(s).toContain("if (isPending) return;");
@@ -203,7 +357,7 @@ describe("7. Court Time Payments ON-gating (trackingOn && connected && stripeRea
 // 8 — Court Time Payments degraded-Stripe OFF behavior unchanged
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("8. Court Time Payments ON -> OFF remains available even when Stripe has degraded — unchanged, and the degraded-while-on copy still shows", () => {
+describe("34G-B/8. Court Time Payments ON -> OFF remains available even when Stripe has degraded — unchanged, and the degraded-while-on copy still shows", () => {
   it("ON -> OFF (currently on) is never blocked by trackingOn/connected/stripeReady — only isPending can block it", () => {
     const s = readSource(COURT_TIME_PAYMENTS_SECTION_PATH);
     const fnStart = s.indexOf("function handleOnlineToggle() {");
@@ -235,7 +389,7 @@ describe("8. Court Time Payments ON -> OFF remains available even when Stripe ha
 // 9 — Stripe Account auth/state machine unchanged
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("9. StripeConnectSection's logic and authorization are unchanged — only directional cross-reference copy and its own module header comment were touched", () => {
+describe("34G-B/9. StripeConnectSection's logic and authorization are unchanged — only directional cross-reference copy and its own module header comment were touched", () => {
   it("canConnect/handleConnect/deriveConnectUIState-based state machine are unchanged", () => {
     const s = readSource(STRIPE_CONNECT_SECTION_PATH);
     expect(s).toContain("const state = deriveConnectUIState(initialStatus.connected, initialStatus.cardPaymentsStatus);");
@@ -260,7 +414,7 @@ describe("9. StripeConnectSection's logic and authorization are unchanged — on
 // 10 — Staff-Managed still cannot enable Court Time Payments
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("10. Staff-Managed clubs still cannot enable Court Time Payments from Settings", () => {
+describe("34G-B/10. Staff-Managed clubs still cannot enable Court Time Payments from Settings", () => {
   it("the ON-direction gate includes !connected, and the disabled-reason copy names the Connected requirement", () => {
     const s = readSource(COURT_TIME_PAYMENTS_SECTION_PATH);
     expect(s).toContain('"Court Time Payments requires the Connected plan. Contact us to upgrade."');
@@ -286,51 +440,14 @@ describe("10. Staff-Managed clubs still cannot enable Court Time Payments from S
 // communicationsInformationArchitecture.regression.test.ts for that
 // checkpoint's full coverage. This block only re-confirms the one durable
 // invariant that originally lived here: no Connected/member_self_service
-// gate was introduced by the move.
-describe("11. Member Announcements (now Compose, at /admin/communications) still has no Connected/member_self_service gate", () => {
+// gate was introduced by the move. The former describe(23-25) block that
+// lived here (asserting the five-section Settings page from Checkpoint 4)
+// is superseded by Admin IA Checkpoint 5's own describe(3-4)/(12-16) blocks
+// above, which assert the current three-GROUP page instead.
+describe("34G-B/11. Member Announcements (now Compose, at /admin/communications) still has no Connected/member_self_service gate", () => {
   it("AnnouncementsSection references no Connected/member_self_service gate", () => {
     const s = readSource(ANNOUNCEMENTS_SECTION_PATH);
     expect(s).not.toMatch(/memberSelfService|member_self_service|capability_not_available/);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 23-25 — Settings removal (Admin IA Checkpoint 4): Announcements and
-//         Delivery Diagnostics are gone; exactly five sections remain
-// ═══════════════════════════════════════════════════════════════════════════
-
-describe("23-25. Settings no longer contains Announcements or Delivery Diagnostics — exactly five sections remain", () => {
-  it("no Member Announcements or Delivery diagnostics section markers remain", () => {
-    const s = readSource(PAGE_PATH);
-    expect(s).not.toMatch(/── Member Announcements ──/);
-    expect(s).not.toMatch(/── Delivery diagnostics ──/i);
-  });
-
-  it("no reference to AnnouncementsSection or DeliveryDiagnosticsSection remains", () => {
-    const s = readSource(PAGE_PATH);
-    expect(s).not.toContain("AnnouncementsSection");
-    expect(s).not.toContain("DeliveryDiagnosticsSection");
-  });
-
-  it("exactly the five intended sections remain, in order: Operating Model, Payments, Club Branding, Club Timezone, Pricing", () => {
-    const s = readSource(PAGE_PATH);
-    const order = [
-      "── Operating Model",
-      "── Payments ──",
-      "── Club Branding ──",
-      "── Club Timezone ──",
-      "── Pricing ──",
-    ];
-    let lastIdx = -1;
-    for (const marker of order) {
-      const idx = s.indexOf(marker);
-      expect(idx, `${marker} missing`).toBeGreaterThan(lastIdx);
-      lastIdx = idx;
-    }
-    // No sixth top-level "── " section heading beyond Pricing.
-    const pricingIdx = s.indexOf("── Pricing ──");
-    const afterPricing = s.slice(pricingIdx + "── Pricing ──".length);
-    expect(afterPricing).not.toMatch(/── [A-Za-z].*──/);
   });
 });
 
@@ -339,7 +456,7 @@ describe("23-25. Settings no longer contains Announcements or Delivery Diagnosti
 //       tier-mutation control introduced
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("12. no RPC surface change and no tier-mutation control — this checkpoint is UI/copy/grouping only", () => {
+describe("34G-B/12. no RPC surface change and no tier-mutation control — this checkpoint is UI/copy/grouping only", () => {
   it("none of the three payment components reference set_club_tier_for_operator or export a tier-mutation function (page.tsx's own Operating Model section legitimately documents WHY tier mutation stays privileged in prose — checked separately below via its actual absence of any .rpc( call, not a bare name match)", () => {
     for (const path of [PAYMENT_TRACKING_SECTION_PATH, STRIPE_CONNECT_SECTION_PATH, COURT_TIME_PAYMENTS_SECTION_PATH]) {
       const s = readSource(path);
@@ -350,9 +467,9 @@ describe("12. no RPC surface change and no tier-mutation control — this checkp
     expect(pageSrc).not.toMatch(/\.rpc\(\s*["']set_club_tier_for_operator["']/);
   });
 
-  it("the Operating Model section in page.tsx remains read-only — no onClick/action=/.rpc( inside its own <section>, even after the Phase 34G-B copy/pill correction", () => {
+  it("the Operating Model section in page.tsx remains read-only — no onClick/action=/.rpc( inside its own group, even after the Phase 34G-B copy/pill correction", () => {
     const s = readSource(PAGE_PATH);
-    const idx = s.indexOf('<section className="space-y-2">');
+    const idx = s.indexOf(GROUP_PLAN_ACCESS);
     expect(idx).toBeGreaterThan(-1);
     const sectionEnd = s.indexOf("</section>", idx);
     const section = s.slice(idx, sectionEnd);
@@ -386,7 +503,7 @@ describe("12. no RPC surface change and no tier-mutation control — this checkp
 //         distinguishes Stripe infrastructure from Court Time Payments
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("13-14. the Stripe-ready state never collides with the Connected PLAN name — badge says 'Stripe ready', heading says 'Stripe account ready', and the explanatory copy names Court Time Payments as the separate feature that uses this account", () => {
+describe("34G-B/13-14. the Stripe-ready state never collides with the Connected PLAN name — badge says 'Stripe ready', heading says 'Stripe account ready', and the explanatory copy names Court Time Payments as the separate feature that uses this account", () => {
   it("the ready-state badge is 'Stripe ready', never 'Connected'", () => {
     const s = readSource(STRIPE_CONNECT_SECTION_PATH);
     const readyBranchStart = s.indexOf('{state === "ready" && (');
@@ -425,7 +542,7 @@ describe("13-14. the Stripe-ready state never collides with the Connected PLAN n
 // 15 — Operating Model plan pills: explicit "Plan" naming, distinct styling
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("15. Operating Model plan pills explicitly name themselves as plans, with Staff-Managed styled neutral and Connected styled with the existing green tokens", () => {
+describe("34G-B/15. Operating Model plan pills explicitly name themselves as plans, with Staff-Managed styled neutral and Connected styled with the existing green tokens", () => {
   it("the Staff-Managed pill reads 'Staff-Managed Plan'", () => {
     const s = readSource(PAGE_PATH);
     expect(s).toContain('{memberSelfService ? "Connected Plan" : "Staff-Managed Plan"}');
@@ -467,7 +584,7 @@ describe("15. Operating Model plan pills explicitly name themselves as plans, wi
 //       plans links to /pricing; no tier-mutation control introduced
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("16. the plan-change footer explains that Court Time manages plan changes, and 'Compare plans' links to /pricing — no mutation control", () => {
+describe("34G-B/16. the plan-change footer explains that Court Time manages plan changes, and 'Compare plans' links to /pricing — no mutation control", () => {
   it("the footer copy reads the locked sentence", () => {
     const s = readSource(PAGE_PATH);
     expect(s).toContain("Plan changes are managed by Court Time.");
@@ -486,7 +603,7 @@ describe("16. the plan-change footer explains that Court Time manages plan chang
 
   it("both links are plain navigation (<Link>) — neither is a form, onClick handler, or Server Action, so no tier-mutation control was introduced", () => {
     const s = readSource(PAGE_PATH);
-    const idx = s.indexOf('<section className="space-y-2">');
+    const idx = s.indexOf(GROUP_PLAN_ACCESS);
     const sectionEnd = s.indexOf("</section>", idx);
     const section = s.slice(idx, sectionEnd);
     expect(section).not.toMatch(/<form|onSubmit|useTransition|startTransition/);
@@ -498,7 +615,7 @@ describe("16. the plan-change footer explains that Court Time manages plan chang
 //       the toggle itself remains visibly disabled
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("17. the Court Time Payments card stays fully readable when disabled — only the toggle itself shows disabled styling", () => {
+describe("34G-B/17. the Court Time Payments card stays fully readable when disabled — only the toggle itself shows disabled styling", () => {
   it("the outer card's className is a plain string with no conditional opacity expression", () => {
     const s = readSource(COURT_TIME_PAYMENTS_SECTION_PATH);
     expect(s).toContain('<div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5">');

@@ -427,8 +427,8 @@ export default async function AdminOverviewPage() {
                   done={activeMembersCount > 0 || rosterMemberCount > 0 || activeInviteCount > 0}
                   href="/admin/members"
                 />
-                <SetupRow label="Email delivery"      done={emailConfigured}            href="/admin/settings" optional />
-                <SetupRow label="SMS delivery"        done={smsConfigured}              href="/admin/settings" optional />
+                <SetupRow label="Email delivery"      done={emailConfigured}            href="/admin/communications?tab=diagnostics" optional />
+                <SetupRow label="SMS delivery"        done={smsConfigured}              href="/admin/communications?tab=diagnostics" optional />
               </div>
             </section>
           )}
@@ -630,7 +630,7 @@ export default async function AdminOverviewPage() {
                     <span className="text-gray-400 dark:text-gray-500">›</span>
                   </Link>
                   <Link href="/admin/settings" className="ct-row-interactive">
-                    Settings
+                    Club Settings
                     <span className="text-gray-400 dark:text-gray-500">›</span>
                   </Link>
                   <Link href="/admin/audit-log" className="ct-row-interactive">
