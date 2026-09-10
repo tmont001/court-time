@@ -5,14 +5,12 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
-import EventTypesSection from "./EventTypesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
-import LessonTypesSection from "./LessonTypesSection";
 import DeliveryDiagnosticsSection from "./DeliveryDiagnosticsSection";
 import AnnouncementsSection from "./AnnouncementsSection";
 
@@ -30,7 +28,7 @@ export default async function AdminSettingsPage() {
   // — see the Operating Model section below.
   const memberSelfService = profile?.memberSelfService ?? false;
 
-  const [settingsResult, clubResult, eventTypesResult, lessonTypesResult, stripeConnectResult] = await Promise.all([
+  const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
       .select("currency, default_court_hourly_rate_cents, payment_mode")
@@ -41,13 +39,6 @@ export default async function AdminSettingsPage() {
       .select("name, logo_url, theme_key, timezone")
       .eq("id", clubId)
       .single(),
-    supabase
-      .from("event_types")
-      .select("id, key, label, color, is_active, default_price_amount_cents")
-      .eq("club_id", clubId)
-      .order("is_active", { ascending: false })
-      .order("label"),
-    supabase.rpc("get_lesson_types"),
     // Phase 34D-A: club_stripe_accounts has no authenticated-client grant
     // at all (0147) — this helper resolves the caller/club itself and
     // reads through the service-role RPC, scoped to the server's own
@@ -57,16 +48,6 @@ export default async function AdminSettingsPage() {
 
   const settings   = settingsResult.data;
   const club       = clubResult.data;
-  const eventTypes = (eventTypesResult.data ?? []) as {
-    id: string; key: string; label: string; color: string; is_active: boolean;
-    default_price_amount_cents: number | null;
-  }[];
-  const lessonTypes = (lessonTypesResult.data ?? []) as {
-    id: string; name: string; description: string | null;
-    allowed_durations: number[] | null; max_participants: number;
-    pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
-    rate_notes: string | null; is_active: boolean;
-  }[];
   const currency = settings?.currency ?? "USD";
   const stripeStatus = stripeConnectResult.status;
   // Phase 34D-C: the SAME derivation StripeConnectSection's own state
@@ -242,19 +223,6 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-100 dark:border-gray-800" />
 
-        {/* ── Event Types ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Event Types
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Edit labels and colors. Deactivated types stay on historical events but are hidden when creating new ones.
-          </p>
-          <EventTypesSection clubId={clubId} currency={currency} initialTypes={eventTypes} />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
         {/* ── Pricing ── */}
         <section className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -267,19 +235,6 @@ export default async function AdminSettingsPage() {
             currency={currency}
             defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
           />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Lesson Types ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Lesson Types
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Flat price per lesson type. Changing a price only affects lessons booked after the change.
-          </p>
-          <LessonTypesSection currency={currency} initialTypes={lessonTypes} />
         </section>
 
         <hr className="border-gray-100 dark:border-gray-800" />

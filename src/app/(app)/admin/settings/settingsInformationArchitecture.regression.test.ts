@@ -88,9 +88,7 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
     const order = [
       "── Club Branding ──",
       "── Club Timezone ──",
-      "── Event Types ──",
       "── Pricing ──",
-      "── Lesson Types ──",
       "── Member Announcements ──",
     ];
     let lastIdx = -1;
@@ -112,6 +110,17 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
     expect(s).not.toContain("BookingRulesForm");
     expect(s).not.toContain("OperatingHoursEditor");
     expect(s).not.toContain("DateOverridesEditor");
+  });
+
+  // Admin UX Checkpoint 3: Event Types moved to /events (Admin-only
+  // "Event Types" tab) and Lesson Types moved to /admin/lessons
+  // (Admin-only "Lesson Types" tab) — this page no longer renders either.
+  it("Event Types and Lesson Types no longer appear on /admin/settings — relocated to Events/Lessons", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/── Event Types ──/);
+    expect(s).not.toMatch(/── Lesson Types ──/);
+    expect(s).not.toContain("EventTypesSection");
+    expect(s).not.toContain("LessonTypesSection");
   });
 });
 

@@ -15,7 +15,7 @@ import {
   setEventTypeActive,
   deleteEventType,
   setEventTypePrice,
-} from "./actions";
+} from "./eventTypesActions";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -788,20 +788,32 @@ function EventTypeRow({
           </div>
         </div>
       ) : (
-        /* ── Default view ── */
+        /* ── Default view ──
+            Runtime QA (~320px): the label used to share one un-wrapping
+            row with price + up to 4 action buttons, forcing the label
+            (the primary identity of this row) to truncate to make room for
+            actions. Mobile (<sm): the label+price pair gets its own
+            full-width row; actions drop to a second row and wrap freely.
+            sm+: reverts to one row (label left, price+actions right) —
+            price now sits immediately after the label rather than
+            immediately before Edit as it did pre-fix, a small, deliberate
+            reflow that groups price with the label it describes at every
+            width, not just on mobile. */
         <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-3">
-            <p className={`text-sm font-medium min-w-0 truncate ${
-              et.is_active
-                ? "text-gray-900 dark:text-gray-100"
-                : "text-gray-400 dark:text-gray-500 line-through"
-            }`}>
-              {et.label}
-            </p>
-            <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
-              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="flex items-center justify-between gap-3 sm:justify-start sm:gap-2 sm:min-w-0">
+              <p className={`text-sm font-medium min-w-0 truncate ${
+                et.is_active
+                  ? "text-gray-900 dark:text-gray-100"
+                  : "text-gray-400 dark:text-gray-500 line-through"
+              }`}>
+                {et.label}
+              </p>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0">
                 {formatOperatorPrice(et.default_price_amount_cents, currency)}
               </span>
+            </div>
+            <div className="flex items-center gap-3 shrink-0 flex-wrap sm:justify-end">
               <button
                 type="button"
                 onClick={onStartEdit}

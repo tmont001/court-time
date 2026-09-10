@@ -147,16 +147,20 @@ describe("6. /admin/settings no longer renders those three sections", () => {
     expect(s).not.toContain("waitlist_offer_window_hours");
   });
 
-  it("no other Settings section (Pricing, Branding, Timezone, Event Types, Lesson Types, Payments, Operating Model, Announcements, Diagnostics) was touched or reordered", () => {
+  it("no other Settings section (Pricing, Branding, Timezone, Payments, Operating Model, Announcements, Diagnostics) was touched or reordered by the Courts move", () => {
+    // Event Types and Lesson Types are deliberately excluded from this
+    // list — a later, separate Admin UX checkpoint (Events + Lessons IA)
+    // relocated both out of Settings entirely; that checkpoint's own test
+    // (settingsInformationArchitecture.regression.test.ts) covers that
+    // fact. This test's own concern is narrower: nothing the COURTS move
+    // touched was affected.
     const s = readSource(SETTINGS_PAGE_PATH);
     for (const marker of [
       "── Operating Model",
       "── Payments ──",
       "── Club Branding ──",
       "── Club Timezone ──",
-      "── Event Types ──",
       "── Pricing ──",
-      "── Lesson Types ──",
       "── Member Announcements ──",
     ]) {
       expect(s, `${marker} missing — an unrelated section was affected`).toContain(marker);
