@@ -63,6 +63,16 @@ interface Props {
  * for clearer contrast against both light and dark surfaces in both modes,
  * still no ring, still never touching the Total/Cancelled bar colors.
  *
+ * Runtime QA fix #5 (touch-target size): each day's <button> was h-16 w-4
+ * (64x16px) — Lighthouse flags anything under 24px on either axis. Widened
+ * to w-6 (24px) and moved the old w-4 sizing onto an inner px-1 inset (24 -
+ * 4px each side = 16px) so the visible Total/Cancelled bar pair keeps
+ * its exact prior width; the outer flex gap between buttons was dropped
+ * (the new internal padding already provides day-to-day visual separation)
+ * so the track doesn't grow by more than the minimum needed for the wider
+ * hit targets themselves. No overlapping hit areas — each button's own box
+ * is now genuinely >=24px, so adjacent days never share a physical target.
+ *
  * This is the one component on /admin/reports that needs client state (for
  * exactly this reason) — the rest of the page stays a Server Component;
  * only this narrow piece is "use client".
@@ -118,7 +128,7 @@ export default function ReservationsDailyChart({ series }: Props) {
           no scrollbar at all; only a genuinely wider range (366-day
           custom, or a narrow mobile viewport) scrolls. */}
       <div className="overflow-x-auto overflow-y-hidden">
-        <div className="flex items-end gap-1 w-max px-1">
+        <div className="flex items-end w-max px-1">
           {series.map((p, i) => {
             const totalPct = (p.total_count / max) * 100;
             const cancelledPct = (p.cancelled_count / max) * 100;
@@ -133,7 +143,7 @@ export default function ReservationsDailyChart({ series }: Props) {
                 onMouseEnter={() => setActiveIndex(i)}
                 onFocus={() => setActiveIndex(i)}
                 onClick={() => setActiveIndex(i)}
-                className={`h-16 w-4 shrink-0 flex items-end gap-[1px] rounded-md motion-safe:transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:focus-visible:ring-brand-tint focus-visible:ring-offset-1 ${
+                className={`h-16 w-6 shrink-0 px-1 flex items-end gap-[1px] rounded-md motion-safe:transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand dark:focus-visible:ring-brand-tint focus-visible:ring-offset-1 ${
                   isActive ? "bg-gray-200 dark:bg-gray-700" : ""
                 }`}
               >

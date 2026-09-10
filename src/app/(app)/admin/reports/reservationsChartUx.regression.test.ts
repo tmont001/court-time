@@ -372,6 +372,34 @@ describe("legend and chart title wording", () => {
   });
 });
 
+describe("12. day-button touch-target size (Lighthouse: buttons must be >=24px on both axes)", () => {
+  it("the button itself is now w-6 (24px), not the old w-4 (16px)", () => {
+    const s = chartComponentSource();
+    expect(s).toContain('className={`h-16 w-6 shrink-0 px-1 flex items-end gap-[1px] rounded-md');
+  });
+
+  it("the visible Total/Cancelled bar pair is inset by internal padding (px-1) rather than the button itself staying narrow — bars keep their prior ~16px width inside the wider 24px button", () => {
+    const s = chartComponentSource();
+    expect(s).toMatch(/w-6 shrink-0 px-1 flex items-end gap-\[1px\]/);
+  });
+
+  it("the outer inter-button gap was dropped (not merely shrunk) so the wider buttons don't balloon total track width beyond what the larger hit targets themselves require", () => {
+    const s = chartComponentSource();
+    expect(s).toContain('<div className="flex items-end w-max px-1">');
+    expect(s).not.toMatch(/flex items-end gap-1 w-max/);
+  });
+
+  it("aria-pressed still reflects isActive on the real <button>", () => {
+    const s = chartComponentSource();
+    expect(s).toContain("aria-pressed={isActive}");
+  });
+
+  it("still exactly one <button> per day — no second overlapping element standing in as an invisible/expanded hit area", () => {
+    const scroll = scrollContainerRegion(chartComponentSource());
+    expect(scroll.match(/<button/g)?.length).toBe(1);
+  });
+});
+
 describe("11. no RPC/data-contract change", () => {
   it("get_reservation_summary is still called with the same rpcArgs, and daily_series is still read the same way, via the new component", () => {
     const s = pageSource();
