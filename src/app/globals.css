@@ -756,9 +756,9 @@
 /* ── Marketing scroll-reveal ────────────────────────────────────────────────
    Elements start hidden (.mkt-reveal) and gain .mkt-reveal--visible when they
    enter the viewport via IntersectionObserver in MarketingReveal.tsx.
-   Supports four variants:
-     default   — fade + rise
-     delay-1/2 — staggered entrance (100 / 200 ms extra wait)
+   Supports five variants:
+     default     — fade + rise
+     delay-1/2/3/4 — staggered entrance (80 / 160 / 240 / 320 ms extra wait)
    Under prefers-reduced-motion the element is always fully visible. */
 .mkt-reveal {
   opacity: 0;
@@ -772,6 +772,7 @@
 .mkt-reveal.delay-1 { transition-delay: 80ms;  }
 .mkt-reveal.delay-2 { transition-delay: 160ms; }
 .mkt-reveal.delay-3 { transition-delay: 240ms; }
+.mkt-reveal.delay-4 { transition-delay: 320ms; }
 
 @media (prefers-reduced-motion: reduce) {
   .mkt-reveal {
