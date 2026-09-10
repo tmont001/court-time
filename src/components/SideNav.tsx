@@ -220,7 +220,7 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
 
   return (
     <nav
-      className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40 motion-safe:transition-colors motion-safe:duration-150"
+      className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-60 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40 motion-safe:transition-colors motion-safe:duration-150"
       aria-label="Main navigation"
     >
       {/* Brand header — same height as the page Header (h-14 = 3.5rem) */}

@@ -89,12 +89,18 @@
 
 /* ── Responsive layout helpers ─────────────────────────────────────────────── */
 /* Replaces the hardcoded calc(100dvh - 56px - 64px - ...) across all pages.
-   Mobile: subtract header (3.5rem) + bottom nav (4rem) + safe area.
-   Desktop: subtract header only (sidebar takes horizontal space, not vertical). */
+   Below lg (1024px): subtract header (3.5rem) + bottom nav (4rem) + safe area
+   — the compact bottom-nav shell is visible in this whole range now (Admin
+   UX shell fix: the desktop sidebar no longer appears until lg, so the
+   bottom nav's own vertical space must still be reserved right up to that
+   same boundary, not just below the old 768px breakpoint).
+   lg (1024px) and up: subtract header only (sidebar takes horizontal space,
+   not vertical) — matches SideNav.tsx/BottomNav.tsx/layout.tsx's own lg
+   boundary exactly; these must never drift apart. */
 :root {
   --page-fill-height: calc(100dvh - 3.5rem - 4rem - env(safe-area-inset-bottom, 0px));
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   :root {
     --page-fill-height: calc(100dvh - 3.5rem);
   }
@@ -136,9 +142,11 @@
   }
 }
 
-/* AppLayout main content: on mobile pads for the fixed bottom nav;
-   on desktop (sidebar mode) the sidebar is horizontal so no bottom pad.
-   Neutral background separates the canvas from accent-tinted surfaces
+/* AppLayout main content: below lg (1024px) pads for the fixed bottom nav
+   (visible in that whole range now — see --page-fill-height above for why
+   this must stay in lockstep with SideNav/BottomNav/layout.tsx's own lg
+   boundary); at lg+ (sidebar mode) the sidebar is horizontal so no bottom
+   pad. Neutral background separates the canvas from accent-tinted surfaces
    (welcome card, sidebar) so themed elements pop against a consistent base. */
 .app-main-content {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
@@ -147,7 +155,7 @@
 .dark .app-main-content {
   background-color: rgb(17 24 39);
 }
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .app-main-content {
     padding-bottom: 0;
   }

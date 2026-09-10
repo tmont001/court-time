@@ -215,10 +215,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className={`theme-${themeKey} min-h-screen`}>
-      {/* Sidebar: fixed on desktop (md+), hidden on mobile */}
+      {/* Sidebar: fixed on desktop (lg+, 1024px), hidden below that */}
       <SideNav userRole={profile?.role ?? undefined} clubName={clubName} memberships={memberships} memberSelfService={profile?.memberSelfService ?? true} />
-      {/* Content area: offset right of sidebar on desktop */}
-      <div className="flex flex-col min-h-screen md:pl-60">
+      {/* Content area: offset right of sidebar on desktop (lg+) */}
+      <div className="flex flex-col min-h-screen lg:pl-60">
         <main className="flex-1 app-main-content">
           {profile?.role === "member" && profile.club_id && (
             <MemberWelcomeCard userId={user.id} clubId={profile.club_id} />
@@ -226,7 +226,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
-      {/* Bottom nav: visible on mobile, hidden on desktop where SideNav takes over */}
+      {/* Bottom nav: visible below lg (1024px), hidden at lg+ where SideNav takes over */}
       <BottomNav userRole={profile?.role ?? undefined} clubName={clubName} memberships={memberships} memberSelfService={profile?.memberSelfService ?? true} />
       {/* Phase 26E2: mounted once for the whole authenticated app shell
           (covers every (app)/* route, including nested /admin/* pages).
