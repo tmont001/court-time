@@ -78,7 +78,7 @@ export default async function MarketingHomePage() {
           {/* Text side */}
           <div className="flex-1 text-center lg:text-left max-w-xl mx-auto lg:mx-0">
             {/* Eyebrow */}
-            <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">
               Club operations software
             </p>
 
@@ -94,7 +94,7 @@ export default async function MarketingHomePage() {
               administration — without the group texts.
             </p>
 
-            <p className="mt-3 text-sm text-gray-400 dark:text-gray-500">
+            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
               Built for Admins, Pros, and Members who need club operations
               to feel simple.
             </p>
@@ -158,7 +158,7 @@ export default async function MarketingHomePage() {
               <div className="group h-full rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-5 relative overflow-hidden hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md motion-safe:transition-all motion-safe:duration-200">
                 {/* Top accent line */}
                 <div className="absolute top-0 left-0 right-0 h-0.5 bg-gray-900 dark:bg-gray-100 opacity-0 group-hover:opacity-100 motion-safe:transition-opacity motion-safe:duration-200" />
-                <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2">
+                <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-2">
                   {f.label}
                 </p>
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1.5">
@@ -273,7 +273,7 @@ export default async function MarketingHomePage() {
       {/* ── Pilot CTA — dark treatment ────────────────────────────────────── */}
       <section className="bg-gray-900 dark:bg-gray-950">
         <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
             Founding clubs
           </p>
           <h2 className="text-2xl font-bold text-white mb-3">
@@ -284,7 +284,7 @@ export default async function MarketingHomePage() {
             Founding clubs get protected pricing and direct access to the
             team while we build alongside real pilot use.
           </p>
-          <p className="text-sm text-gray-500 mb-8">
+          <p className="text-sm text-gray-400 mb-8">
             No credit card required during the founding evaluation and
             onboarding period.
           </p>

@@ -166,7 +166,7 @@ export default function ReservationsDailyChart({ series }: Props) {
           legible there. */}
       {axisLabels.length > 0 && (
         <div
-          className={`flex items-center text-[9px] text-gray-400 dark:text-gray-500 mt-1.5 px-1 ${
+          className={`flex items-center text-[9px] text-gray-500 dark:text-gray-400 mt-1.5 px-1 ${
             axisLabels.length === 1 ? "justify-center" : "justify-between"
           }`}
         >
@@ -178,7 +178,7 @@ export default function ReservationsDailyChart({ series }: Props) {
         </div>
       )}
 
-      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 flex items-center gap-3">
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-3">
         <span className="inline-flex items-center gap-1">
           <span className="inline-block w-2 h-2 rounded-sm bg-accent" /> Total reservations
         </span>

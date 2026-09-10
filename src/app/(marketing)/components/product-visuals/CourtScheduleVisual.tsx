@@ -2,9 +2,9 @@ import ProductFrame from "./ProductFrame";
 
 // Mirrors the real /calendar grid: fixed time gutter, court columns, an
 // hourly line grid with lighter half-hour lines, and the same block
-// treatments the app uses (blue "Your booking", colored event block via the
-// club's actual event-type color, hatched maintenance block). Cropped to a
-// short 8:00–Noon window across 3 courts rather than a full day.
+// treatments the app uses (blue "Your booking", colored event block,
+// hatched maintenance block). Cropped to a short 8:00–Noon window across
+// 3 courts rather than a full day.
 
 const GUTTER_W = 34;
 const COL_W = 76;
@@ -56,7 +56,7 @@ export default function CourtScheduleVisual() {
                   style={{ top: i * ROW_H, width: GUTTER_W }}
                 >
                   {slot.isHour && (
-                    <span className="text-[8px] leading-none text-gray-400 dark:text-gray-600">{slot.label}</span>
+                    <span className="text-[8px] leading-none text-gray-500 dark:text-gray-400">{slot.label}</span>
                   )}
                 </div>
               ))}
@@ -86,7 +86,9 @@ export default function CourtScheduleVisual() {
               </div>
             </div>
 
-            {/* Court 2 — a scheduled event, colored via the real event-type token */}
+            {/* Court 2 — a scheduled event. Uses the brand green (--ct-brand)
+                rather than the actual "Group Clinic" event-type color
+                (#2E9B5E), which fails WCAG AA contrast for white text. */}
             <div className="relative shrink-0 border-l border-gray-200 dark:border-gray-700" style={{ width: COL_W, height: GRID_H }}>
               {SLOTS.map((slot, i) => (
                 <div
@@ -99,7 +101,7 @@ export default function CourtScheduleVisual() {
               ))}
               <div
                 className="absolute rounded text-[9px] font-semibold px-1 pt-0.5 text-white overflow-hidden"
-                style={{ top: 2 * ROW_H + 1, height: ROW_H * 2 - 2, left: 2, right: 2, background: "#2E9B5E" }}
+                style={{ top: 2 * ROW_H + 1, height: ROW_H * 2 - 2, left: 2, right: 2, background: "var(--ct-brand)" }}
               >
                 Adult Clinic
               </div>

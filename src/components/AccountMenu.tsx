@@ -39,10 +39,14 @@ export default function AccountMenu({ userInitials, userName, userEmail }: Props
       {/* Trigger — initials avatar */}
       <button
         onClick={() => setOpen((v) => !v)}
-        aria-label="Account menu"
+        aria-label={`Account menu, ${userInitials}`}
         aria-expanded={open}
         className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 text-xs font-semibold text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 motion-safe:transition-colors motion-safe:duration-100"
       >
+        {/* aria-hidden: the visible initials are already reflected in the
+            button's own aria-label above, so hiding this from the
+            accessibility tree avoids announcing them twice — the label
+            still contains the rendered text, satisfying WCAG 2.5.3. */}
         <span aria-hidden="true">{userInitials}</span>
       </button>
 

@@ -85,7 +85,7 @@ function scrollContainerRegion(s: string): string {
 function axisRegion(s: string): string {
   const start = s.indexOf("{/* Orientation-only axis");
   expect(start, "orientation-axis comment not found").toBeGreaterThan(-1);
-  const end = s.indexOf('<p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 flex items-center gap-3">', start);
+  const end = s.indexOf('<p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-3">', start);
   expect(end, "legend paragraph not found after axis block").toBeGreaterThan(start);
   return s.slice(start, end);
 }

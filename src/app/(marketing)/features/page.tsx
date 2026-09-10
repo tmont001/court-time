@@ -181,7 +181,7 @@ export default function FeaturesPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-6">
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4">
+              <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">
                 Before Court Time
               </p>
               <ul className="space-y-2.5 text-sm text-gray-600 dark:text-gray-300 leading-relaxed list-none">
@@ -194,13 +194,13 @@ export default function FeaturesPage() {
               </ul>
             </div>
             <div className="rounded-xl border-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-800 px-6 py-6">
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4">
+              <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">
                 With Court Time
               </p>
               <ul className="space-y-2.5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed list-none">
                 {AFTER.map((item) => (
                   <li key={item} className="flex gap-2">
-                    <span className="mt-0.5 text-green-600 dark:text-green-400 shrink-0 font-bold">✓</span>
+                    <span className="mt-0.5 text-green-700 dark:text-green-400 shrink-0 font-bold">✓</span>
                     <span>{item}</span>
                   </li>
                 ))}

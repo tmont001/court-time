@@ -201,7 +201,7 @@ function NavLink({
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 select-none">
+    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 select-none">
       {children}
     </p>
   );

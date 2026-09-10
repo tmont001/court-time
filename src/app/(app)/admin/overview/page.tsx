@@ -115,7 +115,7 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <p className="text-sm text-gray-400 dark:text-gray-500 px-1">{label}</p>;
+  return <p className="text-sm text-gray-500 dark:text-gray-400 px-1">{label}</p>;
 }
 
 function SetupRow({
@@ -128,11 +128,11 @@ function SetupRow({
       <span className="text-sm text-gray-700 dark:text-gray-200">
         {label}
         {optional && (
-          <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">(optional)</span>
+          <span className="ml-1.5 text-xs text-gray-500 dark:text-gray-400">(optional)</span>
         )}
       </span>
       {done
-        ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Done</span>
+        ? <span className="text-xs font-medium text-green-700 dark:text-green-400">Done</span>
         : <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Set up →</span>}
     </Link>
   );
@@ -449,21 +449,21 @@ export default async function AdminOverviewPage() {
                 <div className="px-4 py-2.5 flex items-center justify-between">
                   <span className="text-sm text-gray-700 dark:text-gray-200">Email configured</span>
                   {emailConfigured
-                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Yes</span>
-                    : <span className="text-xs text-gray-400 dark:text-gray-500">No</span>}
+                    ? <span className="text-xs font-medium text-green-700 dark:text-green-400">Yes</span>
+                    : <span className="text-xs text-gray-500 dark:text-gray-400">No</span>}
                 </div>
                 <div className="px-4 py-2.5 flex items-center justify-between">
                   <span className="text-sm text-gray-700 dark:text-gray-200">SMS configured</span>
                   {smsConfigured
-                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Yes</span>
-                    : <span className="text-xs text-gray-400 dark:text-gray-500">No</span>}
+                    ? <span className="text-xs font-medium text-green-700 dark:text-green-400">Yes</span>
+                    : <span className="text-xs text-gray-500 dark:text-gray-400">No</span>}
                 </div>
                 <div className="px-4 py-2.5 flex items-center justify-between">
                   <span className="text-sm text-gray-700 dark:text-gray-200">Delivery failures (48 h)</span>
                   {sectionFailed.deliveries
                     ? <span className="text-xs text-orange-500">Unavailable</span>
                     : failureCount === 0
-                      ? <span className="text-xs font-medium text-green-600 dark:text-green-400">None</span>
+                      ? <span className="text-xs font-medium text-green-700 dark:text-green-400">None</span>
                       : <span className="text-xs font-semibold text-red-600 dark:text-red-400">{failureCount}</span>}
                 </div>
                 <Link

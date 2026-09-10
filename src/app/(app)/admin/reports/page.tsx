@@ -119,7 +119,7 @@ function SectionHeading({ children, right }: { children: React.ReactNode; right?
 // style.
 function SnapshotBadge() {
   return (
-    <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+    <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
       <span aria-hidden="true" className="inline-block w-1 h-1 rounded-full bg-gray-400 dark:bg-gray-500" />
       Current snapshot
     </span>
@@ -127,7 +127,7 @@ function SnapshotBadge() {
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <p className="text-sm text-gray-400 dark:text-gray-500 px-1">{label}</p>;
+  return <p className="text-sm text-gray-500 dark:text-gray-400 px-1">{label}</p>;
 }
 
 function UnavailableState() {
@@ -146,7 +146,7 @@ function CompactStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</p>
-      <p className="text-[10px] text-gray-400 dark:text-gray-500 leading-tight mt-0.5">{label}</p>
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{label}</p>
     </div>
   );
 }
@@ -169,9 +169,9 @@ function StatTile({
   return (
     <div className="ct-card px-3 py-3 text-center" title={title}>
       <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
-      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">{label}</p>
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">{label}</p>
       {snapshot && (
-        <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-1">
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">
           Current snapshot
         </p>
       )}
@@ -185,13 +185,13 @@ function StatTile({
 function InfoDisclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
   return (
     <details className="group mt-1.5">
-      <summary className="cursor-pointer select-none list-none inline-flex items-center gap-1 text-[10px] text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 px-1">
+      <summary className="cursor-pointer select-none list-none inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-1">
         <span aria-hidden="true" className="inline-block motion-safe:transition-transform group-open:rotate-90">
           ›
         </span>
         {summary}
       </summary>
-      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 px-1">{children}</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 px-1">{children}</p>
     </details>
   );
 }
@@ -508,7 +508,7 @@ export default async function AdminReportsPage({
               </button>
             </form>
 
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               {resolved.startDate === resolved.endDate
                 ? `Showing ${resolved.startDate}.`
                 : `Showing ${resolved.startDate} – ${resolved.endDate}.`}
@@ -614,7 +614,7 @@ export default async function AdminReportsPage({
                         style={{ width: `${Math.max(0, Math.min(100, c.gross_utilization_pct))}%` }}
                       />
                     </div>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
                       {formatPct(c.gross_utilization_pct)} gross · {formatPct(c.member_demand_utilization_pct)}{" "}
                       member-demand
                     </p>
@@ -622,7 +622,7 @@ export default async function AdminReportsPage({
                 ))}
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Historical ranges use today&apos;s court and hours configuration, not what was in
               effect at the time.
             </p>
@@ -663,7 +663,7 @@ export default async function AdminReportsPage({
                 )}
               </>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Includes reservations on courts since deactivated.
             </p>
           </section>
@@ -713,13 +713,13 @@ export default async function AdminReportsPage({
                   />
                 </div>
                 {eventProgram.attendance_marked_count === 0 && (
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
                     No attendance recorded for this range.
                   </p>
                 )}
               </>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Attendance rates count only confirmed participants with a recorded attendance mark;
               guests are never included, since guest attendance isn&apos;t tracked.
             </p>
@@ -749,7 +749,7 @@ export default async function AdminReportsPage({
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Counts entries, not distinct people; a member can appear more than once.
             </p>
           </section>
@@ -781,7 +781,7 @@ export default async function AdminReportsPage({
                 />
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Every figure here (besides Active Members) counts distinct members, not total
               actions. Engaged Members is the union across reservations, event participation, and
               program enrollment — a member active in more than one way is still counted once.
@@ -821,7 +821,7 @@ export default async function AdminReportsPage({
             </div>
             {!financialRangeFailed && financialSummary!.domainBreakdown.length > 0 && (
               <>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-3 mb-1.5 px-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-3 mb-1.5 px-1">
                   Net collected by domain
                 </p>
                 <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
@@ -835,7 +835,7 @@ export default async function AdminReportsPage({
                 </div>
               </>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               Collected/Refunded/Net Collected reflect the selected range above. Outstanding is a
               current snapshot, not filtered by the selected range.
             </p>
