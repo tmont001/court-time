@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
@@ -30,11 +29,6 @@ export default async function AdminAuditLogPage() {
         style={{ height: "var(--page-fill-height)" }}
       >
         <div className="md:max-w-3xl md:mx-auto">
-          <div className="px-4 pt-3 pb-0">
-            <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
-              ← Back to Account
-            </Link>
-          </div>
         {error ? (
           <div className="mx-4 mt-6 px-4 py-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-700">
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">Failed to load audit log</p>

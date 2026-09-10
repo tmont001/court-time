@@ -78,11 +78,6 @@ export default async function AdminCourtsPage({
   return (
     <>
       <Header screenTitle="Courts" />
-      <div className="px-4 pt-3 pb-0 md:max-w-2xl md:mx-auto">
-        <Link href="/profile" className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150">
-          ← Back to Account
-        </Link>
-      </div>
       <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
 
         {/* ── Tab strip ── same Link + searchParams pattern as /admin/reports'

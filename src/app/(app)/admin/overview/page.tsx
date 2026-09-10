@@ -423,13 +423,6 @@ export default async function AdminOverviewPage() {
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-2xl md:mx-auto px-4 pt-3 pb-8 space-y-6">
 
-          <Link
-            href="/profile"
-            className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-          >
-            ← Back to Account
-          </Link>
-
           {/* Warning banner — shown only when one or more queries failed */}
           {anyFailed && (
             <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 px-4 py-3">
