@@ -1618,6 +1618,14 @@ export type Database = {
         Args: { p_capability: string };
         Returns: boolean;
       };
+      get_financial_range_summary: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          domain:          string;
+          collected_cents: number;
+          refunded_cents:  number;
+        }[];
+      };
       get_reporting_overview: {
         Args: { p_start_date: string; p_end_date: string };
         Returns: {
@@ -2471,6 +2479,23 @@ export type Database = {
           notification_id:   string;
           recipient_user_id: string;
           body:               string;
+        }[];
+      };
+      get_communications_activity: {
+        Args: {
+          p_limit?:  number;
+          p_offset?: number;
+        };
+        Returns: {
+          // batch_id is null for an announcement sent before migration 0102
+          // added durable batch tracking — see get_communications_activity's
+          // own SQL comment.
+          batch_id:           string | null;
+          title:              string;
+          sent_at:            string;
+          recipient_count:    number;
+          email_sent_count:   number;
+          email_failed_count: number;
         }[];
       };
       upsert_operating_hours_override: {

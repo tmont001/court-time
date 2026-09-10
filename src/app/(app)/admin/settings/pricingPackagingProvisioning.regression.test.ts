@@ -356,13 +356,14 @@ describe("14. historical payment/refund/dispute/Record Payment access remains fu
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("15. no Admin-facing tier-mutation UI or Server Action is introduced — the read-only indicator never writes", () => {
-  it("admin/settings/page.tsx's new Operating Model <section> only READS profile.memberSelfService — no Server Action, no form, no onClick/mutation call inside the rendered section itself", () => {
+  it("admin/settings/page.tsx's Plan & Access group (Operating Model) only READS profile.memberSelfService — no Server Action, no form, no onClick/mutation call inside the rendered group itself", () => {
     const s = readSource(SETTINGS_PAGE_PATH);
-    // Anchor on the actual JSX section heading, not the earlier prose
-    // comment (which legitimately mentions "Operating Model" and
-    // "set_club_tier_for_operator" only to document that tier mutation
-    // stays privileged/out of scope here).
-    const idx = s.indexOf('<section className="space-y-2">');
+    // Anchor on the actual JSX group heading (Admin IA Checkpoint 5: Plan &
+    // Access is the last of the three groups on the page, containing only
+    // Operating Model), not the earlier prose comment (which legitimately
+    // mentions "Operating Model" and "set_club_tier_for_operator" only to
+    // document that tier mutation stays privileged/out of scope here).
+    const idx = s.indexOf('<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Plan & Access</h2>');
     expect(idx).toBeGreaterThan(-1);
     const sectionEnd = s.indexOf("</section>", idx);
     const section = s.slice(idx, sectionEnd);

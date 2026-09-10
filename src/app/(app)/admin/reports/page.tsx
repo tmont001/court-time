@@ -4,6 +4,14 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import { resolveReportRange, type ReportRange } from "./dateRange";
+import { logReportingRpcFailure } from "./reportingDiagnostics";
+import { formatRateOrUnavailable } from "./reportPresentation";
+import type { DailySeriesPoint } from "./reservationsChart";
+import ReservationsDailyChart from "./ReservationsDailyChart";
+import { formatMoney } from "@/lib/money";
+import { getFinancialRangeSummary, getOutstandingSnapshot, FINANCIAL_DOMAIN_LABEL } from "../payments/financialSummary";
+import ReportExportButton from "./ReportExportButton";
+import type { ReportSummaryRow } from "./reportExport";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,12 +37,6 @@ type CourtUtilizationRow = {
   member_demand_reserved_hours: number;
   gross_utilization_pct: number;
   member_demand_utilization_pct: number;
-};
-
-type DailySeriesPoint = {
-  local_date: string;
-  total_count: number;
-  cancelled_count: number;
 };
 
 type ReservationSummaryRow = {
@@ -97,16 +99,35 @@ function formatHours(n: number): string {
 
 // ── Layout components ─────────────────────────────────────────────────────────
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
-      {children}
-    </p>
+    <div className="flex items-center justify-between gap-3 mb-2">
+      <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+        {children}
+      </p>
+      {right}
+    </div>
+  );
+}
+
+// Restrained, scannable marker for a value that is NOT governed by the
+// page's selected date range (e.g. a live roster/queue count) — deliberately
+// not a long paragraph, so it reads at a glance next to or inside the metric
+// itself. Reuses this page's existing small-caption visual language (the
+// same text-[10px]/uppercase/tracking-wider treatment SectionHeading and
+// StatTile's own label already use) rather than introducing a new badge
+// style.
+function SnapshotBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+      <span aria-hidden="true" className="inline-block w-1 h-1 rounded-full bg-gray-400 dark:bg-gray-500" />
+      Current snapshot
+    </span>
   );
 }
 
 function EmptyState({ label }: { label: string }) {
-  return <p className="text-sm text-gray-400 dark:text-gray-500 px-1">{label}</p>;
+  return <p className="text-sm text-gray-500 dark:text-gray-400 px-1">{label}</p>;
 }
 
 function UnavailableState() {
@@ -117,21 +138,61 @@ function UnavailableState() {
   );
 }
 
-function UtilizationRow({ label, pct }: { label: string; pct: number }) {
+// Two-per-row compact stat, for a summary strip inside a card rather than
+// its own bordered tile — used by the Court Utilization overall-summary
+// strip, deliberately lighter-weight than StatTile so it doesn't compete
+// visually with the per-court rows beneath it.
+function CompactStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="px-4 py-2.5 flex items-center justify-between">
-      <span className="text-sm text-gray-700 dark:text-gray-200">{label}</span>
-      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{formatPct(pct)}</span>
+    <div>
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</p>
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5">{label}</p>
     </div>
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({
+  label,
+  value,
+  snapshot,
+  title,
+}: {
+  label: string;
+  value: string;
+  /** Renders the same restrained "Current snapshot" marker SnapshotBadge
+   * uses, sized for a tile rather than a section heading. */
+  snapshot?: boolean;
+  /** Native title attribute — used to explain a "—" value inline without an
+   * external tooltip dependency. */
+  title?: string;
+}) {
   return (
-    <div className="ct-card px-3 py-3 text-center">
+    <div className="ct-card px-3 py-3 text-center" title={title}>
       <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</p>
-      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">{label}</p>
+      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 leading-tight">{label}</p>
+      {snapshot && (
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-1">
+          Current snapshot
+        </p>
+      )}
     </div>
+  );
+}
+
+// Native <details>/<summary> disclosure for lower-value explanatory copy —
+// this project's own established pattern (see DeliveryDiagnosticsSection and
+// NotificationPreferencesForm's groups) rather than a tooltip library.
+function InfoDisclosure({ summary, children }: { summary: string; children: React.ReactNode }) {
+  return (
+    <details className="group mt-1.5">
+      <summary className="cursor-pointer select-none list-none inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-1">
+        <span aria-hidden="true" className="inline-block motion-safe:transition-transform group-open:rotate-90">
+          ›
+        </span>
+        {summary}
+      </summary>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 px-1">{children}</p>
+    </details>
   );
 }
 
@@ -144,54 +205,12 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Simple CSS-only sparkline: one bar per day, height proportional to that
-// day's total, with a darker cap segment showing the cancelled share.
-// Horizontally scrollable so a 366-day custom range never overflows the page.
-function DailyBarSeries({ series }: { series: DailySeriesPoint[] }) {
-  const max = Math.max(1, ...series.map(p => p.total_count));
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex items-end gap-[3px] h-16 min-w-max px-1">
-        {series.map(p => {
-          const totalPct = (p.total_count / max) * 100;
-          const cancelledPct = p.total_count > 0 ? (p.cancelled_count / p.total_count) * 100 : 0;
-          return (
-            <div
-              key={p.local_date}
-              title={`${p.local_date}: ${p.total_count} total, ${p.cancelled_count} cancelled`}
-              className="w-2 shrink-0 rounded-t bg-gray-100 dark:bg-gray-800 flex flex-col justify-end overflow-hidden"
-              style={{ height: "100%" }}
-            >
-              <div className="w-full flex flex-col justify-end" style={{ height: `${totalPct}%` }}>
-                <div
-                  className="w-full bg-red-400 dark:bg-red-500"
-                  style={{ height: `${cancelledPct}%` }}
-                />
-                <div
-                  className="w-full bg-accent"
-                  style={{ height: `${100 - cancelledPct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function ReportsUnavailablePage() {
   return (
     <>
       <Header screenTitle="Reports" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-2xl md:mx-auto px-4 pt-3 pb-8 space-y-6">
-          <Link
-            href="/admin/overview"
-            className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-          >
-            ← Back to Overview
-          </Link>
           <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 px-4 py-3">
             <p className="text-sm text-orange-700 dark:text-orange-300">
               Reports are temporarily unavailable — we couldn&apos;t load your club&apos;s
@@ -241,6 +260,18 @@ export default async function AdminReportsPage({
 
   const tz = club.timezone;
 
+  // Admin Cleanup Checkpoint 6 — currency for the new Financial Summary
+  // section, sourced the same way admin/payments/page.tsx already does
+  // (club_settings.currency, "USD" fallback) — no silent-failure risk here
+  // the way an unset timezone has, since a missing currency safely falls
+  // back to the same default every other money display in this app uses.
+  const { data: clubSettings } = await supabase
+    .from("club_settings")
+    .select("currency")
+    .eq("club_id", clubId)
+    .single();
+  const currency = clubSettings?.currency ?? "USD";
+
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: tz });
 
   const sp = await searchParams;
@@ -257,6 +288,40 @@ export default async function AdminReportsPage({
       supabase.rpc("get_waitlist_demand", rpcArgs),
       supabase.rpc("get_member_engagement_summary", rpcArgs),
     ]);
+
+  logReportingRpcFailure("get_reporting_overview", overviewResult.error);
+  logReportingRpcFailure("get_court_utilization", courtsResult.error);
+  logReportingRpcFailure("get_reservation_summary", reservationsResult.error);
+  logReportingRpcFailure("get_event_program_summary", eventProgramResult.error);
+  logReportingRpcFailure("get_waitlist_demand", waitlistResult.error);
+  logReportingRpcFailure("get_member_engagement_summary", engagementResult.error);
+
+  // Admin Cleanup Checkpoint 6 — Financial Summary. Consumes the SAME
+  // authoritative layer /admin/payments' Overview tab consumes (never a
+  // second, competing formula) — Collected/Refunded/Net for this exact
+  // selected range (same club_local_bounds boundary every RPC above
+  // already uses), plus Outstanding as a CURRENT SNAPSHOT (reusing the
+  // existing Outstanding Balances computation, not re-derived here).
+  const [financialSummaryResult, outstandingResult] = await Promise.all([
+    getFinancialRangeSummary(supabase, resolved.startDate, resolved.endDate),
+    getOutstandingSnapshot(supabase, clubId, tz),
+  ]);
+  if (financialSummaryResult.error) {
+    logReportingRpcFailure("get_financial_range_summary", financialSummaryResult.error);
+  }
+  if ("error" in outstandingResult) {
+    console.error("[AdminReports] outstanding snapshot failed:", { message: outstandingResult.error });
+  }
+  const financialSummary = financialSummaryResult.data;
+  const outstandingCents = "error" in outstandingResult ? null : outstandingResult.outstandingCents;
+  // Correction — the range summary (Collected/Refunded/Net) and the
+  // Outstanding snapshot are two INDEPENDENT reads (separate awaited
+  // results above) that can fail independently; a single combined
+  // "financialFailed" boolean would misreport one as unavailable merely
+  // because the other failed. Tracked separately so both the UI and the
+  // CSV export can represent each half's real status truthfully.
+  const financialRangeFailed = !financialSummary;
+  const outstandingFailed = outstandingCents === null;
 
   const overviewRows = (overviewResult.data ?? []) as OverviewRow[];
   const overview = overviewRows[0] ?? null;
@@ -281,6 +346,89 @@ export default async function AdminReportsPage({
   const engagement = engagementRows[0] ?? null;
   const engagementFailed = !!engagementResult.error || !engagement;
 
+  // Admin Cleanup Checkpoint 6 (correction pass) — Export report (.csv).
+  // Curated summary metrics from sections ALREADY loaded above — never
+  // every field, never a raw dataset dump. A failed section is NEVER
+  // silently omitted (a downloaded file has no surrounding UI context to
+  // explain a gap the way the page's own UnavailableState does) — it
+  // contributes exactly one truthful "Data status: Unavailable" row
+  // instead, never a fabricated metric value. One section failing never
+  // blocks any other section's real rows from exporting.
+  const reportSummaryRows: ReportSummaryRow[] = [];
+
+  // "Court Utilization" here mirrors the page's own Court Utilization
+  // section's gross/member-demand summary strip, which reads exclusively
+  // from `overview` (get_reporting_overview) — gated on overviewFailed
+  // alone, matching that strip's own render condition; courtsFailed
+  // governs only the separate per-court list, which this curated export
+  // does not include at all.
+  if (!overviewFailed) {
+    reportSummaryRows.push(
+      { section: "Court Utilization", metric: "Gross utilization", value: formatPct(overview!.gross_utilization_pct), scope: "Selected range" },
+      { section: "Court Utilization", metric: "Member demand utilization", value: formatPct(overview!.member_demand_utilization_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Court Utilization", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!reservationsFailed) {
+    reportSummaryRows.push(
+      { section: "Reservations", metric: "Total reservations", value: String(reservationSummary!.total_reservations), scope: "Selected range" },
+      { section: "Reservations", metric: "Cancelled reservations", value: String(reservationSummary!.cancelled_reservations), scope: "Selected range" },
+      { section: "Reservations", metric: "Cancellation rate", value: formatPct(reservationSummary!.cancellation_rate_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Reservations", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!eventProgramFailed) {
+    reportSummaryRows.push(
+      { section: "Events & Programs", metric: "Total sessions held", value: String(eventProgram!.total_sessions_held), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Total enrollment", value: String(eventProgram!.total_enrollment), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Fill rate", value: formatPct(eventProgram!.fill_rate_pct), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Attendance rate", value: formatPct(eventProgram!.attendance_rate_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Events & Programs", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!waitlistFailed) {
+    reportSummaryRows.push(
+      { section: "Waitlist Demand", metric: "Total outstanding entries", value: String(waitlist!.total_outstanding_entries), scope: "Current snapshot" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Waitlist Demand", metric: "Data status", value: "Unavailable", scope: "Current snapshot" });
+  }
+
+  if (!engagementFailed) {
+    reportSummaryRows.push(
+      { section: "Member Engagement", metric: "Active members", value: String(engagement!.active_member_snapshot_count), scope: "Current snapshot" },
+      { section: "Member Engagement", metric: "Engaged members", value: String(engagement!.engaged_member_count), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Member Engagement", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  // Financial: range (Collected/Refunded/Net) and snapshot (Outstanding)
+  // fail independently — each contributes its own real rows or its own
+  // truthful status row, never coupled to the other's outcome.
+  if (!financialRangeFailed) {
+    reportSummaryRows.push(
+      { section: "Financial", metric: "Collected", value: formatMoney(financialSummary!.collectedCents, currency), scope: "Selected range" },
+      { section: "Financial", metric: "Refunded", value: formatMoney(financialSummary!.refundedCents, currency), scope: "Selected range" },
+      { section: "Financial", metric: "Net collected", value: formatMoney(financialSummary!.netCollectedCents, currency), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Financial", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+  if (!outstandingFailed) {
+    reportSummaryRows.push(
+      { section: "Financial", metric: "Outstanding", value: formatMoney(outstandingCents!, currency), scope: "Current snapshot" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Financial", metric: "Data status", value: "Unavailable", scope: "Current snapshot" });
+  }
+
   const rangeLinks: { key: ReportRange; label: string; href: string }[] = [
     { key: "today", label: "Today", href: "/admin/reports?range=today" },
     { key: "7d", label: "Last 7 days", href: "/admin/reports?range=7d" },
@@ -292,13 +440,6 @@ export default async function AdminReportsPage({
       <Header screenTitle="Reports" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-2xl md:mx-auto px-4 pt-3 pb-8 space-y-6">
-          <Link
-            href="/admin/overview"
-            className="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 hover:text-accent motion-safe:transition-colors motion-safe:duration-150"
-          >
-            ← Back to Overview
-          </Link>
-
           <section className="space-y-1">
             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Operational reports</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -367,7 +508,7 @@ export default async function AdminReportsPage({
               </button>
             </form>
 
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
               {resolved.startDate === resolved.endDate
                 ? `Showing ${resolved.startDate}.`
                 : `Showing ${resolved.startDate} – ${resolved.endDate}.`}
@@ -375,6 +516,18 @@ export default async function AdminReportsPage({
                 " Today includes scheduled court occupancy for the entire local date."}
               {" "}A custom range can span at most 366 days.
             </p>
+          </section>
+
+          {/* ── Export (Admin Cleanup Checkpoint 6) ──────────────────────────
+              The SUMMARY report — detailed transaction exports remain owned
+              by /admin/payments. Built entirely from the already-loaded
+              values above (reportSummaryRows), never a second query. */}
+          <section>
+            <ReportExportButton
+              rows={reportSummaryRows}
+              startDate={resolved.startDate}
+              endDate={resolved.endDate}
+            />
           </section>
 
           {resolved.invalid && (
@@ -394,67 +547,48 @@ export default async function AdminReportsPage({
               <UnavailableState />
             ) : (
               <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: "Court Utilization", value: formatPct(overview.gross_utilization_pct) },
-                  { label: "Total Reservations", value: String(overview.total_reservations) },
-                  { label: "Sessions Held", value: String(overview.sessions_held) },
-                  { label: "Session Fill Rate", value: formatPct(overview.session_fill_rate_pct) },
-                  { label: "Cancellation Rate", value: formatPct(overview.cancellation_rate_pct) },
-                  { label: "Active Members", value: String(overview.active_member_count) },
-                ].map(t => (
-                  <div key={t.label} className="ct-card px-3 py-3 text-center">
-                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">{t.value}</p>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">
-                      {t.label}
-                    </p>
-                  </div>
-                ))}
+                <StatTile label="Court Utilization" value={formatPct(overview.gross_utilization_pct)} />
+                <StatTile label="Total Reservations" value={String(overview.total_reservations)} />
+                <StatTile label="Sessions Held" value={String(overview.sessions_held)} />
+                <StatTile
+                  label="Session Fill Rate"
+                  value={formatRateOrUnavailable(overview.session_fill_rate_pct, overview.total_session_capacity > 0)}
+                  title={overview.total_session_capacity > 0 ? undefined : "No session capacity in range."}
+                />
+                <StatTile label="Cancellation Rate" value={formatPct(overview.cancellation_rate_pct)} />
+                <StatTile label="Active Members" value={String(overview.active_member_count)} snapshot />
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              Active Members is a current snapshot, not specific to the selected range.
-            </p>
           </section>
 
-          {/* ── Overall utilization summary ────────────────────────────────── */}
+          {/* ── Court utilization ──────────────────────────────────────────── */}
+          {/* Consolidated: the overall gross/member-demand summary now sits as
+              a compact strip above the per-court rows it used to duplicate as
+              its own full section — same two RPCs (get_reporting_overview,
+              get_court_utilization), each still independently rendered as
+              unavailable if its own RPC failed. Outstanding waitlist and
+              cancelled reservations are deliberately NOT shown here — this
+              section is court-utilization information only; those two values
+              live in their own semantic homes (Waitlist Demand's "Total
+              outstanding", Reservations' cancellation rate/count) rather than
+              being duplicated here too. overview.outstanding_waitlist_count
+              and overview.cancelled_reservations/.total_reservations remain
+              read from this same RPC result elsewhere on this page — nothing
+              was removed from the RPC call or the page's data, only from this
+              one section's presentation. */}
           <section>
-            <SectionHeading>Court utilization (overall)</SectionHeading>
+            <SectionHeading>Court Utilization</SectionHeading>
             {overviewFailed ? (
               <UnavailableState />
             ) : (
-              <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
-                <UtilizationRow label="Gross utilization" pct={overview.gross_utilization_pct} />
-                <UtilizationRow
+              <div className="ct-card px-4 py-3 grid grid-cols-2 gap-x-4 gap-y-3 mb-2">
+                <CompactStat label="Gross utilization" value={formatPct(overview.gross_utilization_pct)} />
+                <CompactStat
                   label="Member-demand utilization"
-                  pct={overview.member_demand_utilization_pct}
+                  value={formatPct(overview.member_demand_utilization_pct)}
                 />
-                <div className="px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">Outstanding waitlist</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {overview.outstanding_waitlist_count}
-                  </span>
-                </div>
-                <div className="px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">Cancelled reservations</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {overview.cancelled_reservations} / {overview.total_reservations}
-                  </span>
-                </div>
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              Gross utilization includes maintenance and admin blocks; member-demand utilization
-              excludes them. Outstanding waitlist counts current entries, not distinct people —
-              a member can appear more than once. Historical ranges use the club&apos;s current
-              active-court configuration and current operating-hours configuration, not what was
-              in effect at the time — a reservation on a court that has since been deactivated
-              is excluded, and past dates are valued at today&apos;s hours, not their own.
-            </p>
-          </section>
-
-          {/* ── Per-court utilization ──────────────────────────────────────── */}
-          <section>
-            <SectionHeading>Court utilization (by court)</SectionHeading>
             {courtsFailed ? (
               <UnavailableState />
             ) : courts.length === 0 ? (
@@ -480,7 +614,7 @@ export default async function AdminReportsPage({
                         style={{ width: `${Math.max(0, Math.min(100, c.gross_utilization_pct))}%` }}
                       />
                     </div>
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
                       {formatPct(c.gross_utilization_pct)} gross · {formatPct(c.member_demand_utilization_pct)}{" "}
                       member-demand
                     </p>
@@ -488,6 +622,14 @@ export default async function AdminReportsPage({
                 ))}
               </div>
             )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Historical ranges use today&apos;s court and hours configuration, not what was in
+              effect at the time.
+            </p>
+            <InfoDisclosure summary="What do these numbers mean?">
+              Gross utilization includes maintenance and admin blocks; member-demand utilization
+              excludes them.
+            </InfoDisclosure>
           </section>
 
           {/* ── Reservations ────────────────────────────────────────────────── */}
@@ -516,22 +658,13 @@ export default async function AdminReportsPage({
                 </div>
                 {reservationSummary.daily_series.length > 0 && (
                   <div className="ct-card mt-2 px-3 py-3">
-                    <DailyBarSeries series={reservationSummary.daily_series} />
-                    <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1.5 flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1">
-                        <span className="inline-block w-2 h-2 rounded-sm bg-accent" /> total
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <span className="inline-block w-2 h-2 rounded-sm bg-red-400 dark:bg-red-500" /> cancelled
-                      </span>
-                    </p>
+                    <ReservationsDailyChart series={reservationSummary.daily_series} />
                   </div>
                 )}
               </>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              Every date in the selected range appears in the daily chart, including zero-count
-              days. Reservation counts reflect all courts, including any court since deactivated.
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Includes reservations on courts since deactivated.
             </p>
           </section>
 
@@ -546,9 +679,21 @@ export default async function AdminReportsPage({
                   <StatTile label="Sessions Held" value={String(eventProgram.total_sessions_held)} />
                   <StatTile label="Standalone" value={String(eventProgram.standalone_sessions_held)} />
                   <StatTile label="Program-Generated" value={String(eventProgram.program_sessions_held)} />
-                  <StatTile label="Fill Rate" value={formatPct(eventProgram.fill_rate_pct)} />
-                  <StatTile label="Attendance Rate" value={formatPct(eventProgram.attendance_rate_pct)} />
-                  <StatTile label="No-Show Rate" value={formatPct(eventProgram.no_show_rate_pct)} />
+                  <StatTile
+                    label="Fill Rate"
+                    value={formatRateOrUnavailable(eventProgram.fill_rate_pct, eventProgram.total_capacity > 0)}
+                    title={eventProgram.total_capacity > 0 ? undefined : "No session capacity in range."}
+                  />
+                  <StatTile
+                    label="Attendance Rate"
+                    value={formatRateOrUnavailable(eventProgram.attendance_rate_pct, eventProgram.attendance_marked_count > 0)}
+                    title={eventProgram.attendance_marked_count > 0 ? undefined : "No attendance recorded for this range."}
+                  />
+                  <StatTile
+                    label="No-Show Rate"
+                    value={formatRateOrUnavailable(eventProgram.no_show_rate_pct, eventProgram.attendance_marked_count > 0)}
+                    title={eventProgram.attendance_marked_count > 0 ? undefined : "No attendance recorded for this range."}
+                  />
                 </div>
                 <div className="ct-card mt-2 divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
                   <DetailRow label="Total capacity" value={String(eventProgram.total_capacity)} />
@@ -567,19 +712,22 @@ export default async function AdminReportsPage({
                     value={String(eventProgram.cancelled_program_sessions)}
                   />
                 </div>
+                {eventProgram.attendance_marked_count === 0 && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+                    No attendance recorded for this range.
+                  </p>
+                )}
               </>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              &ldquo;Program-generated&rdquo; sessions are events created by a program&apos;s
-              schedule — there is no separate session table. Attendance rates count only confirmed
-              participants with a recorded attendance mark; guests are never included, since guest
-              attendance isn&apos;t tracked.
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Attendance rates count only confirmed participants with a recorded attendance mark;
+              guests are never included, since guest attendance isn&apos;t tracked.
             </p>
           </section>
 
           {/* ── Waitlist Demand ─────────────────────────────────────────────── */}
           <section>
-            <SectionHeading>Waitlist Demand</SectionHeading>
+            <SectionHeading right={<SnapshotBadge />}>Waitlist Demand</SectionHeading>
             {waitlistFailed ? (
               <UnavailableState />
             ) : (
@@ -601,10 +749,8 @@ export default async function AdminReportsPage({
                 </div>
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              A current snapshot, independent of the selected date range — not a historical count
-              of offers made, accepted, or expired over the period, which this checkpoint does not
-              track. Counts entries, not distinct people; a member can appear more than once.
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Counts entries, not distinct people; a member can appear more than once.
             </p>
           </section>
 
@@ -618,6 +764,7 @@ export default async function AdminReportsPage({
                 <StatTile
                   label="Active Members"
                   value={String(engagement.active_member_snapshot_count)}
+                  snapshot
                 />
                 <StatTile label="Engaged Members" value={String(engagement.engaged_member_count)} />
                 <StatTile
@@ -634,12 +781,63 @@ export default async function AdminReportsPage({
                 />
               </div>
             )}
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
-              Active Members is a current snapshot. Every other figure here counts distinct
-              members, not total actions — a member with several reservations in range still
-              counts once. Engaged Members is the union across reservations, event participation,
-              and program enrollment, so a member active in more than one way is still counted
-              once, not once per source.
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Every figure here (besides Active Members) counts distinct members, not total
+              actions. Engaged Members is the union across reservations, event participation, and
+              program enrollment — a member active in more than one way is still counted once.
+            </p>
+          </section>
+
+          {/* ── Financial Summary ──────────────────────────────────────────────
+              Admin Cleanup Checkpoint 6 — consumes the exact same
+              get_financial_range_summary RPC + Outstanding-snapshot layer
+              /admin/payments' Overview tab consumes; no formula is
+              duplicated here. */}
+          <section>
+            <SectionHeading>Financial Summary</SectionHeading>
+            {/* Correction — Collected/Refunded/Net (range) and Outstanding
+                (snapshot) are two independent reads that can fail
+                independently; each renders its own truthful state rather
+                than one combined all-or-nothing UnavailableState. */}
+            <div className="grid grid-cols-2 gap-2">
+              {financialRangeFailed ? (
+                <div className="col-span-2">
+                  <UnavailableState />
+                </div>
+              ) : (
+                <>
+                  <StatTile label="Collected" value={formatMoney(financialSummary!.collectedCents, currency)} />
+                  <StatTile label="Refunded" value={formatMoney(financialSummary!.refundedCents, currency)} />
+                  <StatTile label="Net Collected" value={formatMoney(financialSummary!.netCollectedCents, currency)} />
+                </>
+              )}
+              {outstandingFailed ? (
+                <div className="col-span-2">
+                  <UnavailableState />
+                </div>
+              ) : (
+                <StatTile label="Outstanding" value={formatMoney(outstandingCents!, currency)} snapshot />
+              )}
+            </div>
+            {!financialRangeFailed && financialSummary!.domainBreakdown.length > 0 && (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mt-3 mb-1.5 px-1">
+                  Net collected by domain
+                </p>
+                <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
+                  {financialSummary!.domainBreakdown.map(d => (
+                    <DetailRow
+                      key={d.domain}
+                      label={FINANCIAL_DOMAIN_LABEL[d.domain]}
+                      value={formatMoney(d.netCollectedCents, currency)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5 px-1">
+              Collected/Refunded/Net Collected reflect the selected range above. Outstanding is a
+              current snapshot, not filtered by the selected range.
             </p>
           </section>
         </div>

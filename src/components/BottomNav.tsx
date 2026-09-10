@@ -110,6 +110,7 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
         { label: "Payments",      href: "/admin/payments",        exact: false },
         { label: "Courts",        href: "/admin/courts",          exact: false },
         { label: "Club Settings", href: "/admin/settings",        exact: false },
+        { label: "Communications", href: "/admin/communications", exact: false },
         { label: "Audit Log",     href: "/admin/audit-log",       exact: false },
         { label: "Reports",       href: "/admin/reports",         exact: false },
         { label: "Profile",       href: "/profile",               exact: true  },
@@ -141,7 +142,7 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
   return (
     <>
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex z-40 pb-[env(safe-area-inset-bottom)] motion-safe:transition-colors motion-safe:duration-150"
+        className="lg:hidden fixed bottom-0 left-0 right-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex z-40 pb-[env(safe-area-inset-bottom)] motion-safe:transition-colors motion-safe:duration-150"
         aria-label="Mobile navigation"
       >
         {mainTabs.map((tab) => {

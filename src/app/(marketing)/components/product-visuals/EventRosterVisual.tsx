@@ -1,7 +1,8 @@
 import ProductFrame from "./ProductFrame";
 
 // Mirrors the real EventDetailSheet: a colored event-type pill (using the
-// club's actual event-type color token), the exact "X of Y spots filled ·
+// brand green, not the actual "Group Clinic" event-type color, which fails
+// WCAG AA contrast for white text), the exact "X of Y spots filled ·
 // N on waitlist" capacity line, and the real waitlist → offered → confirmed
 // participant lifecycle, including the amber "Spot offered / Accept by"
 // treatment the app shows for an active offer.
@@ -14,7 +15,7 @@ export default function EventRosterVisual() {
       <div className="flex items-center gap-1.5 mb-3">
         <span
           className="inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
-          style={{ background: "#2E9B5E" }}
+          style={{ background: "var(--ct-brand)" }}
         >
           Clinic
         </span>

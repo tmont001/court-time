@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
@@ -13,6 +13,21 @@ import { formatMoney } from "@/lib/money";
 import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
 import PaymentDetailSheet from "@/components/PaymentDetailSheet";
 import PaymentExportMenu from "./PaymentExportMenu";
+import { getFinancialOverviewAction, type FinancialOverviewResult } from "./financialOverviewActions";
+import type { ReportRange } from "../reports/dateRange";
+
+// Mirrors FINANCIAL_DOMAIN_LABEL in ./financialSummary.ts (a server-only
+// module — hydrateExportDomainContext there performs real Supabase queries
+// meant to run only from a Server Action/Component, so it is deliberately
+// NOT imported into this client component; this tiny, stable label map is
+// duplicated rather than sharing that import boundary).
+const FINANCIAL_DOMAIN_LABEL: Record<string, string> = {
+  reservation: "Court reservations",
+  lesson:      "Lessons",
+  event:       "Events",
+  program:     "Programs",
+  other:       "Other / Legacy",
+};
 
 export interface AdminPaymentDispute {
   status: string;
@@ -75,10 +90,17 @@ const DOMAIN_LABEL: Record<AdminPaymentRow["domainType"], string> = {
   program_enrollment: "Program",
 };
 
-type Filter = "outstanding" | "all";
+// Admin Cleanup Checkpoint 6 — Target Payments IA: Overview / Outstanding /
+// Payment Activity. "Outstanding" and "Payment Activity" are the exact
+// same two views this component already had (previously named via a
+// `Filter` type: "outstanding" | "all" — "all" is renamed "activity" here,
+// with byte-identical filtering behavior, never rebuilt). "Overview" is
+// new: Admin-only financial analytics, never shown to Staff (who keep
+// their existing Outstanding/Payment Activity access unchanged).
+type Tab = "overview" | "outstanding" | "activity";
 
 export default function AdminPaymentsClient({
-  rows, clubId, currency, clubTimezone, truncated, isAdmin,
+  rows, clubId, currency, clubTimezone, truncated, isAdmin, initialFinancialOverview,
 }: {
   rows: AdminPaymentRow[];
   clubId: string;
@@ -96,22 +118,51 @@ export default function AdminPaymentsClient({
   // boundary remains createOnlineRefundAction's own server-side
   // `profile.role !== "admin"` check (refundActions.ts), unchanged and
   // untouched by this — hiding the button never substitutes for it.
+  // Admin Cleanup Checkpoint 6 — ALSO now gates whether the Overview tab
+  // is ever rendered at all (never merely hidden by CSS): Staff passes
+  // the page's isOperator gate but must never see financial analytics.
+  // The real boundary is still server-side — get_financial_range_summary
+  // itself raises 'insufficient_role' for a non-admin caller, and
+  // getFinancialOverviewAction independently re-checks role === "admin"
+  // before ever calling it.
   isAdmin: boolean;
+  // Server-rendered Overview figures for the default range (7d), or null
+  // when isAdmin is false (never fetched for Staff) or the initial fetch
+  // failed. The Overview panel's own range switch refetches via
+  // getFinancialOverviewAction — this prop only seeds the first render.
+  initialFinancialOverview: FinancialOverviewResult | null;
 }) {
   const router = useRouter();
-  const [filter, setFilter] = useState<Filter>("outstanding");
+  const [tab, setTab] = useState<Tab>(isAdmin ? "overview" : "outstanding");
   const [query, setQuery]   = useState("");
   const [recordTarget, setRecordTarget] = useState<AdminPaymentRow | null>(null);
   const [refundTarget, setRefundTarget] = useState<AdminPaymentRow | null>(null);
   const [detailTarget, setDetailTarget] = useState<AdminPaymentRow | null>(null);
 
+  const [financialOverview, setFinancialOverview] = useState(initialFinancialOverview);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [isOverviewPending, startOverviewTransition] = useTransition();
+
+  function handleRangeChange(range: ReportRange) {
+    setOverviewError(null);
+    startOverviewTransition(async () => {
+      const result = await getFinancialOverviewAction(range);
+      if (result.error || !result.data) {
+        setOverviewError(result.error ?? "Financial summary could not be loaded.");
+      } else {
+        setFinancialOverview(result.data);
+      }
+    });
+  }
+
   const filtered = useMemo(() => {
     // Locked semantics (runtime QA correction) — Outstanding means
     // "balances the member still owes": unpaid/partially_paid only. A
-    // fully paid, Stripe-refundable transaction belongs on All, never
-    // Outstanding — Refund remains reachable there via row.refundableCents
+    // fully paid, Stripe-refundable transaction belongs on Payment
+    // Activity, never Outstanding — Refund remains reachable there via
+    // row.refundableCents
     // (see the Refund button's own, separate render condition below).
-    let list = filter === "outstanding" ? rows.filter(r => isPaymentOpenForRecording(r.state)) : rows;
+    let list = tab === "outstanding" ? rows.filter(r => isPaymentOpenForRecording(r.state)) : rows;
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(r =>
@@ -119,61 +170,85 @@ export default function AdminPaymentsClient({
       );
     }
     return list;
-  }, [rows, filter, query]);
+  }, [rows, tab, query]);
 
   return (
     <div className="px-4 pb-8 pt-4">
-      <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-        Who owes money, what for, and how much — reflects current payment state only.
-        Not a revenue report or transaction ledger.
-      </p>
-
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <div className="flex w-full sm:w-auto gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-          <button
-            onClick={() => setFilter("outstanding")}
-            className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold motion-safe:transition-colors motion-safe:duration-100 ${
-              filter === "outstanding"
-                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
-          >
-            Outstanding
-          </button>
-          <button
-            onClick={() => setFilter("all")}
-            className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold motion-safe:transition-colors motion-safe:duration-100 ${
-              filter === "all"
-                ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
-          >
-            All
-          </button>
-        </div>
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search by name…"
-          className="w-full sm:flex-1 ct-input text-base md:text-sm"
-        />
-        <PaymentExportMenu clubId={clubId} clubTimezone={clubTimezone} />
-      </div>
-
-      {truncated && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 mb-4">
-          Showing the 500 most recent payments. Use Export for complete payment history.
+      {tab === "overview" ? (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+          Money collected, refunded, and still owed — sourced from your club&apos;s payment ledger.
+        </p>
+      ) : (
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+          Who owes money, what for, and how much — reflects current payment state only.
+          Not a revenue report or transaction ledger.
         </p>
       )}
 
-      {filtered.length === 0 ? (
-        <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
-          {filter === "outstanding" ? "No outstanding balances." : "No payments to show."}
-        </p>
+      {/* Admin IA — tab strip gets its own full-width row (equal-width
+          grid cells), matching the approved tab-strip treatment used
+          elsewhere in this app (Courts/Lessons/Communications). Overview
+          is only ever rendered for isAdmin — never merely hidden by CSS,
+          simply absent from the DOM for Staff, matching the real
+          server-side authorization boundary (get_financial_range_summary
+          itself is Admin-only). */}
+      <div className={`grid ${isAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl mb-4`}>
+        {isAdmin && (
+          <button
+            onClick={() => setTab("overview")}
+            className={tabClass(tab === "overview")}
+          >
+            Overview
+          </button>
+        )}
+        <button
+          onClick={() => setTab("outstanding")}
+          className={tabClass(tab === "outstanding")}
+        >
+          Outstanding
+        </button>
+        <button
+          onClick={() => setTab("activity")}
+          className={tabClass(tab === "activity")}
+        >
+          Payment Activity
+        </button>
+      </div>
+
+      {tab === "overview" ? (
+        <FinancialOverviewPanel
+          overview={financialOverview}
+          error={overviewError}
+          isPending={isOverviewPending}
+          currency={currency}
+          onRangeChange={handleRangeChange}
+        />
       ) : (
-        <div className="space-y-2">
-          {filtered.map(row => (
+        <>
+          <div className="flex flex-col sm:flex-row gap-2 mb-4">
+            <input
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search by name…"
+              className="w-full sm:flex-1 ct-input text-base md:text-sm"
+            />
+            <PaymentExportMenu clubId={clubId} clubTimezone={clubTimezone} />
+          </div>
+
+          {truncated && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 mb-4">
+              Showing the 500 most recent payments. Use Export for complete payment history.
+            </p>
+          )}
+
+          {filtered.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
+              {tab === "outstanding" ? "No outstanding balances." : "No payments to show."}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {filtered.map(row => (
             <div key={row.key} className="ct-card px-4 py-3">
               <div className="flex items-start justify-between gap-3">
                 <Link href={row.href} className="min-w-0 flex-1 hover:opacity-75 motion-safe:transition-opacity motion-safe:duration-100">
@@ -240,8 +315,10 @@ export default function AdminPaymentsClient({
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {recordTarget && (
@@ -284,6 +361,128 @@ export default function AdminPaymentsClient({
           onRequestRecordPayment={() => { setRecordTarget(detailTarget); setDetailTarget(null); }}
         />
       )}
+    </div>
+  );
+}
+
+// Admin Cleanup Checkpoint 6 — shared per-cell style for the 2/3-cell tab
+// strip above, mirroring the approved Courts/Communications tab treatment
+// (flex items-center justify-center text-center leading-tight) so a
+// wrapped "Payment Activity" label at narrow widths stays centered and no
+// taller than its row requires.
+function tabClass(active: boolean): string {
+  return `flex items-center justify-center text-center leading-tight py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
+    active
+      ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+      : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+  }`;
+}
+
+// Admin Cleanup Checkpoint 6 — Financial Overview. Selected-range Collected/
+// Refunded/Net collected (locked relationship: Net = Collected - Refunded,
+// enforced once in financialSummary.ts, never re-derived here) plus a
+// clearly-labeled current-snapshot Outstanding total, plus — only when the
+// authoritative layer actually returned domain activity for the range — a
+// compact Net collected by domain breakdown. Deliberately no chart: a
+// meaningful trend visualization would need daily-bucketed figures this
+// RPC does not return (it returns one range-wide aggregate, not a daily
+// series) — adding that is out of this checkpoint's scope, and a chart
+// with no real underlying series would be decorative, not truthful.
+function FinancialOverviewPanel({
+  overview, error, isPending, currency, onRangeChange,
+}: {
+  overview: FinancialOverviewResult | null;
+  error: string | null;
+  isPending: boolean;
+  currency: string;
+  onRangeChange: (range: ReportRange) => void;
+}) {
+  const rangeLinks: { key: ReportRange; label: string }[] = [
+    { key: "today", label: "Today" },
+    { key: "7d", label: "7 days" },
+    { key: "30d", label: "30 days" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="ct-card flex divide-x divide-gray-100 dark:divide-gray-800 overflow-hidden">
+        {rangeLinks.map(r => (
+          <button
+            key={r.key}
+            type="button"
+            onClick={() => onRangeChange(r.key)}
+            disabled={isPending}
+            className={`flex-1 flex items-center justify-center text-center leading-tight px-2 py-2 text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 disabled:opacity-50 ${
+              overview?.range === r.key
+                ? "bg-accent text-white"
+                : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+            }`}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {error ? (
+        <p className="text-sm text-orange-500 dark:text-orange-400 px-1">{error}</p>
+      ) : !overview ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
+          Financial summary unavailable.
+        </p>
+      ) : (
+        <>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+              Selected range
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <OverviewStat label="Collected" value={formatMoney(overview.summary.collectedCents, currency)} />
+              <OverviewStat label="Refunded" value={formatMoney(overview.summary.refundedCents, currency)} />
+              <OverviewStat label="Net collected" value={formatMoney(overview.summary.netCollectedCents, currency)} emphasize />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+              Current snapshot
+            </p>
+            <OverviewStat label="Outstanding" value={formatMoney(overview.outstandingCents, currency)} fullWidth />
+          </div>
+
+          {overview.summary.domainBreakdown.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2">
+                Net collected by domain · Selected range
+              </p>
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+                {overview.summary.domainBreakdown.map(d => (
+                  <OverviewStat
+                    key={d.domain}
+                    label={FINANCIAL_DOMAIN_LABEL[d.domain] ?? d.domain}
+                    value={formatMoney(d.netCollectedCents, currency)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function OverviewStat({
+  label, value, emphasize, fullWidth,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+  fullWidth?: boolean;
+}) {
+  return (
+    <div className={`ct-card px-3 py-3 text-center ${fullWidth ? "w-full" : ""}`}>
+      <p className={`font-bold text-gray-900 dark:text-gray-100 ${emphasize ? "text-lg" : "text-base"}`}>{value}</p>
+      <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 leading-tight">{label}</p>
     </div>
   );
 }

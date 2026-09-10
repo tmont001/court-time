@@ -12,6 +12,7 @@ import {
 import EventsUpcomingClient, { type UpcomingEventData } from "./EventsUpcomingClient";
 import EventsAdminShell from "./EventsAdminShell";
 import AdminEventsClient from "@/app/(app)/admin/events/AdminEventsClient";
+import EventTypesSection from "@/app/(app)/admin/events/EventTypesSection";
 import LessonsTab from "./LessonsTab";
 import ManageSubview from "./ManageSubview";
 import ProgramsManageClient from "./ProgramsManageClient";
@@ -75,7 +76,12 @@ export default async function EventsPage({
   // already-mounted client-component layers on a same-route navigation.
   // See both components for the full rationale.
   const sp = await searchParams;
-  const initialTab = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";
+  // Admin UX Checkpoint 3: the "eventTypes" branch is resolved further down,
+  // once profile.role is known — an admin-only tab value must never resolve
+  // for a non-admin caller (that tab literally isn't rendered for them; see
+  // EventsAdminShell), so this can't be decided from sp.tab alone the way
+  // the other three values already are.
+  const initialTabFromUrl = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";
 
   // Phase 34F-C: optional ?checkout=success&program=<uuid> return from
   // Stripe Checkout — see eventCheckoutActions.ts/CalendarShell.tsx's own
@@ -110,10 +116,16 @@ export default async function EventsPage({
   // below and the render guard passed to EventsUpcomingClient say plainly
   // what they're gating on.
   const isMember       = profile?.role === "member";
+  const isAdmin        = profile?.role === "admin";
+  // Fails safe to the URL-only resolution (which never includes
+  // "eventTypes") whenever the caller isn't Admin — a Staff/Pro/Member who
+  // navigates to (or bookmarks) ?tab=eventTypes lands on Upcoming instead
+  // of a blank page with no matching panel.
+  const initialTab = sp.tab === "eventTypes" && isAdmin ? "eventTypes" : initialTabFromUrl;
   const now            = new Date().toISOString();
 
   // Parallel fetches: timezone + upcoming events + member programs + admin-only data (courts, all events, lesson requests, programs)
-  const [clubResult, settingsResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult] = await Promise.all([
+  const [clubResult, settingsResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult, eventTypesResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
@@ -172,6 +184,21 @@ export default async function EventsPage({
     isAdminOrPro
       ? getPrograms(clubId)
       : Promise.resolve({ programs: [] as ProgramListRow[] }),
+    // Admin UX Checkpoint 3 — Events IA: Event Types configuration data,
+    // Admin-only (not isAdminOrPro — Staff/Pro never fetch or receive this,
+    // matching the identical admin-only gate on the "eventTypes" tab prop
+    // passed to EventsAdminShell below). The RPC/table-level authorization
+    // in eventTypesActions.ts is the real boundary; this fetch gate is
+    // defense-in-depth so Staff/Pro's page load never even carries this
+    // data over the wire.
+    isAdmin
+      ? supabase
+          .from("event_types")
+          .select("id, key, label, color, is_active, default_price_amount_cents")
+          .eq("club_id", clubId)
+          .order("is_active", { ascending: false })
+          .order("label")
+      : Promise.resolve({ data: null }),
   ]);
 
   const clubTimezone  = clubResult.data?.timezone ?? "America/New_York";
@@ -196,6 +223,10 @@ export default async function EventsPage({
   const programsError = "error" in programsResult ? programsResult.error : undefined;
   const memberPrograms      = "programs" in memberProgramsResult ? memberProgramsResult.programs : [];
   const memberProgramsError = "error" in memberProgramsResult ? memberProgramsResult.error : undefined;
+  const eventTypes = (eventTypesResult.data ?? []) as {
+    id: string; key: string; label: string; color: string; is_active: boolean;
+    default_price_amount_cents: number | null;
+  }[];
 
   // ── Batch-fetch court names for reservation display in EventsUpcomingClient ──
   const allCourtIds = [...new Set(
@@ -288,12 +319,23 @@ export default async function EventsPage({
                   currency={currency}
                 />
               }
+              eventTypes={
+                isAdmin ? (
+                  <div className="px-4 py-3 space-y-3">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Edit labels and colors. Deactivated types stay on historical events but are
+                      hidden when creating new ones.
+                    </p>
+                    <EventTypesSection clubId={clubId} currency={currency} initialTypes={eventTypes} />
+                  </div>
+                ) : undefined
+              }
               courts={adminCourts as { id: string; name: string; display_order: number }[]}
               clubId={clubId}
               clubTimezone={clubTimezone}
               currency={currency}
               isAdmin={profile!.role === "admin"}
-              initialTab={initialTab as "upcoming" | "manage" | "lessons"}
+              initialTab={initialTab as "upcoming" | "manage" | "lessons" | "eventTypes"}
             />
           ) : (
             /* Members: upcoming events list with search and type filter */

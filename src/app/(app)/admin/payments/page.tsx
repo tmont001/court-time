@@ -20,15 +20,21 @@ import {
 } from "./paymentContext";
 import { deriveEffectiveCollectionSummary, type ProvenanceLedgerEvent } from "@/lib/paymentProvenance";
 import { fetchAllRowsExhaustively } from "@/lib/supabase/exhaustiveRange";
+import { resolveReportRange } from "../reports/dateRange";
+import { getFinancialRangeSummary, getOutstandingSnapshot } from "./financialSummary";
+import type { FinancialOverviewResult } from "./financialOverviewActions";
 
 // Phase 34C consolidation — the canonical Admin/Staff operational surface
 // for "who owes money, for what, how much, and can I record a payment" —
-// spanning all 5 payable domains. Deliberately NOT accounting/reporting:
-// no revenue totals, no payment_events ledger viewer, current `payments`
-// state only (the same rollup shape get_payment_states_for_domains reads
-// from — this page just reads the table directly, which payments_select_
-// admin_staff (0143) already permits for Admin/Staff, so no new RPC or
-// migration is needed). Admin+Staff only, never Pro.
+// spanning all 5 payable domains, plus (Admin Cleanup Checkpoint 6) an
+// Admin-only Overview analytics tab (Collected/Refunded/Net collected for
+// a selected range, plus a current-snapshot Outstanding total) sourced
+// from the SAME authoritative financial layer /admin/reports' Financial
+// Summary consumes — current `payments` state only for the Outstanding/
+// Payment Activity tabs (the same rollup shape get_payment_states_for_
+// domains reads from — this page just reads the table directly, which
+// payments_select_admin_staff (0143) already permits for Admin/Staff).
+// Outstanding/Payment Activity remain Admin+Staff; Overview is Admin-only.
 
 const MAX_ROWS = 500;
 
@@ -68,6 +74,41 @@ export default async function AdminPaymentsPage() {
 
   const clubTimezone = (clubResult as { data: { timezone: string } | null })?.data?.timezone ?? "America/New_York";
   const currency     = (settingsResult as { data: { currency: string } | null })?.data?.currency ?? "USD";
+
+  // Admin Cleanup Checkpoint 6 — Overview analytics, Admin-only. Skipped
+  // entirely for Staff (never fetched, never just hidden) since Overview
+  // is not part of Staff's existing operational payment authority.
+  // Defaults to the same "7d" fallback Reports' own resolveReportRange
+  // uses for an unrecognized/missing range — the Overview tab's own range
+  // selector (client-side, via getFinancialOverviewAction) refetches on
+  // change; this is only the INITIAL server-rendered figure.
+  let initialFinancialOverview: FinancialOverviewResult | null = null;
+  if (isAdminRole && clubId) {
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: clubTimezone });
+    const resolved = resolveReportRange(todayStr, "7d", undefined, undefined);
+    const [summaryResult, outstandingResult] = await Promise.all([
+      getFinancialRangeSummary(supabase, resolved.startDate, resolved.endDate),
+      getOutstandingSnapshot(supabase, clubId, clubTimezone),
+    ]);
+    if (summaryResult.error) {
+      console.error("[payments] get_financial_range_summary failed", {
+        code: summaryResult.error.code ?? null,
+        message: summaryResult.error.message ?? null,
+      });
+    }
+    if ("error" in outstandingResult) {
+      console.error("[payments] outstanding snapshot failed", { message: outstandingResult.error });
+    }
+    if (summaryResult.data && !("error" in outstandingResult)) {
+      initialFinancialOverview = {
+        range: resolved.range,
+        startDate: resolved.startDate,
+        endDate: resolved.endDate,
+        summary: summaryResult.data,
+        outstandingCents: outstandingResult.outstandingCents,
+      };
+    }
+  }
 
   // Latest obligation cycle per (domain_type, domain_id) only — a domain
   // with multiple historical cycles must never show a superseded one as
@@ -474,7 +515,15 @@ export default async function AdminPaymentsPage() {
       <Header screenTitle="Payments" />
       <div className="overflow-y-auto" style={{ height: "var(--page-fill-height)" }}>
         <div className="md:max-w-3xl md:mx-auto">
-          <AdminPaymentsClient rows={rows} clubId={clubId} currency={currency} clubTimezone={clubTimezone} truncated={truncated} isAdmin={isAdminRole} />
+          <AdminPaymentsClient
+            rows={rows}
+            clubId={clubId}
+            currency={currency}
+            clubTimezone={clubTimezone}
+            truncated={truncated}
+            isAdmin={isAdminRole}
+            initialFinancialOverview={initialFinancialOverview}
+          />
         </div>
       </div>
     </>

@@ -173,41 +173,73 @@ export default function OperatingHoursEditor({ clubId }: Props) {
         {hours.map((d) => (
           <div
             key={d.day_of_week}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
+            className="py-2.5 border-b border-gray-100 dark:border-gray-800 last:border-b-0"
           >
-            {/* Day name */}
-            <span className="w-24 shrink-0 text-sm text-gray-700 dark:text-gray-300">
-              {DAY_NAMES[d.day_of_week]}
-            </span>
+            {/* Day name + Closed toggle — on mobile this is its own row,
+                spread to the edges; at sm+ it rejoins the time inputs as one
+                wrapping row, matching the original single-row layout. */}
+            <div className="flex items-center justify-between gap-3 sm:flex-wrap sm:justify-start sm:gap-x-3 sm:gap-y-2">
+              <span className="w-24 shrink-0 text-sm text-gray-700 dark:text-gray-300">
+                {DAY_NAMES[d.day_of_week]}
+              </span>
 
-            {/* Closed toggle */}
-            <label className="flex items-center gap-1.5 shrink-0 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={d.is_closed}
-                onChange={(e) => updateDay(d.day_of_week, { is_closed: e.target.checked })}
-                className="accent-gray-700 dark:accent-gray-300"
-              />
-              Closed
-            </label>
+              <label className="flex items-center gap-1.5 shrink-0 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={d.is_closed}
+                  onChange={(e) => updateDay(d.day_of_week, { is_closed: e.target.checked })}
+                  className="accent-gray-700 dark:accent-gray-300"
+                />
+                Closed
+              </label>
 
-            {/* Time inputs */}
-            <div className={`flex items-center gap-2 transition-opacity${d.is_closed ? " opacity-40 pointer-events-none" : ""}`}>
-              <input
-                type="time"
-                value={d.opens_at}
-                disabled={d.is_closed}
-                onChange={(e) => updateDay(d.day_of_week, { opens_at: e.target.value })}
-                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
-              />
-              <span className="text-xs text-gray-400 dark:text-gray-500 select-none">to</span>
-              <input
-                type="time"
-                value={d.closes_at}
-                disabled={d.is_closed}
-                onChange={(e) => updateDay(d.day_of_week, { closes_at: e.target.value })}
-                className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
-              />
+              {/* Desktop time inputs — [start] to [end], unchanged from
+                  before. Hidden below sm; the mobile stacked/grid version
+                  below takes over there instead. */}
+              <div className={`hidden sm:flex sm:items-center sm:gap-2 transition-opacity${d.is_closed ? " opacity-40 pointer-events-none" : ""}`}>
+                <input
+                  type="time"
+                  value={d.opens_at}
+                  disabled={d.is_closed}
+                  onChange={(e) => updateDay(d.day_of_week, { opens_at: e.target.value })}
+                  className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+                />
+                <span className="text-xs text-gray-400 dark:text-gray-500 select-none">to</span>
+                <input
+                  type="time"
+                  value={d.closes_at}
+                  disabled={d.is_closed}
+                  onChange={(e) => updateDay(d.day_of_week, { closes_at: e.target.value })}
+                  className="border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base md:text-sm text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+                />
+              </div>
+            </div>
+
+            {/* Mobile time inputs — labeled Opens/Closes, two columns so
+                each native time input keeps comfortable width (never
+                shrunk to fit a [start] to [end] row that's too narrow).
+                Hidden at sm+, where the inline row above takes over. */}
+            <div className={`grid grid-cols-2 gap-3 mt-2 sm:hidden transition-opacity${d.is_closed ? " opacity-40 pointer-events-none" : ""}`}>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">Opens</span>
+                <input
+                  type="time"
+                  value={d.opens_at}
+                  disabled={d.is_closed}
+                  onChange={(e) => updateDay(d.day_of_week, { opens_at: e.target.value })}
+                  className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-gray-400 dark:text-gray-500">Closes</span>
+                <input
+                  type="time"
+                  value={d.closes_at}
+                  disabled={d.is_closed}
+                  onChange={(e) => updateDay(d.day_of_week, { closes_at: e.target.value })}
+                  className="w-full border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5 text-base text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+                />
+              </div>
             </div>
           </div>
         ))}

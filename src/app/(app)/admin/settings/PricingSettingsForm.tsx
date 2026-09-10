@@ -74,7 +74,7 @@ export default function PricingSettingsForm({ currency, defaultCourtHourlyRateCe
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           Default hourly rate charged for a court reservation. Leave the default rate blank if
           your club does not charge for court reservations — individual courts may still set
-          their own rate below regardless.
+          their own rate on the Courts page regardless.
         </p>
       </div>
 

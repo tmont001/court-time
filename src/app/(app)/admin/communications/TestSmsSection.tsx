@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { sendTestSms } from "./actions";
+import { sendTestSms } from "./communicationsActions";
 
 // Phase 31D: no longer takes a `twilioConfigured` prop — the parent
 // (DeliveryDiagnosticsSection) only renders this component at all when SMS

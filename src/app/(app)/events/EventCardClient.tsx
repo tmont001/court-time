@@ -48,7 +48,6 @@ export default function EventCardClient({
             stopPropagation prevents either from triggering the card's own
             roster-open click. */}
         {(isAdminOrPro || actionArea) && (
-          // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
           <div
             className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700 flex items-center gap-2 flex-wrap"
             onClick={e => e.stopPropagation()}

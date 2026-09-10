@@ -125,6 +125,15 @@ function AuditLogIcon() {
   );
 }
 
+function CommunicationsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  );
+}
+
 function ReportsIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -192,7 +201,7 @@ function NavLink({
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 select-none">
+    <p className="px-3 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 select-none">
       {children}
     </p>
   );
@@ -220,7 +229,7 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
 
   return (
     <nav
-      className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-60 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40 motion-safe:transition-colors motion-safe:duration-150"
+      className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-60 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 z-40 motion-safe:transition-colors motion-safe:duration-150"
       aria-label="Main navigation"
     >
       {/* Brand header — same height as the page Header (h-14 = 3.5rem) */}
@@ -281,6 +290,7 @@ export default function SideNav({ userRole = "member", clubName, memberships = [
             <NavLink href="/admin/payments"   label="Payments"     Icon={PaymentsIcon}   pathname={pathname} />
             <NavLink href="/admin/courts"     label="Courts"       Icon={CourtsIcon}     pathname={pathname} />
             <NavLink href="/admin/settings"   label="Club Settings" Icon={SettingsIcon}  pathname={pathname} />
+            <NavLink href="/admin/communications" label="Communications" Icon={CommunicationsIcon} pathname={pathname} />
             <NavLink href="/admin/audit-log"  label="Audit Log"    Icon={AuditLogIcon}   pathname={pathname} />
             <NavLink href="/admin/reports"    label="Reports"      Icon={ReportsIcon}    pathname={pathname} />
 

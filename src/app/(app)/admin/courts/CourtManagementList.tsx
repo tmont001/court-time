@@ -354,9 +354,17 @@ export default function CourtManagementList({ initialCourts, clubId, currency, d
                   </button>
                 </div>
               ) : (
-                /* ── Normal row ── */
-                <div className="flex items-center justify-between gap-2 px-4 py-3">
-                  {/* Left: name + badge */}
+                /* ── Normal row ──
+                    Mobile (below sm): the name/status/rate block and the
+                    action-button block each get their own full-width row —
+                    the name never has to compete with 6 action buttons for
+                    horizontal space, and the buttons wrap across as many
+                    lines as they need instead of squeezing the name/badge
+                    down to a sliver. sm+: reverts to the original single-row
+                    layout (name/badge/rate on the left, actions on the
+                    right, never wrapping) — unchanged from before. */
+                <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  {/* Name + badge + rate */}
                   <div className="flex items-center gap-2 min-w-0 flex-wrap">
                     <span className="text-sm text-gray-900 dark:text-gray-100 truncate">
                       {court.name}
@@ -374,12 +382,14 @@ export default function CourtManagementList({ initialCourts, clubId, currency, d
                     </span>
                   </div>
 
-                  {/* Right: action buttons — one shared compact-button
-                      vocabulary (src/lib/actionButtonStyles.ts), same
-                      heights/spacing/focus/disabled treatment throughout.
-                      No plain-text actions and no pipe separators — each
-                      button's own border already separates it. */}
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {/* Action buttons — one shared compact-button vocabulary
+                      (src/lib/actionButtonStyles.ts), same heights/spacing/
+                      focus/disabled treatment throughout. No plain-text
+                      actions and no pipe separators — each button's own
+                      border already separates it. Wraps freely on mobile
+                      (its own full-width row); never wraps and never
+                      shrinks at sm+ (original desktop behavior). */}
+                  <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap sm:flex-shrink-0">
                     <button
                       onClick={() => handleMove(idx, "up")}
                       disabled={idx === 0 || anyPending}

@@ -55,6 +55,10 @@ const ROLES = [
     summary: "Oversee courts, programs, members, settings, and reporting.",
   },
   {
+    name: "Staff",
+    summary: "Support day-to-day club operations, including members, bookings, events, and payment tracking.",
+  },
+  {
     name: "Pros",
     summary: "Respond to lesson requests and manage permitted scheduling and event work.",
   },
@@ -144,17 +148,17 @@ export default function FeaturesPage() {
       </div>
 
       {/* ── Role section ──────────────────────────────────────────────────── */}
-      <section className="px-4 py-16 max-w-4xl mx-auto">
+      <section className="px-4 py-16 max-w-5xl mx-auto">
         <MarketingReveal className="text-center mb-10">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Built around how your club actually works
           </h2>
         </MarketingReveal>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           {ROLES.map((role, i) => (
             <MarketingReveal
               key={role.name}
-              delay={`delay-${i + 1}` as "delay-1" | "delay-2" | "delay-3"}
+              delay={`delay-${i + 1}` as "delay-1" | "delay-2" | "delay-3" | "delay-4"}
             >
               <div className="h-full rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-6 text-center hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md motion-safe:transition-all motion-safe:duration-200">
                 <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
@@ -177,7 +181,7 @@ export default function FeaturesPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6 py-6">
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4">
+              <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">
                 Before Court Time
               </p>
               <ul className="space-y-2.5 text-sm text-gray-600 dark:text-gray-300 leading-relaxed list-none">
@@ -190,13 +194,13 @@ export default function FeaturesPage() {
               </ul>
             </div>
             <div className="rounded-xl border-2 border-gray-900 dark:border-gray-100 bg-white dark:bg-gray-800 px-6 py-6">
-              <p className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4">
+              <p className="text-[10px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4">
                 With Court Time
               </p>
               <ul className="space-y-2.5 text-sm text-gray-700 dark:text-gray-300 leading-relaxed list-none">
                 {AFTER.map((item) => (
                   <li key={item} className="flex gap-2">
-                    <span className="mt-0.5 text-green-600 dark:text-green-400 shrink-0 font-bold">✓</span>
+                    <span className="mt-0.5 text-green-700 dark:text-green-400 shrink-0 font-bold">✓</span>
                     <span>{item}</span>
                   </li>
                 ))}

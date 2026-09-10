@@ -433,8 +433,8 @@ describe("N/O. actionButtonStyles.ts lives in an already-Tailwind-scanned path; 
     const importers = [
       "src/app/(app)/calendar/ReservationDetailSheet.tsx",
       "src/app/(app)/calendar/EventDetailSheet.tsx",
-      "src/app/(app)/admin/settings/LessonTypesSection.tsx",
-      "src/app/(app)/admin/settings/EventTypesSection.tsx",
+      "src/app/(app)/admin/lessons/LessonTypesSection.tsx",
+      "src/app/(app)/admin/events/EventTypesSection.tsx",
       "src/app/(app)/admin/payments/PaymentActivityExportSheet.tsx",
       "src/app/(app)/admin/payments/AdminPaymentsClient.tsx",
       "src/app/(app)/admin/members/[id]/MemberDetailClient.tsx",

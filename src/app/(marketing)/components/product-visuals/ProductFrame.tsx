@@ -25,7 +25,7 @@ export default function ProductFrame({
           {label}
         </span>
         {sublabel && (
-          <span className="shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+          <span className="shrink-0 text-[10px] text-gray-500 dark:text-gray-400">
             {sublabel}
           </span>
         )}

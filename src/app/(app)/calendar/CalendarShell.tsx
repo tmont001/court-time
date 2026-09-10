@@ -205,15 +205,19 @@ function minsFromViewportTop(utcDate: Date, tz: string, viewStartHour: number): 
 
 // ─── Time slot list ───────────────────────────────────────────────────────────
 
-interface TimeSlot { label: string; isHour: boolean }
+// `label` is the sparse gutter display (blank on the half-hour); `time` is
+// the full "H:MM AM/PM" for every slot, used for accessible names on the
+// booking buttons below — the gutter never shows it, so it isn't reused
+// from `label`.
+interface TimeSlot { label: string; time: string; isHour: boolean }
 
 function buildTimeSlots(startHour: number, endHour: number): TimeSlot[] {
   const slots: TimeSlot[] = [];
   for (let h = startHour; h < endHour; h++) {
     const ampm    = h < 12 ? "AM" : "PM";
     const display = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    slots.push({ label: `${display}:00 ${ampm}`, isHour: true });
-    slots.push({ label: "",                       isHour: false });
+    slots.push({ label: `${display}:00 ${ampm}`, time: `${display}:00 ${ampm}`, isHour: true });
+    slots.push({ label: "",                       time: `${display}:30 ${ampm}`, isHour: false });
   }
   return slots;
 }
@@ -1435,7 +1439,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                     style={{ top: i * rowH, height: rowH, width: GUTTER_W, paddingTop: 3 }}
                   >
                     {slot.isHour && (
-                      <span className="text-[10px] leading-none text-gray-400 dark:text-gray-600">{slot.label}</span>
+                      <span className="text-[10px] leading-none text-gray-500 dark:text-gray-400">{slot.label}</span>
                     )}
                   </div>
                 ))}
@@ -1461,14 +1465,40 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                         // Slots are also disabled on closed days
                         const isDisabled  = isOccupied || isPast || isClosed;
 
+                        // Occupied/past/closed slots have no action (a disabled
+                        // <button> was never actually clickable — native `disabled`
+                        // already blocked onClick) and, when occupied, are fully
+                        // redundant with the reservation/event block rendered on
+                        // top of them, which carries its own accessible name.
+                        // Rendering them as a plain <div> instead of an unlabeled
+                        // <button> removes ~110 button-name-less nodes from the
+                        // accessibility tree without changing any visible or
+                        // interactive behavior.
+                        if (isDisabled) {
+                          return (
+                            <div
+                              key={slotIdx}
+                              className={`absolute border-t cursor-default ${
+                                slot.isHour ? "border-gray-200 dark:border-gray-700/60" : "border-gray-100 dark:border-gray-800"
+                              }`}
+                              style={{
+                                top: slotIdx * rowH,
+                                height: rowH,
+                                left: 0,
+                                right: 0,
+                              }}
+                            />
+                          );
+                        }
+
                         return (
                           <button
                             key={slotIdx}
-                            disabled={isDisabled}
                             onClick={() => handleSlotTap(court, slotIdx)}
-                            className={`absolute border-t ${
+                            aria-label={`Book ${court.name} at ${slot.time}`}
+                            className={`absolute border-t cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/25 active:bg-gray-200 dark:active:bg-gray-700/40 ${
                               slot.isHour ? "border-gray-200 dark:border-gray-700/60" : "border-gray-100 dark:border-gray-800"
-                            } ${!isDisabled ? "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/25 active:bg-gray-200 dark:active:bg-gray-700/40" : "cursor-default"}`}
+                            }`}
                             style={{
                               top: slotIdx * rowH,
                               height: rowH,
@@ -1477,9 +1507,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                               touchAction: "manipulation",
                             }}
                           >
-                            {!isDisabled && (
-                              <div className="mx-1 my-0.5 h-[calc(100%-4px)] border border-dashed border-gray-200 dark:border-gray-700 rounded-sm" />
-                            )}
+                            <div className="mx-1 my-0.5 h-[calc(100%-4px)] border border-dashed border-gray-200 dark:border-gray-700 rounded-sm" />
                           </button>
                         );
                       })}
@@ -1582,7 +1610,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                             ? "border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                             : isBlocked
                             ? "text-gray-400"
-                            : "bg-gray-400 text-white"
+                            : "bg-gray-500 text-white"
                         } ${justChangedIds.has(res.id) ? "ct-calendar-item-settle" : ""}`;
                         const blockStyle = {
                           ...blockPos,

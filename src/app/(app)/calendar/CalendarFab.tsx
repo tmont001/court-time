@@ -135,7 +135,6 @@ export default function CalendarFab({ userRole, onCreateEvent, onCreateBlock, on
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, close, options.length]);
 
   return (
