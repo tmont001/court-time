@@ -2473,6 +2473,23 @@ export type Database = {
           body:               string;
         }[];
       };
+      get_communications_activity: {
+        Args: {
+          p_limit?:  number;
+          p_offset?: number;
+        };
+        Returns: {
+          // batch_id is null for an announcement sent before migration 0102
+          // added durable batch tracking — see get_communications_activity's
+          // own SQL comment.
+          batch_id:           string | null;
+          title:              string;
+          sent_at:            string;
+          recipient_count:    number;
+          email_sent_count:   number;
+          email_failed_count: number;
+        }[];
+      };
       upsert_operating_hours_override: {
         Args: {
           p_override_date: string;

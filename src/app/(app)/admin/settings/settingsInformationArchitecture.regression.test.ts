@@ -33,7 +33,7 @@ const PAGE_PATH = "src/app/(app)/admin/settings/page.tsx";
 const PAYMENT_TRACKING_SECTION_PATH = "src/app/(app)/admin/settings/PaymentTrackingSection.tsx";
 const STRIPE_CONNECT_SECTION_PATH = "src/app/(app)/admin/settings/StripeConnectSection.tsx";
 const COURT_TIME_PAYMENTS_SECTION_PATH = "src/app/(app)/admin/settings/CourtTimePaymentsSection.tsx";
-const ANNOUNCEMENTS_SECTION_PATH = "src/app/(app)/admin/settings/AnnouncementsSection.tsx";
+const ANNOUNCEMENTS_SECTION_PATH = "src/app/(app)/admin/communications/AnnouncementsSection.tsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1-3 — ONE top-level Payments section; Payment Tracking before Online
@@ -83,13 +83,12 @@ describe("1-3. /admin/settings has ONE top-level Payments section, with Payment 
     expect(courtTimeIdx).toBeGreaterThan(stripeIdx);
   });
 
-  it("the remaining settings sections (Club Branding through Member Announcements) are unchanged in relative order and content, and are not relocated by this checkpoint", () => {
+  it("the remaining settings sections (Club Branding through Pricing) are unchanged in relative order and content, and are not relocated by this checkpoint", () => {
     const s = readSource(PAGE_PATH);
     const order = [
       "── Club Branding ──",
       "── Club Timezone ──",
       "── Pricing ──",
-      "── Member Announcements ──",
     ];
     let lastIdx = -1;
     for (const marker of order) {
@@ -282,18 +281,56 @@ describe("10. Staff-Managed clubs still cannot enable Court Time Payments from S
 // 11 — Member Announcements has NOT gained a Connected entitlement gate
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("11. Member Announcements remains available in Staff-Managed — no Connected/member_self_service gate was added", () => {
-  it("page.tsx's Member Announcements section contains no capability/tier check", () => {
-    const s = readSource(PAGE_PATH);
-    const idx = s.indexOf("── Member Announcements ──");
-    const sectionEnd = s.indexOf("<hr", idx);
-    const section = s.slice(idx, sectionEnd);
-    expect(section).not.toMatch(/memberSelfService|member_self_service|connected|capability_not_available/i);
-  });
-
-  it("AnnouncementsSection itself references no Connected/member_self_service gate", () => {
+// Admin IA Checkpoint 4: Member Announcements moved to
+// /admin/communications (Compose tab) — see
+// communicationsInformationArchitecture.regression.test.ts for that
+// checkpoint's full coverage. This block only re-confirms the one durable
+// invariant that originally lived here: no Connected/member_self_service
+// gate was introduced by the move.
+describe("11. Member Announcements (now Compose, at /admin/communications) still has no Connected/member_self_service gate", () => {
+  it("AnnouncementsSection references no Connected/member_self_service gate", () => {
     const s = readSource(ANNOUNCEMENTS_SECTION_PATH);
     expect(s).not.toMatch(/memberSelfService|member_self_service|capability_not_available/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 23-25 — Settings removal (Admin IA Checkpoint 4): Announcements and
+//         Delivery Diagnostics are gone; exactly five sections remain
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("23-25. Settings no longer contains Announcements or Delivery Diagnostics — exactly five sections remain", () => {
+  it("no Member Announcements or Delivery diagnostics section markers remain", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/── Member Announcements ──/);
+    expect(s).not.toMatch(/── Delivery diagnostics ──/i);
+  });
+
+  it("no reference to AnnouncementsSection or DeliveryDiagnosticsSection remains", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toContain("AnnouncementsSection");
+    expect(s).not.toContain("DeliveryDiagnosticsSection");
+  });
+
+  it("exactly the five intended sections remain, in order: Operating Model, Payments, Club Branding, Club Timezone, Pricing", () => {
+    const s = readSource(PAGE_PATH);
+    const order = [
+      "── Operating Model",
+      "── Payments ──",
+      "── Club Branding ──",
+      "── Club Timezone ──",
+      "── Pricing ──",
+    ];
+    let lastIdx = -1;
+    for (const marker of order) {
+      const idx = s.indexOf(marker);
+      expect(idx, `${marker} missing`).toBeGreaterThan(lastIdx);
+      lastIdx = idx;
+    }
+    // No sixth top-level "── " section heading beyond Pricing.
+    const pricingIdx = s.indexOf("── Pricing ──");
+    const afterPricing = s.slice(pricingIdx + "── Pricing ──".length);
+    expect(afterPricing).not.toMatch(/── [A-Za-z].*──/);
   });
 });
 

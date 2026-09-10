@@ -110,6 +110,7 @@ export default function BottomNav({ userRole = "member", clubName, memberships =
         { label: "Payments",      href: "/admin/payments",        exact: false },
         { label: "Courts",        href: "/admin/courts",          exact: false },
         { label: "Club Settings", href: "/admin/settings",        exact: false },
+        { label: "Communications", href: "/admin/communications", exact: false },
         { label: "Audit Log",     href: "/admin/audit-log",       exact: false },
         { label: "Reports",       href: "/admin/reports",         exact: false },
         { label: "Profile",       href: "/profile",               exact: true  },

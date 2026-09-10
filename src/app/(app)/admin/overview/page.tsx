@@ -45,11 +45,6 @@ type OfferedParticipant = {
   profiles:         { first_name: string | null; last_name: string | null } | null;
 };
 
-type DeliveryFailure = {
-  channel:    string;
-  created_at: string;
-};
-
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 function memberName(p: { first_name: string | null; last_name: string | null } | null): string {
@@ -107,14 +102,6 @@ function formatOfferExpiry(iso: string, tz: string): string {
   return `expires ${new Date(iso).toLocaleDateString("en-US", {
     timeZone: tz, month: "short", day: "numeric",
   })} at ${timeStr}`;
-}
-
-function formatRelativeAge(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const h = Math.floor(diff / 3_600_000);
-  if (h < 1) return "< 1 hour ago";
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
 }
 
 // ── Layout components ─────────────────────────────────────────────────────────
@@ -359,10 +346,14 @@ export default async function AdminOverviewPage() {
         .order("offer_expires_at", { ascending: true })
     : Promise.resolve({ data: [] as OfferedParticipant[], error: null, count: null, status: 200, statusText: "OK" });
 
-  // Delivery failure queries: admin-only.
+  // Delivery failure count: admin-only.
   // notification_deliveries SELECT policy is admin-only (role = 'admin').
-  // Running these for pro users would always return 0 rows and give a false
-  // "no failures" impression, so the system status section is skipped for pros.
+  // Running this for pro users would always return 0 rows and give a false
+  // "no failures" impression, so the Communications summary is skipped for
+  // pros. Admin IA Checkpoint 4 (D1): the detailed per-failure list this
+  // page used to render here now lives only at
+  // /admin/communications?tab=diagnostics — this stays a lightweight count
+  // plus a link, never a duplicate of that detailed view.
   const since48h = new Date(Date.now() - 48 * 3600_000).toISOString();
   const failureCountPromise = isAdmin
     ? supabase
@@ -373,26 +364,13 @@ export default async function AdminOverviewPage() {
         .gte("created_at", since48h)
     : Promise.resolve({ count: 0, error: null, data: null, status: 200, statusText: "OK" });
 
-  const failureDetailsPromise = isAdmin
-    ? supabase
-        .from("notification_deliveries")
-        .select("channel, created_at")
-        .eq("club_id", clubId)
-        .eq("status", "failed")
-        .gte("created_at", since48h)
-        .order("created_at", { ascending: false })
-        .limit(10)
-    : Promise.resolve({ data: [] as DeliveryFailure[], error: null, count: null, status: 200, statusText: "OK" });
-
-  const [offersResult, failureCountResult, failureDetailsResult] = await Promise.all([
+  const [offersResult, failureCountResult] = await Promise.all([
     offersPromise,
     failureCountPromise,
-    failureDetailsPromise,
   ]);
 
-  const rawOffers      = (offersResult.data ?? []) as unknown as OfferedParticipant[];
-  const failureCount   = failureCountResult.count ?? 0;
-  const failureDetails = (failureDetailsResult.data ?? []) as DeliveryFailure[];
+  const rawOffers    = (offersResult.data ?? []) as unknown as OfferedParticipant[];
+  const failureCount = failureCountResult.count ?? 0;
 
   // Attach event title/starts_at to each offer using the phase-1 lookup map.
   const activeOffers = rawOffers.map(o => ({
@@ -407,7 +385,7 @@ export default async function AdminOverviewPage() {
     activeEvents:  !!activeEventsResult.error,
     offers:        !!offersResult.error,
     cancellations: !!cancellationsResult.error,
-    deliveries:    !!(failureCountResult.error || failureDetailsResult.error),
+    deliveries:    !!failureCountResult.error,
   };
 
   const anyFailed = Object.values(sectionFailed).some(Boolean);
@@ -455,26 +433,30 @@ export default async function AdminOverviewPage() {
             </section>
           )}
 
-          {/* ── System status (admin only) ──────────────────────────────────────
+          {/* ── Communications (admin only) ───────────────────────────────────
               notification_deliveries SELECT is admin-only per RLS. Showing this
               section to pro users would always display 0 failures (no rows
               returned by RLS), which is misleading. Env-var status is also only
-              meaningful to admins who manage system configuration. ──────────── */}
+              meaningful to admins who manage system configuration.
+              Admin IA Checkpoint 4 (D1): this is a lightweight health summary
+              only — the detailed per-failure list lives at
+              /admin/communications?tab=diagnostics and is never duplicated
+              here. */}
           {isAdmin && (
             <section>
-              <SectionHeading>System status</SectionHeading>
+              <SectionHeading>Communications</SectionHeading>
               <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
                 <div className="px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">SMS</span>
-                  {smsConfigured
-                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Configured</span>
-                    : <span className="text-xs text-gray-400 dark:text-gray-500">Not configured</span>}
+                  <span className="text-sm text-gray-700 dark:text-gray-200">Email configured</span>
+                  {emailConfigured
+                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Yes</span>
+                    : <span className="text-xs text-gray-400 dark:text-gray-500">No</span>}
                 </div>
                 <div className="px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-sm text-gray-700 dark:text-gray-200">Email</span>
-                  {emailConfigured
-                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Configured</span>
-                    : <span className="text-xs text-gray-400 dark:text-gray-500">Not configured</span>}
+                  <span className="text-sm text-gray-700 dark:text-gray-200">SMS configured</span>
+                  {smsConfigured
+                    ? <span className="text-xs font-medium text-green-600 dark:text-green-400">Yes</span>
+                    : <span className="text-xs text-gray-400 dark:text-gray-500">No</span>}
                 </div>
                 <div className="px-4 py-2.5 flex items-center justify-between">
                   <span className="text-sm text-gray-700 dark:text-gray-200">Delivery failures (48 h)</span>
@@ -484,26 +466,14 @@ export default async function AdminOverviewPage() {
                       ? <span className="text-xs font-medium text-green-600 dark:text-green-400">None</span>
                       : <span className="text-xs font-semibold text-red-600 dark:text-red-400">{failureCount}</span>}
                 </div>
+                <Link
+                  href="/admin/communications?tab=diagnostics"
+                  className="px-4 py-2.5 flex items-center justify-between text-accent hover:bg-gray-50 dark:hover:bg-gray-800/50 motion-safe:transition-colors motion-safe:duration-100"
+                >
+                  <span className="text-sm font-medium">View diagnostics</span>
+                  <span aria-hidden="true">→</span>
+                </Link>
               </div>
-
-              {!sectionFailed.deliveries && failureDetails.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {failureDetails.map((f, i) => (
-                    <div
-                      key={i}
-                      className="ct-card px-3 py-2 flex items-center justify-between text-xs text-red-600 dark:text-red-400"
-                    >
-                      <span className="font-medium uppercase">{f.channel}</span>
-                      <span className="text-gray-400 dark:text-gray-500">{formatRelativeAge(f.created_at)}</span>
-                    </div>
-                  ))}
-                  {failureCount > failureDetails.length && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 px-1">
-                      … and {failureCount - failureDetails.length} more. Review notification delivery logs for details.
-                    </p>
-                  )}
-                </div>
-              )}
             </section>
           )}
 

@@ -2,15 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sendSms } from "@/lib/sms";
-import { sendEmailNotification } from "@/lib/email";
-import { announcementTemplate } from "@/lib/email-templates";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:           "You must be signed in.",
   insufficient_role:           "Admin access required.",
   invalid_club_name:           "Club name cannot be blank.",
-  invalid_announcement:        "Title and message are required (title ≤ 100 chars, message ≤ 500 chars).",
   invalid_timezone:            "Invalid timezone selection.",
   // Phase 34B
   currency_required:           "Currency is required.",
@@ -204,118 +200,4 @@ export async function deleteClubLogo(): Promise<{ error?: string }> {
 
   revalidatePath("/", "layout");
   return {};
-}
-
-export async function sendTestSms(): Promise<{ sid?: string; error?: string }> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in." };
-
-  // Phase 31D: replaces a raw `.from("profiles").select("phone, sms_opt_in,
-  // club_id")` that was silently failing — sms_opt_in was never part of the
-  // column-level SELECT grant added in migration 0079, so that query was
-  // denied in full, and its discarded error was indistinguishable from "no
-  // phone on file." get_my_communication_settings() (migration 0104) is a
-  // security-definer RPC scoped to the caller's own row; club_id alone
-  // remains readable under the existing grant and is fetched separately.
-  const { data: commSettingsRaw, error: commSettingsError } = await supabase.rpc("get_my_communication_settings");
-  const commSettings = commSettingsRaw as unknown as { phone: string | null; sms_opt_in: boolean } | null;
-
-  if (commSettingsError || !commSettings) {
-    return { error: "Communication settings could not be loaded. Please refresh and try again." };
-  }
-
-  if (!commSettings.phone) return { error: "Add a phone number to your profile first." };
-  if (!commSettings.sms_opt_in) return { error: "Enable SMS in your profile first." };
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("club_id")
-    .eq("id", user.id)
-    .single();
-
-  let clubName = "Court Time";
-  if (profile?.club_id) {
-    const { data: club } = await supabase
-      .from("clubs")
-      .select("name")
-      .eq("id", profile.club_id)
-      .single();
-    if (club?.name?.trim()) clubName = club.name.trim();
-  }
-
-  const { sid, error } = await sendSms(
-    commSettings.phone,
-    `This is a test message from ${clubName}.\n\nReply STOP to opt out.`
-  );
-
-  if (error) return { error };
-  return { sid: sid ?? undefined };
-}
-
-// Phase 31C: calls send_announcement_v2 (migration 0102) instead of
-// send_announcement. send_announcement_v2 shares the identical
-// preference-filtered bulk-insert body (including excluding the sending
-// Admin from recipients at the database level — so no app-level actor
-// check is needed here) and additionally returns a durable batch_id plus
-// the exact {notification_id, user_id} pair for every recipient actually
-// inserted, replacing the previous 5-second created_at-window re-query
-// (which was both racy across concurrent announcements and — since it
-// queried by kind only, with no club_id filter — a latent cross-club
-// disclosure risk had it ever executed against real cross-user rows).
-// send_announcement's original bare-integer return is still used nowhere
-// else, so cutting the Server Action over to the v2 in-place is safe.
-export async function sendAnnouncementAction(
-  formData: FormData
-): Promise<{ success?: boolean; message?: string; recipientCount?: number; error?: string }> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
-
-  const title = (formData.get("title") as string | null)?.trim() ?? "";
-  const body  = (formData.get("body")  as string | null)?.trim() ?? "";
-
-  const { data, error } = await supabase.rpc("send_announcement_v2", {
-    p_title: title,
-    p_body:  body,
-  });
-
-  if (error) {
-    const key = error.message.match(/not_authenticated|insufficient_role|invalid_announcement/)?.[0] ?? "";
-    return { error: ERROR_MESSAGES[key] ?? "Failed to send announcement. Please try again." };
-  }
-
-  const result = data as unknown as {
-    batch_id:        string;
-    recipient_count: number;
-    notifications:   Array<{ notification_id: string; user_id: string }>;
-  } | null;
-  const recipientCount = result?.recipient_count ?? 0;
-  const notifications  = result?.notifications ?? [];
-
-  // The announcement body text is already known locally — the same `body`
-  // that was just inserted verbatim as each notification's body by
-  // send_announcement_v2 — so no re-fetch of notification content is
-  // needed for the template.
-  for (const { notification_id, user_id } of notifications) {
-    try {
-      await sendEmailNotification(
-        supabase,
-        notification_id,
-        user_id,
-        "announcement",
-        (clubName) => announcementTemplate(clubName, title, body),
-      );
-    } catch {
-      // Email dispatch must never block announcement success or surface to
-      // the user, and one recipient's failure must never stop the rest.
-    }
-  }
-
-  revalidatePath("/admin/settings");
-  return {
-    success:        true,
-    message:        `Announcement sent to ${recipientCount} member${recipientCount === 1 ? "" : "s"}.`,
-    recipientCount,
-  };
 }

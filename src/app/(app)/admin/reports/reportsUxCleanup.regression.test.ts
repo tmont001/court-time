@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { formatRateOrUnavailable } from "./reportPresentation";
 
@@ -263,15 +263,10 @@ describe("8+9. Reporting diagnostics and RPC/data contract are untouched by this
     expect(s).toContain("series={reservationSummary.daily_series}");
   });
 
-  it("no migration file was added or modified by this checkpoint", () => {
-    // 0169 remains the latest reporting migration — this checkpoint is
-    // presentation-only, per its own explicit scope.
-    const migrationsDir = join(process.cwd(), "supabase/migrations");
-    const files = readdirSync(migrationsDir);
-    const highest = files
-      .map((f: string) => parseInt(f.slice(0, 4), 10))
-      .filter((n: number) => !Number.isNaN(n))
-      .sort((a: number, b: number) => b - a)[0];
-    expect(highest).toBe(169);
-  });
+  // A hardcoded "highest migration === N" assertion previously lived here.
+  // Removed: that pattern cannot hold as an evergreen invariant across
+  // later, unrelated checkpoints — this checkpoint is presentation-only and
+  // truthfully added no migration itself, but cannot prove no later
+  // checkpoint ever would (0170 has since been added by the Communications
+  // checkpoint).
 });

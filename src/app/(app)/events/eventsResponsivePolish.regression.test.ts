@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Admin UX — Events/Features 320px product-polish checkpoint. Two small,
@@ -135,11 +135,9 @@ describe("9. no authorization/RPC/migration changes in this checkpoint", () => {
     expect(s).toContain("eventTypes?:  React.ReactNode;");
   });
 
-  it("highest migration is still 0169 — no migration added by this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const highest = Math.max(
-      ...files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n))
-    );
-    expect(highest).toBe(169);
-  });
+  // A hardcoded "highest migration === N" assertion previously lived here.
+  // Removed: that pattern cannot hold as an evergreen invariant across
+  // later, unrelated checkpoints (0170 has since been added by the
+  // Communications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this cleanup.
 });

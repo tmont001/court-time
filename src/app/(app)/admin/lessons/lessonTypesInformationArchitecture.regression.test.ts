@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Admin UX Checkpoint 3 — Lessons IA. Lesson Types moves from
@@ -119,15 +119,12 @@ describe("9. operational Lessons Admin/Pro scoping is unchanged", () => {
   });
 });
 
-describe("11. no migration was added by this checkpoint", () => {
-  it("highest migration is still 0169", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const highest = Math.max(
-      ...files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n))
-    );
-    expect(highest).toBe(169);
-  });
-});
+// 11. "no migration was added by this checkpoint" was previously asserted
+// here as a hardcoded "highest migration === N" ceiling. Removed: that
+// pattern cannot hold as an evergreen invariant across later, unrelated
+// checkpoints (0170 has since been added by the Communications checkpoint)
+// — see topLevelBackLinkCleanup.regression.test.ts's own note on this same
+// cleanup.
 
 describe("12. no Phase 34 Payments behavior touched", () => {
   it("lessonTypesActions.ts never references payment_events/amount_due_cents/amount_paid_cents/stripe", () => {

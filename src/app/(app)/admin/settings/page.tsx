@@ -11,8 +11,6 @@ import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
-import DeliveryDiagnosticsSection from "./DeliveryDiagnosticsSection";
-import AnnouncementsSection from "./AnnouncementsSection";
 
 export default async function AdminSettingsPage() {
   const user = await getAuthUser();
@@ -56,14 +54,6 @@ export default async function AdminSettingsPage() {
   // disagree about whether the club is actually ready.
   const stripeReadiness = deriveConnectUIState(stripeStatus.connected, stripeStatus.cardPaymentsStatus);
 
-  // Server-only config checks — booleans only ever reach the rendered page;
-  // no environment-variable name or value is passed as a prop or exposed to
-  // the client.
-  const smsConfigured =
-    !!process.env.TWILIO_ACCOUNT_SID &&
-    !!process.env.TWILIO_AUTH_TOKEN &&
-    !!process.env.TWILIO_FROM_NUMBER;
-  const emailConfigured = !!process.env.RESEND_API_KEY;
   const stripeConfigured = stripeConnectResult.configured;
 
   return (
@@ -229,33 +219,6 @@ export default async function AdminSettingsPage() {
           <PricingSettingsForm
             currency={currency}
             defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
-          />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Member Announcements ── */}
-        <section className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Member Announcements
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Send an in-app notification to all active members.
-          </p>
-          <AnnouncementsSection />
-        </section>
-
-        <hr className="border-gray-100 dark:border-gray-800" />
-
-        {/* ── Delivery diagnostics ── */}
-        {/* Phase 31D: closed by default, visually secondary — operator-only
-            provider status and test controls, kept separate from Member
-            notification preferences (which live at /profile/notifications)
-            and from Admin announcement composition above. */}
-        <section>
-          <DeliveryDiagnosticsSection
-            emailConfigured={emailConfigured}
-            smsConfigured={smsConfigured}
           />
         </section>
 

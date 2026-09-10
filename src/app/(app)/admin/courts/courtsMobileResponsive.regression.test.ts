@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Admin UX Checkpoint 2A — mobile responsive polish pass. Runtime QA at
@@ -175,11 +175,9 @@ describe("7. no RPC/action/auth changes", () => {
     expect(s).toContain("searchParams: Promise<{ tab?: string }>");
   });
 
-  it("no migration file was added by this checkpoint", () => {
-    const files: string[] = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const highest = Math.max(
-      ...files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n))
-    );
-    expect(highest).toBe(169);
-  });
+  // A hardcoded "highest migration === N" assertion previously lived here.
+  // Removed: that pattern cannot hold as an evergreen invariant across
+  // later, unrelated checkpoints (0170 has since been added by the
+  // Communications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this cleanup.
 });

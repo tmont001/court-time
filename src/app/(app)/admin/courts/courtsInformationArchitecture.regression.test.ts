@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Admin UX Checkpoint 2A — Courts IA. /admin/courts becomes three tabs
@@ -147,11 +147,13 @@ describe("6. /admin/settings no longer renders those three sections", () => {
     expect(s).not.toContain("waitlist_offer_window_hours");
   });
 
-  it("no other Settings section (Pricing, Branding, Timezone, Payments, Operating Model, Announcements, Diagnostics) was touched or reordered by the Courts move", () => {
-    // Event Types and Lesson Types are deliberately excluded from this
-    // list — a later, separate Admin UX checkpoint (Events + Lessons IA)
-    // relocated both out of Settings entirely; that checkpoint's own test
-    // (settingsInformationArchitecture.regression.test.ts) covers that
+  it("no other Settings section (Pricing, Branding, Timezone, Payments, Operating Model) was touched or reordered by the Courts move", () => {
+    // Event Types, Lesson Types, Member Announcements, and Delivery
+    // Diagnostics are deliberately excluded from this list — later,
+    // separate Admin UX checkpoints (Events + Lessons IA; Communications)
+    // relocated all four out of Settings entirely; those checkpoints' own
+    // tests (settingsInformationArchitecture.regression.test.ts,
+    // communicationsInformationArchitecture.regression.test.ts) cover that
     // fact. This test's own concern is narrower: nothing the COURTS move
     // touched was affected.
     const s = readSource(SETTINGS_PAGE_PATH);
@@ -161,7 +163,6 @@ describe("6. /admin/settings no longer renders those three sections", () => {
       "── Club Branding ──",
       "── Club Timezone ──",
       "── Pricing ──",
-      "── Member Announcements ──",
     ]) {
       expect(s, `${marker} missing — an unrelated section was affected`).toContain(marker);
     }
@@ -259,14 +260,13 @@ describe("10. all surfaces remain Admin-only", () => {
 });
 
 describe("11. no migration/payment behavior changes", () => {
-  it("no migration file was added or modified by this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const highest = files
-      .map((f: string) => parseInt(f.slice(0, 4), 10))
-      .filter((n: number) => !Number.isNaN(n))
-      .sort((a: number, b: number) => b - a)[0];
-    expect(highest).toBe(169);
-  });
+  // A hardcoded "highest migration === N" assertion previously lived here.
+  // Removed: that pattern cannot hold as an evergreen invariant across
+  // later, unrelated checkpoints — this checkpoint (Courts IA) truthfully
+  // added no migration itself, but cannot prove no later checkpoint ever
+  // would (0170 has since been added by the Communications checkpoint).
+  // Migration-specific claims belong in the test suite of the checkpoint
+  // that actually owns that migration.
 
   it("no payment/pricing RPC or component was touched — this checkpoint's actions.ts changes are scoped to court/hours/rules RPCs only", () => {
     const s = readSource(COURTS_ACTIONS_PATH);
