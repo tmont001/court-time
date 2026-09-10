@@ -916,14 +916,19 @@ describe("Authorization — Admin only, browser never reaches privileged refund 
 // ═══════════════════════════════════════════════════════════════════════════
 // Locked semantics (runtime QA correction) — Outstanding = balances the
 // member still owes (unpaid/partially_paid only). A fully paid, Stripe-
-// refundable transaction belongs on All, never Outstanding; Refund remains
-// reachable from All via the row's own, separate render condition.
+// refundable transaction belongs on Payment Activity, never Outstanding;
+// Refund remains reachable from Payment Activity via the row's own,
+// separate render condition. Admin Cleanup Checkpoint 6 renamed the
+// underlying state from `filter` ("outstanding" | "all") to `tab`
+// ("overview" | "outstanding" | "activity") and the "All" tab label to
+// "Payment Activity" — the filtering behavior itself is byte-identical,
+// only the variable/tab name changed.
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; refund-eligible paid rows live on All (locked semantics)", () => {
+describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; refund-eligible paid rows live on Payment Activity (locked semantics)", () => {
   function outstandingFilterExpression(): string {
     const src = readSource(ADMIN_CLIENT_PATH);
-    const idx = src.indexOf('filter === "outstanding"');
+    const idx = src.indexOf('tab === "outstanding"');
     expect(idx).toBeGreaterThan(0);
     return src.slice(idx, src.indexOf(";", idx) + 1);
   }
@@ -949,7 +954,7 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
     expect(isOutstanding({ openForRecording: true })).toBe(true);
   });
 
-  it("a paid, refund-eligible row still renders Refund on the \"All\" tab (for an Admin) — the button's own condition is independent of the tab filter", () => {
+  it("a paid, refund-eligible row still renders Refund on the \"Payment Activity\" tab (for an Admin) — the button's own condition is independent of the tab filter", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
     // Phase 34E-C added !row.disputeBlocksRefund alongside the original
     // 34E-B condition — still never isPaymentOpenForRecording, and still
@@ -969,11 +974,8 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
     expect(btnIdx).toBeGreaterThan(0);
   });
 
-  it("the \"All\" tab is untouched — still shows every row with no filter predicate", () => {
-    const src = readSource(ADMIN_CLIENT_PATH);
-    const idx = src.indexOf('filter === "outstanding"');
-    const ternaryEnd = src.indexOf(";", idx);
-    const expr = src.slice(idx, ternaryEnd + 1);
+  it("the \"Payment Activity\" tab (formerly \"All\") is untouched — still shows every row with no filter predicate", () => {
+    const expr = outstandingFilterExpression();
     expect(expr).toMatch(/:\s*rows;/);
   });
 

@@ -1618,6 +1618,14 @@ export type Database = {
         Args: { p_capability: string };
         Returns: boolean;
       };
+      get_financial_range_summary: {
+        Args: { p_start_date: string; p_end_date: string };
+        Returns: {
+          domain:          string;
+          collected_cents: number;
+          refunded_cents:  number;
+        }[];
+      };
       get_reporting_overview: {
         Args: { p_start_date: string; p_end_date: string };
         Returns: {

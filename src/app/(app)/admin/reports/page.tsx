@@ -8,6 +8,10 @@ import { logReportingRpcFailure } from "./reportingDiagnostics";
 import { formatRateOrUnavailable } from "./reportPresentation";
 import type { DailySeriesPoint } from "./reservationsChart";
 import ReservationsDailyChart from "./ReservationsDailyChart";
+import { formatMoney } from "@/lib/money";
+import { getFinancialRangeSummary, getOutstandingSnapshot, FINANCIAL_DOMAIN_LABEL } from "../payments/financialSummary";
+import ReportExportButton from "./ReportExportButton";
+import type { ReportSummaryRow } from "./reportExport";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -256,6 +260,18 @@ export default async function AdminReportsPage({
 
   const tz = club.timezone;
 
+  // Admin Cleanup Checkpoint 6 — currency for the new Financial Summary
+  // section, sourced the same way admin/payments/page.tsx already does
+  // (club_settings.currency, "USD" fallback) — no silent-failure risk here
+  // the way an unset timezone has, since a missing currency safely falls
+  // back to the same default every other money display in this app uses.
+  const { data: clubSettings } = await supabase
+    .from("club_settings")
+    .select("currency")
+    .eq("club_id", clubId)
+    .single();
+  const currency = clubSettings?.currency ?? "USD";
+
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: tz });
 
   const sp = await searchParams;
@@ -280,6 +296,33 @@ export default async function AdminReportsPage({
   logReportingRpcFailure("get_waitlist_demand", waitlistResult.error);
   logReportingRpcFailure("get_member_engagement_summary", engagementResult.error);
 
+  // Admin Cleanup Checkpoint 6 — Financial Summary. Consumes the SAME
+  // authoritative layer /admin/payments' Overview tab consumes (never a
+  // second, competing formula) — Collected/Refunded/Net for this exact
+  // selected range (same club_local_bounds boundary every RPC above
+  // already uses), plus Outstanding as a CURRENT SNAPSHOT (reusing the
+  // existing Outstanding Balances computation, not re-derived here).
+  const [financialSummaryResult, outstandingResult] = await Promise.all([
+    getFinancialRangeSummary(supabase, resolved.startDate, resolved.endDate),
+    getOutstandingSnapshot(supabase, clubId, tz),
+  ]);
+  if (financialSummaryResult.error) {
+    logReportingRpcFailure("get_financial_range_summary", financialSummaryResult.error);
+  }
+  if ("error" in outstandingResult) {
+    console.error("[AdminReports] outstanding snapshot failed:", { message: outstandingResult.error });
+  }
+  const financialSummary = financialSummaryResult.data;
+  const outstandingCents = "error" in outstandingResult ? null : outstandingResult.outstandingCents;
+  // Correction — the range summary (Collected/Refunded/Net) and the
+  // Outstanding snapshot are two INDEPENDENT reads (separate awaited
+  // results above) that can fail independently; a single combined
+  // "financialFailed" boolean would misreport one as unavailable merely
+  // because the other failed. Tracked separately so both the UI and the
+  // CSV export can represent each half's real status truthfully.
+  const financialRangeFailed = !financialSummary;
+  const outstandingFailed = outstandingCents === null;
+
   const overviewRows = (overviewResult.data ?? []) as OverviewRow[];
   const overview = overviewRows[0] ?? null;
   const overviewFailed = !!overviewResult.error || !overview;
@@ -302,6 +345,89 @@ export default async function AdminReportsPage({
   const engagementRows = (engagementResult.data ?? []) as MemberEngagementRow[];
   const engagement = engagementRows[0] ?? null;
   const engagementFailed = !!engagementResult.error || !engagement;
+
+  // Admin Cleanup Checkpoint 6 (correction pass) — Export report (.csv).
+  // Curated summary metrics from sections ALREADY loaded above — never
+  // every field, never a raw dataset dump. A failed section is NEVER
+  // silently omitted (a downloaded file has no surrounding UI context to
+  // explain a gap the way the page's own UnavailableState does) — it
+  // contributes exactly one truthful "Data status: Unavailable" row
+  // instead, never a fabricated metric value. One section failing never
+  // blocks any other section's real rows from exporting.
+  const reportSummaryRows: ReportSummaryRow[] = [];
+
+  // "Court Utilization" here mirrors the page's own Court Utilization
+  // section's gross/member-demand summary strip, which reads exclusively
+  // from `overview` (get_reporting_overview) — gated on overviewFailed
+  // alone, matching that strip's own render condition; courtsFailed
+  // governs only the separate per-court list, which this curated export
+  // does not include at all.
+  if (!overviewFailed) {
+    reportSummaryRows.push(
+      { section: "Court Utilization", metric: "Gross utilization", value: formatPct(overview!.gross_utilization_pct), scope: "Selected range" },
+      { section: "Court Utilization", metric: "Member demand utilization", value: formatPct(overview!.member_demand_utilization_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Court Utilization", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!reservationsFailed) {
+    reportSummaryRows.push(
+      { section: "Reservations", metric: "Total reservations", value: String(reservationSummary!.total_reservations), scope: "Selected range" },
+      { section: "Reservations", metric: "Cancelled reservations", value: String(reservationSummary!.cancelled_reservations), scope: "Selected range" },
+      { section: "Reservations", metric: "Cancellation rate", value: formatPct(reservationSummary!.cancellation_rate_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Reservations", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!eventProgramFailed) {
+    reportSummaryRows.push(
+      { section: "Events & Programs", metric: "Total sessions held", value: String(eventProgram!.total_sessions_held), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Total enrollment", value: String(eventProgram!.total_enrollment), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Fill rate", value: formatPct(eventProgram!.fill_rate_pct), scope: "Selected range" },
+      { section: "Events & Programs", metric: "Attendance rate", value: formatPct(eventProgram!.attendance_rate_pct), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Events & Programs", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  if (!waitlistFailed) {
+    reportSummaryRows.push(
+      { section: "Waitlist Demand", metric: "Total outstanding entries", value: String(waitlist!.total_outstanding_entries), scope: "Current snapshot" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Waitlist Demand", metric: "Data status", value: "Unavailable", scope: "Current snapshot" });
+  }
+
+  if (!engagementFailed) {
+    reportSummaryRows.push(
+      { section: "Member Engagement", metric: "Active members", value: String(engagement!.active_member_snapshot_count), scope: "Current snapshot" },
+      { section: "Member Engagement", metric: "Engaged members", value: String(engagement!.engaged_member_count), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Member Engagement", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+
+  // Financial: range (Collected/Refunded/Net) and snapshot (Outstanding)
+  // fail independently — each contributes its own real rows or its own
+  // truthful status row, never coupled to the other's outcome.
+  if (!financialRangeFailed) {
+    reportSummaryRows.push(
+      { section: "Financial", metric: "Collected", value: formatMoney(financialSummary!.collectedCents, currency), scope: "Selected range" },
+      { section: "Financial", metric: "Refunded", value: formatMoney(financialSummary!.refundedCents, currency), scope: "Selected range" },
+      { section: "Financial", metric: "Net collected", value: formatMoney(financialSummary!.netCollectedCents, currency), scope: "Selected range" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Financial", metric: "Data status", value: "Unavailable", scope: "Selected range" });
+  }
+  if (!outstandingFailed) {
+    reportSummaryRows.push(
+      { section: "Financial", metric: "Outstanding", value: formatMoney(outstandingCents!, currency), scope: "Current snapshot" },
+    );
+  } else {
+    reportSummaryRows.push({ section: "Financial", metric: "Data status", value: "Unavailable", scope: "Current snapshot" });
+  }
 
   const rangeLinks: { key: ReportRange; label: string; href: string }[] = [
     { key: "today", label: "Today", href: "/admin/reports?range=today" },
@@ -390,6 +516,18 @@ export default async function AdminReportsPage({
                 " Today includes scheduled court occupancy for the entire local date."}
               {" "}A custom range can span at most 366 days.
             </p>
+          </section>
+
+          {/* ── Export (Admin Cleanup Checkpoint 6) ──────────────────────────
+              The SUMMARY report — detailed transaction exports remain owned
+              by /admin/payments. Built entirely from the already-loaded
+              values above (reportSummaryRows), never a second query. */}
+          <section>
+            <ReportExportButton
+              rows={reportSummaryRows}
+              startDate={resolved.startDate}
+              endDate={resolved.endDate}
+            />
           </section>
 
           {resolved.invalid && (
@@ -647,6 +785,59 @@ export default async function AdminReportsPage({
               Every figure here (besides Active Members) counts distinct members, not total
               actions. Engaged Members is the union across reservations, event participation, and
               program enrollment — a member active in more than one way is still counted once.
+            </p>
+          </section>
+
+          {/* ── Financial Summary ──────────────────────────────────────────────
+              Admin Cleanup Checkpoint 6 — consumes the exact same
+              get_financial_range_summary RPC + Outstanding-snapshot layer
+              /admin/payments' Overview tab consumes; no formula is
+              duplicated here. */}
+          <section>
+            <SectionHeading>Financial Summary</SectionHeading>
+            {/* Correction — Collected/Refunded/Net (range) and Outstanding
+                (snapshot) are two independent reads that can fail
+                independently; each renders its own truthful state rather
+                than one combined all-or-nothing UnavailableState. */}
+            <div className="grid grid-cols-2 gap-2">
+              {financialRangeFailed ? (
+                <div className="col-span-2">
+                  <UnavailableState />
+                </div>
+              ) : (
+                <>
+                  <StatTile label="Collected" value={formatMoney(financialSummary!.collectedCents, currency)} />
+                  <StatTile label="Refunded" value={formatMoney(financialSummary!.refundedCents, currency)} />
+                  <StatTile label="Net Collected" value={formatMoney(financialSummary!.netCollectedCents, currency)} />
+                </>
+              )}
+              {outstandingFailed ? (
+                <div className="col-span-2">
+                  <UnavailableState />
+                </div>
+              ) : (
+                <StatTile label="Outstanding" value={formatMoney(outstandingCents!, currency)} snapshot />
+              )}
+            </div>
+            {!financialRangeFailed && financialSummary!.domainBreakdown.length > 0 && (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mt-3 mb-1.5 px-1">
+                  Net collected by domain
+                </p>
+                <div className="ct-card divide-y divide-gray-100 dark:divide-gray-800 overflow-hidden">
+                  {financialSummary!.domainBreakdown.map(d => (
+                    <DetailRow
+                      key={d.domain}
+                      label={FINANCIAL_DOMAIN_LABEL[d.domain]}
+                      value={formatMoney(d.netCollectedCents, currency)}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 px-1">
+              Collected/Refunded/Net Collected reflect the selected range above. Outstanding is a
+              current snapshot, not filtered by the selected range.
             </p>
           </section>
         </div>

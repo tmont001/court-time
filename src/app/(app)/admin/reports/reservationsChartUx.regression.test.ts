@@ -381,8 +381,14 @@ describe("11. no RPC/data-contract change", () => {
 
   it("all six reporting RPC calls and their diagnostic logging remain exactly as before this checkpoint", () => {
     const s = pageSource();
+    // Admin Cleanup Checkpoint 6 legitimately added a 7th diagnostic-logged
+    // read for the new Financial Summary section — but it goes through
+    // getFinancialRangeSummary (../payments/financialSummary.ts), never a
+    // direct supabase.rpc( call written in page.tsx itself, so THAT count
+    // is still exactly 6; only logReportingRpcFailure( grew to 7. This
+    // checkpoint's own concern (the reservations chart) is unaffected.
     expect(s.match(/supabase\.rpc\(/g)?.length).toBe(6);
-    expect(s.match(/logReportingRpcFailure\(/g)?.length).toBe(6);
+    expect(s.match(/logReportingRpcFailure\(/g)?.length).toBe(7);
   });
 
   it("the old DailyBarSeries function no longer exists anywhere in page.tsx", () => {

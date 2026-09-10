@@ -473,12 +473,22 @@ describe("13. exportDomainHydration.ts passes BOTH parent and child statuses to 
 const CLIENT_PATH = "src/app/(app)/admin/payments/AdminPaymentsClient.tsx";
 const EXPORT_MENU_PATH = "src/app/(app)/admin/payments/PaymentExportMenu.tsx";
 
-describe("Export control lives in the SAME toolbar row as Outstanding/All + Search, not its own isolated header row", () => {
-  it("AdminPaymentsClient.tsx renders <PaymentExportMenu> inside the toolbar div that also contains the filter-tabs container and the search <input>", () => {
+// Admin Cleanup Checkpoint 6 — the Outstanding/Payment Activity/Overview
+// tab strip now gets its OWN full-width row (equal-width grid cells),
+// matching the approved tab-strip treatment used elsewhere in this app
+// (Courts/Lessons/Communications) — a third tab (Overview) made the prior
+// single shared toolbar row too cramped, the same reasoning that already
+// drove this pattern everywhere else it's used. The search input +
+// PaymentExportMenu remain together in their own row immediately below,
+// rendered only for the Outstanding/Payment Activity tabs (never Overview,
+// which has no list to search or export).
+describe("Export control lives in the SAME row as Search, immediately below the (now separate) tab strip", () => {
+  it("AdminPaymentsClient.tsx renders <PaymentExportMenu> inside the toolbar div that also contains the search <input>, after the tab strip's own separate row", () => {
     const s = codeOnly(readSource(CLIENT_PATH));
-    const toolbarIdx = s.indexOf('<div className="flex flex-col sm:flex-row gap-2 mb-4">');
-    expect(toolbarIdx).toBeGreaterThan(-1);
-    const tabsIdx = s.indexOf("Outstanding", toolbarIdx);
+    const tabStripIdx = s.indexOf("gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl mb-4");
+    expect(tabStripIdx).toBeGreaterThan(-1);
+    const toolbarIdx = s.indexOf('<div className="flex flex-col sm:flex-row gap-2 mb-4">', tabStripIdx);
+    expect(toolbarIdx).toBeGreaterThan(tabStripIdx);
     const searchInputIdx = s.indexOf('placeholder="Search by name…"', toolbarIdx);
     const exportMenuIdx = s.indexOf("<PaymentExportMenu", toolbarIdx);
     // G-D1 added a conditional {truncated && (...)} notice between the
@@ -486,8 +496,7 @@ describe("Export control lives in the SAME toolbar row as Outstanding/All + Sear
     // find the toolbar's closing tag directly rather than assuming it's
     // immediately followed by {filtered.length.
     const toolbarCloseIdx = s.indexOf("</div>", exportMenuIdx);
-    expect(tabsIdx).toBeGreaterThan(toolbarIdx);
-    expect(searchInputIdx).toBeGreaterThan(tabsIdx);
+    expect(searchInputIdx).toBeGreaterThan(toolbarIdx);
     expect(exportMenuIdx).toBeGreaterThan(searchInputIdx);
     expect(toolbarCloseIdx).toBeGreaterThan(exportMenuIdx);
   });
