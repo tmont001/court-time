@@ -623,11 +623,21 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
 
   // null whenever not viewing today, or when the current club-local time
   // falls outside the rendered operating-hours grid — the caller (render
-  // below) must not draw a misleading indicator in either case.
-  const nowIndicatorTop = useMemo(() => {
+  // below) must not draw a misleading indicator in either case. `label`
+  // reuses the EXACT existing inline time-formatting pattern already used
+  // 3x elsewhere in this file (toLocaleTimeString with clubTimezone,
+  // hour: "numeric", minute: "2-digit", hour12: true) — no new formatter,
+  // no new timer; derived from the same nowTickMs state as `top`.
+  const nowIndicator = useMemo(() => {
     if (!isViewingToday || nowTickMs === null) return null;
-    const mins = minutesSinceGridStart(new Date(nowTickMs), clubTimezone, startHour);
-    return resolveNowIndicatorTop(mins, { gridStartHour: startHour, gridEndHour: endHour, rowHeightPx: rowH });
+    const nowDate = new Date(nowTickMs);
+    const mins = minutesSinceGridStart(nowDate, clubTimezone, startHour);
+    const top = resolveNowIndicatorTop(mins, { gridStartHour: startHour, gridEndHour: endHour, rowHeightPx: rowH });
+    if (top === null) return null;
+    const label = nowDate.toLocaleTimeString("en-US", {
+      timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+    });
+    return { top, label };
   }, [isViewingToday, nowTickMs, clubTimezone, startHour, endHour, rowH]);
 
   const filteredCourts = useMemo(
@@ -1069,7 +1079,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // Phase 35D: live clock for the "now" indicator line only. Runs for the
   // lifetime of the component regardless of which date is being viewed
   // (cheap — one Date.now() + one state update per minute); the indicator
-  // itself (nowIndicatorTop below) is gated separately on isViewingToday,
+  // itself (nowIndicator below) is gated separately on isViewingToday,
   // so this ticking has no visible effect while viewing a non-today date.
   useEffect(() => {
     setNowTickMs(Date.now());
@@ -1551,34 +1561,64 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                     )}
                   </div>
                 ))}
+
+                {/* Phase 35D: current-time PILL — the sole visual anchor
+                    for the now-line (no separate dot). A child of this
+                    STICKY gutter, so it stays pinned alongside the hour
+                    labels regardless of horizontal scroll, exactly like
+                    them. Kept entirely INSIDE the gutter's own width (a
+                    small positive `right` offset leaves ~3px of space
+                    before the first court boundary) — it must never
+                    overlap Court 1. Being inside the sticky gutter (z-10)
+                    it always paints above the (non-sticky, z-[5]) line
+                    below, so the line visually appears to "begin" exactly
+                    at GUTTER_W no matter the scroll position. Compact by
+                    design — a precise time marker, not a status badge — so
+                    the court schedule itself stays visually dominant.
+                    Purely decorative: pointer-events-none + aria-hidden,
+                    same as the line. */}
+                {nowIndicator !== null && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute flex items-center justify-center rounded-full pointer-events-none whitespace-nowrap px-1 bg-[#E85D4F]"
+                    style={{ top: nowIndicator.top - 8, right: 3, height: 16 }}
+                  >
+                    <span className="text-[9px] font-semibold leading-none tabular-nums text-white">
+                      {nowIndicator.label}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {/* Phase 35D: live "now" indicator — only when viewing today
+              {/* Phase 35D: live "now" line — only when viewing today
                   (club-local) and only when the current club-local time
                   falls within the rendered operating-hours grid. Spans the
                   court columns only, never the sticky time gutter (left
-                  offset starts at GUTTER_W); scrolls horizontally WITH the
-                  columns since it is a plain (non-sticky) sibling at the
-                  same local coordinate origin, so it is correctly covered
-                  by the gutter's own opaque sticky background when
-                  scrolled underneath it, exactly like reservation/event
-                  blocks already are. Purely visual: pointer-events-none
-                  keeps it out of the way of taps/clicks/horizontal swipe
-                  scrolling, and aria-hidden keeps it out of the
+                  offset starts at GUTTER_W, exactly at the first court
+                  boundary); scrolls horizontally WITH the columns since it
+                  is a plain (non-sticky) sibling at the same local
+                  coordinate origin, so it is correctly covered by the
+                  gutter's (and the pill's) own opaque sticky background
+                  when scrolled underneath it, exactly like reservation/
+                  event blocks already are. Purely visual: pointer-events-
+                  none keeps it out of the way of taps/clicks/horizontal
+                  swipe scrolling, and aria-hidden keeps it out of the
                   accessibility tree and off the tab order entirely.
                   Rendered BEFORE the court-column blocks below (this is an
                   absolutely-positioned element, so its DOM position has no
                   effect on flex layout/geometry) so it paints underneath
-                  reservation/event cards, never on top of them. */}
-              {nowIndicatorTop !== null && (
+                  reservation/event cards, never on top of them —
+                  interactive schedule cards stay visually more important
+                  than the line, and the line itself stays visually
+                  subordinate to the pill (same hue, reduced opacity) —
+                  the intended hierarchy is pill > line > ordinary grid
+                  lines, with the court schedule dominant over all three. */}
+              {nowIndicator !== null && (
                 <div
                   aria-hidden="true"
-                  className="absolute pointer-events-none z-[5]"
-                  style={{ top: nowIndicatorTop - 4, left: GUTTER_W, right: 0, height: 8 }}
-                >
-                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-red-400/90 dark:bg-red-400/80" />
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-red-400 dark:bg-red-400" />
-                </div>
+                  className="absolute pointer-events-none z-[5] bg-[#E85D4F]/85"
+                  style={{ top: nowIndicator.top - 1, left: GUTTER_W, right: 0, height: 2 }}
+                />
               )}
 
               {/* Court columns */}
