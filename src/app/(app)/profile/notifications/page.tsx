@@ -5,6 +5,8 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import NotificationPreferencesForm from "./NotificationPreferencesForm";
 import DeliveryMethodsSection from "./DeliveryMethodsSection";
+import CalendarSubscriptionSection from "./CalendarSubscriptionSection";
+import type { CalendarFeedType } from "./calendarFeedActions";
 
 interface CommunicationSettings {
   phone:      string | null;
@@ -34,6 +36,22 @@ export default async function NotificationPreferencesPage() {
     // 0104) is a security-definer RPC scoped to the caller's own row.
     supabase.rpc("get_my_communication_settings"),
   ]);
+
+  // Phase 35C — personal calendar subscription. Admin/Staff get no
+  // subscribed feed in this checkpoint (they retain 35B's one-off
+  // exports), so calendarFeedType stays null and the section is omitted
+  // entirely for them, matching the locked scope exactly.
+  const calendarFeedType: CalendarFeedType | null =
+    profile?.role === "member" ? "member_personal" :
+    profile?.role === "pro"    ? "pro_lessons" :
+    null;
+
+  const memberFeedUnavailable = profile?.role === "member" && !profile.memberSelfService;
+
+  const { data: hasActiveCalendarFeedToken } =
+    calendarFeedType && !memberFeedUnavailable
+      ? await supabase.rpc("has_active_calendar_feed_token", { p_feed_type: calendarFeedType })
+      : { data: false };
 
   const commSettings = commSettingsRaw as unknown as CommunicationSettings | null;
   // A successful lookup always returns a non-null object for an
@@ -69,6 +87,21 @@ export default async function NotificationPreferencesPage() {
           phone={commSettings?.phone ?? null}
           smsOptIn={commSettings?.sms_opt_in ?? false}
         />
+
+        {calendarFeedType && profile?.activeClubId && (
+          <CalendarSubscriptionSection
+            feedType={calendarFeedType}
+            clubId={profile.activeClubId}
+            title="Calendar subscription"
+            description={
+              calendarFeedType === "member_personal"
+                ? "Subscribe once to keep your Court Time reservations, events, programs, and lessons synced to your personal calendar app."
+                : "Subscribe once to keep your Court Time reservations, events, programs, and confirmed lessons synced to your personal calendar app."
+            }
+            initialHasActiveToken={hasActiveCalendarFeedToken === true}
+            unavailable={memberFeedUnavailable}
+          />
+        )}
 
         <div className="space-y-1">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-1">

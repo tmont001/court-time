@@ -620,6 +620,28 @@ export default function EventDetailSheet({
           className="mt-1.5"
         />
 
+        {/* Add to Calendar — one-off .ics export (Phase 35B). Eligible for a
+            scheduled, non-archived, not-yet-finished Event (including a
+            generated Program occurrence, which is itself an events row —
+            no separate check needed here). Deliberately compared against
+            event.ends_at, NOT the pre-existing isPastEvent (which is
+            starts_at-based and answers a different question — join/edit
+            eligibility "has this already started" — not "is there
+            anything left to add to a calendar"): an event currently in
+            progress should still be exportable. The export route
+            independently re-derives and re-checks this same eligibility,
+            and RLS (events_select_same_club) independently re-derives
+            whether this viewer may see the row at all — this is a
+            UI-display gate only. */}
+        {event.status === "scheduled" && new Date(event.ends_at) > new Date() && (
+          <a
+            href={`/api/calendar/export/event/${event.id}`}
+            className={`mt-2 flex items-center justify-center ${ACTION_BUTTON_SECONDARY}`}
+          >
+            Add to Calendar
+          </a>
+        )}
+
         {/* View Roster — admin/pro only */}
         {canViewRoster && (
           <button

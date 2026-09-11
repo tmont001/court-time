@@ -18,6 +18,12 @@ import CalendarFab from "./CalendarFab";
 import { createReservation, adminCreateMemberReservation, cancelMemberReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
+import {
+  minutesSinceGridStart,
+  getClubLocalDateISO,
+  resolveNowIndicatorTop,
+  resolveSmartScrollTop,
+} from "@/lib/calendar/nowIndicator";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import { formatMoney } from "@/lib/money";
@@ -38,6 +44,14 @@ const MAX_ROW_H  = 64;
 // Approximate height of the sticky court-name header row (py-2 + text-xs + border).
 const COURT_HEADER_H = 33;
 const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+// Phase 35D: how often the live "now" indicator's position is recomputed.
+// Minute-level freshness is sufficient — never per-second.
+const NOW_TICK_INTERVAL_MS = 60_000;
+// Phase 35D: minutes of earlier context left visible above "now" on the
+// one-shot smart initial scroll (roughly 60-90 minutes per product spec;
+// the actual PIXEL offset is always derived from the grid's current row
+// height via resolveSmartScrollTop, never a hardcoded pixel value).
+const SMART_SCROLL_CONTEXT_MINUTES = 60;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -187,20 +201,6 @@ interface Props {
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
   currency:                     string; // Phase 34B
   defaultCourtHourlyRateCents:  number | null; // Phase 34B: club default, court.hourly_rate_cents overrides it
-}
-
-// Returns minutes elapsed since viewStartHour for a given UTC date in tz.
-function minsFromViewportTop(utcDate: Date, tz: string, viewStartHour: number): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(utcDate);
-  const h = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
-  const m = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
-  const hour = h === 24 ? 0 : h;
-  return hour * 60 + m - viewStartHour * 60;
 }
 
 // ─── Time slot list ───────────────────────────────────────────────────────────
@@ -392,6 +392,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // nowMs is 0 during SSR so all slots render as available (no past-slot check).
   // After hydration, useEffect sets the real timestamp, past slots disable without mismatch.
   const [nowMs, setNowMs]                 = useState(0);
+  // Phase 35D: separate from nowMs above (which is set exactly once on
+  // mount and drives past-slot disabling — unrelated, pre-existing
+  // behavior this checkpoint must not touch). nowTickMs ticks every
+  // NOW_TICK_INTERVAL_MS and drives ONLY the live "now" indicator line's
+  // position — null during SSR/before the first tick so the indicator
+  // never renders from a guessed/mismatched time.
+  const [nowTickMs, setNowTickMs]         = useState<number | null>(null);
   const [events, setEvents]               = useState<EventWithDetails[]>([]);
 
   // ── Responsive column width / row height ──────────────────────────────────
@@ -604,6 +611,35 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const timeSlots  = useMemo(() => buildTimeSlots(startHour, endHour), [startHour, endHour]);
   const totalGridH = timeSlots.length * rowH;
 
+  // ── Phase 35D: live "now" indicator ─────────────────────────────────────
+  // "Today" is evaluated in the CLUB's own IANA timezone from the live
+  // clock (nowTickMs), not the browser/device local timezone and not the
+  // server-computed todayISO prop (which is a point-in-time snapshot used
+  // elsewhere in this file for the Today button/date-pill highlighting —
+  // deliberately left untouched; this is a separate, self-correcting check
+  // so the indicator still behaves correctly if the tab is left open across
+  // a club-local midnight).
+  const isViewingToday = nowTickMs !== null && getClubLocalDateISO(new Date(nowTickMs), clubTimezone) === selectedISO;
+
+  // null whenever not viewing today, or when the current club-local time
+  // falls outside the rendered operating-hours grid — the caller (render
+  // below) must not draw a misleading indicator in either case. `label`
+  // reuses the EXACT existing inline time-formatting pattern already used
+  // 3x elsewhere in this file (toLocaleTimeString with clubTimezone,
+  // hour: "numeric", minute: "2-digit", hour12: true) — no new formatter,
+  // no new timer; derived from the same nowTickMs state as `top`.
+  const nowIndicator = useMemo(() => {
+    if (!isViewingToday || nowTickMs === null) return null;
+    const nowDate = new Date(nowTickMs);
+    const mins = minutesSinceGridStart(nowDate, clubTimezone, startHour);
+    const top = resolveNowIndicatorTop(mins, { gridStartHour: startHour, gridEndHour: endHour, rowHeightPx: rowH });
+    if (top === null) return null;
+    const label = nowDate.toLocaleTimeString("en-US", {
+      timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
+    });
+    return { top, label };
+  }, [isViewingToday, nowTickMs, clubTimezone, startHour, endHour, rowH]);
+
   const filteredCourts = useMemo(
     () => courts.filter(c => selectedCourtIds.has(c.id)),
     [courts, selectedCourtIds]
@@ -666,6 +702,30 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const prevColWRef           = useRef<number | null>(null);
   const pendingScrollRatioRef = useRef<number | null>(null);
 
+  // Phase 35D: smart initial vertical scroll — mirrors the horizontal
+  // ratio-preservation refs immediately above in spirit (one-shot,
+  // ref-guarded, applied only after the relevant DOM value actually
+  // commits), but is a wholly separate concern (vertical position, not
+  // horizontal), so it gets its own pair of refs rather than overloading
+  // the horizontal ones.
+  //   - pendingSmartScrollRef: "an intentional smart-scroll should happen
+  //     at the next compute()". Seeded true only when the INITIAL view is
+  //     today (using a fresh timestamp, independent of the nowTickMs
+  //     ticker above — this is a one-shot mount decision, not something
+  //     that should track the live clock); set true again, explicitly, by
+  //     the Today button's own click handler below. Never set true by
+  //     ordinary prev/next-day navigation, even if it happens to land on
+  //     today — only mount and the explicit Today action trigger this.
+  //   - pendingSmartScrollMinsRef: the minutes-since-grid-start value to
+  //     apply, computed inside compute() (cheap, synchronous, no DOM
+  //     dependency) but not actually written to el.scrollTop until the
+  //     resulting rowH has committed to the DOM (the effect keyed on
+  //     [rowH] below) — otherwise el.scrollHeight could still reflect the
+  //     stale pre-layout row height and the target would be clamped
+  //     against the wrong (smaller) scrollable range.
+  const pendingSmartScrollRef     = useRef(getClubLocalDateISO(new Date(), clubTimezone) === selectedISO);
+  const pendingSmartScrollMinsRef = useRef<number | null>(null);
+
   // Placed after filteredCourts/timeSlots to avoid the forward-reference TS error.
   useLayoutEffect(() => {
     const el = gridContainerRef.current;
@@ -674,6 +734,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       const available = el.clientWidth - GUTTER_W;
       const count     = Math.max(filteredCourts.length, 1);
       const newColW   = Math.min(Math.max(Math.floor(available / count), MIN_colW), MAX_colW);
+
+      // Consumed unconditionally on every compute() — a stale "pending"
+      // flag left over from a prior context must never silently fire
+      // later (e.g. on an incidental resize in a different context).
+      const shouldSmartScroll = pendingSmartScrollRef.current;
+      pendingSmartScrollRef.current = false;
 
       if (!hasComputedOnceRef.current) {
         // First-ever layout: nothing to preserve, natural scrollLeft (0) is correct.
@@ -692,6 +758,17 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
       }
       prevContextKeyRef.current = calendarContextKey;
       prevColWRef.current = newColW;
+
+      // Phase 35D: resolve (but do not yet apply) the smart-scroll target.
+      // Left null — a no-op for the [rowH]-keyed effect below — whenever
+      // there is nothing sensible to scroll to (not triggered this pass,
+      // or "now" falls outside the rendered operating-hours grid), so the
+      // natural default scroll position (0) stands untouched.
+      if (shouldSmartScroll) {
+        const mins = minutesSinceGridStart(new Date(), clubTimezone, startHour);
+        const totalMinutes = (endHour - startHour) * 60;
+        pendingSmartScrollMinsRef.current = (mins >= 0 && mins <= totalMinutes) ? mins : null;
+      }
 
       setColW(newColW);
       setContainerW(el.clientWidth);
@@ -718,6 +795,29 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     pendingScrollRatioRef.current = null;
   }, [colW]);
 
+  // Phase 35D: applies the one-shot smart vertical scroll only after rowH
+  // (and therefore totalGridH/el.scrollHeight) has actually committed to
+  // the DOM. Consumes and clears pendingSmartScrollMinsRef immediately, so
+  // a LATER incidental rowH change (any subsequent resize) is always a
+  // no-op here — this can only ever fire once per mount-on-today or
+  // Today-button click, never repeatedly, and never fights a scroll the
+  // user has since performed themselves.
+  useLayoutEffect(() => {
+    const el = gridContainerRef.current;
+    if (!el || pendingSmartScrollMinsRef.current === null) return;
+    const mins = pendingSmartScrollMinsRef.current;
+    pendingSmartScrollMinsRef.current = null;
+    const target = resolveSmartScrollTop(mins, {
+      gridStartHour: startHour,
+      gridEndHour: endHour,
+      rowHeightPx: rowH,
+      contextMinutes: SMART_SCROLL_CONTEXT_MINUTES,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    });
+    if (target !== null) el.scrollTop = target;
+  }, [rowH]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const innerWidth = GUTTER_W + Math.max(filteredCourts.length * colW, colW);
 
   // When the selected courts don't fill the available width (low court counts
@@ -730,8 +830,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const occupiedSlots = useMemo(() => {
     const map = new Map<string, Set<number>>();
     for (const res of reservations) {
-      const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone, startHour);
-      const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
+      const startMins = minutesSinceGridStart(new Date(res.starts_at), clubTimezone, startHour);
+      const endMins   = minutesSinceGridStart(new Date(res.ends_at),   clubTimezone, startHour);
       const startSlot = Math.floor(startMins / 30);
       const endSlot   = Math.ceil(endMins   / 30);
       if (!map.has(res.court_id)) map.set(res.court_id, new Set());
@@ -975,6 +1075,17 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     isMutationRefreshRef.current = false;
   }, [fetchReservations, fetchEvents]);
   useEffect(() => { setNowMs(Date.now()); }, []);
+
+  // Phase 35D: live clock for the "now" indicator line only. Runs for the
+  // lifetime of the component regardless of which date is being viewed
+  // (cheap — one Date.now() + one state update per minute); the indicator
+  // itself (nowIndicator below) is gated separately on isViewingToday,
+  // so this ticking has no visible effect while viewing a non-today date.
+  useEffect(() => {
+    setNowTickMs(Date.now());
+    const id = setInterval(() => setNowTickMs(Date.now()), NOW_TICK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   function handleSlotTap(court: Court, slotIdx: number) {
@@ -1279,7 +1390,14 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           {/* Today — only when not viewing today */}
           {selectedISO !== todayISO && (
             <button
-              onClick={() => setSelectedDate(new Date(todayISO + "T12:00:00Z"))}
+              onClick={() => {
+                // Phase 35D: an explicit Today action may perform the smart
+                // initial vertical scroll once — ordinary prev/next-day
+                // navigation never sets this, even if it happens to land on
+                // today.
+                pendingSmartScrollRef.current = true;
+                setSelectedDate(new Date(todayISO + "T12:00:00Z"));
+              }}
               className="shrink-0 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 motion-safe:transition-colors motion-safe:duration-100 whitespace-nowrap"
             >
               Today
@@ -1425,7 +1543,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             </div>
 
             {/* Grid body: gutter + court columns */}
-            <div className="flex" style={{ height: totalGridH }}>
+            <div className="flex relative" style={{ height: totalGridH }}>
 
               {/* Time gutter — sticky on horizontal scroll */}
               <div
@@ -1443,7 +1561,65 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                     )}
                   </div>
                 ))}
+
+                {/* Phase 35D: current-time PILL — the sole visual anchor
+                    for the now-line (no separate dot). A child of this
+                    STICKY gutter, so it stays pinned alongside the hour
+                    labels regardless of horizontal scroll, exactly like
+                    them. Kept entirely INSIDE the gutter's own width (a
+                    small positive `right` offset leaves ~3px of space
+                    before the first court boundary) — it must never
+                    overlap Court 1. Being inside the sticky gutter (z-10)
+                    it always paints above the (non-sticky, z-[5]) line
+                    below, so the line visually appears to "begin" exactly
+                    at GUTTER_W no matter the scroll position. Compact by
+                    design — a precise time marker, not a status badge — so
+                    the court schedule itself stays visually dominant.
+                    Purely decorative: pointer-events-none + aria-hidden,
+                    same as the line. */}
+                {nowIndicator !== null && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute flex items-center justify-center rounded-full pointer-events-none whitespace-nowrap px-1 bg-[#E85D4F]"
+                    style={{ top: nowIndicator.top - 8, right: 3, height: 16 }}
+                  >
+                    <span className="text-[9px] font-semibold leading-none tabular-nums text-white">
+                      {nowIndicator.label}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* Phase 35D: live "now" line — only when viewing today
+                  (club-local) and only when the current club-local time
+                  falls within the rendered operating-hours grid. Spans the
+                  court columns only, never the sticky time gutter (left
+                  offset starts at GUTTER_W, exactly at the first court
+                  boundary); scrolls horizontally WITH the columns since it
+                  is a plain (non-sticky) sibling at the same local
+                  coordinate origin, so it is correctly covered by the
+                  gutter's (and the pill's) own opaque sticky background
+                  when scrolled underneath it, exactly like reservation/
+                  event blocks already are. Purely visual: pointer-events-
+                  none keeps it out of the way of taps/clicks/horizontal
+                  swipe scrolling, and aria-hidden keeps it out of the
+                  accessibility tree and off the tab order entirely.
+                  Rendered BEFORE the court-column blocks below (this is an
+                  absolutely-positioned element, so its DOM position has no
+                  effect on flex layout/geometry) so it paints underneath
+                  reservation/event cards, never on top of them —
+                  interactive schedule cards stay visually more important
+                  than the line, and the line itself stays visually
+                  subordinate to the pill (same hue, reduced opacity) —
+                  the intended hierarchy is pill > line > ordinary grid
+                  lines, with the court schedule dominant over all three. */}
+              {nowIndicator !== null && (
+                <div
+                  aria-hidden="true"
+                  className="absolute pointer-events-none z-[5] bg-[#E85D4F]/85"
+                  style={{ top: nowIndicator.top - 1, left: GUTTER_W, right: 0, height: 2 }}
+                />
+              )}
 
               {/* Court columns */}
               {filteredCourts.length > 0 ? (
@@ -1514,8 +1690,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
 
                       {/* Reservation blocks — absolutely positioned over the slot buttons */}
                       {courtRes.map(res => {
-                        const startMins = minsFromViewportTop(new Date(res.starts_at), clubTimezone, startHour);
-                        const endMins   = minsFromViewportTop(new Date(res.ends_at),   clubTimezone, startHour);
+                        const startMins = minutesSinceGridStart(new Date(res.starts_at), clubTimezone, startHour);
+                        const endMins   = minutesSinceGridStart(new Date(res.ends_at),   clubTimezone, startHour);
                         const top       = (startMins / 30) * rowH;
                         const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, 4);
                         // Phase 33C3: also recognize a claimed Member's own
@@ -1675,8 +1851,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
 
                       {/* Event blocks — colored, tappable, span the full column */}
                       {(eventsByCourtId.get(court.id) ?? []).map(ev => {
-                          const startMins = minsFromViewportTop(new Date(ev.starts_at), clubTimezone, startHour);
-                          const endMins   = minsFromViewportTop(new Date(ev.ends_at),   clubTimezone, startHour);
+                          const startMins = minutesSinceGridStart(new Date(ev.starts_at), clubTimezone, startHour);
+                          const endMins   = minutesSinceGridStart(new Date(ev.ends_at),   clubTimezone, startHour);
                           const top       = (startMins / 30) * rowH;
                           const height    = Math.max(((endMins - startMins) / 30) * rowH - 2, rowH);
                           return (

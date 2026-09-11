@@ -17,7 +17,7 @@ import {
   getReservationCheckoutEligibilityAction,
   createReservationCheckoutAction,
 } from "./reservationCheckoutActions";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH, ACTION_BUTTON_SECONDARY } from "@/components/styles/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -263,6 +263,32 @@ export default function ReservationDetailSheet({
     reservation.status === "confirmed" &&
     new Date(reservation.starts_at) > new Date();
 
+  // Phase 35B: one-off "Add to Calendar" (.ics) export. Only a confirmed,
+  // not-yet-finished member_booking reservation is exportable here —
+  // maintenance/admin_block rows are internal operational court closures,
+  // not a personal appointment, and reason='event'/'pro_lesson'
+  // reservations never reach this sheet at all (CalendarShell routes those
+  // to EventDetailSheet/LessonRequestDetail instead, which carry their own
+  // Add to Calendar action).
+  //
+  // Correction pass: Admin/Staff (canManageMemberReservation) may export
+  // any eligible reservation on this sheet, exactly like their existing
+  // Edit/Cancel authority. A Member/Pro may export only their OWN
+  // reservation — mirrored here via onMemberCancel's existing presence
+  // signal, which CalendarShell only ever supplies when the viewer owns
+  // this exact row (by owner_user_id or their own current roster
+  // identity) AND holds a member/pro role — the SAME signal Cancel above
+  // already relies on for the identical reason (never inferred merely
+  // from "this sheet happened to open"). The export route independently
+  // re-derives and re-checks both the eligibility and the ownership
+  // server-side — this is a UI-display gate only, never the authorization
+  // boundary itself.
+  const canExportToCalendar =
+    reservation.reason === "member_booking" &&
+    reservation.status === "confirmed" &&
+    new Date(reservation.ends_at) > new Date() &&
+    (canManageMemberReservation || !!onMemberCancel);
+
   // ── Actions ───────────────────────────────────────────────────────────────
 
   async function handleAdminCancel() {
@@ -437,6 +463,17 @@ export default function ReservationDetailSheet({
 
         {/* Error */}
         {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+
+        {/* Add to Calendar — one-off .ics export (Phase 35B). Secondary in
+            visual hierarchy, one canonical action on this detail surface. */}
+        {canExportToCalendar && (
+          <a
+            href={`/api/calendar/export/reservation/${reservation.id}`}
+            className={`mt-5 flex items-center justify-center ${ACTION_BUTTON_SECONDARY}`}
+          >
+            Add to Calendar
+          </a>
+        )}
 
         {/* Edit — admin mode only, eligible reservations only */}
         {(canEdit || canEditMaintenance) && (
