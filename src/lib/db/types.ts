@@ -1039,6 +1039,7 @@ export type Database = {
           created_at: string;
           updated_at: string;
           price_amount_cents: number | null;  // Phase 34B
+          confirmed_at: string | null;  // Phase 35C — set once, never cleared, by a DB trigger
         };
         Insert: {
           id?: string;
@@ -1052,6 +1053,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           price_amount_cents?: number | null;  // Phase 34B
+          confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
         };
         Update: {
           id?: string;
@@ -1065,6 +1067,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
           price_amount_cents?: number | null;  // Phase 34B
+          confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
         };
         Relationships: [
           {
@@ -1600,6 +1603,51 @@ export type Database = {
           request_fingerprint?:       string | null;
         };
         Relationships: [];
+      };
+      calendar_feed_tokens: {
+        Row: {
+          id:         string;
+          club_id:    string;
+          profile_id: string;
+          feed_type:  "member_personal" | "pro_lessons";
+          token_hash: string;
+          created_at: string;
+          revoked_at: string | null;
+        };
+        Insert: {
+          id?:         string;
+          club_id:     string;
+          profile_id:  string;
+          feed_type:   "member_personal" | "pro_lessons";
+          token_hash:  string;
+          created_at?: string;
+          revoked_at?: string | null;
+        };
+        Update: {
+          id?:         string;
+          club_id?:    string;
+          profile_id?: string;
+          feed_type?:  "member_personal" | "pro_lessons";
+          token_hash?: string;
+          created_at?: string;
+          revoked_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "calendar_feed_tokens_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "calendar_feed_tokens_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: { [_ in never]: never };
@@ -4472,6 +4520,22 @@ export type Database = {
           p_fingerprint?:              string | null;
         };
         Returns: { id: string; deduped: boolean }[];
+      };
+      issue_calendar_feed_token: {
+        Args: { p_feed_type: string; p_token_hash: string; p_expected_club_id: string };
+        Returns: undefined;
+      };
+      revoke_calendar_feed_token: {
+        Args: { p_feed_type: string; p_expected_club_id: string };
+        Returns: undefined;
+      };
+      has_active_calendar_feed_token: {
+        Args: { p_feed_type: string };
+        Returns: boolean;
+      };
+      get_calendar_feed_rows: {
+        Args: { p_token_hash: string };
+        Returns: Json;
       };
     };
     Enums: { [_ in never]: never };
