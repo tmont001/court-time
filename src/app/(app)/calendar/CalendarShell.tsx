@@ -1553,6 +1553,34 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                 ))}
               </div>
 
+              {/* Phase 35D: live "now" indicator — only when viewing today
+                  (club-local) and only when the current club-local time
+                  falls within the rendered operating-hours grid. Spans the
+                  court columns only, never the sticky time gutter (left
+                  offset starts at GUTTER_W); scrolls horizontally WITH the
+                  columns since it is a plain (non-sticky) sibling at the
+                  same local coordinate origin, so it is correctly covered
+                  by the gutter's own opaque sticky background when
+                  scrolled underneath it, exactly like reservation/event
+                  blocks already are. Purely visual: pointer-events-none
+                  keeps it out of the way of taps/clicks/horizontal swipe
+                  scrolling, and aria-hidden keeps it out of the
+                  accessibility tree and off the tab order entirely.
+                  Rendered BEFORE the court-column blocks below (this is an
+                  absolutely-positioned element, so its DOM position has no
+                  effect on flex layout/geometry) so it paints underneath
+                  reservation/event cards, never on top of them. */}
+              {nowIndicatorTop !== null && (
+                <div
+                  aria-hidden="true"
+                  className="absolute pointer-events-none z-[5]"
+                  style={{ top: nowIndicatorTop - 4, left: GUTTER_W, right: 0, height: 8 }}
+                >
+                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-red-400/90 dark:bg-red-400/80" />
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-red-400 dark:bg-red-400" />
+                </div>
+              )}
+
               {/* Court columns */}
               {filteredCourts.length > 0 ? (
                 filteredCourts.map(court => {
@@ -1816,27 +1844,6 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                 <div
                   className="flex-1 border-l border-gray-200 dark:border-gray-700"
                   style={{ height: totalGridH }}
-                />
-              )}
-
-              {/* Phase 35D: live "now" indicator — only when viewing today
-                  (club-local) and only when the current club-local time
-                  falls within the rendered operating-hours grid. Spans the
-                  court columns only, never the sticky time gutter (left
-                  offset starts at GUTTER_W); scrolls horizontally WITH the
-                  columns since it is a plain (non-sticky) sibling at the
-                  same local coordinate origin, so it is correctly covered
-                  by the gutter's own opaque sticky background when
-                  scrolled underneath it, exactly like reservation/event
-                  blocks already are. Purely visual: pointer-events-none
-                  keeps it out of the way of taps/clicks/horizontal swipe
-                  scrolling, and aria-hidden keeps it out of the
-                  accessibility tree and off the tab order entirely. */}
-              {nowIndicatorTop !== null && (
-                <div
-                  aria-hidden="true"
-                  className="absolute pointer-events-none z-[5] bg-red-500/80 dark:bg-red-400/80"
-                  style={{ top: nowIndicatorTop - 1, left: GUTTER_W, right: 0, height: 2 }}
                 />
               )}
 
