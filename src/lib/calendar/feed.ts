@@ -22,7 +22,7 @@
 
 import { createHash } from "crypto";
 import type { IcsEvent } from "@/lib/ics";
-import { reservationUid, eventUid, lessonUid, safeDescription } from "@/lib/calendar/export";
+import { reservationUid, eventUid, lessonUid, safeDescription, buildEventSummary } from "@/lib/calendar/export";
 
 export const FEED_HISTORY_DAYS = 90;
 export const FEED_FUTURE_DAYS = 180;
@@ -63,6 +63,17 @@ export interface FeedRow {
   description: string | null;
   counterparty_name: string | null;
   revision_at: string;
+  // Optional, event-domain-only: the human-readable Event Type label (see
+  // @/lib/calendar/export's buildEventSummary), applied identically to the
+  // one-off Event/Program export's SUMMARY. Populated by
+  // get_calendar_feed_rows' event branches as of migration 0176 (joined
+  // from event_types.label; always null for the reservation/lesson
+  // branches, which have no Event Type). Kept optional — the same way
+  // `lastModified` was added to IcsEvent ahead of the SQL layer supplying
+  // revision_at — so a row from a pre-0176 database (or any other caller
+  // that omits it) still degrades safely to buildFeedIcsEvent's
+  // pre-existing plain-title behavior rather than erroring.
+  event_type_label?: string | null;
 }
 
 export type FeedRowDecision = "active" | "cancelled" | "exclude";
@@ -123,7 +134,7 @@ export function buildFeedIcsEvent(row: FeedRow, decision: "active" | "cancelled"
         uid: eventUid(row.id),
         dtstart: new Date(row.starts_at),
         dtend: new Date(row.ends_at),
-        summary: row.title ?? "Event",
+        summary: buildEventSummary(row.title ?? "Event", row.event_type_label),
         location: row.court_name,
         description: safeDescription(row.description),
         lastModified,

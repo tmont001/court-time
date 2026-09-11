@@ -132,6 +132,31 @@ describe("buildFeedIcsEvent — reuses the EXACT 35B UID scheme per domain", () 
     expect(buildFeedIcsEvent(r, "active").description).toBeNull();
   });
 
+  it("event row SUMMARY is prefixed with the Event Type label when the SQL layer supplies event_type_label (reuses buildEventSummary — the SAME rule as the one-off export)", () => {
+    const r = row({ domain: "event", id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", title: "Advanced Doubles Drill", event_type_label: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
+    const built = buildFeedIcsEvent(r, "active");
+    expect(built.summary).toBe("Clinic — Advanced Doubles Drill");
+    expect(built.uid).toBe(eventUid("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
+  });
+
+  it("CRITICAL: duplicate-prefix protection applies identically in the subscription feed — a title already starting with its type label is left unprefixed", () => {
+    const r = row({ domain: "event", title: "Clinic: Advanced Doubles Drill", event_type_label: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
+    expect(buildFeedIcsEvent(r, "active").summary).toBe("Clinic: Advanced Doubles Drill");
+  });
+
+  it("an event row with no event_type_label (current get_calendar_feed_rows shape, pending a DB-layer addition) renders the plain title unchanged — additive, no regression", () => {
+    const r = row({ domain: "event", title: "Member Mixer", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
+    expect(buildFeedIcsEvent(r, "active").summary).toBe("Member Mixer");
+  });
+
+  it("reservation and lesson SUMMARY construction is entirely untouched by Event Type labeling, even if a row somehow carried event_type_label", () => {
+    const reservationRow = row({ domain: "reservation", court_name: "Court 3", event_type_label: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
+    expect(buildFeedIcsEvent(reservationRow, "active").summary).toBe("Court Reservation — Court 3");
+
+    const lessonRow = row({ domain: "lesson", counterparty_name: "Sam Pro", event_type_label: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
+    expect(buildFeedIcsEvent(lessonRow, "active").summary).toBe("Lesson with Sam Pro");
+  });
+
   it("lesson row builds with lessonUid and 'Lesson with {counterparty}'", () => {
     const r = row({ domain: "lesson", id: "cccccccc-cccc-cccc-cccc-cccccccccccc", counterparty_name: "Sam Pro", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false });
     const built = buildFeedIcsEvent(r, "active");

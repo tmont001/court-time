@@ -7,6 +7,7 @@ import {
   reservationUid,
   isEventExportEligible,
   buildEventIcsEvent,
+  buildEventSummary,
   eventUid,
   resolveLocation,
   isLessonExportEligible,
@@ -168,6 +169,82 @@ describe("Event — eligibility (scheduled, not archived, not yet finished)", ()
 
   it("isProgramOccurrenceExportEligible is the identical rule as isEventExportEligible", () => {
     expect(isProgramOccurrenceExportEligible).toBe(isEventExportEligible);
+  });
+
+  it("standalone Event SUMMARY is prefixed with the Event Type label", () => {
+    const built = buildEventIcsEvent(
+      { id: "22222222-2222-2222-2222-222222222222", title: "Advanced Doubles Drill", starts_at: "2026-06-02T14:00:00.000Z", ends_at: "2026-06-02T15:00:00.000Z" },
+      "Court 1",
+      null,
+      "Clinic",
+    );
+    expect(built.summary).toBe("Clinic — Advanced Doubles Drill");
+  });
+
+  it("a null Event Type label (or none given) leaves SUMMARY as the plain title, unaffected by this checkpoint", () => {
+    const built = buildEventIcsEvent(
+      { id: "22222222-2222-2222-2222-222222222222", title: "Advanced Doubles Drill", starts_at: "2026-06-02T14:00:00.000Z", ends_at: "2026-06-02T15:00:00.000Z" },
+      "Court 1",
+    );
+    expect(built.summary).toBe("Advanced Doubles Drill");
+  });
+
+  it("stable UID is unaffected by whether an Event Type label is applied", () => {
+    const occurrenceId = "22222222-2222-2222-2222-222222222222";
+    const withLabel = buildEventIcsEvent(
+      { id: occurrenceId, title: "Advanced Doubles Drill", starts_at: "2026-06-02T14:00:00.000Z", ends_at: "2026-06-02T15:00:00.000Z" },
+      "Court 1",
+      null,
+      "Clinic",
+    );
+    const withoutLabel = buildEventIcsEvent(
+      { id: occurrenceId, title: "Advanced Doubles Drill", starts_at: "2026-06-02T14:00:00.000Z", ends_at: "2026-06-02T15:00:00.000Z" },
+      "Court 1",
+    );
+    expect(withLabel.uid).toBe(eventUid(occurrenceId));
+    expect(withLabel.uid).toBe(withoutLabel.uid);
+  });
+});
+
+describe("buildEventSummary — Event Type label prefixing, ONE-WAY duplicate-prefix suppression only", () => {
+  it("prefixes with '<Label> — <Title>' when the title does not already carry the type", () => {
+    expect(buildEventSummary("Advanced Doubles Drill", "Clinic")).toBe("Clinic — Advanced Doubles Drill");
+    expect(buildEventSummary("Court Time vs. West Side", "League Match")).toBe("League Match — Court Time vs. West Side");
+    expect(buildEventSummary("Friday Night Mixer", "Social")).toBe("Social — Friday Night Mixer");
+    expect(buildEventSummary("Club Championships", "Tournament")).toBe("Tournament — Club Championships");
+  });
+
+  it("CRITICAL: leaves the title unchanged when it is effectively the same as the label (never 'Clinic — Clinic')", () => {
+    expect(buildEventSummary("Clinic", "Clinic")).toBe("Clinic");
+    expect(buildEventSummary("clinic", "Clinic")).toBe("clinic");
+    expect(buildEventSummary("  Clinic  ", "clinic")).toBe("  Clinic  ");
+  });
+
+  it("CRITICAL: leaves the title unchanged when it already begins with the COMPLETE label followed by a real boundary (whitespace, colon, or dash)", () => {
+    expect(buildEventSummary("Clinic — Advanced Doubles Drill", "Clinic")).toBe("Clinic — Advanced Doubles Drill");
+    expect(buildEventSummary("Clinic: Advanced Doubles Drill", "Clinic")).toBe("Clinic: Advanced Doubles Drill");
+    expect(buildEventSummary("Clinic-Advanced Doubles Drill", "Clinic")).toBe("Clinic-Advanced Doubles Drill");
+    expect(buildEventSummary("SOCIAL Friday Night Mixer", "Social")).toBe("SOCIAL Friday Night Mixer");
+  });
+
+  it("CRITICAL (one-way rule, exact locked examples): a title merely OVERLAPPING the front of a longer label is NOT treated as already prefixed — suppression is never based on the label starting with the title", () => {
+    // "League Match" starts with "League", but "League" the title is NOT
+    // already type-prefixed just because of that — it still gets prefixed.
+    expect(buildEventSummary("League", "League Match")).toBe("League Match — League");
+  });
+
+  it("CRITICAL: a title that merely overlaps the label with no real word boundary (e.g. 'Clinical' is a different word than 'Clinic') is NOT suppressed", () => {
+    expect(buildEventSummary("Clinical Trial Info Session", "Clinic")).toBe("Clinic — Clinical Trial Info Session");
+  });
+
+  it("returns the title unchanged when the label is null, undefined, or blank", () => {
+    expect(buildEventSummary("Advanced Doubles Drill", null)).toBe("Advanced Doubles Drill");
+    expect(buildEventSummary("Advanced Doubles Drill", undefined)).toBe("Advanced Doubles Drill");
+    expect(buildEventSummary("Advanced Doubles Drill", "   ")).toBe("Advanced Doubles Drill");
+  });
+
+  it("does not suppress prefixing merely because the label reappears as a substring elsewhere in the title", () => {
+    expect(buildEventSummary("Weekend Clinic Series", "Clinic")).toBe("Clinic — Weekend Clinic Series");
   });
 });
 
@@ -387,6 +464,30 @@ describe("Program — occurrence-to-VEVENT mapping", () => {
     ];
     const built = buildProgramOccurrenceIcsEvents(occurrences, new Map());
     expect(built[0].description).toBeNull();
+  });
+
+  it("Program occurrence SUMMARY is prefixed with each occurrence's OWN Event Type label, resolved per-occurrence rather than assumed uniform", () => {
+    const occurrences = [
+      { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", title: "Week 1", starts_at: "2026-06-01T14:00:00.000Z", ends_at: "2026-06-01T15:00:00.000Z" },
+      { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", title: "Week 2", starts_at: "2026-06-08T14:00:00.000Z", ends_at: "2026-06-08T15:00:00.000Z" },
+    ];
+    const typeLabelByEventId = new Map<string, string | null>([
+      ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "Clinic"],
+      // second occurrence has no resolvable type label — must not crash
+    ]);
+    const built = buildProgramOccurrenceIcsEvents(occurrences, new Map(), null, typeLabelByEventId);
+    expect(built[0].summary).toBe("Clinic — Week 1");
+    expect(built[1].summary).toBe("Week 2");
+    expect(built[0].uid).toBe(eventUid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+    expect(built[1].uid).toBe(eventUid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"));
+  });
+
+  it("omitting typeLabelByEventId entirely leaves every occurrence's SUMMARY as the plain title (backward compatible)", () => {
+    const occurrences = [
+      { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", title: "Week 1", starts_at: "2026-06-01T14:00:00.000Z", ends_at: "2026-06-01T15:00:00.000Z" },
+    ];
+    const built = buildProgramOccurrenceIcsEvents(occurrences, new Map());
+    expect(built[0].summary).toBe("Week 1");
   });
 });
 

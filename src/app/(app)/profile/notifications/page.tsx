@@ -96,7 +96,7 @@ export default async function NotificationPreferencesPage() {
             description={
               calendarFeedType === "member_personal"
                 ? "Subscribe once to keep your Court Time reservations, events, programs, and lessons synced to your personal calendar app."
-                : "Subscribe once to keep your confirmed lessons synced to your personal calendar app."
+                : "Subscribe once to keep your Court Time reservations, events, programs, and confirmed lessons synced to your personal calendar app."
             }
             initialHasActiveToken={hasActiveCalendarFeedToken === true}
             unavailable={memberFeedUnavailable}

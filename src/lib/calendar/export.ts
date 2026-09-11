@@ -171,16 +171,55 @@ export function isEventExportEligible(
   return event.status === "scheduled" && event.archived_at === null && new Date(event.ends_at) > now;
 }
 
+// Prefixes SUMMARY with the human-readable Event Type label (e.g.
+// "Clinic — Advanced Doubles Drill"), for standalone Events and Program
+// occurrences alike — both are canonical `events` rows and both carry their
+// own event_type_id. Uses event_types.label (admin-editable display text),
+// never the immutable internal `key`.
+//
+// Suppression is deliberately ONE-WAY: the title is left untouched only
+// when it is already effectively type-prefixed — either an exact
+// case-insensitive match to the label ("Clinic" + "Clinic" -> "Clinic"), or
+// the title begins with the COMPLETE label followed by a real word
+// boundary (whitespace, colon, or a hyphen/dash) — "Clinic — Advanced
+// Doubles Drill" and "Clinic: Advanced Doubles Drill" both stay as
+// written. A boundary is required specifically so a merely-overlapping
+// prefix (e.g. title "Clinical Trial" against label "Clinic") is NOT
+// mistaken for an intentional label prefix — "Clinical" is a different
+// word, not "Clinic" followed by a separator. The reverse direction is
+// never checked: the label starting with (or containing) the title is NOT
+// grounds for suppression — a title "League" against a type "League
+// Match" is NOT already type-prefixed merely because "League Match"
+// happens to start with "League"; it still becomes
+// "League Match — League". Getting this direction wrong would silently
+// drop the type label from titles that need it most.
+export function buildEventSummary(title: string, eventTypeLabel: string | null | undefined): string {
+  const label = eventTypeLabel?.trim();
+  if (!label) return title;
+
+  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedLabel = label.toLowerCase();
+  if (normalizedTitle === normalizedLabel) return title;
+
+  if (normalizedTitle.startsWith(normalizedLabel)) {
+    const boundary = normalizedTitle.charAt(normalizedLabel.length);
+    if (/[\s:\-\u2013\u2014]/.test(boundary)) return title;
+  }
+
+  return `${label} — ${title}`;
+}
+
 export function buildEventIcsEvent(
   event: { id: string; title: string; starts_at: string; ends_at: string },
   location: string | null,
   description: string | null = null,
+  eventTypeLabel: string | null = null,
 ): IcsEvent {
   return {
     uid: eventUid(event.id),
     dtstart: new Date(event.starts_at),
     dtend: new Date(event.ends_at),
-    summary: event.title,
+    summary: buildEventSummary(event.title, eventTypeLabel),
     location,
     description,
   };
@@ -331,12 +370,25 @@ export function canMemberExportProgramSchedule(
 // applied uniformly to every occurrence in this schedule export — matching
 // the exact behavior generate_program_sessions (0088) itself established
 // by copying the same description onto every occurrence at generation time.
+// typeLabelByEventId: keyed by occurrence id, not looked up once from the
+// parent Program — an occurrence's own event_type_id can be edited
+// independently after generation (EditEventSheet has no special case for
+// program-linked events, the same reason program-occurrence DESCRIPTION is
+// re-read fresh per-occurrence's source rather than assumed uniform), so
+// each occurrence's OWN current type label is resolved individually,
+// exactly like location.
 export function buildProgramOccurrenceIcsEvents(
   occurrences: readonly { id: string; title: string; starts_at: string; ends_at: string }[],
   locationByEventId: ReadonlyMap<string, string | null>,
   description: string | null = null,
+  typeLabelByEventId: ReadonlyMap<string, string | null> = new Map(),
 ): IcsEvent[] {
   return occurrences.map(occurrence =>
-    buildEventIcsEvent(occurrence, locationByEventId.get(occurrence.id) ?? null, description),
+    buildEventIcsEvent(
+      occurrence,
+      locationByEventId.get(occurrence.id) ?? null,
+      description,
+      typeLabelByEventId.get(occurrence.id) ?? null,
+    ),
   );
 }

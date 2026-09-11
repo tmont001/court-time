@@ -115,6 +115,23 @@ async function lookupCourtNames(
   return new Map((data ?? []).map(c => [c.id, c.name]));
 }
 
+// The human-readable event_types.label for each given id — never the
+// immutable internal `key`. RLS's event_types_select_same_club already
+// grants any same-club viewer read access with no role restriction, so no
+// further authorization is needed beyond the events row itself already
+// having passed its own eligibility/authorization check.
+async function lookupEventTypeLabels(
+  supabase: Supabase,
+  eventTypeIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (eventTypeIds.length === 0) return new Map();
+  const { data } = await supabase
+    .from("event_types")
+    .select("id, label")
+    .in("id", Array.from(new Set(eventTypeIds)));
+  return new Map((data ?? []).map(t => [t.id, t.label]));
+}
+
 // The caller's own durable roster identity, resolved entirely server-side —
 // never accepted from the client. Mirrors the exact RPC (and null-for-
 // unclaimed-caller handling) /my-schedule already uses for the same
@@ -176,7 +193,7 @@ async function lookupProgramDescription(supabase: Supabase, programId: string | 
 async function exportEvent(supabase: Supabase, id: string, now: Date): Promise<IcsEvent[] | null> {
   const { data: event } = await supabase
     .from("events")
-    .select("id, title, starts_at, ends_at, status, archived_at, program_id, reservations(court_id, reason, status)")
+    .select("id, title, starts_at, ends_at, status, archived_at, program_id, event_type_id, reservations(court_id, reason, status)")
     .eq("id", id)
     .maybeSingle();
 
@@ -185,12 +202,20 @@ async function exportEvent(supabase: Supabase, id: string, now: Date): Promise<I
   const courtIds = (event.reservations ?? [])
     .filter(r => r.reason === "event" && r.status === "confirmed")
     .map(r => r.court_id);
-  const [nameById, description] = await Promise.all([
+  const [nameById, description, typeLabelById] = await Promise.all([
     lookupCourtNames(supabase, courtIds),
     lookupProgramDescription(supabase, event.program_id),
+    lookupEventTypeLabels(supabase, [event.event_type_id]),
   ]);
 
-  return [buildEventIcsEvent(event, resolveLocation(courtIds, nameById), description)];
+  return [
+    buildEventIcsEvent(
+      event,
+      resolveLocation(courtIds, nameById),
+      description,
+      typeLabelById.get(event.event_type_id) ?? null,
+    ),
+  ];
 }
 
 async function exportLesson(
@@ -289,7 +314,7 @@ async function exportProgram(
 
   const { data: occurrenceRows } = await supabase
     .from("events")
-    .select("id, title, starts_at, ends_at, status, archived_at, reservations(court_id, reason, status)")
+    .select("id, title, starts_at, ends_at, status, archived_at, event_type_id, reservations(court_id, reason, status)")
     .eq("program_id", id)
     .order("starts_at");
 
@@ -307,7 +332,10 @@ async function exportProgram(
       .filter(r => r.reason === "event" && r.status === "confirmed")
       .map(r => r.court_id),
   );
-  const nameById = await lookupCourtNames(supabase, allCourtIds);
+  const [nameById, typeLabelById] = await Promise.all([
+    lookupCourtNames(supabase, allCourtIds),
+    lookupEventTypeLabels(supabase, occurrences.map(ev => ev.event_type_id)),
+  ]);
 
   const locationByEventId = new Map(
     occurrences.map(ev => {
@@ -318,12 +346,24 @@ async function exportProgram(
     }),
   );
 
+  // Read per-occurrence, not once from the parent Program — see
+  // buildProgramOccurrenceIcsEvents' own header for why an occurrence's
+  // event_type_id can differ from the Program's after independent editing.
+  const typeLabelByEventId = new Map(
+    occurrences.map(ev => [ev.id, typeLabelById.get(ev.event_type_id) ?? null] as const),
+  );
+
   // programs.description is rendered unconditionally to any Member who can
   // see their own whole-program enrollment (ProgramEnrollmentCard) — the
   // one confirmed, current, participant-facing text field for this domain.
   // Applied uniformly to every occurrence, matching generate_program_
   // sessions' (0088) own "same description on every occurrence" origin.
-  return buildProgramOccurrenceIcsEvents(occurrences, locationByEventId, safeDescription(program.description));
+  return buildProgramOccurrenceIcsEvents(
+    occurrences,
+    locationByEventId,
+    safeDescription(program.description),
+    typeLabelByEventId,
+  );
 }
 
 export async function GET(
