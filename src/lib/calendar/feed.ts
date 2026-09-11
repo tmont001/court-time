@@ -39,10 +39,19 @@ export function feedWindowBounds(now: Date): { start: Date; end: Date } {
 
 export type FeedDomain = "reservation" | "event" | "lesson";
 
-// The exact shape get_calendar_feed_rows (0173) returns per row, already
-// authorization-filtered and already carrying only SAFE fields (never
-// payment/contact/roster/audit/staff-only data — see that function's own
-// header for the per-domain reasoning, reused unchanged from 35B/35B1).
+// The exact shape get_calendar_feed_rows (0173, corrected by the 0174
+// runtime-correction migration) returns per row, already authorization-
+// filtered, already baseline/cancellation-timestamp-gated (see migration
+// 0174 — a newly-created subscription never backfills old history, and a
+// cancellation never appears unless it happened at-or-after the token's
+// own creation), and already carrying only SAFE fields (never payment/
+// contact/roster/audit/staff-only data — see that function's own header
+// for the per-domain reasoning, reused unchanged from 35B/35B1).
+// revision_at is the authoritative "last touched" instant for this row's
+// specific feed-visible content, computed per-domain in SQL (0174) from
+// existing updated_at columns across every source that affects a visible
+// property (title/time/status/court name/description/counterparty name) —
+// never a new column invented for this purpose alone.
 export interface FeedRow {
   domain: FeedDomain;
   id: string;
@@ -53,6 +62,7 @@ export interface FeedRow {
   court_name: string | null;
   description: string | null;
   counterparty_name: string | null;
+  revision_at: string;
 }
 
 export type FeedRowDecision = "active" | "cancelled" | "exclude";
@@ -83,9 +93,17 @@ export function decideFeedRowInclusion(
 
 // Builds one IcsEvent from a feed row. Reuses the exact 35B UID scheme and
 // the exact 35B/35B1 safe-description policy (safeDescription) — no new
-// privacy surface is introduced here.
+// privacy surface is introduced here. lastModified is always populated
+// from row.revision_at — a SQL-computed, per-domain MAX() over every
+// source column that affects this row's visible content (see feed.ts's
+// own header and migration 0174) — so a genuine edit to any visible field
+// always advances LAST-MODIFIED, and the semantic ETag (computeFeedETag
+// below) stays keyed to the actual visible fields, not to this timestamp,
+// so an unrelated non-visible change can never falsely invalidate a
+// client's cache even if it happens to also advance revision_at.
 export function buildFeedIcsEvent(row: FeedRow, decision: "active" | "cancelled"): IcsEvent {
   const status = decision === "cancelled" ? ("CANCELLED" as const) : undefined;
+  const lastModified = new Date(row.revision_at);
 
   switch (row.domain) {
     case "reservation": {
@@ -96,6 +114,7 @@ export function buildFeedIcsEvent(row: FeedRow, decision: "active" | "cancelled"
         dtend: new Date(row.ends_at),
         summary: `Court Reservation — ${courtName}`,
         location: courtName,
+        lastModified,
         status,
       };
     }
@@ -107,6 +126,7 @@ export function buildFeedIcsEvent(row: FeedRow, decision: "active" | "cancelled"
         summary: row.title ?? "Event",
         location: row.court_name,
         description: safeDescription(row.description),
+        lastModified,
         status,
       };
     case "lesson":
@@ -117,6 +137,7 @@ export function buildFeedIcsEvent(row: FeedRow, decision: "active" | "cancelled"
         summary: `Lesson with ${row.counterparty_name ?? "Court Time"}`,
         location: row.court_name,
         description: safeDescription(row.description),
+        lastModified,
         status,
       };
   }
@@ -152,6 +173,19 @@ export function buildFeedIcsEvents(rows: readonly FeedRow[], now: Date): IcsEven
 // two calls even for identical content, which is exactly why the served
 // ETag must be WEAK (see the route's own header comment) rather than a
 // claim of byte-for-byte representation equality.
+//
+// Deliberately excludes lastModified too, even though it IS a real
+// exported property: revision_at is computed (0174) as a MAX() over every
+// source column touching this row's visible content, which can be
+// slightly over-broad (e.g. an unrelated field on the same source row
+// bumping its own updated_at). LAST-MODIFIED is merely an advisory hint to
+// calendar clients and tolerates that imprecision; the HTTP-level ETag
+// contract does not — it must stay keyed ONLY to fields that are
+// genuinely, contractually part of the visible content, so a non-visible
+// change can never falsely invalidate a client's cache. Every field that
+// actually determines visible content (dtstart/dtend/summary/location/
+// description/status) is already hashed directly above, so a real visible
+// edit always changes the ETag regardless of lastModified's own precision.
 export function computeFeedETag(events: readonly IcsEvent[]): string {
   const canonical = events
     .map(e => JSON.stringify({

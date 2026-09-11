@@ -36,6 +36,7 @@ function row(overrides: Partial<FeedRow> & { starts_at: string; ends_at: string;
     court_name: "Court 1",
     description: null,
     counterparty_name: null,
+    revision_at: NOW.toISOString(),
     ...overrides,
   };
 }
@@ -150,6 +151,35 @@ describe("buildFeedIcsEvent — reuses the EXACT 35B UID scheme per domain", () 
     const b = buildFeedIcsEvent(rescheduled, "active");
     expect(a.uid).toBe(b.uid);
     expect(a.dtstart.getTime()).not.toBe(b.dtstart.getTime());
+  });
+});
+
+describe("buildFeedIcsEvent — lastModified pass-through (Phase 35C runtime correction)", () => {
+  it("always populates lastModified from row.revision_at, for every domain", () => {
+    const revisionAt = "2026-03-01T08:15:30.000Z";
+    for (const domain of ["reservation", "event", "lesson"] as const) {
+      const r = row({ domain, starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false, revision_at: revisionAt });
+      expect(buildFeedIcsEvent(r, "active").lastModified?.toISOString()).toBe(revisionAt);
+    }
+  });
+
+  it("a revision_at change alone (e.g. an edit to a visible field bumped the source updated_at) produces a different lastModified with the SAME uid — this is exactly the update-detection signal calendar clients rely on", () => {
+    const before = row({ domain: "event", id: "11111111-1111-1111-1111-111111111111", title: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false, revision_at: "2026-01-01T00:00:00.000Z" });
+    const after = row({ domain: "event", id: "11111111-1111-1111-1111-111111111111", title: "Clinic — Updated", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false, revision_at: "2026-02-01T00:00:00.000Z" });
+    const a = buildFeedIcsEvent(before, "active");
+    const b = buildFeedIcsEvent(after, "active");
+    expect(a.uid).toBe(b.uid);
+    expect(a.lastModified?.toISOString()).not.toBe(b.lastModified?.toISOString());
+    expect(a.summary).not.toBe(b.summary);
+  });
+});
+
+describe("computeFeedETag — deliberately independent of lastModified", () => {
+  it("does NOT change when only revision_at/lastModified changes and every other visible field is identical", () => {
+    const a = buildFeedIcsEvent(row({ id: "1", domain: "event", title: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false, revision_at: "2026-01-01T00:00:00.000Z" }), "active");
+    const b = buildFeedIcsEvent(row({ id: "1", domain: "event", title: "Clinic", starts_at: daysFromNow(1), ends_at: daysFromNow(1), is_cancelled: false, revision_at: "2026-06-01T00:00:00.000Z" }), "active");
+    expect(a.lastModified?.toISOString()).not.toBe(b.lastModified?.toISOString());
+    expect(computeFeedETag([a])).toBe(computeFeedETag([b]));
   });
 });
 

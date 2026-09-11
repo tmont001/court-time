@@ -27,6 +27,15 @@ export interface IcsEvent {
   // @/lib/calendar/export's safeDescription and the per-domain callers in
   // the route) — this module only ever serializes what it's given.
   description?: string | null;
+  // Phase 35C runtime correction: the authoritative "this VEVENT's visible
+  // content last changed at this instant" signal, derived server-side per
+  // domain from existing updated_at columns (and any other column whose
+  // change affects a feed-visible property — see
+  // @/lib/calendar/feed.ts and migration 0174 for the exact per-domain
+  // formula). Optional and 35B-backward-compatible: 35B's one-off exports
+  // never set this and remain unaffected; 35C's subscription feed always
+  // does. Emitted as LAST-MODIFIED, the same UTC DATE-TIME form as DTSTAMP.
+  lastModified?: Date;
   status?: "CONFIRMED" | "CANCELLED";
 }
 
@@ -100,6 +109,9 @@ function buildVevent(event: IcsEvent, dtstamp: string): string[] {
   if (event.description) {
     lines.push(foldContentLine(`DESCRIPTION:${escapeIcsText(event.description)}`));
   }
+  if (event.lastModified) {
+    lines.push(foldContentLine(`LAST-MODIFIED:${formatIcsUtc(event.lastModified)}`));
+  }
   if (event.status) {
     lines.push(foldContentLine(`STATUS:${event.status}`));
   }
@@ -111,10 +123,18 @@ function buildVevent(event: IcsEvent, dtstamp: string): string[] {
 // CRLF line endings throughout, per RFC 5545. A zero-event array still
 // produces a valid, importable (empty) calendar, never an error. DTSTAMP is
 // the moment of generation (now), shared by every VEVENT in one export —
-// never a stored value, per RFC 5545 §3.8.7.2. SEQUENCE is deliberately
-// omitted: it only matters for update semantics on a re-fetched
-// subscription, which Phase 35B (one-off, standalone exports) does not
-// implement — a future subscription feature adds it deliberately then.
+// never a stored value, per RFC 5545 §3.8.7.2.
+//
+// SEQUENCE remains deliberately omitted, reassessed and reconfirmed during
+// the Phase 35C runtime correction (which DID add LAST-MODIFIED, precisely
+// because runtime evidence showed update semantics matter for a
+// subscription): no domain table carries a genuine monotonic revision
+// counter, and deriving one from a timestamp (e.g. epoch seconds) would be
+// exactly the brittle, direction-unstable arithmetic explicitly rejected in
+// favor of the combination this module and @/lib/calendar/feed.ts actually
+// implement — stable UID + LAST-MODIFIED + changed DTSTART/DTEND/SUMMARY/
+// LOCATION/STATUS + a semantic ETag at the HTTP layer. Revisit only if real
+// calendar-client behavior (Apple/Google) is observed to require it.
 export function buildIcsCalendar(events: IcsEvent[], now: Date = new Date()): string {
   const dtstamp = formatIcsUtc(now);
   const lines: string[] = [

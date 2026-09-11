@@ -128,7 +128,7 @@ describe("HTTP response shape — subscription semantics, not a one-off download
   const rows = [{
     domain: "reservation", id: "11111111-1111-1111-1111-111111111111",
     starts_at: inDays(3), ends_at: inDays(3),
-    is_cancelled: false, title: null, court_name: "Court 3", description: null, counterparty_name: null,
+    is_cancelled: false, title: null, court_name: "Court 3", description: null, counterparty_name: null, revision_at: new Date().toISOString(),
   }];
 
   it("text/calendar content type, no attachment Content-Disposition", async () => {
@@ -159,7 +159,7 @@ describe("conditional requests (ETag / 304)", () => {
   const rows = [{
     domain: "reservation", id: "11111111-1111-1111-1111-111111111111",
     starts_at: inDays(3), ends_at: inDays(3),
-    is_cancelled: false, title: null, court_name: "Court 3", description: null, counterparty_name: null,
+    is_cancelled: false, title: null, court_name: "Court 3", description: null, counterparty_name: null, revision_at: new Date().toISOString(),
   }];
 
   it("a first request returns 200 with an ETag header", async () => {
@@ -217,7 +217,7 @@ describe("conditional requests (ETag / 304)", () => {
       domain: "reservation", id: "22222222-2222-2222-2222-222222222222",
       starts_at: new Date(Date.now() - 89 * dayMs).toISOString(),
       ends_at: new Date(Date.now() - 89 * dayMs + 60 * 60 * 1000).toISOString(),
-      is_cancelled: false, title: null, court_name: "Court 5", description: null, counterparty_name: null,
+      is_cancelled: false, title: null, court_name: "Court 5", description: null, counterparty_name: null, revision_at: new Date().toISOString(),
     };
     mockCreatePrivilegedClient.mockReturnValue(makeFakeSupabase({ data: { feed_type: "member_personal", rows: [visibleRow] }, error: null }));
     const first = await callGet(VALID_TOKEN);

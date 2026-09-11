@@ -621,6 +621,7 @@ export type Database = {
           price_amount_cents: number | null;       // Phase 34B
           archived_at: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
           archived_by: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
+          cancelled_at: string | null;              // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
         };
         Insert: {
           id?: string;
@@ -643,6 +644,7 @@ export type Database = {
           price_amount_cents?: number | null;       // Phase 34B
           archived_at?: string | null;
           archived_by?: string | null;
+          cancelled_at?: string | null;
         };
         Update: {
           id?: string;
@@ -665,6 +667,7 @@ export type Database = {
           price_amount_cents?: number | null;       // Phase 34B
           archived_at?: string | null;
           archived_by?: string | null;
+          cancelled_at?: string | null;
         };
         Relationships: [
           {
@@ -1040,6 +1043,7 @@ export type Database = {
           updated_at: string;
           price_amount_cents: number | null;  // Phase 34B
           confirmed_at: string | null;  // Phase 35C — set once, never cleared, by a DB trigger
+          cancelled_at: string | null;  // Phase 35C runtime correction (0174) — set once, never cleared, by the same DB trigger
         };
         Insert: {
           id?: string;
@@ -1054,6 +1058,7 @@ export type Database = {
           updated_at?: string;
           price_amount_cents?: number | null;  // Phase 34B
           confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
+          cancelled_at?: string | null;  // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
         };
         Update: {
           id?: string;
@@ -1068,6 +1073,7 @@ export type Database = {
           updated_at?: string;
           price_amount_cents?: number | null;  // Phase 34B
           confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
+          cancelled_at?: string | null;  // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
         };
         Relationships: [
           {

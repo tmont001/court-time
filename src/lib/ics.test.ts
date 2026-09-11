@@ -312,4 +312,45 @@ describe("buildIcsCalendar — full VCALENDAR/VEVENT structure", () => {
       }
     });
   });
+
+  describe("LAST-MODIFIED (Phase 35C runtime correction)", () => {
+    it("omits LAST-MODIFIED when not provided — 35B one-off exports never set it and remain unaffected", () => {
+      const ics = buildIcsCalendar([{ uid: "a@court-time.app", dtstart: now, dtend: now, summary: "S" }], now);
+      expect(ics).not.toContain("LAST-MODIFIED:");
+    });
+
+    it("emits a well-formed UTC LAST-MODIFIED when provided", () => {
+      const lastModified = new Date("2026-03-01T08:15:30.000Z");
+      const ics = buildIcsCalendar(
+        [{ uid: "a@court-time.app", dtstart: now, dtend: now, summary: "S", lastModified }],
+        now,
+      );
+      expect(ics).toContain("LAST-MODIFIED:20260301T081530Z");
+    });
+
+    it("LAST-MODIFIED is independent of DTSTAMP — two calls at different generation times with the same lastModified value emit the same LAST-MODIFIED line but (legitimately) different DTSTAMP lines", () => {
+      const lastModified = new Date("2026-03-01T08:15:30.000Z");
+      const genA = new Date("2026-03-05T00:00:00.000Z");
+      const genB = new Date("2026-03-06T00:00:00.000Z");
+      const icsA = buildIcsCalendar([{ uid: "a@court-time.app", dtstart: now, dtend: now, summary: "S", lastModified }], genA);
+      const icsB = buildIcsCalendar([{ uid: "a@court-time.app", dtstart: now, dtend: now, summary: "S", lastModified }], genB);
+      expect(icsA).toContain("LAST-MODIFIED:20260301T081530Z");
+      expect(icsB).toContain("LAST-MODIFIED:20260301T081530Z");
+      expect(icsA.match(/DTSTAMP:\S+/)?.[0]).not.toBe(icsB.match(/DTSTAMP:\S+/)?.[0]);
+    });
+
+    it("can appear alongside DESCRIPTION and STATUS on the same VEVENT without interfering with folding/escaping of either", () => {
+      const ics = buildIcsCalendar(
+        [{
+          uid: "a@court-time.app", dtstart: now, dtend: now, summary: "S",
+          description: "Doe, Jane; note", status: "CANCELLED",
+          lastModified: new Date("2026-03-01T08:15:30.000Z"),
+        }],
+        now,
+      );
+      expect(ics).toContain("DESCRIPTION:Doe\\, Jane\\; note");
+      expect(ics).toContain("STATUS:CANCELLED");
+      expect(ics).toContain("LAST-MODIFIED:20260301T081530Z");
+    });
+  });
 });
