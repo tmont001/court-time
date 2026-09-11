@@ -15,7 +15,7 @@ import {
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
 import { isPaymentOpenForRecording, type PaymentStateRow } from "@/lib/payments";
 import { formatMemberPrice } from "@/lib/money";
-import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH, ACTION_BUTTON_SECONDARY } from "@/components/styles/actionButtonStyles";
 import { getLessonCheckoutEligibilityAction, createLessonCheckoutAction } from "./lessonCheckoutActions";
 
 interface Props {
@@ -288,6 +288,21 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
         </div>
       )}
       {checkoutError && <p className="mb-4 text-xs text-red-500">{checkoutError}</p>}
+
+      {/* Add to Calendar — one-off .ics export (Phase 35B), confirmed,
+          not-yet-finished lessons only (using the authoritative
+          proposed_ends_at). The export route independently re-derives and
+          re-checks this same eligibility, and RLS independently re-derives
+          whether this viewer may see the row at all — this is a
+          UI-display gate only, never the authorization boundary itself. */}
+      {request.status === "confirmed" && request.proposed_ends_at && new Date(request.proposed_ends_at) > new Date() && (
+        <a
+          href={`/api/calendar/export/lesson/${request.id}`}
+          className={`mb-4 flex items-center justify-center ${ACTION_BUTTON_SECONDARY}`}
+        >
+          Add to Calendar
+        </a>
+      )}
 
       {/* Decline reason */}
       {request.status === "declined" && request.decline_reason && (

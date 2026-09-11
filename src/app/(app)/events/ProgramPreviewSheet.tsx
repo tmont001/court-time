@@ -16,7 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { generateProgramSessions, type GenerateResult } from "./programsActions";
 import { mapProgramError } from "./programErrors";
 import { isOperator } from "@/lib/auth/roles";
-import { ACTION_BUTTON_SECONDARY_COMPACT } from "./actionButtonStyles";
+import { ACTION_BUTTON_SECONDARY_COMPACT, ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -102,6 +102,16 @@ export default function ProgramPreviewSheet({
   // Phase 34A: widened admin -> isOperator (admin+staff); Pro's existing
   // owner-scoped access is unchanged.
   const canManage = isOperator(userRole) || (userRole === "pro" && programCreatedBy === userId);
+  // Phase 35B: "Add program schedule" (.ics, multiple VEVENTs — one per
+  // generated occurrence). Operator semantics per the locked product
+  // decision: Admin/Staff/Pro may export the schedule whenever their
+  // existing role/domain access lets them view this Program at all — the
+  // same unconditional, non-creator-scoped visibility programs_select_
+  // same_club's RLS already grants role='pro' (unlike canManage above,
+  // which is deliberately narrower/creator-scoped for the write-side
+  // Preview & Generate action). The export route independently re-derives
+  // and re-checks this same role check server-side.
+  const canExportSchedule = isOperator(userRole) || userRole === "pro";
   const isDraft   = programStatus === "draft";
   const showEditDraft = isDraft && canManage;
   // Phase 33G4: this sheet only ever previews schedule-rule occurrences and
@@ -241,6 +251,18 @@ export default function ProgramPreviewSheet({
                 )}
               </div>
             </div>
+
+            {/* Add program schedule — one-off .ics export (Phase 35B),
+                multiple VEVENTs (one per eligible generated occurrence).
+                Schedule facts only — never roster/participant data. */}
+            {canExportSchedule && (
+              <a
+                href={`/api/calendar/export/program/${programId}`}
+                className={`inline-flex items-center justify-center ${ACTION_BUTTON_SECONDARY}`}
+              >
+                Add program schedule
+              </a>
+            )}
 
             {result ? (
               <div className="rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/40 px-4 py-3">

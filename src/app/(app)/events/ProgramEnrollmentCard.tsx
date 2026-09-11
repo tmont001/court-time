@@ -18,7 +18,7 @@ import {
   type EnrollmentResult,
 } from "./programEnrollmentActions";
 import { mapProgramError } from "./programErrors";
-import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE, ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "./actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_DESTRUCTIVE, ACTION_BUTTON_PRIMARY_COMPACT_TOUCH, ACTION_BUTTON_SECONDARY } from "./actionButtonStyles";
 import PriceSummary from "@/components/PriceSummary";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import ProgramEnrollConfirmModal from "@/components/ProgramEnrollConfirmModal";
@@ -332,9 +332,30 @@ export default function ProgramEnrollmentCard({ program, clubId, clubTimezone, c
           </button>
         )}
         {status === "enrolled" && (
-          <button onClick={handleLeave} disabled={isPending} className={ACTION_BUTTON_DESTRUCTIVE}>
-            {isPending && pendingKind === "leave" ? PENDING_LABEL.leave : "Leave Program"}
-          </button>
+          <>
+            {/* Phase 35B: one-off "Add to Calendar" (.ics, multiple
+                VEVENTs — one per eligible generated occurrence this
+                checkpoint's session enrollment covers). This is the ONE
+                existing Member-facing detail surface for a whole-program
+                ('program' enrollment_model) enrollment — a per_session
+                Member never sees this card at all (see EventsUpcomingClient,
+                which only renders it for whole-program enrollment_model),
+                so it never grants that Member the full parent schedule; a
+                per_session Member already exports their own joined session
+                from that occurrence's own Event detail instead. The export
+                route independently re-derives and re-checks status==
+                'enrolled' + enrollment_model=='program' server-side — this
+                is a UI-display gate only. */}
+            <a
+              href={`/api/calendar/export/program/${program.id}`}
+              className={`inline-flex items-center justify-center ${ACTION_BUTTON_SECONDARY}`}
+            >
+              Add to Calendar
+            </a>
+            <button onClick={handleLeave} disabled={isPending} className={ACTION_BUTTON_DESTRUCTIVE}>
+              {isPending && pendingKind === "leave" ? PENDING_LABEL.leave : "Leave Program"}
+            </button>
+          </>
         )}
         {status === "waitlisted" && (
           <button onClick={handleLeave} disabled={isPending} className={ACTION_BUTTON_DESTRUCTIVE}>

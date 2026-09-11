@@ -619,6 +619,8 @@ export type Database = {
           program_occurrence_date: string | null;  // Phase 27B1
           is_program_exception: boolean;           // Phase 27B1
           price_amount_cents: number | null;       // Phase 34B
+          archived_at: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
+          archived_by: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
         };
         Insert: {
           id?: string;
@@ -639,6 +641,8 @@ export type Database = {
           program_occurrence_date?: string | null;  // Phase 27B1
           is_program_exception?: boolean;           // Phase 27B1
           price_amount_cents?: number | null;       // Phase 34B
+          archived_at?: string | null;
+          archived_by?: string | null;
         };
         Update: {
           id?: string;
@@ -659,6 +663,8 @@ export type Database = {
           program_occurrence_date?: string | null;  // Phase 27B1
           is_program_exception?: boolean;           // Phase 27B1
           price_amount_cents?: number | null;       // Phase 34B
+          archived_at?: string | null;
+          archived_by?: string | null;
         };
         Relationships: [
           {
