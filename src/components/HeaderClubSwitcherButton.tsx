@@ -4,14 +4,16 @@ import { useEffect, useState } from "react";
 import ClubMembershipList from "@/components/ClubMembershipList";
 import type { ClubMembershipOption } from "@/lib/supabase/user";
 
-// Mobile-only entry point to club switching from the top-left header icon.
-// Unlike BottomNav's More -> "Switch club" (a full-width pull-up sheet,
-// rendered via ResponsiveSheet), this is a small anchored popover directly
-// below the button — a pull-up sheet here would be partially obstructed by
-// the fixed bottom navigation and the calendar's floating create button on
-// pages like Calendar. Reuses ClubMembershipList (and, through it,
-// switchActiveClubAction) unmodified — no second membership-list or
-// switching implementation.
+// Direct entry point to club switching from the top-left header icon,
+// visible for the full range where SideNav's own desktop switcher is
+// hidden (below lg, 1024px) — not mobile-only. Unlike BottomNav's More ->
+// "Switch club" (a full-width pull-up sheet, rendered via ResponsiveSheet),
+// this is a small anchored popover directly below the button — a pull-up
+// sheet here would be partially obstructed by the fixed bottom navigation
+// and the calendar's floating create button on pages like Calendar (both
+// of which remain visible at tablet widths too). Reuses ClubMembershipList
+// (and, through it, switchActiveClubAction) unmodified — no second
+// membership-list or switching implementation.
 
 function ChevronIcon() {
   return (

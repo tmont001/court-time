@@ -23,6 +23,13 @@ import { join } from "node:path";
 // Source-inspection style, matching this repository's established
 // convention for framework-coupled files with no jsdom (see
 // ResponsiveSheet.regression.test.ts's own header for the same rationale).
+//
+// Follow-up production hotfix (fix/responsive-club-switcher, 3 days later):
+// the five places above were the sidebar/bottom-nav shell boundary, but
+// Header.tsx's OWN direct club-switch trigger (HeaderClubSwitcherButton)
+// was a SIXTH place using the same md->lg logic that this checkpoint never
+// touched — it was still md, leaving a real 768-1023px gap where no direct
+// switcher was visible at all. See describe block 9 below for that fix.
 
 function readSource(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), "utf-8");
@@ -131,11 +138,66 @@ describe("6. unrelated ResponsiveSheet/.ct-input 768px breakpoints remain unchan
     expect(programSrc).toContain('className="absolute right-0 text-sm text-gray-400 md:hidden"');
     expect(waitlistSrc).toContain('className="absolute right-0 text-sm text-gray-400 md:hidden"');
   });
+});
 
-  it("Header.tsx's md:block/md:hidden club-icon-switcher classes are untouched", () => {
-    const s = readSource("src/components/Header.tsx");
-    expect(s).toContain('<div className="hidden md:block">{clubIcon}</div>');
-    expect(s).toContain('<div className="md:hidden">');
+// ─── Production hotfix (fix/responsive-club-switcher) ──────────────────────
+//
+// Header.tsx's OWN direct club-switch trigger (HeaderClubSwitcherButton)
+// was left at its original `md` (768px) split when the checkpoint above
+// moved SideNav/BottomNav's boundary to `lg` (1024px). That left a live
+// 768-1023px gap: SideNav's dropdown hidden (< lg), Header's direct
+// trigger also hidden (>= md renders the static, non-interactive icon
+// instead) — only the buried BottomNav More -> "Switch club" path
+// remained reachable. Fix: Header.tsx's club-icon-switcher split moves
+// from md to lg, matching SideNav/BottomNav's boundary exactly, so there
+// is no viewport width where every DIRECT switcher is hidden. No
+// switching mechanism, RPC, membership query, or active-club logic
+// changed — ClubMembershipList/switchActiveClubAction are reused
+// unmodified, exactly as before.
+
+const HEADER_PATH = "src/components/Header.tsx";
+
+describe("9. Header's direct club-switch trigger now matches SideNav's own lg breakpoint — closes the 768-1023px gap", () => {
+  it("the club-icon-switcher split moved from md to lg", () => {
+    const s = readSource(HEADER_PATH);
+    expect(s).toContain('<div className="hidden lg:block">{clubIcon}</div>');
+    expect(s).toContain('<div className="lg:hidden">');
+    expect(s).not.toContain('<div className="hidden md:block">{clubIcon}</div>');
+    expect(s).not.toContain('<div className="md:hidden">');
+  });
+
+  it("lg here is the exact same breakpoint SideNav/BottomNav already use — not a new, independently-chosen value", () => {
+    const headerSrc    = readSource(HEADER_PATH);
+    const sideNavSrc   = readSource(SIDE_NAV_PATH);
+    const bottomNavSrc = readSource(BOTTOM_NAV_PATH);
+    expect(headerSrc).toContain("lg:hidden");
+    expect(sideNavSrc).toContain("hidden lg:flex");
+    expect(bottomNavSrc).toContain("lg:hidden fixed bottom-0");
+  });
+
+  it("HeaderClubSwitcherButton is still reused unmodified as the direct trigger — no second switching implementation was introduced", () => {
+    const s = readSource(HEADER_PATH);
+    expect(s).toContain("<HeaderClubSwitcherButton clubName={clubName} icon={clubIcon} memberships={memberships} />");
+  });
+
+  it("the eligibility gate (2+ active memberships) and single-club fallback are unchanged", () => {
+    const s = readSource(HEADER_PATH);
+    expect(s).toContain("const canSwitchOnMobile = memberships.length > 1;");
+    expect(s).toContain("{canSwitchOnMobile ? (");
+    expect(s).toMatch(/\) : \(\s*clubIcon\s*\)\}/);
+  });
+
+  it("no viewport width leaves every direct switcher hidden: SideNav covers [1024px, ∞), Header's direct trigger covers [0, 1024px) — the two ranges are exhaustive and non-overlapping", () => {
+    const sideNavSrc = readSource(SIDE_NAV_PATH);
+    const headerSrc  = readSource(HEADER_PATH);
+    expect(sideNavSrc).toContain("hidden lg:flex"); // SideNav: visible only >= 1024px
+    expect(headerSrc).toContain('<div className="lg:hidden">'); // direct trigger: visible only < 1024px
+  });
+
+  it("BottomNav's More -> Switch club fallback is untouched by this fix — remains an additional path, not the only one", () => {
+    const s = readSource(BOTTOM_NAV_PATH);
+    expect(s).toContain("Switch club");
+    expect(s).toContain("setSwitcherOpen(true)");
   });
 });
 
