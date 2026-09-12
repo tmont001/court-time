@@ -72,6 +72,48 @@ describe("resolveNotificationTarget — event/waitlist kinds", () => {
   });
 });
 
+describe("resolveNotificationTarget — waitlist_offer is polymorphic (Phase 36C: event_id OR program_id)", () => {
+  const PROGRAM_ID = "44444444-4444-4444-4444-444444444444";
+
+  it("resolves to the canonical Event path when metadata carries a valid event_id", () => {
+    expect(resolveNotificationTarget("waitlist_offer", { event_id: EVENT_ID }, "member"))
+      .toBe(`/calendar?event=${EVENT_ID}`);
+  });
+
+  it("resolves to the whole-Program enrollment target when metadata carries a valid program_id instead", () => {
+    expect(resolveNotificationTarget("waitlist_offer", { program_id: PROGRAM_ID }, "member"))
+      .toBe(`/events?program=${PROGRAM_ID}`);
+  });
+
+  it("event_id wins when both are present", () => {
+    const metadata = { event_id: EVENT_ID, program_id: PROGRAM_ID };
+    expect(resolveNotificationTarget("waitlist_offer", metadata, "member")).toBe(`/calendar?event=${EVENT_ID}`);
+  });
+
+  it("falls through to the program target when event_id is present but malformed", () => {
+    const metadata = { event_id: "not-a-uuid", program_id: PROGRAM_ID };
+    expect(resolveNotificationTarget("waitlist_offer", metadata, "member")).toBe(`/events?program=${PROGRAM_ID}`);
+  });
+
+  it("falls through to the safe legacy target_path when both event_id and program_id are missing/malformed", () => {
+    expect(resolveNotificationTarget("waitlist_offer", { target_path: "/events" }, "member")).toBe("/events");
+    expect(resolveNotificationTarget("waitlist_offer", {}, "member")).toBeNull();
+    expect(resolveNotificationTarget("waitlist_offer", { event_id: "bad", program_id: "also-bad" }, "member"))
+      .toBeNull();
+  });
+
+  it("the program target is role-agnostic — every role resolves to the same /events?program= path", () => {
+    const metadata = { program_id: PROGRAM_ID };
+    expect(resolveNotificationTarget("waitlist_offer", metadata, "member")).toBe(`/events?program=${PROGRAM_ID}`);
+    expect(resolveNotificationTarget("waitlist_offer", metadata, "pro")).toBe(`/events?program=${PROGRAM_ID}`);
+    expect(resolveNotificationTarget("waitlist_offer", metadata, "admin")).toBe(`/events?program=${PROGRAM_ID}`);
+  });
+
+  it("waitlist_promoted is unchanged — it stays event_id-only, never falls back to program_id", () => {
+    expect(resolveNotificationTarget("waitlist_promoted", { program_id: PROGRAM_ID }, "member")).toBeNull();
+  });
+});
+
 describe("resolveNotificationTarget — lesson kinds are role-aware", () => {
   const LESSON_KINDS: NotificationKind[] = [
     "lesson_request_received",

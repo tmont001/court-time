@@ -304,7 +304,15 @@ export default function EventDetailSheet({
   // Pro's own events would otherwise never satisfy an isHost-based check.
   // Phase 34A: widened admin -> isOperator (admin+staff) — Pro's existing
   // owner-scoped behavior is unchanged.
-  const canCancelEvent = isOperator(userRole) || (userRole === "pro" && event.created_by === userId);
+  // Phase 36C: excludes an already-cancelled event — there is nothing
+  // left to cancel, and re-cancelling would only surface a confusing
+  // "already cancelled" error (mirrors ReservationDetailSheet's identical
+  // Phase 36B fix). The grid's own regular fetch has always filtered to
+  // status='scheduled', so a cancelled event could not reach this sheet
+  // before the Event checkout-return effect's by-id fetch (which carries
+  // no such filter) and, now, the generalized ?event=<uuid> deep link.
+  const canCancelEvent = event.status === "scheduled" &&
+    (isOperator(userRole) || (userRole === "pro" && event.created_by === userId));
   // Edit was Admin-only in Phase 30C — no Pro exception, unlike
   // cancellation. Phase 34A: widened admin -> isOperator; Pro is still
   // never admitted here (update_event, 0136, never gained a Pro path).
@@ -322,6 +330,10 @@ export default function EventDetailSheet({
   const courtNames = event.court_ids
     .map(id => courts.find(c => c.id === id)?.name ?? "Court")
     .join(", ");
+
+  // Phase 36C: read-only state for a legitimately visible cancelled Event
+  // — see canCancelEvent's comment above for why this is newly reachable.
+  const isCancelled = event.status === "cancelled";
 
   const dateLabel = new Date(event.starts_at).toLocaleDateString("en-US", {
     timeZone: clubTimezone, weekday: "long", month: "long", day: "numeric",
@@ -594,6 +606,16 @@ export default function EventDetailSheet({
           {startLabel} – {endLabel}
         </p>
 
+        {/* Cancelled — read-only state (Phase 36C, mirrors
+            ReservationDetailSheet's Phase 36B fix). Booking context below
+            (courts/date/time/capacity/price/roster) is still shown; no
+            action that assumes the Event remains scheduled is offered. */}
+        {isCancelled && (
+          <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 mt-2">
+            Cancelled
+          </span>
+        )}
+
         {/* Courts */}
         {courtNames && (
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{courtNames}</p>
@@ -672,8 +694,14 @@ export default function EventDetailSheet({
           </div>
         )}
 
-        {/* ── Offered state — replaces the standard action button ── */}
-        {isOffered ? (
+        {/* ── Offered state — replaces the standard action button ──
+            Wrapped in !isCancelled (Phase 36C): a cancelled Event never
+            offers Join/Leave/Waitlist/Accept/Pass — cancel_event itself
+            already cascades any 'offered' participant row to 'cancelled'
+            (so an in-flight offer can never survive event cancellation),
+            and a preserved historical 'confirmed'/'waitlisted' row must
+            not surface a now-meaningless Leave/Rejoin action either. */}
+        {!isCancelled && (isOffered ? (
           offerExpired ? (
             /* Offer has expired client-side */
             <div className="mt-5">
@@ -748,7 +776,7 @@ export default function EventDetailSheet({
               {buttonLabel}
             </button>
           </>
-        )}
+        ))}
 
         {/* Payment state — Phase 34F-B, own state only, read-only. Pay Now
             is the Member's own action for their own confirmed registration

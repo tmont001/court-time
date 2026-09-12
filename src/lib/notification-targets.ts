@@ -5,15 +5,30 @@
 // NotificationSheet.tsx today and, later, inside server-side email/SMS
 // template rendering without any change.
 //
-// ARCHITECTURE LOCK (Phase 36 audit): `kind` already determines the domain,
-// and the domain object's own id is already present in `metadata` under an
-// existing per-domain key (reservation_id / event_id / request_id) for
-// every current producer. This module deliberately does NOT introduce a
-// generic `target_id`/`target_domain` metadata key or a new notifications
-// column — it reads the ids producers already write. Raw
-// `metadata.target_path` (the pre-Phase-36 mechanism, still lesson-only and
-// page-level) stays a legacy fallback, never the primary path, and is never
-// removed — old rows must keep resolving exactly as they do today.
+// ARCHITECTURE LOCK (Phase 36 audit): `kind` already determines the
+// domain(s), and the domain object's own id is already present in
+// `metadata` under an existing per-domain key (reservation_id / event_id /
+// request_id / program_id) for every current producer. This module
+// deliberately does NOT introduce a generic `target_id`/`target_domain`
+// metadata key or a new notifications column — it reads the ids producers
+// already write. Raw `metadata.target_path` (the pre-Phase-36 mechanism,
+// still lesson-only and page-level) stays a legacy fallback, never the
+// primary path, and is never removed — old rows must keep resolving
+// exactly as they do today.
+//
+// Phase 36C correction: `kind` does NOT always determine a single uniform
+// domain. `waitlist_offer` is genuinely polymorphic — it is produced both
+// by advance_waitlist_offer/admin_offer_spot* (a single generated Event
+// occurrence's own waitlist, event_id) and by
+// _advance_program_waitlist_offer (a WHOLE-Program enrollment waitlist,
+// program_id — there is no single occurrence to point to for that one;
+// see supabase/migrations/0127_program_session_capacity_correctness.sql
+// and accept_program_waitlist_offer's own p_program_id-only signature in
+// 0091). Rather than pretending one idKey covers both shapes,
+// NOTIFICATION_TARGET_MAP allows a kind's value to be an ORDERED LIST of
+// candidate definitions — the first one whose id is present and valid
+// wins. This stays a narrow, explicit special case for the one kind that
+// actually needs it, not a general multi-domain mechanism.
 //
 // Authorization is NOT this module's concern: a path returned here is only
 // ever a hint for which id to fetch. The destination page/sheet performs
@@ -46,7 +61,7 @@ export type NotificationKind =
   | "lesson_provider_reassigned"
   | "lesson_admin_requested";
 
-export type TargetDomain = "reservation" | "event" | "lesson_request";
+export type TargetDomain = "reservation" | "event" | "lesson_request" | "program";
 
 export interface TargetDefinition {
   domain: TargetDomain;
@@ -55,8 +70,10 @@ export interface TargetDefinition {
   idKey: string;
 }
 
-// kind -> { domain, idKey } | null (null = deliberately no structured
-// destination, e.g. a broadcast announcement is not "about" one object).
+// kind -> a single definition, an ORDERED LIST of candidate definitions
+// (first valid id wins — see waitlist_offer below), or null (null =
+// deliberately no structured destination, e.g. a broadcast announcement
+// is not "about" one object).
 export const NOTIFICATION_TARGET_MAP = {
   reservation_confirmed:           { domain: "reservation",   idKey: "reservation_id" },
   reservation_cancelled_by_admin:  { domain: "reservation",   idKey: "reservation_id" },
@@ -66,7 +83,15 @@ export const NOTIFICATION_TARGET_MAP = {
   event_joined:                    { domain: "event",         idKey: "event_id" },
   event_updated:                   { domain: "event",         idKey: "event_id" },
   waitlist_promoted:                { domain: "event",         idKey: "event_id" },
-  waitlist_offer:                   { domain: "event",         idKey: "event_id" },
+  // Polymorphic (Phase 36C) — a single generated Event occurrence's own
+  // waitlist carries event_id; a whole-Program enrollment waitlist
+  // carries program_id instead. event_id is tried first: if a producer
+  // ever supplied both (never happens today), the occurrence-specific
+  // target wins.
+  waitlist_offer: [
+    { domain: "event",   idKey: "event_id" },
+    { domain: "program", idKey: "program_id" },
+  ],
   announcement:                     null,
   lesson_request_received:         { domain: "lesson_request", idKey: "request_id" },
   lesson_request_proposed:         { domain: "lesson_request", idKey: "request_id" },
@@ -75,7 +100,7 @@ export const NOTIFICATION_TARGET_MAP = {
   lesson_cancelled:                { domain: "lesson_request", idKey: "request_id" },
   lesson_provider_reassigned:      { domain: "lesson_request", idKey: "request_id" },
   lesson_admin_requested:          { domain: "lesson_request", idKey: "request_id" },
-} satisfies Record<NotificationKind, TargetDefinition | null>;
+} satisfies Record<NotificationKind, TargetDefinition | readonly TargetDefinition[] | null>;
 
 // Same shape as the local UUID_RE already duplicated per-file across the
 // codebase (e.g. src/lib/supabase/staleClub.ts, switchClubAction.ts,
@@ -98,10 +123,14 @@ function readMetadataId(metadata: Json | null, idKey: string): string | null {
   return isValidUuid(value) ? value : null;
 }
 
-function getTargetDefinition(kind: string): TargetDefinition | null {
-  return Object.prototype.hasOwnProperty.call(NOTIFICATION_TARGET_MAP, kind)
-    ? NOTIFICATION_TARGET_MAP[kind as NotificationKind]
-    : null;
+/** Always returns an array — a single definition is normalized to a
+ * 1-element array so resolveNotificationTarget has one loop, not a branch
+ * for "one definition" vs "a list of candidates". */
+function getTargetDefinitions(kind: string): readonly TargetDefinition[] {
+  if (!Object.prototype.hasOwnProperty.call(NOTIFICATION_TARGET_MAP, kind)) return [];
+  const entry = NOTIFICATION_TARGET_MAP[kind as NotificationKind];
+  if (entry === null) return [];
+  return Array.isArray(entry) ? entry : [entry];
 }
 
 function buildStructuredPath(
@@ -123,6 +152,13 @@ function buildStructuredPath(
       return isMember(viewerRole)
         ? `/my-schedule?tab=lessons&request_id=${encodedId}`
         : `/admin/lessons?lessonId=${encodedId}`;
+    case "program":
+      // ProgramEnrollmentCard is the sole canonical whole-Program
+      // Member surface (Phase 27D2) — one path for every role, matching
+      // the fact that only Members ever receive this notification
+      // variant (_advance_program_waitlist_offer's recipient is always a
+      // roster member's own claimed_by account).
+      return `/events?program=${encodedId}`;
   }
 }
 
@@ -150,24 +186,25 @@ export function getSafeTargetPath(metadata: Json | null): string | null {
  * this only ever supplies a hint for which id to look up).
  *
  * Resolution order:
- *   1. Structured target: `kind` has a target definition AND the metadata
- *      id it names is present and a valid UUID -> canonical, role-aware
- *      path for that domain object. Wins even over a stale target_path.
- *   2. Structured target definition exists but the id is missing/malformed
- *      -> fall back to the legacy `metadata.target_path`, if safe.
- *   3. `kind` has no structured definition (including `announcement`,
- *      and any unrecognized/future kind) -> also fall back to the legacy
+ *   1. Structured target: `kind` has one or more candidate definitions,
+ *      tried in order — the first whose named metadata id is present and
+ *      a valid UUID wins (canonical, role-aware path for that domain
+ *      object). For every kind except `waitlist_offer` there is exactly
+ *      one candidate; `waitlist_offer` tries event_id, then program_id
+ *      (see NOTIFICATION_TARGET_MAP's own comment). Wins even over a
+ *      stale target_path.
+ *   2. No candidate's id is present/valid (including a kind with no
+ *      structured definition at all — `announcement`, or any
+ *      unrecognized/future kind) -> fall back to the legacy
  *      `metadata.target_path`, if safe.
- *   4. Nothing resolves -> null.
+ *   3. Nothing resolves -> null.
  */
 export function resolveNotificationTarget(
   kind: string,
   metadata: Json | null,
   viewerRole: string | null | undefined,
 ): string | null {
-  const definition = getTargetDefinition(kind);
-
-  if (definition) {
+  for (const definition of getTargetDefinitions(kind)) {
     const id = readMetadataId(metadata, definition.idKey);
     if (id) return buildStructuredPath(definition.domain, id, viewerRole);
   }

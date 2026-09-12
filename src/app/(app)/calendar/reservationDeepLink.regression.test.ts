@@ -59,9 +59,13 @@ describe("page.tsx — ?reservation=<uuid> is accepted independent of checkout=s
     expect(s).not.toContain("initialCheckoutReservationId");
   });
 
-  it("leaves the Event checkout param untouched (still gated on checkout=success — out of scope until 36C)", () => {
+  it("Phase 36C superseded this: the Event param is now ALSO decoupled from checkout=success, mirroring the reservation param exactly — see eventDeepLink.regression.test.ts for full 36C coverage", () => {
     const s = src();
-    expect(s).toContain('checkoutParam === "success" && eventParam && uuidRe.test(eventParam)');
+    const idx = s.indexOf("const initialEventId =");
+    expect(idx).toBeGreaterThan(-1);
+    const line = s.slice(idx, s.indexOf(";", idx) + 1);
+    expect(line).not.toContain("checkoutParam");
+    expect(line).toContain("uuidRe.test(eventParam)");
   });
 });
 

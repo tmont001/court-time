@@ -198,13 +198,27 @@ interface Props {
   // handler uses is re-applied here — this id is only ever a hint for
   // which row to fetch, never an authorization bypass.
   initialReservationId?: string | null;
-  // Phase 34F-B: optional ?checkout=success&event=<uuid> return from
-  // Stripe Checkout. Never mutates any financial state on its own — only
-  // used to auto-open that Event's own detail sheet, which shows
-  // authoritative, freshly-fetched payment state (paid or still unpaid,
-  // whichever the webhook has actually reconciled so far). Mirrors
-  // initialCheckoutReservationId immediately above exactly.
-  initialCheckoutEventId?: string | null;
+  // Phase 34F-B, generalized in Phase 36C: optional ?event=<uuid> — no
+  // longer requires checkout=success (renamed from initialCheckoutEventId
+  // accordingly), mirroring initialReservationId's own 36B generalization
+  // exactly. Auto-opens that Event's own detail sheet directly by id —
+  // used both by the Stripe Checkout return flow (still works identically,
+  // now also covering the checkout=CANCEL return) and by notification
+  // deep links (Phase 36E). Never mutates any financial state on its own.
+  //
+  // Unlike initialReservationId, no separate "can this viewer open this
+  // Event's detail" rule is re-applied here: events_select_same_club RLS
+  // (0132) already IS that exact rule — club-wide for a member_self_
+  // service club (Connected), participation-gated
+  // (current_user_participates_in_event) otherwise (Staff-Managed) — and
+  // the calendar grid's own click handler has never applied any further
+  // per-row eligibility check on top of it (every RLS-visible Event block
+  // is unconditionally clickable, unlike a reservation block's isClickable
+  // gate). So the plain RLS-scoped fetch below is already exactly as
+  // restrictive as the product's intended Event visibility contract — a
+  // deliberate difference from the reservation deep link's Phase 36B
+  // server-side correction, not an oversight.
+  initialEventId?: string | null;
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
   currency:                     string; // Phase 34B
@@ -288,7 +302,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialCheckoutEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -494,11 +508,21 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // same fix to the reservation effect above, which used router.replace
   // until then.
   //
-  // Event deep-linking beyond this Stripe-return case is out of scope
-  // until Phase 36C — this effect still only fires for
-  // ?checkout=success&event=<uuid>, unlike the reservation effect above.
+  // Phase 36C generalized this beyond the Stripe-return case: a plain
+  // ?event=<uuid> (no checkout param at all) now opens the same sheet —
+  // notification deep links will use exactly this path from Phase 36E.
+  // Only `event` and `checkout` (which, on /calendar, only ever pairs
+  // with `event` or `reservation`) are stripped from the URL; any other
+  // param (e.g. ?date=) is preserved, mirroring the reservation effect's
+  // own 36B cleanup exactly.
+  //
+  // No canOpenReservationDetail-equivalent check is applied here — see
+  // initialEventId's own prop comment above for why the plain RLS-scoped
+  // fetch below is already exactly as restrictive as intended: Event
+  // visibility has no narrower app-level rule sitting on top of RLS the
+  // way a reservation's per-row eligibility does.
   useEffect(() => {
-    if (!initialCheckoutEventId) return;
+    if (!initialEventId) return;
     supabase
       .from("events")
       .select(`
@@ -509,7 +533,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         event_guests(id, status),
         reservations(court_id, status, reason)
       `)
-      .eq("id", initialCheckoutEventId)
+      .eq("id", initialEventId)
       .single()
       .then(({ data }) => {
         if (!data) return;
@@ -537,7 +561,11 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             .map(res => res.court_id),
         });
       });
-    window.history.replaceState(null, "", "/calendar");
+    const params = new URLSearchParams(window.location.search);
+    params.delete("event");
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);

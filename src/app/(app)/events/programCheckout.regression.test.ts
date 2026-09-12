@@ -1295,28 +1295,30 @@ describe("return-route behavior — /events only, history.replaceState not route
     expect(fn).not.toMatch(/date=/);
   });
 
-  it("events/page.tsx parses ?checkout=success&program=<uuid> with the same uuid-validated, success-gated derivation as Calendar/Lessons' own established convention", () => {
+  it("Phase 36C generalized this: events/page.tsx now parses ?program=<uuid> independent of checkout=success, mirroring Calendar's reservation/event deep links (Phase 36B/36C) — checkoutParam no longer exists in page.tsx at all", () => {
     const s = readSource(EVENTS_PAGE_PATH);
-    expect(s).toContain('const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;');
-    expect(s).toContain('const programParam  = typeof sp.program === "string" ? sp.program : null;');
-    expect(s).toContain('checkoutParam === "success" && programParam && uuidRe.test(programParam) ? programParam : null;');
+    expect(s).toContain('const programParam = typeof sp.program === "string" ? sp.program : null;');
+    expect(s).toContain('programParam && uuidRe.test(programParam) ? programParam : null;');
+    expect(s).not.toContain("checkoutParam");
   });
 
-  it("EventsUpcomingClient's own return-flow effect uses window.history.replaceState, mirroring the 34F-A lesson-navigation fix — never router.replace, which the 34F-A runtime QA found forces a visible double Server Component re-fetch", () => {
+  it("EventsUpcomingClient's own return-flow effect uses window.history.replaceState, mirroring the 34F-A lesson-navigation fix — never router.replace, which the 34F-A runtime QA found forces a visible double Server Component re-fetch. Phase 36C: now query-preserving, since a plain ?program=<uuid> deep link can co-occur with other params", () => {
     const s = readSource(EVENTS_UPCOMING_PATH);
-    const start = s.indexOf("if (!initialCheckoutProgramId) return;");
+    const start = s.indexOf("if (!initialProgramId) return;");
+    expect(start).toBeGreaterThan(-1);
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     const effect = s.slice(start, end);
-    expect(effect).toContain('window.history.replaceState(null, "", "/events");');
+    expect(effect).toContain('window.history.replaceState(null, "", query ? `/events?${query}` : "/events");');
     expect(effect).not.toMatch(/router\.replace/);
   });
 
-  it("no second Program detail/payment surface is created — ProgramEnrollmentCard is already inline on /events for every program the caller has a stake in, so the return effect needs no sheet-opening logic", () => {
+  it("no second Program detail/payment surface is created — ProgramEnrollmentCard is already inline on /events for every program the caller has a stake in, so the return effect only scrolls to an already-rendered card by id (Phase 36C) rather than opening a sheet", () => {
     const s = readSource(EVENTS_UPCOMING_PATH);
-    const start = s.indexOf("if (!initialCheckoutProgramId) return;");
+    const start = s.indexOf("if (!initialProgramId) return;");
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     const effect = s.slice(start, end);
     expect(effect).not.toMatch(/setSelected|supabase\s*\n?\s*\.from/);
+    expect(effect).toContain("document.getElementById(`program-card-${initialProgramId}`)");
   });
 });
 

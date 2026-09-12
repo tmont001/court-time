@@ -85,23 +85,28 @@ export default async function CalendarPage({
   const initialDateISO = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
 
   // Phase 34D-D1, generalized in Phase 36B: optional ?reservation=<uuid> —
-  // no longer requires checkout=success. See CalendarShell's own comment
-  // for what this does (and does not do: never mutates any financial
-  // state itself, and never bypasses the calendar's own "can this viewer
-  // open this reservation's detail" rule).
-  const checkoutParam    = typeof sp.checkout === "string" ? sp.checkout : null;
+  // no longer requires checkout=success (Stripe's checkout=success/cancel
+  // return URLs both still carry this same param; either return still
+  // works, since acceptance no longer depends on the checkout param at
+  // all). See CalendarShell's own comment for what this does (and does
+  // not do: never mutates any financial state itself, and never bypasses
+  // the calendar's own "can this viewer open this reservation's detail"
+  // rule).
   const reservationParam = typeof sp.reservation === "string" ? sp.reservation : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const initialReservationId =
     reservationParam && uuidRe.test(reservationParam) ? reservationParam : null;
 
-  // Phase 34F-B: optional ?checkout=success&event=<uuid> return from Stripe
-  // Checkout — see CalendarShell's own comment for what this does (and
-  // does not do: never mutates any financial state itself). Mirrors the
-  // reservation param immediately above exactly.
+  // Phase 34F-B, generalized in Phase 36C: optional ?event=<uuid> — no
+  // longer requires checkout=success, mirroring the reservation param's
+  // own 36B generalization exactly. See CalendarShell's own comment for
+  // why no server-side re-authorization layer is added here (unlike the
+  // reservation deep link): Event visibility is already exactly RLS-
+  // gated to the intended product contract, with no narrower app-level
+  // click-eligibility rule to preserve on top of it.
   const eventParam = typeof sp.event === "string" ? sp.event : null;
-  const initialCheckoutEventId =
-    checkoutParam === "success" && eventParam && uuidRe.test(eventParam) ? eventParam : null;
+  const initialEventId =
+    eventParam && uuidRe.test(eventParam) ? eventParam : null;
 
   if (courtsError) {
     console.error("[Calendar] courts query failed:", courtsError.message);
@@ -124,7 +129,7 @@ export default async function CalendarPage({
           todayISO={todayISO}
           initialDateISO={initialDateISO}
           initialReservationId={initialReservationId}
-          initialCheckoutEventId={initialCheckoutEventId}
+          initialEventId={initialEventId}
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}
           currency={settings?.currency ?? "USD"}
