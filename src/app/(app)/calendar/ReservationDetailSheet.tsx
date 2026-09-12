@@ -97,6 +97,16 @@ interface Props {
   // from isAdmin: canEditMaintenance (maintenance/admin blocks) stays
   // isAdmin-only, unchanged.
   canManageMemberReservation: boolean;
+  // Phase 37E correction: explicit, independent presentation signal for
+  // Players & Guests own-reservation access — true only for a Member/Pro
+  // viewing THEIR OWN reservation (CalendarShell derives this via the
+  // canonical isOwnReservation claim-continuity helper, the same rule
+  // canOpenReservationDetail itself is built on). Deliberately NOT derived
+  // from onMemberCancel below, and not read anywhere else in this
+  // component: cancellation availability and roster-ownership presentation
+  // are separate product concepts, so a future cancellation-window/status
+  // change to onMemberCancel must never silently remove this access.
+  canManageOwnReservationRoster: boolean;
   currency:                    string;
   defaultCourtHourlyRateCents: number | null;
   onClose:        () => void;
@@ -119,7 +129,7 @@ function mapCancelError(message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, currency, defaultCourtHourlyRateCents, onClose, onCancelled, onUpdated, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, canManageOwnReservationRoster, currency, defaultCourtHourlyRateCents, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -413,16 +423,47 @@ export default function ReservationDetailSheet({
           </div>
         )}
 
-        {/* Players & Guests — Phase 37D. Admin/Staff only
-            (canManageMemberReservation, the same isOperator gate as Edit
-            above and as update_member_reservation/admin_cancel_
-            reservation_v2's own already-widened role check) — Member/Pro
-            own-reservation UX is Phase 37E, not this checkpoint. This is a
-            presentation-only gate: every read/write inside routes
-            exclusively through the Phase 37C (0179) SECURITY DEFINER
-            RPCs, which independently re-derive and enforce the real
-            authorization server-side. */}
-        {reservation.reason === "member_booking" && canManageMemberReservation && (
+        {/* Players & Guests — Phase 37D (Admin/Staff), extended Phase 37E
+            (Member/Pro on their own reservation). Two presentation paths,
+            each an explicit boolean prop, reusing existing signals rather
+            than a new ownership calculation:
+              - canManageMemberReservation (isOperator: admin+staff) — same
+                gate as Edit above and update_member_reservation/admin_
+                cancel_reservation_v2's own already-widened role check.
+              - canManageOwnReservationRoster — an EXPLICIT, independent
+                presentation prop CalendarShell derives via the canonical
+                isOwnReservation claim-continuity helper (owner_user_id OR
+                roster_member_id) AND role in (member, pro) — the identical
+                rule Phase 37C's own _authorize_reservation_roster_access
+                enforces server-side. Deliberately NOT derived from
+                onMemberCancel (Phase 37E correction): cancellation
+                availability and roster-ownership presentation are separate
+                product concepts, so a future cancellation-window/status
+                change can never silently remove this access, and this
+                stays correct even for an already-cancelled own reservation
+                (onMemberCancel's own callback is meaningless once
+                cancelled — the Cancel button below is hidden entirely for
+                isCancelled — but roster access must not be, per the locked
+                Phase 37E rule that a cancelled own reservation still shows
+                a read-only roster). A non-owning Member/Pro can never
+                reach this sheet at all (canOpenReservationDetail), so this
+                is presentation-only, never the authorization boundary.
+            Member additionally needs member_self_service — not re-checked
+            here: CalendarPage already redirects any Staff-Managed Member
+            (role='member', memberSelfService=false) to /my-schedule before
+            this component tree ever mounts, so a Member who reaches this
+            sheet at all is structurally guaranteed to have self-service.
+            Pro is never gated by this capability (locked Phase 37E rule).
+            Adding a second, local memberSelfService flag here would be a
+            redundant, staleness-prone second source of truth for a fact
+            the page-level redirect already enforces; the RPC's own
+            capability_not_available remains the authoritative backstop
+            for the narrow stale-tab edge case (see ReservationRosterSection's
+            mapRosterError). This is presentation-only either way: every
+            read/write inside routes exclusively through the Phase 37C
+            (0179) SECURITY DEFINER RPCs, which independently re-derive and
+            enforce the real authorization server-side. */}
+        {reservation.reason === "member_booking" && (canManageMemberReservation || canManageOwnReservationRoster) && (
           <ReservationRosterSection
             reservationId={reservation.id}
             clubId={clubId}

@@ -61,6 +61,16 @@ function mapRosterError(code: string): string {
       return "Enter a guest name.";
     case "guest_display_name_too_long":
       return "Guest name is too long (max 100 characters).";
+    // Phase 37E: this section is now reachable by a Member (previously
+    // Admin/Staff only, who are never gated by member_self_service). The
+    // presentation gate should already prevent a Staff-Managed Member from
+    // ever reaching this UI at all (see ReservationDetailSheet's render
+    // gate comment), but 0179's own capability_not_available remains the
+    // authoritative backstop for a narrow stale-tab edge case (the club's
+    // tier changes to Staff-Managed while this sheet is already open) —
+    // never a raw database error reaching the user.
+    case "capability_not_available":
+      return "Self-service booking management is not available for this club.";
     default:
       return "Something went wrong. Please try again.";
   }
