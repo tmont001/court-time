@@ -1306,7 +1306,7 @@ describe("return-route behavior — /events only, history.replaceState not route
     const s = readSource(EVENTS_UPCOMING_PATH);
     const start = s.indexOf("if (!initialProgramId) return;");
     expect(start).toBeGreaterThan(-1);
-    const end = s.indexOf("}, []);", start) + "}, []);".length;
+    const end = s.indexOf("}, [initialProgramId, searchParams]);", start) + "}, [initialProgramId, searchParams]);".length;
     const effect = s.slice(start, end);
     expect(effect).toContain('window.history.replaceState(null, "", query ? `/events?${query}` : "/events");');
     expect(effect).not.toMatch(/router\.replace/);
@@ -1315,7 +1315,7 @@ describe("return-route behavior — /events only, history.replaceState not route
   it("no second Program detail/payment surface is created — ProgramEnrollmentCard is already inline on /events for every program the caller has a stake in, so the return effect only scrolls to an already-rendered card by id (Phase 36C) rather than opening a sheet", () => {
     const s = readSource(EVENTS_UPCOMING_PATH);
     const start = s.indexOf("if (!initialProgramId) return;");
-    const end = s.indexOf("}, []);", start) + "}, []);".length;
+    const end = s.indexOf("}, [initialProgramId, searchParams]);", start) + "}, [initialProgramId, searchParams]);".length;
     const effect = s.slice(start, end);
     expect(effect).not.toMatch(/setSelected|supabase\s*\n?\s*\.from/);
     expect(effect).toContain("document.getElementById(`program-card-${initialProgramId}`)");

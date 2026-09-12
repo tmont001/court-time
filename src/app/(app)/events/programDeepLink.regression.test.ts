@@ -51,7 +51,7 @@ describe("/events?program=<valid visible id> targets the matching ProgramEnrollm
     const s = readSource(UPCOMING_PATH);
     const idx = s.indexOf("if (!initialProgramId) return;");
     expect(idx).toBeGreaterThan(-1);
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialProgramId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain("document.getElementById(`program-card-${initialProgramId}`)");
     expect(block).toContain('.scrollIntoView({ behavior: "smooth", block: "center" });');
@@ -60,19 +60,26 @@ describe("/events?program=<valid visible id> targets the matching ProgramEnrollm
     expect(block).not.toMatch(/classList|animate|highlight/i);
   });
 
-  it("runs once on mount only (empty dependency array) — a later refresh (with the param already stripped) does not re-scroll", () => {
+  it("Phase 36E: depends on [initialProgramId, searchParams], not [] — reactive to a same-route notification click and a repeat click of the same one, not mount-only. A later refresh (with the param already stripped) still does not re-scroll, since initialProgramId is absent from the URL by then", () => {
     const s = readSource(UPCOMING_PATH);
     const idx = s.indexOf("if (!initialProgramId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialProgramId, searchParams]);", idx);
     expect(endIdx).toBeGreaterThan(idx);
-    const block = s.slice(idx, endIdx + "}, []);".length);
-    expect(block).toMatch(/\},\s*\[\]\);/);
+    const block = s.slice(idx, endIdx + "}, [initialProgramId, searchParams]);".length);
+    expect(block).toMatch(/\},\s*\[initialProgramId,\s*searchParams\]\);/);
+    expect(block).not.toMatch(/\},\s*\[\]\);/);
+  });
+
+  it("useSearchParams is imported and called — the reactivity signal", () => {
+    const s = readSource(UPCOMING_PATH);
+    expect(s).toContain('import { useRouter, useSearchParams } from "next/navigation";');
+    expect(s).toContain("const searchParams = useSearchParams();");
   });
 
   it("strips program/checkout via window.history.replaceState, preserving any other param, never reintroducing router.replace", () => {
     const s = readSource(UPCOMING_PATH);
     const idx = s.indexOf("if (!initialProgramId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialProgramId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('params.delete("program");');
     expect(block).toContain('params.delete("checkout");');
@@ -85,7 +92,7 @@ describe("unknown/invisible/nonexistent Program id — no leak, no extra fetch, 
   it("the deep-link effect never issues its own data fetch — it only reads DOM elements already rendered from the unconditional `programs` prop", () => {
     const s = readSource(UPCOMING_PATH);
     const idx = s.indexOf("if (!initialProgramId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialProgramId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).not.toMatch(/supabase|fetch\(|getMemberPrograms/);
   });

@@ -70,24 +70,33 @@ describe("LessonsClient.tsx — request_id/lesson lookup stays inside the alread
     const s = src();
     const idx = s.indexOf("if (!initialLessonRequestId) return;");
     expect(idx).toBeGreaterThan(-1);
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialLessonRequestId, searchParams]);", idx);
+    expect(endIdx).toBeGreaterThan(idx);
     const block = s.slice(idx, endIdx);
     expect(block).not.toMatch(/supabase|\.from\(|fetch\(/);
   });
 
-  it("runs once on mount only (empty dependency array) — a later refresh (with the param already stripped) does not reopen the detail", () => {
+  it("Phase 36E: depends on [initialLessonRequestId, searchParams], not [] — reactive to a same-route notification click and a repeat click of the same one, and now calls setSelected directly rather than relying solely on the useState initializer (which never re-runs after first mount)", () => {
     const s = src();
     const idx = s.indexOf("if (!initialLessonRequestId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialLessonRequestId, searchParams]);", idx);
     expect(endIdx).toBeGreaterThan(idx);
-    const block = s.slice(idx, endIdx + "}, []);".length);
-    expect(block).toMatch(/\},\s*\[\]\);/);
+    const block = s.slice(idx, endIdx + "}, [initialLessonRequestId, searchParams]);".length);
+    expect(block).toMatch(/\},\s*\[initialLessonRequestId,\s*searchParams\]\);/);
+    expect(block).not.toMatch(/\},\s*\[\]\);/);
+    expect(block).toContain("if (match) setSelected(match);");
+  });
+
+  it("useSearchParams is imported and called — the reactivity signal", () => {
+    const s = src();
+    expect(s).toContain('import { useRouter, useSearchParams } from "next/navigation";');
+    expect(s).toContain("const searchParams = useSearchParams();");
   });
 
   it("strips request_id/lesson/checkout via window.history.replaceState, preserving tab=lessons and any other param, never router.replace", () => {
     const s = src();
     const idx = s.indexOf("if (!initialLessonRequestId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialLessonRequestId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('params.delete("request_id");');
     expect(block).toContain('params.delete("lesson");');

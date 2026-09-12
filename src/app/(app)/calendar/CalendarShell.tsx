@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
@@ -305,6 +305,25 @@ function mergeRowsById<T extends { id: string }>(
 export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
+  // Phase 36E fix: reactive to a same-route notification click. Next.js's
+  // useSearchParams() reflects Next's OWN completed-navigation state — it
+  // updates on every genuine router.push/replace, including a repeat push
+  // to a URL whose params match a PRIOR navigation, because each is a
+  // distinct completed navigation event, not deduped by string content.
+  // initialReservationId/initialEventId (server-computed props) stay the
+  // actual id source; this is the missing piece that makes the effects
+  // below re-evaluate when the id arrives via a same-route click rather
+  // than a fresh mount.
+  //
+  // Phase 36E correction: current Next.js DOES integrate
+  // window.history.pushState/replaceState with router state/
+  // useSearchParams — an earlier version of this comment claimed our own
+  // raw-History cleanup calls below were "invisible" to it, which is
+  // wrong. Because of that, each deep-link effect below also checks the
+  // LIVE searchParams value against its own id prop before acting (see
+  // each effect's own comment) — otherwise the effect's own cleanup could
+  // re-trigger itself via this same searchParams dependency.
+  const searchParams = useSearchParams();
 
   // ── State ──────────────────────────────────────────────────────────────────
   // Initialize from the server-supplied date string (UTC noon = same calendar date in any timezone).
@@ -468,17 +487,45 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // this-viewer all resolve to the same null — no error, no distinct
   // "not authorized" state, no leak of whether the id existed at all.
   //
-  // Runs once on mount only. Uses window.history.replaceState (not
-  // router.replace, which the pre-36B version of this effect used) —
-  // matching the fix already applied to the Event checkout effect below,
-  // for the same reason: router.replace with a changed search-param set
-  // forces Next.js to re-render/re-fetch the route's Server Component
-  // tree, visibly re-flashing /calendar's loading fallback a second time.
-  // Only `reservation` and `checkout` (which, on /calendar, only ever
-  // pairs with `reservation` or `event`) are stripped — any other param
-  // (e.g. ?date=) is preserved rather than resetting to a bare "/calendar".
+  // Uses window.history.replaceState (not router.replace, which the
+  // pre-36B version of this effect used) — matching the fix already
+  // applied to the Event checkout effect below, for the same reason:
+  // router.replace with a changed search-param set forces Next.js to
+  // re-render/re-fetch the route's Server Component tree, visibly
+  // re-flashing /calendar's loading fallback a second time. Only
+  // `reservation` and `checkout` (which, on /calendar, only ever pairs
+  // with `reservation` or `event`) are stripped — any other param (e.g.
+  // ?date=) is preserved rather than resetting to a bare "/calendar".
+  //
+  // Phase 36E fix — depends on [initialReservationId, searchParams], not
+  // []: a mount-only effect never reopens this sheet for a notification
+  // click that lands while /calendar is ALREADY mounted (router.push
+  // changes the URL and the prop, but an empty dependency array only ever
+  // runs once, at the original mount). searchParams is also what makes a
+  // REPEAT click of the same reservation work — initialReservationId's own
+  // value alone would not change between two clicks of the identical
+  // notification (nothing ever resets the prop itself; only the visible
+  // URL changes), but each click is still a genuine, distinct completed
+  // navigation that searchParams reflects.
+  //
+  // Phase 36E correction — the LIVE param must still be checked before
+  // acting: current Next.js integrates window.history.replaceState with
+  // useSearchParams (a prior version of this comment claimed cleanup was
+  // "invisible" to it — that assumption was wrong). That means this
+  // effect's OWN cleanup call below can itself cause `searchParams` to
+  // update once the URL param is removed, which — since searchParams is a
+  // dependency — can re-trigger this exact effect a second time with
+  // initialReservationId still "A" (the prop, unchanged) but the live URL
+  // already clean. Comparing the live param against the prop is what
+  // makes that second, spurious invocation a safe no-op instead of a
+  // redundant re-fetch/re-cleanup: only when the two genuinely agree
+  // (a real, not-yet-consumed navigation) does the effect proceed. This
+  // is not a permanent "already consumed" guard — it re-evaluates fresh
+  // every render, so a later, distinct navigation to the same id (a
+  // repeat click) still matches and still opens.
   useEffect(() => {
     if (!initialReservationId) return;
+    if (searchParams.get("reservation") !== initialReservationId) return;
     getReservationDeepLinkDetail(initialReservationId).then((reservation) => {
       if (reservation) setSelectedReservation(reservation);
     });
@@ -487,8 +534,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     params.delete("checkout");
     const query = params.toString();
     window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialReservationId, searchParams]);
 
   // Phase 34F-B — returning from Stripe Checkout for an Event: fetch and
   // auto-open the Event's own detail sheet directly by id, mirroring the
@@ -521,8 +567,24 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // fetch below is already exactly as restrictive as intended: Event
   // visibility has no narrower app-level rule sitting on top of RLS the
   // way a reservation's per-row eligibility does.
+  //
+  // Phase 36E fix — depends on [initialEventId, searchParams], not []:
+  // see the reservation effect's identical fix above for the full
+  // reasoning (a mount-only effect never reopens for a same-route
+  // notification click, and searchParams — not initialEventId alone — is
+  // what makes even a REPEAT click of the same Event notification work).
+  //
+  // Phase 36E correction — see the reservation effect's identical comment
+  // above: current Next.js integrates window.history.replaceState with
+  // useSearchParams, so this effect's OWN cleanup call below can itself
+  // re-trigger it. Checking the LIVE param against initialEventId before
+  // acting is what makes that spurious re-invocation a no-op rather than
+  // a redundant re-fetch — re-evaluated fresh every render, never a
+  // permanent "already consumed" guard, so a later repeat click still
+  // matches and still opens.
   useEffect(() => {
     if (!initialEventId) return;
+    if (searchParams.get("event") !== initialEventId) return;
     supabase
       .from("events")
       .select(`
@@ -567,7 +629,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     const query = params.toString();
     window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialEventId, searchParams]);
   const [pendingSlotAction, setPendingSlotAction]     = useState<SlotAction | null>(null);
   const [slotPreFill, setSlotPreFill]                 = useState<SlotAction | null>(null);
   // Operator (admin/pro/staff): maps owner_user_id → display name for

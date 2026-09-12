@@ -85,7 +85,8 @@ describe("CalendarShell.tsx — reservation deep-link effect", () => {
     const s = src();
     const idx = s.indexOf("if (!initialReservationId) return;");
     expect(idx).toBeGreaterThan(-1);
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialReservationId, searchParams]);", idx);
+    expect(endIdx).toBeGreaterThan(idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain("getReservationDeepLinkDetail(initialReservationId)");
     expect(block).toContain("if (reservation) setSelectedReservation(reservation);");
@@ -110,19 +111,27 @@ describe("CalendarShell.tsx — reservation deep-link effect", () => {
     expect(s).toContain('import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";');
   });
 
-  it("runs the reservation deep-link effect once on mount only (empty dependency array)", () => {
+  it("Phase 36E: the effect depends on [initialReservationId, searchParams], not [] — reactive to a same-route notification click and a repeat click of the same notification, not mount-only", () => {
     const s = src();
     const idx = s.indexOf("if (!initialReservationId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialReservationId, searchParams]);", idx);
     expect(endIdx).toBeGreaterThan(idx);
-    const block = s.slice(idx, endIdx + "}, []);".length);
-    expect(block).toMatch(/\},\s*\[\]\);/);
+    const block = s.slice(idx, endIdx + "}, [initialReservationId, searchParams]);".length);
+    expect(block).toMatch(/\},\s*\[initialReservationId,\s*searchParams\]\);/);
+    // The old mount-only shape must be gone, not merely supplemented.
+    expect(block).not.toMatch(/\},\s*\[\]\);/);
+  });
+
+  it("useSearchParams is imported and called — the reactivity signal, per this file's own comment on why raw history.replaceState cleanup alone cannot make a mount-only effect reactive", () => {
+    const s = src();
+    expect(s).toContain('import { useRouter, useSearchParams } from "next/navigation";');
+    expect(s).toContain("const searchParams = useSearchParams();");
   });
 
   it("strips reservation/checkout via window.history.replaceState, preserving other params, and never reintroduces router.replace for this effect", () => {
     const s = src();
     const idx = s.indexOf("if (!initialReservationId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialReservationId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('params.delete("reservation");');
     expect(block).toContain('params.delete("checkout");');

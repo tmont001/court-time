@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import EventCardClient from "./EventCardClient";
 import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
 import type { MemberProgramCard } from "./programEnrollmentActions";
@@ -108,6 +108,12 @@ export default function EventsUpcomingClient({
   initialProgramId,
 }: Props) {
   const router = useRouter();
+  // Phase 36E fix: see CalendarShell's identical comment on its own
+  // searchParams call for the full reasoning — this is what makes the
+  // deep-link effect below react to a notification click landing while
+  // /events is ALREADY mounted (including a repeat click of the same
+  // notification), rather than only working on a fresh navigation here.
+  const searchParams = useSearchParams();
   const [searchQuery,      setSearchQuery]      = useState("");
   const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
 
@@ -135,8 +141,32 @@ export default function EventsUpcomingClient({
   // null and this is a complete no-op: no extra fetch, no error, no
   // existence leak, page renders exactly as it would have without the
   // param.
+  //
+  // Phase 36E fix — depends on [initialProgramId, searchParams], not []:
+  // a mount-only effect never re-scrolls for a notification click landing
+  // while /events is ALREADY mounted (router.push changes the URL and the
+  // prop, but an empty dependency array only ever runs once, at the
+  // original mount). searchParams is what makes even a REPEAT click of
+  // the same Program notification work — initialProgramId's own value
+  // alone would not change between two clicks of the identical
+  // notification (nothing ever resets the prop itself; only the visible
+  // URL changes), but each click is still a genuine, distinct completed
+  // navigation that searchParams reflects.
+  //
+  // Phase 36E correction — current Next.js integrates
+  // window.history.replaceState with useSearchParams (an earlier version
+  // of this comment claimed our cleanup was "invisible" to it — wrong).
+  // That means this effect's OWN cleanup call below can itself cause
+  // searchParams to update and re-trigger this exact effect a second time
+  // with initialProgramId still set (the prop never resets) but the live
+  // URL already clean. Checking the LIVE param against initialProgramId
+  // before acting turns that spurious re-invocation into a safe no-op —
+  // re-evaluated fresh every render, never a permanent "already
+  // consumed" guard, so a later repeat click still matches and still
+  // scrolls.
   useEffect(() => {
     if (!initialProgramId) return;
+    if (searchParams.get("program") !== initialProgramId) return;
     document.getElementById(`program-card-${initialProgramId}`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
     const params = new URLSearchParams(window.location.search);
@@ -144,8 +174,7 @@ export default function EventsUpcomingClient({
     params.delete("checkout");
     const query = params.toString();
     window.history.replaceState(null, "", query ? `/events?${query}` : "/events");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialProgramId, searchParams]);
 
   // Phase 34C — positive-price Join confirmation. Only ever set when
   // price_amount_cents > 0; Free/unpriced events keep the existing

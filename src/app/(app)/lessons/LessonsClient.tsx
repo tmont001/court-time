@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import RequestLessonSheet from "./RequestLessonSheet";
 import LessonRequestDetail from "./LessonRequestDetail";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
@@ -112,6 +112,13 @@ export default function LessonsClient({
   initialLessonRequestId,
 }: Props) {
   const router = useRouter();
+  // Phase 36E fix: see CalendarShell's identical comment on its own
+  // searchParams call for the full reasoning — this is what makes the
+  // deep-link effect below react to a notification click landing while
+  // /my-schedule?tab=lessons is ALREADY mounted (including a repeat click
+  // of the same notification), rather than only working on a fresh
+  // navigation here.
+  const searchParams = useSearchParams();
   const [showRequest, setShowRequest] = useState(autoOpen);
   // Phase 36D: looked up inside initialRequests — the caller's own
   // get_my_lesson_requests-scoped rows — never a separate/broader fetch by
@@ -143,8 +150,53 @@ export default function LessonsClient({
   // 36B/36C cleanup. router.replace remains correct for the ?request=1
   // case below (pre-existing, unrelated to this checkpoint, out of scope
   // here).
+  //
+  // Phase 36E fix — this effect now ALSO calls setSelected, and depends
+  // on [initialLessonRequestId, searchParams] rather than []. Two
+  // distinct bugs, both fixed the same way:
+  //   1. `selected`'s initial value above is a useState INITIALIZER —
+  //      by React's own design it is evaluated once, on the very first
+  //      render, and never again. A same-route notification click updates
+  //      the initialLessonRequestId PROP but that alone can never make a
+  //      useState initializer re-run — nothing without an effect ever
+  //      opens the sheet for that click at all, mount-only concerns
+  //      aside.
+  //   2. Even inside an effect, an empty dependency array only ever runs
+  //      once, at the original mount — the exact same class of bug
+  //      CalendarShell's reservation/event effects had.
+  // searchParams (see its own comment above) is what additionally makes
+  // even a REPEAT click of the same Lesson notification work —
+  // initialLessonRequestId's own value alone would not change between two
+  // clicks of the identical notification (nothing ever resets the prop
+  // itself; only the visible URL changes), but each click is still a
+  // genuine, distinct completed navigation that searchParams reflects.
+  // Matches initialRequests — the caller's own already-authorized rows —
+  // exactly like the initializer above; still never a second/broader
+  // fetch.
+  //
+  // Phase 36E correction — current Next.js integrates
+  // window.history.replaceState with useSearchParams (an earlier version
+  // of this comment claimed our cleanup was "invisible" to it — wrong).
+  // That means this effect's OWN cleanup call below can itself cause
+  // searchParams to update and re-trigger this exact effect a second time
+  // with initialLessonRequestId still set (the prop never resets) but the
+  // live URL already clean. Checking the LIVE param against
+  // initialLessonRequestId before acting turns that spurious
+  // re-invocation into a safe no-op — re-evaluated fresh every render,
+  // never a permanent "already consumed" guard, so a later repeat click
+  // still matches and still opens. Checks BOTH `request_id` (the
+  // canonical notification target) and `lesson` (the Stripe
+  // checkout-return target) — either matching is sufficient, since
+  // initialLessonRequestId itself was already resolved from whichever of
+  // the two was present (page.tsx never allows both to disagree in
+  // practice, but this only needs one to confirm the navigation is real).
   useEffect(() => {
     if (!initialLessonRequestId) return;
+    const liveRequestId = searchParams.get("request_id");
+    const liveLessonId  = searchParams.get("lesson");
+    if (liveRequestId !== initialLessonRequestId && liveLessonId !== initialLessonRequestId) return;
+    const match = initialRequests.find(r => r.id === initialLessonRequestId) ?? null;
+    if (match) setSelected(match);
     const params = new URLSearchParams(window.location.search);
     params.delete("request_id");
     params.delete("lesson");
@@ -152,7 +204,7 @@ export default function LessonsClient({
     const query = params.toString();
     window.history.replaceState(null, "", query ? `/my-schedule?${query}` : "/my-schedule");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialLessonRequestId, searchParams]);
 
   // Phase 34C — the Member's own read-only payment state per confirmed
   // request, via the sanitized batched read boundary. Batched once for

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import type { Json } from "@/lib/db/types";
-import { getSafeTargetPath } from "@/lib/notification-targets";
+import { resolveNotificationTarget } from "@/lib/notification-targets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +21,12 @@ interface NotificationRow {
 interface Props {
   onClose: () => void;
   onRead:  () => void;
+  // Phase 36E: sourced from Header's own already-running profile query
+  // (via NotificationBell) — the ONLY thing this is used for is picking
+  // the right Lesson destination inside resolveNotificationTarget
+  // (Member vs Pro/Staff/Admin). Never trusted for authorization; the
+  // destination page always independently re-authorizes itself.
+  userRole: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -38,7 +44,7 @@ function relativeTime(iso: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function NotificationSheet({ onClose, onRead }: Props) {
+export default function NotificationSheet({ onClose, onRead, userRole }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -87,16 +93,18 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
 
   const handleNotificationClick = useCallback((n: NotificationRow) => {
     if (!n.is_read) {
-      // Fire-and-forget: UI already updated synchronously above.
+      // Fire-and-forget: UI already updated synchronously above. Navigation
+      // below does not wait on it — consistent with the existing mark-read
+      // semantics this component already had before Phase 36E.
       handleMarkRead(n.id);
     }
-    const targetPath = getSafeTargetPath(n.metadata);
+    const targetPath = resolveNotificationTarget(n.kind, n.metadata, userRole);
     if (targetPath) {
       onClose();
       router.push(targetPath);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, onClose]);
+  }, [router, onClose, userRole]);
 
   async function handleMarkAllRead() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
@@ -122,12 +130,17 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
         ? ((n.metadata as Record<string, string> | null)?.title ?? null)
         : null;
 
-      const targetPath = getSafeTargetPath(n.metadata);
+      const targetPath = resolveNotificationTarget(n.kind, n.metadata, userRole);
       const isActionable = !n.is_read || !!targetPath;
       return (
         <div
           key={n.id}
+          role={isActionable ? "button" : undefined}
+          tabIndex={isActionable ? 0 : undefined}
           onClick={isActionable ? () => handleNotificationClick(n) : undefined}
+          onKeyDown={isActionable ? (e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleNotificationClick(n); }
+          } : undefined}
           className={`flex items-start gap-3 py-3 border-b border-gray-100 dark:border-gray-700 last:border-b-0 rounded-lg -mx-2 px-2 ${
             isActionable
               ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 motion-safe:transition-colors motion-safe:duration-100"

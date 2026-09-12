@@ -84,7 +84,8 @@ describe("CalendarShell.tsx — Event deep-link effect", () => {
     const s = src();
     const idx = s.indexOf("if (!initialEventId) return;");
     expect(idx).toBeGreaterThan(-1);
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialEventId, searchParams]);", idx);
+    expect(endIdx).toBeGreaterThan(idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('.from("events")');
     expect(block).toContain(".single()");
@@ -92,19 +93,26 @@ describe("CalendarShell.tsx — Event deep-link effect", () => {
     expect(block).not.toContain("canOpenReservationDetail");
   });
 
-  it("runs the Event deep-link effect once on mount only (empty dependency array)", () => {
+  it("Phase 36E: the effect depends on [initialEventId, searchParams], not [] — reactive to a same-route notification click and a repeat click of the same notification, not mount-only", () => {
     const s = src();
     const idx = s.indexOf("if (!initialEventId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialEventId, searchParams]);", idx);
     expect(endIdx).toBeGreaterThan(idx);
-    const block = s.slice(idx, endIdx + "}, []);".length);
-    expect(block).toMatch(/\},\s*\[\]\);/);
+    const block = s.slice(idx, endIdx + "}, [initialEventId, searchParams]);".length);
+    expect(block).toMatch(/\},\s*\[initialEventId,\s*searchParams\]\);/);
+    expect(block).not.toMatch(/\},\s*\[\]\);/);
+  });
+
+  it("useSearchParams is imported and called (shared with the reservation effect above) — the reactivity signal that makes this work", () => {
+    const s = src();
+    expect(s).toContain('import { useRouter, useSearchParams } from "next/navigation";');
+    expect(s).toContain("const searchParams = useSearchParams();");
   });
 
   it("strips event/checkout via window.history.replaceState, preserving other params (e.g. ?date=), never reintroducing router.replace", () => {
     const s = src();
     const idx = s.indexOf("if (!initialEventId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialEventId, searchParams]);", idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('params.delete("event");');
     expect(block).toContain('params.delete("checkout");');
@@ -116,7 +124,8 @@ describe("CalendarShell.tsx — Event deep-link effect", () => {
     const s = src();
     expect(s).toContain("getReservationDeepLinkDetail(initialReservationId)");
     const idx = s.indexOf("if (!initialReservationId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialReservationId, searchParams]);", idx);
+    expect(endIdx).toBeGreaterThan(idx);
     const block = s.slice(idx, endIdx);
     expect(block).toContain('params.delete("reservation");');
     expect(block).toContain('params.delete("checkout");');
@@ -207,7 +216,8 @@ describe("Program occurrences deep-link via event_id — no parallel Program-ses
   it("the Event deep-link effect and its RawEventRow mapping carry program_id only as EXISTING Event-row context (already present pre-36C) — no new program-keyed fetch/branch was added for this checkpoint", () => {
     const s = readSource(SHELL_PATH);
     const idx = s.indexOf("if (!initialEventId) return;");
-    const endIdx = s.indexOf("}, []);", idx);
+    const endIdx = s.indexOf("}, [initialEventId, searchParams]);", idx);
+    expect(endIdx).toBeGreaterThan(idx);
     const block = s.slice(idx, endIdx);
     // program_id is read as one field of the fetched Event row (via the
     // same RawEventRow shape fetchEvents already uses) — it is never used

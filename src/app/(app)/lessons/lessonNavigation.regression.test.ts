@@ -56,7 +56,7 @@ describe("the fix — checkout-return param stripping uses window.history.replac
   const getEffect = () => {
     const s = readSource(CLIENT_PATH);
     const start = s.indexOf("useEffect(() => {\n    if (!initialLessonRequestId) return;");
-    const end = s.indexOf("}, []);", start) + "}, []);".length;
+    const end = s.indexOf("}, [initialLessonRequestId, searchParams]);", start) + "}, [initialLessonRequestId, searchParams]);".length;
     expect(start).toBeGreaterThan(-1);
     return s.slice(start, end);
   };
@@ -71,10 +71,22 @@ describe("the fix — checkout-return param stripping uses window.history.replac
     expect(effect).not.toMatch(/router\.(replace|push)/);
   });
 
-  it("still guards on initialLessonRequestId (renamed from initialCheckoutLessonId, Phase 36D) and still runs only once on mount (empty dependency array) — behavior otherwise unchanged from the prior round, only the navigation mechanism/param generalized", () => {
+  it("still guards on initialLessonRequestId (renamed from initialCheckoutLessonId, Phase 36D)", () => {
     const effect = getEffect();
     expect(effect).toContain("if (!initialLessonRequestId) return;");
-    expect(effect.trim().endsWith("}, []);")).toBe(true);
+  });
+
+  it("Phase 36E: depends on [initialLessonRequestId, searchParams], not [] — reactive to a same-route notification click (and a repeat click of the same one), not mount-only. Also now calls setSelected directly, since a useState initializer alone can never react to a prop change after first mount", () => {
+    const effect = getEffect();
+    expect(effect.trim().endsWith("}, [initialLessonRequestId, searchParams]);")).toBe(true);
+    expect(effect).not.toMatch(/\},\s*\[\]\);/);
+    expect(effect).toContain("if (match) setSelected(match);");
+  });
+
+  it("useSearchParams is imported and called — the reactivity signal", () => {
+    const s = readSource(CLIENT_PATH);
+    expect(s).toContain('import { useRouter, useSearchParams } from "next/navigation";');
+    expect(s).toContain("const searchParams = useSearchParams();");
   });
 });
 
@@ -108,7 +120,7 @@ describe("the detail sheet itself never re-fetches unnecessarily on the checkout
     // No additional fetchPaymentStates/router.refresh call inside the
     // deep-link effect itself.
     const start = s.indexOf("useEffect(() => {\n    if (!initialLessonRequestId) return;");
-    const end = s.indexOf("}, []);", start) + "}, []);".length;
+    const end = s.indexOf("}, [initialLessonRequestId, searchParams]);", start) + "}, [initialLessonRequestId, searchParams]);".length;
     const effect = s.slice(start, end);
     expect(effect).not.toMatch(/fetchPaymentStates|router\.refresh/);
   });
