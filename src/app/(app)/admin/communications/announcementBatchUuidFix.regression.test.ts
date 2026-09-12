@@ -37,14 +37,17 @@ function readSource(relativePath: string): string {
   return readFileSync(join(process.cwd(), relativePath), "utf-8");
 }
 
+const MIGRATION_0177_PATH = "supabase/migrations/0177_announcement_active_membership_eligibility.sql";
 const MIGRATION_0171_PATH = "supabase/migrations/0171_fix_announcement_batch_uuid.sql";
 const MIGRATION_0170_PATH = "supabase/migrations/0170_communications_activity_rpc.sql";
 const MIGRATION_0102_PATH = "supabase/migrations/0102_communications_delivery_identity.sql";
 const ACTIONS_PATH        = "src/app/(app)/admin/communications/communicationsActions.ts";
 
 function currentAuthoritativeSource(): string {
-  // Mirrors what CREATE OR REPLACE does in the live database: once 0171
-  // exists, it is the function's current definition; until then, 0102 is.
+  // Mirrors what CREATE OR REPLACE does in the live database: once 0177
+  // exists (the Phase 36E announcement-eligibility correction), it is the
+  // function's current definition; else 0171 if that exists; else 0102.
+  if (existsSync(join(process.cwd(), MIGRATION_0177_PATH))) return readSource(MIGRATION_0177_PATH);
   return existsSync(join(process.cwd(), MIGRATION_0171_PATH))
     ? readSource(MIGRATION_0171_PATH)
     : readSource(MIGRATION_0102_PATH);
@@ -119,9 +122,11 @@ describe("8-13. every other behavior of send_announcement_v2 is preserved verbat
     expect(s).toContain("'recipient_count', v_recipient_count,\n      'batch_id',        v_batch_id");
   });
 
-  it("13. the sending Admin is still excluded from their own announcement's recipients", () => {
+  it("13. the sending Admin is still excluded from their own announcement's recipients — the column reference changed (profiles.id -> club_memberships.user_id) as of Phase 36E's eligibility fix (0177), but the exclusion itself is unchanged", () => {
     const s = currentAuthoritativeSource();
-    expect(s).toContain("and p.id      <> auth.uid()");
+    const excludesViaClubMemberships = s.includes("and cm.user_id   <> auth.uid()");
+    const excludesViaProfiles        = s.includes("and p.id      <> auth.uid()");
+    expect(excludesViaClubMemberships || excludesViaProfiles).toBe(true);
   });
 
   it("title/body validation (not_authenticated, insufficient_role, invalid_announcement) still raise the exact same exception strings the Server Action maps", () => {

@@ -20,13 +20,19 @@ export default async function Header({ screenTitle }: HeaderProps) {
   let userInitials = "";
   let userName     = "";
   const userEmail  = user?.email ?? "";
+  let userRole: string | null = null;
 
   if (user) {
+    // Phase 36E: `role` added to this already-running query (no new
+    // round-trip) — threaded down to NotificationBell/NotificationSheet so
+    // resolveNotificationTarget can pick the right Lesson destination
+    // (Member vs Pro/Staff/Admin) without a separate client-side fetch.
     const { data: profile } = await supabase
       .from("profiles")
-      .select("club_id, first_name, last_name")
+      .select("club_id, first_name, last_name, role")
       .eq("id", user.id)
       .single();
+    userRole = profile?.role ?? null;
     if (profile?.club_id) {
       const { data: club } = await supabase
         .from("clubs")
@@ -91,7 +97,7 @@ export default async function Header({ screenTitle }: HeaderProps) {
       <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">{screenTitle}</span>
       <div className="flex items-center gap-0.5">
         <ThemeToggle />
-        <NotificationBell />
+        <NotificationBell userRole={userRole} />
         <AccountMenu
           userInitials={userInitials}
           userName={userName}

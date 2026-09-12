@@ -4,7 +4,16 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import NotificationSheet from "@/components/NotificationSheet";
 
-export default function NotificationBell() {
+interface Props {
+  // Phase 36E: the signed-in user's current role, sourced from Header's
+  // own already-running profile query — passed through to NotificationSheet
+  // so resolveNotificationTarget can pick the right Lesson destination.
+  // Never used for anything else here; destination authorization remains
+  // entirely the destination page's own responsibility.
+  userRole: string | null;
+}
+
+export default function NotificationBell({ userRole }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const [count, setCount] = useState(0);
   const [open,  setOpen]  = useState(false);
@@ -88,6 +97,7 @@ export default function NotificationBell() {
         <NotificationSheet
           onClose={() => setOpen(false)}
           onRead={fetchCount}
+          userRole={userRole}
         />
       )}
     </>

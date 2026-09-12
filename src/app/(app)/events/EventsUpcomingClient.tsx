@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import EventCardClient from "./EventCardClient";
 import ProgramEnrollmentCard from "./ProgramEnrollmentCard";
 import type { MemberProgramCard } from "./programEnrollmentActions";
@@ -77,13 +77,16 @@ interface Props {
   leaveEventAction:            (formData: FormData) => Promise<void>;
   acceptWaitlistOfferAction:   (formData: FormData) => Promise<void>;
   declineWaitlistOfferAction:  (formData: FormData) => Promise<void>;
-  // Phase 34F-C: optional ?checkout=success&program=<uuid> return from
-  // Stripe Checkout. Never mutates any financial state on its own —
-  // ProgramEnrollmentCard's own fetchPaymentStates/eligibility effects
-  // already show authoritative, freshly-fetched state on this hard-
-  // navigation page load regardless; this is used only to strip the
-  // one-time query string from the URL bar below.
-  initialCheckoutProgramId?:   string | null;
+  // Phase 34F-C, generalized in Phase 36C: optional ?program=<uuid> — no
+  // longer requires checkout=success (renamed from
+  // initialCheckoutProgramId accordingly). Never mutates any financial
+  // state on its own — ProgramEnrollmentCard's own fetchPaymentStates/
+  // eligibility effects already show authoritative, freshly-fetched
+  // state on this hard-navigation page load regardless. As of Phase 36C
+  // this also scrolls the matching ProgramEnrollmentCard into view (a
+  // whole-Program waitlist_offer notification deep link target), in
+  // addition to stripping the one-time query string from the URL bar.
+  initialProgramId?:   string | null;
 }
 
 export default function EventsUpcomingClient({
@@ -102,32 +105,76 @@ export default function EventsUpcomingClient({
   leaveEventAction,
   acceptWaitlistOfferAction,
   declineWaitlistOfferAction,
-  initialCheckoutProgramId,
+  initialProgramId,
 }: Props) {
   const router = useRouter();
+  // Phase 36E fix: see CalendarShell's identical comment on its own
+  // searchParams call for the full reasoning — this is what makes the
+  // deep-link effect below react to a notification click landing while
+  // /events is ALREADY mounted (including a repeat click of the same
+  // notification), rather than only working on a fresh navigation here.
+  const searchParams = useSearchParams();
   const [searchQuery,      setSearchQuery]      = useState("");
   const [eventTypeFilter,  setEventTypeFilter]  = useState<string | null>(null);
 
-  // Phase 34F-C (flicker regression precedent — LessonsClient.tsx /
-  // CalendarShell.tsx) — strip ?checkout=&program= from the URL once this
-  // client component has mounted, so a later browser refresh never re-runs
-  // any success/cancel-specific behavior. Deliberately uses the raw
+  // Phase 34F-C, generalized in Phase 36C (flicker regression precedent —
+  // LessonsClient.tsx / CalendarShell.tsx) — bring the matching
+  // ProgramEnrollmentCard into view, then strip ?program=&checkout= from
+  // the URL once this client component has mounted, so a later browser
+  // refresh never re-scrolls/re-targets. Deliberately uses the raw
   // History API (window.history.replaceState), NOT next/navigation's
   // router.replace: /events's own page.tsx reads searchParams directly
   // (tab/checkout/program), so router.replace with a changed search-param
   // set would force Next.js to re-render/re-fetch the entire Server
-  // Component tree for this route immediately after Stripe's hard-
-  // navigation redirect already rendered the page once — the exact
-  // double-flash regression LessonsClient.tsx's own identical comment
-  // documents. No detail sheet exists to auto-open here (unlike /calendar
-  // /my-schedule): ProgramEnrollmentCard is already inline on this page
-  // for every program the caller has a stake in, so nothing else is
-  // needed beyond cleaning the URL bar.
+  // Component tree for this route immediately after a hard-navigation
+  // redirect already rendered the page once — the exact double-flash
+  // regression LessonsClient.tsx's own identical comment documents. Only
+  // `program`/`checkout` are stripped; any other param is preserved.
+  //
+  // No new detail sheet, no dedicated Program route: ProgramEnrollmentCard
+  // is already inline on this page for every program the caller has a
+  // stake in (`programs`, fetched unconditionally above, independent of
+  // this param) — this effect only looks up an already-rendered element
+  // by id and scrolls to it. If initialProgramId doesn't match any
+  // rendered card (nonexistent, another club's, not visible to this
+  // Member, or simply not one they have a stake in), the lookup returns
+  // null and this is a complete no-op: no extra fetch, no error, no
+  // existence leak, page renders exactly as it would have without the
+  // param.
+  //
+  // Phase 36E fix — depends on [initialProgramId, searchParams], not []:
+  // a mount-only effect never re-scrolls for a notification click landing
+  // while /events is ALREADY mounted (router.push changes the URL and the
+  // prop, but an empty dependency array only ever runs once, at the
+  // original mount). searchParams is what makes even a REPEAT click of
+  // the same Program notification work — initialProgramId's own value
+  // alone would not change between two clicks of the identical
+  // notification (nothing ever resets the prop itself; only the visible
+  // URL changes), but each click is still a genuine, distinct completed
+  // navigation that searchParams reflects.
+  //
+  // Phase 36E correction — current Next.js integrates
+  // window.history.replaceState with useSearchParams (an earlier version
+  // of this comment claimed our cleanup was "invisible" to it — wrong).
+  // That means this effect's OWN cleanup call below can itself cause
+  // searchParams to update and re-trigger this exact effect a second time
+  // with initialProgramId still set (the prop never resets) but the live
+  // URL already clean. Checking the LIVE param against initialProgramId
+  // before acting turns that spurious re-invocation into a safe no-op —
+  // re-evaluated fresh every render, never a permanent "already
+  // consumed" guard, so a later repeat click still matches and still
+  // scrolls.
   useEffect(() => {
-    if (!initialCheckoutProgramId) return;
-    window.history.replaceState(null, "", "/events");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!initialProgramId) return;
+    if (searchParams.get("program") !== initialProgramId) return;
+    document.getElementById(`program-card-${initialProgramId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const params = new URLSearchParams(window.location.search);
+    params.delete("program");
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/events?${query}` : "/events");
+  }, [initialProgramId, searchParams]);
 
   // Phase 34C — positive-price Join confirmation. Only ever set when
   // price_amount_cents > 0; Free/unpriced events keep the existing
@@ -310,14 +357,20 @@ export default function EventsUpcomingClient({
               </p>
               <div className="px-4 space-y-3">
                 {filteredPrograms.map(p => (
-                  <ProgramEnrollmentCard
-                    key={p.id}
-                    program={p}
-                    clubId={clubId}
-                    clubTimezone={clubTimezone}
-                    currency={currency}
-                    memberSelfService={memberSelfService}
-                  />
+                  // Phase 36C: the id below is the sole addressing
+                  // mechanism the ?program=<uuid> deep-link effect above
+                  // uses to scroll this specific card into view — a plain
+                  // wrapper, not a new component; ProgramEnrollmentCard's
+                  // own props/behavior are unchanged.
+                  <div key={p.id} id={`program-card-${p.id}`}>
+                    <ProgramEnrollmentCard
+                      program={p}
+                      clubId={clubId}
+                      clubTimezone={clubTimezone}
+                      currency={currency}
+                      memberSelfService={memberSelfService}
+                    />
+                  </div>
                 ))}
               </div>
             </div>

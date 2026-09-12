@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";
+import type { Database } from "@/lib/db/types";
 import { sendSms } from "@/lib/sms";
 import { sendEmailNotification, sendRosterOperationalEmail } from "@/lib/email";
 import {
@@ -53,6 +56,15 @@ async function resolveAllBlockingEventCheckouts(
 
   return { ok: true };
 }
+
+// Same shape as the local UUID_RE already duplicated per-file across the
+// codebase (e.g. src/lib/notification-targets.ts, src/lib/supabase/
+// staleClub.ts, switchClubAction.ts) — no project-wide shared helper
+// exists yet, so this reuses that exact pattern rather than adding a
+// competing validator.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type Reservation = Database["public"]["Tables"]["reservations"]["Row"];
 
 // ---------------------------------------------------------------------------
 // Shared result shape for update_member_reservation / cancel_member_reservation
@@ -1250,4 +1262,56 @@ export async function cancelMemberReservation(
   revalidatePath("/calendar");
   revalidatePath("/my-schedule");
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// getReservationDeepLinkDetail
+// Phase 36B security correction — the reservation deep-link effect
+// (CalendarShell's ?reservation=<uuid> handling) must not deliver another
+// Member's/otherwise detail-ineligible reservation payload to the browser
+// merely because reservations_select_same_club RLS is intentionally
+// club-wide (the calendar grid legitimately needs every same-club row to
+// render its own blocks/labels — reservation-DETAIL eligibility is the
+// separate, narrower canOpenReservationDetail rule). Fetching by exact id
+// directly from the browser via the same-club-scoped RLS applied that
+// narrower rule only AFTER the full row had already transited the
+// network to the browser — merely suppressed from rendering, not withheld.
+// Running the same fetch + rule here instead means an unauthorized
+// target's row is never sent to the browser at all: only this function's
+// own return value is, and it returns null for every unauthorized case.
+//
+// Accepts ONLY the reservation id. Every identity input to
+// canOpenReservationDetail (user id, role, roster member id) is derived
+// here from the caller's own authenticated session (getAuthUser/
+// getAuthProfile/current_user_roster_member_id) — never accepted as a
+// parameter, so a client can never supply its own club/user/role/roster
+// identity to influence this result. Nonexistent, wrong-club, RLS-hidden,
+// another user's, and detail-ineligible-for-this-viewer all collapse to
+// the same null — indistinguishable to the caller.
+// ---------------------------------------------------------------------------
+export async function getReservationDeepLinkDetail(
+  reservationId: string,
+): Promise<Reservation | null> {
+  if (!UUID_RE.test(reservationId)) return null;
+
+  const user = await getAuthUser();
+  if (!user) return null;
+
+  const profile = await getAuthProfile();
+  if (!profile?.club_id) return null;
+
+  const supabase = await createClient();
+
+  const [{ data: reservation }, { data: userRosterMemberId }] = await Promise.all([
+    supabase.from("reservations").select("*").eq("id", reservationId).single(),
+    supabase.rpc("current_user_roster_member_id"),
+  ]);
+  if (!reservation) return null;
+
+  const allowed = canOpenReservationDetail(
+    { reason: reservation.reason, ownerUserId: reservation.owner_user_id, rosterMemberId: reservation.roster_member_id },
+    { userId: user.id, userRosterMemberId: userRosterMemberId ?? null, role: profile.role },
+  );
+
+  return allowed ? reservation : null;
 }

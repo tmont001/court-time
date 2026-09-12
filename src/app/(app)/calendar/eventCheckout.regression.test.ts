@@ -796,18 +796,18 @@ describe("one canonical Member Pay Now surface — EventDetailSheet only", () =>
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("CalendarShell's Event checkout-return effect uses window.history.replaceState, mirroring the 34F-A lesson-navigation fix — never router.replace, which the 34F-A runtime QA found forces a visible double Server Component re-fetch", () => {
-  it("the NEW event checkout-return effect uses window.history.replaceState", () => {
+  it("the NEW event checkout-return effect uses window.history.replaceState (Phase 36C: now query-preserving, since a plain ?event=<uuid> deep link can co-occur with other params like ?date=)", () => {
     const s = readSource("src/app/(app)/calendar/CalendarShell.tsx");
-    const start = s.indexOf("if (!initialCheckoutEventId) return;");
+    const start = s.indexOf("if (!initialEventId) return;");
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     const effect = s.slice(start, end);
-    expect(effect).toContain('window.history.replaceState(null, "", "/calendar");');
+    expect(effect).toContain('window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");');
     expect(effect).not.toMatch(/router\.replace/);
   });
 
   it("fetches the Event with the same full-detail shape fetchEvents itself uses, so EventDetailSheet receives everything it needs to render", () => {
     const s = readSource("src/app/(app)/calendar/CalendarShell.tsx");
-    const start = s.indexOf("if (!initialCheckoutEventId) return;");
+    const start = s.indexOf("if (!initialEventId) return;");
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     const effect = s.slice(start, end);
     expect(effect).toContain("event_participants(id, profile_id, roster_member_id, role, status, offer_expires_at)");

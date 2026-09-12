@@ -7,6 +7,7 @@ import LessonProSheet from "./LessonProSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
 import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
+import { lessonDependsOnLiveReservation } from "@/lib/lessons/lessonAccess";
 
 interface Court {
   id:   string;
@@ -99,13 +100,42 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
     if (autoOpenAttemptRef.current === lessonIdParam) return;
     autoOpenAttemptRef.current = lessonIdParam;
 
+    // Authorization: `match` inside `requests` (the caller's own RPC-
+    // scoped rows) is the ONLY boundary — no match (unauthorized,
+    // nonexistent, reassigned away) means nothing opens, regardless of
+    // what follows below.
     const match = requests.find(r => r.id === lessonIdParam);
-    if (!match || !match.linked_reservation_id) { clearLessonIdParam(); return; }
+    if (!match) { clearLessonIdParam(); return; }
 
-    const statusEligible =
-      match.status === "confirmed" ||
-      (match.status === "proposed" && match.linked_reservation_id !== null);
-    if (!statusEligible) { clearLessonIdParam(); return; }
+    // Phase 36D correction: only a state whose CURRENT actionable
+    // workflow actually depends on an active linked reservation —
+    // confirmed, or a proposed RESCHEDULE of an already-confirmed lesson
+    // (status='proposed' WITH linked_reservation_id already set) — needs
+    // the live re-validation below. Phase 30G's own reasoning still
+    // applies exactly to that pair: lesson_requests.proposed_starts_at is
+    // not authoritative for a pending reschedule (it holds the new
+    // candidate, not the original lesson's time), so the linked
+    // reservation itself is the only reliable source of whether the
+    // original lesson is still confirmed, same-club, and in the future.
+    //
+    // Every OTHER state — pending, a FRESH proposed (no
+    // linked_reservation_id yet — the normal "Pro proposed a time,
+    // member hasn't responded" case), declined, cancelled, withdrawn —
+    // has no active reservation dependency at all: this is the exact
+    // same condition canReschedule already uses elsewhere in this file
+    // for "does this request's current state hinge on a live
+    // reservation," reused here rather than inventing a second one. Those
+    // states open directly from the already-authorized row — identically
+    // to a manual click on that same card (the onClick above performs no
+    // reservation check whatsoever), which is the behavior parity this
+    // correction restores.
+    if (!lessonDependsOnLiveReservation(match.status, match.linked_reservation_id)) {
+      setSelected(match);
+      setProposeMode(false);
+      return;
+    }
+
+    if (!match.linked_reservation_id) { clearLessonIdParam(); return; }
 
     let cancelled = false;
 
@@ -176,7 +206,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   // remains admin-only and deferred.
   const canReschedule = (r: ProLessonRequestRow) =>
     r.member_claimed &&
-    (r.status === "confirmed" || (r.status === "proposed" && r.linked_reservation_id !== null)) &&
+    lessonDependsOnLiveReservation(r.status, r.linked_reservation_id) &&
     (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId));
 
   return (

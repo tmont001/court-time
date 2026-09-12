@@ -83,19 +83,23 @@ export default async function EventsPage({
   // the other three values already are.
   const initialTabFromUrl = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";
 
-  // Phase 34F-C: optional ?checkout=success&program=<uuid> return from
-  // Stripe Checkout — see eventCheckoutActions.ts/CalendarShell.tsx's own
-  // identical-shaped params for the established convention. Never mutates
-  // any financial state itself; ProgramEnrollmentCard's own fetchPaymentStat
-  // es effect (already fresh on this hard-navigation page load) shows
-  // authoritative, freshly-fetched payment state regardless of this param's
-  // presence — this is only used to strip the one-time query string from
-  // the URL bar (EventsUpcomingClient's own effect).
-  const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;
-  const programParam  = typeof sp.program === "string" ? sp.program : null;
+  // Phase 34F-C, generalized in Phase 36C: optional ?program=<uuid> — no
+  // longer requires checkout=success, mirroring /calendar's reservation/
+  // event deep-link params (Phase 36B/36C) exactly. ProgramEnrollmentCard's
+  // own fetchPaymentStates effect (already fresh on this hard-navigation
+  // page load) shows authoritative, freshly-fetched payment state
+  // regardless of this param's presence — this never mutates any
+  // financial state itself. Used by EventsUpcomingClient both to strip
+  // the one-time query string from the URL bar and, as of Phase 36C, to
+  // scroll the matching ProgramEnrollmentCard into view (waitlist_offer
+  // notification deep links land here when the offer is for a
+  // whole-Program enrollment rather than a single Event occurrence — see
+  // src/lib/notification-targets.ts's own comment on why that kind is
+  // polymorphic).
+  const programParam = typeof sp.program === "string" ? sp.program : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const initialCheckoutProgramId =
-    checkoutParam === "success" && programParam && uuidRe.test(programParam) ? programParam : null;
+  const initialProgramId =
+    programParam && uuidRe.test(programParam) ? programParam : null;
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -260,7 +264,7 @@ export default async function EventsPage({
       leaveEventAction={leaveEventAction.bind(null, clubId)}
       acceptWaitlistOfferAction={acceptWaitlistOfferAction.bind(null, clubId)}
       declineWaitlistOfferAction={declineWaitlistOfferAction.bind(null, clubId)}
-      initialCheckoutProgramId={initialCheckoutProgramId}
+      initialProgramId={initialProgramId}
     />
   );
 

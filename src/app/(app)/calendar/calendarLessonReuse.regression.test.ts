@@ -159,9 +159,9 @@ describe("12. Admin/Staff/Pro calendar Lesson-block behavior is unchanged", () =
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("13. Reservation and Event click behavior on /calendar is unchanged by this correction", () => {
-  it("the member_booking/maintenance block's own isClickable predicate (isBlocked ? isAdmin : (isOperator(userRole) || isOwn)) is untouched — the new Lesson-only variables (canViewOwnLesson/isLessonClickable/handleLessonClick) never leak into this branch", () => {
+  it("the member_booking/maintenance block's own isClickable predicate — equivalent to isBlocked ? isAdmin : (isOperator(userRole) || isOwn), extracted into the shared canOpenReservationDetail helper by Phase 36B — is untouched by this correction; the new Lesson-only variables (canViewOwnLesson/isLessonClickable/handleLessonClick) never leak into this branch", () => {
     const s = readSource(CALENDAR_SHELL_PATH);
-    expect(s).toContain("const isClickable = isBlocked ? isAdmin : (isOperator(userRole) || isOwn);");
+    expect(s).toContain("const isClickable = canOpenReservationDetail(");
   });
 
   it("Event click handling (selectedEvent/setSelectedEvent, EventDetailSheet) is a completely separate code path from the reservations-grid Lesson-block branch touched here — no shared state, no shared click dispatcher", () => {
