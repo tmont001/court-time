@@ -70,15 +70,25 @@ export default async function Header({ screenTitle }: HeaderProps) {
     </div>
   );
 
-  // Phase 26E1 mobile UX: the top-left club icon becomes a second entry
-  // point to the same "Switch Club" sheet already reachable via BottomNav's
-  // More menu — mobile only, and only for 2+ active memberships. Sourced
-  // from the same getMyClubMemberships() the authenticated layout already
-  // calls for SideNav/BottomNav this request — React.cache() means this is
-  // not a second network/RPC round trip when the layout already fetched it.
-  // Desktop is untouched: it always renders the exact same static icon,
-  // whether or not the user can switch (the SideNav dropdown is the
-  // desktop entry point).
+  // Phase 26E1 mobile UX, corrected (responsive club-switcher gap fix): the
+  // top-left club icon becomes a second, direct entry point to the same
+  // "Switch Club" list already reachable via BottomNav's More menu —
+  // visible for exactly the range where SideNav's own desktop switcher is
+  // hidden (below lg, 1024px), not merely below md (768px). This split
+  // originally matched SideNav's boundary when both were `md`, but
+  // ce59ffd ("fix(ui): improve tablet navigation layout") later moved
+  // SideNav/BottomNav's own boundary to `lg` without updating this one,
+  // leaving a live 768-1023px gap where neither SideNav's dropdown nor
+  // this direct trigger was visible — only the buried BottomNav
+  // More -> Switch club path remained. `lg` here must always match
+  // SideNav's `hidden lg:flex` / BottomNav's `lg:hidden` boundary (see
+  // appShellBreakpoint.regression.test.ts) — and only for 2+ active
+  // memberships. Sourced from the same getMyClubMemberships() the
+  // authenticated layout already calls for SideNav/BottomNav this
+  // request — React.cache() means this is not a second network/RPC round
+  // trip when the layout already fetched it. Desktop (lg+) is untouched:
+  // it always renders the exact same static icon, whether or not the user
+  // can switch (the SideNav dropdown is the desktop entry point).
   const memberships = user ? await getMyClubMemberships() : [];
   const canSwitchOnMobile = memberships.length > 1;
 
@@ -86,8 +96,8 @@ export default async function Header({ screenTitle }: HeaderProps) {
     <header className="sticky top-0 z-30 flex items-center justify-between px-4 h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 motion-safe:transition-colors motion-safe:duration-150">
       {canSwitchOnMobile ? (
         <>
-          <div className="hidden md:block">{clubIcon}</div>
-          <div className="md:hidden">
+          <div className="hidden lg:block">{clubIcon}</div>
+          <div className="lg:hidden">
             <HeaderClubSwitcherButton clubName={clubName} icon={clubIcon} memberships={memberships} />
           </div>
         </>
