@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import type { Json } from "@/lib/db/types";
+import { getSafeTargetPath } from "@/lib/notification-targets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,17 +37,6 @@ function relativeTime(iso: string): string {
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-
-// Returns the target_path from notification metadata if it is a safe relative path.
-// Rejects protocol URLs ("http://…"), protocol-relative URLs ("//…"), and
-// anything that does not start with exactly one "/".
-function getSafeTargetPath(n: NotificationRow): string | null {
-  const meta = n.metadata as Record<string, unknown> | null;
-  const path = meta?.target_path;
-  if (typeof path !== "string") return null;
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes(":")) return null;
-  return path;
-}
 
 export default function NotificationSheet({ onClose, onRead }: Props) {
   const supabase = useMemo(() => createClient(), []);
@@ -100,7 +90,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
       // Fire-and-forget: UI already updated synchronously above.
       handleMarkRead(n.id);
     }
-    const targetPath = getSafeTargetPath(n);
+    const targetPath = getSafeTargetPath(n.metadata);
     if (targetPath) {
       onClose();
       router.push(targetPath);
@@ -132,7 +122,7 @@ export default function NotificationSheet({ onClose, onRead }: Props) {
         ? ((n.metadata as Record<string, string> | null)?.title ?? null)
         : null;
 
-      const targetPath = getSafeTargetPath(n);
+      const targetPath = getSafeTargetPath(n.metadata);
       const isActionable = !n.is_read || !!targetPath;
       return (
         <div
