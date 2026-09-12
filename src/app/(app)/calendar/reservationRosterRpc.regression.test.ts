@@ -434,14 +434,15 @@ describe("0179 compatibility — existing schema/RPCs/behavior/UI untouched", ()
     expect(sql).not.toMatch(/drop table/);
   });
 
-  it("41. no UI file references any of the six new RPC names as of 37C (0179 is schema/RPC only, no UI wiring)", () => {
-    // Phase 37D subsequently wired calendar/actions.ts and (indirectly, via
-    // the new ReservationRosterSection component it imports)
-    // ReservationDetailSheet.tsx to these RPCs — see
-    // reservationRosterUx.regression.test.ts for that checkpoint's own
-    // coverage. This test is narrowed to the two files 37D never touched,
-    // preserving its original intent (37C itself adds no UI) without
-    // asserting something 37D correctly made false.
+  it("41. CalendarShell.tsx and EditReservationSheet.tsx never call the six roster RPCs directly — that access stays behind calendar/actions.ts", () => {
+    // Phase 37D/37E wired the roster surface into ReservationDetailSheet
+    // (via the new ReservationRosterSection component) and calendar/
+    // actions.ts, which are the only two files permitted to reference these
+    // RPCs (see reservationRosterUx.regression.test.ts and
+    // reservationOwnRosterAccess.regression.test.ts for that coverage).
+    // CalendarShell.tsx and EditReservationSheet.tsx were never part of
+    // that surface and must stay that way — this invariant is evergreen,
+    // not scoped to "as of 37C".
     for (const path of [CALENDAR_SHELL_PATH, EDIT_RESERVATION_SHEET_PATH]) {
       const src = readSource(path);
       for (const rpc of PUBLIC_RPCS) {
