@@ -6,6 +6,7 @@ import { adminCancelReservation } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
 import EditMaintenanceSheet from "./EditMaintenanceSheet";
+import ReservationRosterSection from "./ReservationRosterSection";
 import PriceSummary from "@/components/PriceSummary";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
@@ -410,6 +411,23 @@ export default function ReservationDetailSheet({
               </div>
             )}
           </div>
+        )}
+
+        {/* Players & Guests — Phase 37D. Admin/Staff only
+            (canManageMemberReservation, the same isOperator gate as Edit
+            above and as update_member_reservation/admin_cancel_
+            reservation_v2's own already-widened role check) — Member/Pro
+            own-reservation UX is Phase 37E, not this checkpoint. This is a
+            presentation-only gate: every read/write inside routes
+            exclusively through the Phase 37C (0179) SECURITY DEFINER
+            RPCs, which independently re-derive and enforce the real
+            authorization server-side. */}
+        {reservation.reason === "member_booking" && canManageMemberReservation && (
+          <ReservationRosterSection
+            reservationId={reservation.id}
+            clubId={clubId}
+            isCancelled={isCancelled}
+          />
         )}
 
         {/* Price — snapshotted at booking/edit time, shown read-only here.

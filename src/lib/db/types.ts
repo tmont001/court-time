@@ -2171,6 +2171,43 @@ export type Database = {
         };
         Returns: Json;
       };
+      // Phase 37C (0179) — reservation roster RPCs.
+      get_reservation_roster: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: {
+          kind:               string;  // 'participant' | 'guest'
+          relationship_id:    string;
+          roster_member_id:   string | null;  // null for a guest row
+          display_name:       string;
+          is_holder:          boolean;  // always false for a guest row
+          reservation_status: string;
+        }[];
+      };
+      get_reservation_eligible_roster_members: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: {
+          roster_member_id:      string;
+          display_name:          string;
+          role:                   string;  // 'member' | 'pro' | 'staff' | 'admin'
+          is_reservation_holder:  boolean;
+        }[];
+      };
+      add_reservation_participant: {
+        Args: { p_reservation_id: string; p_expected_club_id: string; p_roster_member_id: string };
+        Returns: string;  // reservation_participants.id
+      };
+      remove_reservation_participant: {
+        Args: { p_reservation_id: string; p_expected_club_id: string; p_participant_id: string };
+        Returns: string;  // reservation_participants.id
+      };
+      add_reservation_guest: {
+        Args: { p_reservation_id: string; p_expected_club_id: string; p_display_name: string };
+        Returns: string;  // reservation_guests.id
+      };
+      remove_reservation_guest: {
+        Args: { p_reservation_id: string; p_expected_club_id: string; p_guest_id: string };
+        Returns: string;  // reservation_guests.id
+      };
       get_members: {
         Args: Record<string, never>;
         Returns: {
