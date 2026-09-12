@@ -84,14 +84,16 @@ export default async function CalendarPage({
   const dateParam     = typeof sp.date === "string" ? sp.date : null;
   const initialDateISO = dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null;
 
-  // Phase 34D-D1: optional ?checkout=success&reservation=<uuid> return from
-  // Stripe Checkout — see CalendarShell's own comment for what this does
-  // (and does not do: never mutates any financial state itself).
+  // Phase 34D-D1, generalized in Phase 36B: optional ?reservation=<uuid> —
+  // no longer requires checkout=success. See CalendarShell's own comment
+  // for what this does (and does not do: never mutates any financial
+  // state itself, and never bypasses the calendar's own "can this viewer
+  // open this reservation's detail" rule).
   const checkoutParam    = typeof sp.checkout === "string" ? sp.checkout : null;
   const reservationParam = typeof sp.reservation === "string" ? sp.reservation : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const initialCheckoutReservationId =
-    checkoutParam === "success" && reservationParam && uuidRe.test(reservationParam) ? reservationParam : null;
+  const initialReservationId =
+    reservationParam && uuidRe.test(reservationParam) ? reservationParam : null;
 
   // Phase 34F-B: optional ?checkout=success&event=<uuid> return from Stripe
   // Checkout — see CalendarShell's own comment for what this does (and
@@ -121,7 +123,7 @@ export default async function CalendarPage({
           userRole={userRole}
           todayISO={todayISO}
           initialDateISO={initialDateISO}
-          initialCheckoutReservationId={initialCheckoutReservationId}
+          initialReservationId={initialReservationId}
           initialCheckoutEventId={initialCheckoutEventId}
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}

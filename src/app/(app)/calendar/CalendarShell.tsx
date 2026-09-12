@@ -15,7 +15,7 @@ import LessonRequestDetail from "@/app/(app)/lessons/LessonRequestDetail";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
-import { createReservation, adminCreateMemberReservation, cancelMemberReservation } from "./actions";
+import { createReservation, adminCreateMemberReservation, cancelMemberReservation, getReservationDeepLinkDetail } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import {
@@ -26,6 +26,7 @@ import {
 } from "@/lib/calendar/nowIndicator";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
+import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";
 import { formatMoney } from "@/lib/money";
 import PriceSummary from "@/components/PriceSummary";
 
@@ -184,12 +185,19 @@ interface Props {
   userRole:                string;
   todayISO:                string; // YYYY-MM-DD in club timezone, computed server-side
   initialDateISO?:         string | null; // optional ?date= override from URL
-  // Phase 34D-D1: optional ?checkout=success&reservation=<id> return from
-  // Stripe Checkout. Never mutates any financial state on its own — only
-  // used to auto-open that reservation's own detail sheet, which shows
-  // authoritative, freshly-fetched payment state (paid or still unpaid,
-  // whichever the webhook has actually reconciled so far).
-  initialCheckoutReservationId?: string | null;
+  // Phase 34D-D1, generalized in Phase 36B: optional ?reservation=<uuid> —
+  // no longer requires checkout=success (renamed from
+  // initialCheckoutReservationId accordingly). Auto-opens that
+  // reservation's own detail sheet directly by id, independent of
+  // whatever date range this mount happens to have loaded — used both by
+  // the Stripe Checkout return flow (still works identically, and now also
+  // covers the checkout=CANCEL return, which always carried this same
+  // param but was previously ignored) and by notification deep links
+  // (Phase 36E). Never mutates any financial state on its own. The exact
+  // same canOpenReservationDetail rule the calendar grid's own click
+  // handler uses is re-applied here — this id is only ever a hint for
+  // which row to fetch, never an authorization bypass.
+  initialReservationId?: string | null;
   // Phase 34F-B: optional ?checkout=success&event=<uuid> return from
   // Stripe Checkout. Never mutates any financial state on its own — only
   // used to auto-open that Event's own detail sheet, which shows
@@ -280,7 +288,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialCheckoutReservationId, initialCheckoutEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialCheckoutEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
 
@@ -419,27 +427,52 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // verbatim (imported above) rather than a second implementation.
   const [selectedLessonRequest, setSelectedLessonRequest] = useState<LessonRequestRow | null>(null);
 
-  // Phase 34D-D1 — returning from Stripe Checkout: fetch and auto-open the
-  // reservation's own detail sheet directly by id (independent of whatever
-  // date range this mount happens to have loaded into `reservations`,
-  // which may not include it at all), so the Member immediately sees
-  // authoritative, freshly-fetched payment state. Runs once on mount only
-  // — the query params are stripped immediately after so a later refresh
-  // never reopens it. RLS (reservations_select_same_club) already scopes
-  // this fetch to the caller's own club; no additional ownership check is
-  // needed here since the detail sheet itself only shows Pay Now/Cancel
-  // for the caller's own booking regardless of how it was opened.
+  // Phase 34D-D1, generalized in Phase 36B — auto-open a reservation's own
+  // detail sheet directly by id, independent of whatever date range this
+  // mount happens to have loaded into `reservations` (which may not
+  // include it at all). Originally the Stripe-checkout-return path only
+  // (?checkout=success&reservation=<uuid>); now fires for the bare
+  // ?reservation=<uuid> param too (notification deep links, Phase 36E),
+  // which also means the Stripe checkout=CANCEL return — which always
+  // carried this same param but was previously ignored entirely — now
+  // opens the same detail sheet instead of landing on a blank calendar.
+  //
+  // Authorization (Phase 36B security correction): reservations_select_
+  // same_club RLS is club-wide by design (the calendar grid legitimately
+  // needs every same-club row to render its own blocks/labels) — it is
+  // NOT sufficient on its own to gate the DETAIL SHEET. Fetching the row
+  // directly from the browser and only then applying the narrower
+  // canOpenReservationDetail rule would still put another Member's/a
+  // maintenance block's full row on the wire to this browser, merely
+  // suppressed from rendering — not withheld. getReservationDeepLinkDetail
+  // (a Server Action, "./actions") re-derives the caller's identity
+  // server-side and applies that exact same rule there, so the row for an
+  // unauthorized target is never sent to the browser at all: this id is
+  // only ever a hint for which row to look up, and the action's own
+  // return value is the only thing that reaches this effect. Nonexistent,
+  // wrong-club, RLS-hidden, another user's, and detail-ineligible-for-
+  // this-viewer all resolve to the same null — no error, no distinct
+  // "not authorized" state, no leak of whether the id existed at all.
+  //
+  // Runs once on mount only. Uses window.history.replaceState (not
+  // router.replace, which the pre-36B version of this effect used) —
+  // matching the fix already applied to the Event checkout effect below,
+  // for the same reason: router.replace with a changed search-param set
+  // forces Next.js to re-render/re-fetch the route's Server Component
+  // tree, visibly re-flashing /calendar's loading fallback a second time.
+  // Only `reservation` and `checkout` (which, on /calendar, only ever
+  // pairs with `reservation` or `event`) are stripped — any other param
+  // (e.g. ?date=) is preserved rather than resetting to a bare "/calendar".
   useEffect(() => {
-    if (!initialCheckoutReservationId) return;
-    supabase
-      .from("reservations")
-      .select("*")
-      .eq("id", initialCheckoutReservationId)
-      .single()
-      .then(({ data }) => {
-        if (data) setSelectedReservation(data);
-      });
-    router.replace("/calendar", { scroll: false });
+    if (!initialReservationId) return;
+    getReservationDeepLinkDetail(initialReservationId).then((reservation) => {
+      if (reservation) setSelectedReservation(reservation);
+    });
+    const params = new URLSearchParams(window.location.search);
+    params.delete("reservation");
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -450,17 +483,20 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // full-detail select shape fetchEvents itself uses so EventDetailSheet
   // receives everything it needs). Runs once on mount only.
   //
-  // Uses window.history.replaceState, NOT router.replace (the mechanism
-  // the reservation effect above still uses) — the 34F-A lesson-navigation
-  // runtime QA fix (LessonsClient.tsx) found that next/navigation's
-  // router.replace with a CHANGED search-param set forces Next.js to
-  // re-render/re-fetch the route's entire Server Component tree, visibly
-  // re-flashing /calendar's own loading fallback a second time right after
-  // Stripe's hard-navigation redirect already rendered the page once.
-  // window.history.replaceState updates the URL bar with zero Next.js
-  // navigation/re-render. Scoped to this new effect only — the pre-
-  // existing reservation effect's own router.replace is left untouched,
-  // out of this checkpoint's scope.
+  // Uses window.history.replaceState, NOT router.replace — the 34F-A
+  // lesson-navigation runtime QA fix (LessonsClient.tsx) found that
+  // next/navigation's router.replace with a CHANGED search-param set
+  // forces Next.js to re-render/re-fetch the route's entire Server
+  // Component tree, visibly re-flashing /calendar's own loading fallback a
+  // second time right after Stripe's hard-navigation redirect already
+  // rendered the page once. window.history.replaceState updates the URL
+  // bar with zero Next.js navigation/re-render — Phase 36B applied this
+  // same fix to the reservation effect above, which used router.replace
+  // until then.
+  //
+  // Event deep-linking beyond this Stripe-return case is out of scope
+  // until Phase 36C — this effect still only fires for
+  // ?checkout=success&event=<uuid>, unlike the reservation effect above.
   useEffect(() => {
     if (!initialCheckoutEventId) return;
     supabase
@@ -1778,7 +1814,13 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                         // operator (Admin or Staff, isOperator) or its own owner, matching
                         // update_member_reservation/admin_cancel_reservation_v2's own
                         // already-widened (0132) admin+staff role check.
-                        const isClickable = isBlocked ? isAdmin : (isOperator(userRole) || isOwn);
+                        // Phase 36B: delegates to the extracted canOpenReservationDetail —
+                        // the same rule the reservation deep-link effect below now reuses —
+                        // so there is exactly one implementation of this decision, not two.
+                        const isClickable = canOpenReservationDetail(
+                          { reason: res.reason, ownerUserId: res.owner_user_id, rosterMemberId: res.roster_member_id },
+                          { userId, userRosterMemberId, role: userRole },
+                        );
                         const blockCls = `absolute rounded text-[10px] font-medium px-1 overflow-hidden flex items-center ${
                           isClickable ? "cursor-pointer" : "pointer-events-none"
                         } ${

@@ -240,6 +240,16 @@ export default function ReservationDetailSheet({
 
   const ownerName = memberDisplay ? memberDisplay.name : "Loading…";
 
+  // Phase 36B: the calendar grid's own fetch has always filtered to
+  // status in ('pending','confirmed'), so a cancelled reservation could
+  // never reach this sheet before — reservation deep links are the first
+  // path that can open one directly by id (e.g. a
+  // reservation_cancelled_by_admin notification). Read-only: no action
+  // below assumes the booking is still active. This sheet never reads or
+  // renders the row's internal cancellation-audit columns — not already
+  // Member-visible elsewhere.
+  const isCancelled = reservation.status === "cancelled";
+
   // Admin or Staff (canManageMemberReservation) may edit only a confirmed
   // member_booking reservation whose start is still in the future. Member
   // and Pro owners never see Edit. Authorization comes exclusively from
@@ -337,6 +347,15 @@ export default function ReservationDetailSheet({
         {/* Time */}
         <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5 font-medium">{startLabel} – {endLabel}</p>
 
+        {/* Cancelled — read-only state (Phase 36B). Booking context below
+            (court/date/time, Member/format/price) is still shown; no
+            action that assumes the booking remains active is offered. */}
+        {isCancelled && (
+          <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 mt-2">
+            Cancelled
+          </span>
+        )}
+
         {/* Owner — admin mode only; member is viewing their own booking.
             member_booking rows get the fuller "Member" row inside the
             details box below instead of this line, to avoid showing the
@@ -424,7 +443,7 @@ export default function ReservationDetailSheet({
         {reservation.reason === "member_booking" && paymentState && (
           <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <PaymentStateBadge state={paymentState} />
-            {!onMemberCancel && canManageMemberReservation && isPaymentOpenForRecording(paymentState) && (
+            {!isCancelled && !onMemberCancel && canManageMemberReservation && isPaymentOpenForRecording(paymentState) && (
               <button
                 onClick={() => setRecordPaymentOpen(true)}
                 className={ACTION_BUTTON_PRIMARY_COMPACT_TOUCH}
@@ -432,7 +451,7 @@ export default function ReservationDetailSheet({
                 Record Payment
               </button>
             )}
-            {onMemberCancel && checkoutEligible && isPaymentOpenForRecording(paymentState) && (
+            {!isCancelled && onMemberCancel && checkoutEligible && isPaymentOpenForRecording(paymentState) && (
               <button
                 disabled={checkoutLoading}
                 onClick={handlePayNow}
@@ -486,14 +505,19 @@ export default function ReservationDetailSheet({
           </button>
         )}
 
-        {/* Cancel — member mode or admin mode */}
-        <button
-          disabled={loading}
-          onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
-          className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${(canEdit || canEditMaintenance) ? "mt-3" : "mt-5"}`}
-        >
-          {loading ? "Cancelling…" : reservation.reason === "maintenance" ? "Cancel Block" : "Cancel Booking"}
-        </button>
+        {/* Cancel — member mode or admin mode. Not offered once the
+            reservation is already cancelled (Phase 36B) — there is
+            nothing left to cancel, and re-cancelling would only surface a
+            confusing "already cancelled" error. */}
+        {!isCancelled && (
+          <button
+            disabled={loading}
+            onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
+            className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${(canEdit || canEditMaintenance) ? "mt-3" : "mt-5"}`}
+          >
+            {loading ? "Cancelling…" : reservation.reason === "maintenance" ? "Cancel Block" : "Cancel Booking"}
+          </button>
+        )}
 
       </ResponsiveSheet>
 
