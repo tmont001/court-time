@@ -225,16 +225,29 @@ export default async function MySchedulePage({
   const tab      = typeof sp.tab === "string" ? sp.tab : "upcoming";
   const autoOpen = sp.request === "1";
 
-  // Phase 34F-A: optional ?checkout=success&lesson=<uuid> return from
-  // Stripe Checkout — mirrors calendar/page.tsx's own identical
-  // initialCheckoutReservationId derivation. Never mutates any financial
-  // state itself; only tells LessonsClient which request to reopen so the
-  // Member immediately sees authoritative, freshly-fetched payment state.
-  const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;
-  const lessonParam   = typeof sp.lesson === "string" ? sp.lesson : null;
+  // Phase 34F-A, generalized in Phase 36D: two params resolve to the SAME
+  // canonical Lesson-request id, neither requiring checkout=success
+  // (mirroring Calendar's reservation/event/program deep links — Phase
+  // 36B/36C — exactly):
+  //   ?request_id=<uuid>  — the general deep link Phase 36A's notification
+  //                         resolver already emits for all seven lesson
+  //                         notification kinds (/my-schedule?tab=lessons
+  //                         &request_id=<uuid>).
+  //   ?lesson=<uuid>      — the pre-existing Stripe Checkout return param
+  //                         (?checkout=success&lesson=<uuid>, and now also
+  //                         the checkout=cancel return, previously ignored
+  //                         since it always carried this same param).
+  // Never mutates any financial state itself; only tells LessonsClient
+  // which request to reopen — that component looks the id up inside
+  // initialRequests (the caller's own get_my_lesson_requests-scoped rows),
+  // never issuing a broader/new fetch by this id.
+  const requestIdParam = typeof sp.request_id === "string" ? sp.request_id : null;
+  const lessonParam    = typeof sp.lesson === "string" ? sp.lesson : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  const initialCheckoutLessonId =
-    checkoutParam === "success" && lessonParam && uuidRe.test(lessonParam) ? lessonParam : null;
+  const initialLessonRequestId =
+    requestIdParam && uuidRe.test(requestIdParam) ? requestIdParam :
+    lessonParam    && uuidRe.test(lessonParam)    ? lessonParam :
+    null;
 
   const user = await getAuthUser();
   if (!user) redirect("/sign-in");
@@ -911,7 +924,7 @@ export default async function MySchedulePage({
               prosError={prosError}
               autoOpen={autoOpen && !prosError && pros.length > 0 && profile?.memberSelfService !== false}
               canRequestNew={profile?.memberSelfService !== false}
-              initialCheckoutLessonId={initialCheckoutLessonId}
+              initialLessonRequestId={initialLessonRequestId}
             />
           )}
 

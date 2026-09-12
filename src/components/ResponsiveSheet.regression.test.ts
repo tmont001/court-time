@@ -369,9 +369,9 @@ describe("11. representative unrelated ResponsiveSheet callers require zero chan
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("12. history.replaceState checkout-return fix remains in place, independent of this ResponsiveSheet correction", () => {
-  it("LessonsClient still strips ?checkout=&lesson= via window.history.replaceState, not router.replace", () => {
+  it("LessonsClient still strips ?request_id=/?lesson=/?checkout= via window.history.replaceState, not router.replace (Phase 36D: generalized beyond checkout-only, now query-preserving)", () => {
     const s = readSource("src/app/(app)/lessons/LessonsClient.tsx");
-    expect(s).toContain('window.history.replaceState(null, "", "/my-schedule?tab=lessons");');
+    expect(s).toContain('window.history.replaceState(null, "", query ? `/my-schedule?${query}` : "/my-schedule");');
   });
 });
 

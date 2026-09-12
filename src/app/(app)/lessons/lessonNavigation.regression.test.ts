@@ -33,12 +33,17 @@ const PAGE_PATH    = "src/app/(app)/my-schedule/page.tsx";
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("root-cause preconditions — confirms the mechanism this fix addresses actually exists", () => {
-  it("my-schedule/page.tsx reads searchParams directly (tab/request/checkout/lesson) — the precondition for router.replace/push to force a Server Component re-render on a search-param-only change", () => {
+  it("my-schedule/page.tsx reads searchParams directly (tab/request/checkout/lesson/request_id) — the precondition for router.replace/push to force a Server Component re-render on a search-param-only change", () => {
     const s = readSource(PAGE_PATH);
     expect(s).toContain("const sp       = searchParams ? await searchParams : {};");
     expect(s).toContain('const tab      = typeof sp.tab === "string" ? sp.tab : "upcoming";');
-    expect(s).toContain('const checkoutParam = typeof sp.checkout === "string" ? sp.checkout : null;');
-    expect(s).toContain('const lessonParam   = typeof sp.lesson === "string" ? sp.lesson : null;');
+    // Phase 36D generalized this: checkoutParam is gone, request_id/lesson
+    // both resolve into one canonical initialLessonRequestId, neither
+    // requiring checkout=success — see lessonRequestDeepLink.regression.
+    // test.ts for full 36D coverage.
+    expect(s).toContain('const requestIdParam = typeof sp.request_id === "string" ? sp.request_id : null;');
+    expect(s).toContain('const lessonParam    = typeof sp.lesson === "string" ? sp.lesson : null;');
+    expect(s).not.toContain("checkoutParam");
   });
 
   it("/my-schedule has its own loading.tsx Suspense fallback — the visible skeleton that flashed a second time", () => {
@@ -50,15 +55,15 @@ describe("root-cause preconditions — confirms the mechanism this fix addresses
 describe("the fix — checkout-return param stripping uses window.history.replaceState, never next/navigation's router", () => {
   const getEffect = () => {
     const s = readSource(CLIENT_PATH);
-    const start = s.indexOf("useEffect(() => {\n    if (!initialCheckoutLessonId) return;");
+    const start = s.indexOf("useEffect(() => {\n    if (!initialLessonRequestId) return;");
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     expect(start).toBeGreaterThan(-1);
     return s.slice(start, end);
   };
 
-  it("uses window.history.replaceState to update the URL — zero Next.js navigation, zero Server Component re-fetch, zero Suspense/loading.tsx re-trigger", () => {
+  it("uses window.history.replaceState to update the URL — zero Next.js navigation, zero Server Component re-fetch, zero Suspense/loading.tsx re-trigger (Phase 36D: now query-preserving, since a plain ?request_id=<uuid> deep link can co-occur with other params)", () => {
     const effect = getEffect();
-    expect(effect).toContain('window.history.replaceState(null, "", "/my-schedule?tab=lessons");');
+    expect(effect).toContain('window.history.replaceState(null, "", query ? `/my-schedule?${query}` : "/my-schedule");');
   });
 
   it("does NOT call router.replace/router.push for this specific effect — the exact mechanism that caused the double-flash", () => {
@@ -66,9 +71,9 @@ describe("the fix — checkout-return param stripping uses window.history.replac
     expect(effect).not.toMatch(/router\.(replace|push)/);
   });
 
-  it("still guards on initialCheckoutLessonId and still runs only once on mount (empty dependency array) — behavior otherwise unchanged from the prior round, only the navigation mechanism changed", () => {
+  it("still guards on initialLessonRequestId (renamed from initialCheckoutLessonId, Phase 36D) and still runs only once on mount (empty dependency array) — behavior otherwise unchanged from the prior round, only the navigation mechanism/param generalized", () => {
     const effect = getEffect();
-    expect(effect).toContain("if (!initialCheckoutLessonId) return;");
+    expect(effect).toContain("if (!initialLessonRequestId) return;");
     expect(effect.trim().endsWith("}, []);")).toBe(true);
   });
 });
@@ -94,15 +99,15 @@ describe("the detail sheet itself never re-fetches unnecessarily on the checkout
   it("the initial `selected` state is derived synchronously from initialRequests (already-loaded SSR data) — the sheet renders immediately on first client paint, no extra round-trip before it appears", () => {
     const s = readSource(CLIENT_PATH);
     expect(s).toContain(
-      "const [selected, setSelected]       = useState<LessonRequestRow | null>(\n    initialCheckoutLessonId ? initialRequests.find(r => r.id === initialCheckoutLessonId) ?? null : null,\n  );",
+      "const [selected, setSelected]       = useState<LessonRequestRow | null>(\n    initialLessonRequestId ? initialRequests.find(r => r.id === initialLessonRequestId) ?? null : null,\n  );",
     );
   });
 
   it("payment state freshness for the reopened sheet comes from LessonRequestDetail's own existing fetchPaymentStates effect, not a second lesson-list re-fetch here", () => {
     const s = readSource(CLIENT_PATH);
     // No additional fetchPaymentStates/router.refresh call inside the
-    // checkout-return effect itself.
-    const start = s.indexOf("useEffect(() => {\n    if (!initialCheckoutLessonId) return;");
+    // deep-link effect itself.
+    const start = s.indexOf("useEffect(() => {\n    if (!initialLessonRequestId) return;");
     const end = s.indexOf("}, []);", start) + "}, []);".length;
     const effect = s.slice(start, end);
     expect(effect).not.toMatch(/fetchPaymentStates|router\.refresh/);

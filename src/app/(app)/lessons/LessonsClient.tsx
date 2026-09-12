@@ -60,12 +60,17 @@ interface Props {
    * start a NEW lesson request. Resolving an existing request/proposal
    * (RequestCard -> LessonRequestDetail) is unaffected. */
   canRequestNew:   boolean;
-  /** Phase 34F-A: set when the Member just returned from a successful
-   * Stripe Checkout (?checkout=success&lesson=<id>) — reopens that
-   * request's own detail sheet so authoritative, freshly-fetched payment
-   * state is immediately visible. Mirrors CalendarShell's identical
-   * initialCheckoutReservationId handling. */
-  initialCheckoutLessonId?: string | null;
+  /** Phase 34F-A, generalized in Phase 36D: the canonical Lesson-request
+   * deep-link id — set from either ?request_id=<uuid> (the general
+   * notification deep link, no longer requiring checkout=success) or
+   * ?lesson=<uuid> (the Stripe Checkout return param, also decoupled from
+   * checkout=success as of this checkpoint — mirrors CalendarShell's
+   * identical initialReservationId/initialEventId generalization).
+   * Reopens that request's own existing detail (LessonRequestDetail) so
+   * authoritative, freshly-fetched payment/lifecycle state is immediately
+   * visible — resolved by looking the id up inside initialRequests below,
+   * never a new/broader fetch. */
+  initialLessonRequestId?: string | null;
 }
 
 function statusBadge(status: string) {
@@ -104,33 +109,48 @@ export default function LessonsClient({
   prosError,
   autoOpen,
   canRequestNew,
-  initialCheckoutLessonId,
+  initialLessonRequestId,
 }: Props) {
   const router = useRouter();
   const [showRequest, setShowRequest] = useState(autoOpen);
+  // Phase 36D: looked up inside initialRequests — the caller's own
+  // get_my_lesson_requests-scoped rows — never a separate/broader fetch by
+  // this id. Another Member's request, a nonexistent id, or a request no
+  // longer in this Member's authorized set simply finds no match: selected
+  // stays null, the page renders normally, with no distinct error state.
   const [selected, setSelected]       = useState<LessonRequestRow | null>(
-    initialCheckoutLessonId ? initialRequests.find(r => r.id === initialCheckoutLessonId) ?? null : null,
+    initialLessonRequestId ? initialRequests.find(r => r.id === initialLessonRequestId) ?? null : null,
   );
 
-  // Phase 34F-A (flicker regression fix) — strip ?checkout=&lesson= from
-  // the URL once the detail sheet has been opened above, so a later
-  // browser refresh never reopens it. Deliberately uses the raw History
-  // API (window.history.replaceState), NOT next/navigation's router.replace:
-  // /my-schedule's own page.tsx reads searchParams directly (tab/request/
-  // checkout/lesson), so router.replace with a changed search-param set
-  // forces Next.js to re-render/re-fetch the ENTIRE Server Component tree
-  // for this route — and because my-schedule/loading.tsx exists, that
-  // second, client-triggered re-fetch (milliseconds after the genuine
-  // hard-navigation redirect from Stripe already rendered the page once)
-  // visibly flashed the skeleton fallback a second time. history.
-  // replaceState updates the URL bar with zero Next.js navigation/
-  // re-render — the sheet already shows freshly-fetched payment state via
-  // its own fetchPaymentStates effect, so no re-fetch is needed here at
-  // all. router.replace remains correct for the ?request=1 case below
-  // (pre-existing, unrelated to this regression, out of scope here).
+  // Phase 34F-A (flicker regression fix), generalized in Phase 36D — strip
+  // ?request_id=/?lesson=/?checkout= from the URL once the detail sheet
+  // has been opened above, so a later browser refresh never reopens it.
+  // Deliberately uses the raw History API (window.history.replaceState),
+  // NOT next/navigation's router.replace: /my-schedule's own page.tsx
+  // reads searchParams directly (tab/request/checkout/lesson/request_id),
+  // so router.replace with a changed search-param set forces Next.js to
+  // re-render/re-fetch the ENTIRE Server Component tree for this route —
+  // and because my-schedule/loading.tsx exists, that second,
+  // client-triggered re-fetch (milliseconds after a hard-navigation
+  // redirect already rendered the page once) visibly flashed the skeleton
+  // fallback a second time. history.replaceState updates the URL bar with
+  // zero Next.js navigation/re-render — the sheet already shows
+  // freshly-fetched payment/lifecycle state via its own effects, so no
+  // re-fetch is needed here at all. Only `request_id`/`lesson`/`checkout`
+  // are stripped; `tab` (already present, since this component only
+  // mounts inside the tab==="lessons" branch) and any other param are
+  // preserved via URLSearchParams, mirroring CalendarShell's identical
+  // 36B/36C cleanup. router.replace remains correct for the ?request=1
+  // case below (pre-existing, unrelated to this checkpoint, out of scope
+  // here).
   useEffect(() => {
-    if (!initialCheckoutLessonId) return;
-    window.history.replaceState(null, "", "/my-schedule?tab=lessons");
+    if (!initialLessonRequestId) return;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("request_id");
+    params.delete("lesson");
+    params.delete("checkout");
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/my-schedule?${query}` : "/my-schedule");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
