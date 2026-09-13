@@ -26,7 +26,7 @@ import {
 } from "@/lib/calendar/nowIndicator";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
-import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";
+import { canOpenReservationDetail, isOwnReservation } from "@/lib/calendar/reservationAccess";
 import { formatMoney } from "@/lib/money";
 import PriceSummary from "@/components/PriceSummary";
 
@@ -2173,6 +2173,28 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
           // (0132) role check. Gates canEdit (member_booking only);
           // canEditMaintenance stays on isAdmin, unchanged.
           canManageMemberReservation={isOperator(userRole)}
+          // Phase 37E correction: an explicit, independent presentation
+          // signal for Players & Guests own-reservation access — Member/Pro
+          // role AND the SAME canonical isOwnReservation claim-continuity
+          // check (owner_user_id OR roster_member_id) already used
+          // elsewhere in this file and enforced server-side by 0179's own
+          // _authorize_reservation_roster_access. Deliberately NOT derived
+          // from onMemberCancel below: cancellation availability and
+          // roster-ownership presentation are separate product concepts —
+          // a future cancellation-window/status change to onMemberCancel
+          // must never silently remove the owner's Players & Guests
+          // access. No new ownership formula is introduced here.
+          canManageOwnReservationRoster={
+            (userRole === "member" || userRole === "pro") &&
+            isOwnReservation(
+              {
+                reason: selectedReservation.reason,
+                ownerUserId: selectedReservation.owner_user_id,
+                rosterMemberId: selectedReservation.roster_member_id,
+              },
+              { userId, userRosterMemberId, role: userRole },
+            )
+          }
           currency={currency}
           defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setSelectedReservation(null)}

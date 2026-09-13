@@ -1265,6 +1265,159 @@ export async function cancelMemberReservation(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 37D — reservation participant/guest roster.
+//
+// Thin server-action wrappers over the six Phase 37C (0179) SECURITY
+// DEFINER RPCs — the ONLY access surface for reservation_participants/
+// reservation_guests (both tables are RLS-enabled with zero client-facing
+// policies and zero direct table grants). These actions never query either
+// table directly; they only forward to the RPCs and pass through whatever
+// error code Postgres raises, exactly like adminCancelReservation/
+// cancelMemberReservation above — client components map those codes to
+// user-safe copy. assertActiveClub is the same friendly preflight every
+// other reservation mutation above already uses; the RPCs themselves
+// independently re-derive and enforce the canonical club server-side
+// (0179's _authorize_reservation_roster_access), so this is a UX
+// improvement, never the authorization boundary.
+// ---------------------------------------------------------------------------
+
+export interface ReservationRosterRow {
+  kind:               "participant" | "guest";
+  relationship_id:    string;
+  roster_member_id:   string | null;
+  display_name:       string;
+  is_holder:          boolean;
+  reservation_status: string;
+}
+
+export interface ReservationEligibleRosterMember {
+  roster_member_id:     string;
+  display_name:         string;
+  role:                 string;
+  is_reservation_holder: boolean;
+}
+
+export async function getReservationRoster(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: ReservationRosterRow[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_reservation_roster", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  return { data: (data ?? []) as ReservationRosterRow[] };
+}
+
+export async function getReservationEligibleRosterMembers(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: ReservationEligibleRosterMember[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_reservation_eligible_roster_members", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  return { data: (data ?? []) as ReservationEligibleRosterMember[] };
+}
+
+export async function addReservationParticipant(
+  reservationId: string,
+  expectedClubId: string,
+  rosterMemberId: string,
+): Promise<{ data?: { participantId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("add_reservation_participant", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_roster_member_id: rosterMemberId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { participantId: data as unknown as string } };
+}
+
+export async function removeReservationParticipant(
+  reservationId: string,
+  expectedClubId: string,
+  participantId: string,
+): Promise<{ data?: { participantId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("remove_reservation_participant", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_participant_id: participantId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { participantId: data as unknown as string } };
+}
+
+export async function addReservationGuest(
+  reservationId: string,
+  expectedClubId: string,
+  displayName: string,
+): Promise<{ data?: { guestId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("add_reservation_guest", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_display_name: displayName,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { guestId: data as unknown as string } };
+}
+
+export async function removeReservationGuest(
+  reservationId: string,
+  expectedClubId: string,
+  guestId: string,
+): Promise<{ data?: { guestId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("remove_reservation_guest", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_guest_id: guestId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { guestId: data as unknown as string } };
+}
+
+// ---------------------------------------------------------------------------
 // getReservationDeepLinkDetail
 // Phase 36B security correction — the reservation deep-link effect
 // (CalendarShell's ?reservation=<uuid> handling) must not deliver another

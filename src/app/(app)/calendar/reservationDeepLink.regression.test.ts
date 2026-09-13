@@ -108,7 +108,11 @@ describe("CalendarShell.tsx — reservation deep-link effect", () => {
 
   it("imports canOpenReservationDetail from the extracted, framework-independent module", () => {
     const s = src();
-    expect(s).toContain('import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";');
+    // Phase 37E added a second import (isOwnReservation, for the
+    // independent canManageOwnReservationRoster presentation prop) from
+    // this same module — the assertion is scoped to canOpenReservationDetail
+    // specifically, not the exact full import statement text.
+    expect(s).toMatch(/import \{ canOpenReservationDetail(, isOwnReservation)? \} from "@\/lib\/calendar\/reservationAccess";/);
   });
 
   it("Phase 36E: the effect depends on [initialReservationId, searchParams], not [] — reactive to a same-route notification click and a repeat click of the same notification, not mount-only", () => {
