@@ -26,3 +26,30 @@ export function lessonDependsOnLiveReservation(
 ): boolean {
   return status === "confirmed" || (status === "proposed" && linkedReservationId !== null);
 }
+
+// Phase 38A: "has this CONFIRMED lesson's effective start time already
+// passed" — shared by LessonsTab's Active/Past list split and its card
+// action gating (Propose New Time / Reassign Pro / card-level Cancel are
+// hidden for a past confirmed lesson, replaced with a plain View Details
+// affordance into the same LessonProSheet), and by LessonProSheet's own
+// Reassign Pro button visibility.
+//
+// Only meaningful for status='confirmed': proposedStartsAt then holds the
+// lesson's actual confirmed start time (kept in sync by every confirm/
+// reschedule/direct-edit RPC — the same field LessonsTab already trusts to
+// render a confirmed lesson's date/time). For every other status this is
+// always false — a pending or first-time-proposed request is never "past",
+// and a pending RESCHEDULE's proposed_starts_at holds the new CANDIDATE
+// time, not the original lesson's time, so it must never be evaluated here
+// (callers gate this predicate on status === 'confirmed' explicitly).
+//
+// Framework-independent (no React/router/Supabase import) — matches
+// lessonDependsOnLiveReservation's own convention exactly.
+export function isPastConfirmedLesson(
+  status: string,
+  proposedStartsAt: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (status !== "confirmed" || !proposedStartsAt) return false;
+  return new Date(proposedStartsAt) <= now;
+}

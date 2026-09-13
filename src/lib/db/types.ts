@@ -3206,6 +3206,18 @@ export type Database = {
           is_lesson_provider: boolean;
         }[];
       };
+      // Phase 38A multi-club correction: confirmed-lesson-reassignment-only
+      // provider list, club_memberships-canonical (see 0180).
+      get_confirmed_lesson_reassignment_pros: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                 string;
+          first_name:         string | null;
+          last_name:          string | null;
+          role:               string;
+          is_lesson_provider: boolean;
+        }[];
+      };
       // Phase 33G2 (0128): admin+pro roster read for the Lesson-booking
       // Member picker — roster_members itself stays admin-only RLS.
       get_lesson_roster_members: {
@@ -3322,6 +3334,39 @@ export type Database = {
           club_id:               string;
           member_id:             string;
           pro_id:                string;
+          preferred_court_id:    string | null;
+          duration_minutes:      number;
+          member_note:           string | null;
+          preferred_windows:     Json | null;
+          proposed_starts_at:    string | null;
+          proposed_ends_at:      string | null;
+          proposed_court_id:     string | null;
+          status:                string;
+          decline_reason:        string | null;
+          cancellation_reason:   string | null;
+          last_actor_id:         string | null;
+          last_actor_role:       string | null;
+          linked_reservation_id: string | null;
+          created_at:            string;
+          updated_at:            string;
+          confirmed_at:          string | null;
+          declined_at:           string | null;
+          cancelled_at:          string | null;
+          cancelled_by:          string | null;
+        };
+      };
+      admin_reassign_confirmed_lesson_pro: {
+        Args: {
+          p_request_id:          string;
+          p_expected_updated_at: string;
+          p_new_pro_id:          string;
+        };
+        Returns: {
+          id:                    string;
+          club_id:               string;
+          member_id:             string | null;
+          pro_id:                string;
+          roster_member_id:      string;
           preferred_court_id:    string | null;
           duration_minutes:      number;
           member_note:           string | null;
