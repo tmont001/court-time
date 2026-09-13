@@ -129,14 +129,16 @@ describe("11. a different Member cannot reach another Member's Lesson detail —
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("12. Admin/Staff/Pro calendar Lesson-block behavior is unchanged", () => {
-  it("canManageLesson's own definition (role/ownership/status/future-only) is byte-identical to its pre-existing shape — only the click dispatch (handleLessonClick) was generalized to also check canViewOwnLesson, never canManageLesson's own eligibility", () => {
+  it("canManageLesson's own definition (role/ownership/status) is unchanged in shape apart from the approved past-lesson-viewable change — only the click dispatch (handleLessonClick) was generalized to also check canViewOwnLesson, never canManageLesson's own role/ownership eligibility", () => {
     const block = getLessonBlockSection();
     expect(block).toContain(
       "const canManageLesson =\n" +
       '                            (isAdmin || (userRole === "pro" && isOwn)) &&\n' +
-      '                            res.status === "confirmed" &&\n' +
-      "                            new Date(res.starts_at) > new Date();",
+      '                            res.status === "confirmed";',
     );
+    // Approved product change: viewing (not mutating) a confirmed lesson is
+    // no longer restricted to future-only for Admin/assigned Pro.
+    expect(block).not.toMatch(/canManageLesson[\s\S]{0,200}new Date\(res\.starts_at\) > new Date\(\)/);
   });
 
   it("Admin/Pro's own click still routes to handleManageLesson (navigates to /admin/lessons) exactly as before — never intercepted by the new Member-view path", () => {

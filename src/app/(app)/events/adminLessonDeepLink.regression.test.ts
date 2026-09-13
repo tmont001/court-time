@@ -89,11 +89,37 @@ describe("state-aware validation: only a live-reservation-dependent state gets t
     expect(idx).toBeGreaterThan(-1);
     const block = effect.slice(idx);
     expect(block).toContain(".from(\"reservations\")");
+    expect(block).toContain('reservation.club_id === clubId');
     expect(block).toContain('reservation.reason === "pro_lesson"');
     expect(block).toContain('reservation.status === "confirmed"');
-    expect(block).toContain("new Date(reservation.starts_at) > new Date()");
     expect(block).toContain("if (!reservationEligible) {\n        clearLessonIdParam();\n        return;\n      }");
     expect(block).toContain("setSelected(match);");
+  });
+
+  // Approved product change: viewing a lesson's detail is not time-restricted
+  // — a past confirmed lesson is a valid, viewable lesson. The mutation RPCs
+  // (propose_lesson_time, cancel_lesson) remain the authoritative gate on
+  // which actions a past lesson still permits, independent of this
+  // re-validation.
+  it("no longer requires the reservation to be in the future — reservationEligible has no starts_at/now() comparison", () => {
+    const effect = getEffect();
+    const idx = effect.indexOf("const reservationEligible =");
+    expect(idx).toBeGreaterThan(-1);
+    const endIdx = effect.indexOf(";", idx);
+    const block = effect.slice(idx, endIdx);
+    expect(block).not.toMatch(/starts_at/);
+    expect(block).not.toMatch(/new Date\(\)/);
+  });
+
+  it("still requires same-club, pro_lesson reason, and confirmed status — only the time requirement was removed", () => {
+    const effect = getEffect();
+    const idx = effect.indexOf("const reservationEligible =");
+    const endIdx = effect.indexOf(";", idx);
+    const block = effect.slice(idx, endIdx);
+    expect(block).toContain("!!reservation");
+    expect(block).toContain("reservation.club_id === clubId");
+    expect(block).toContain('reservation.reason === "pro_lesson"');
+    expect(block).toContain('reservation.status === "confirmed"');
   });
 });
 
