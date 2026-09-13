@@ -1854,13 +1854,14 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                           const note = (res.notes ?? "").trim();
                           const lessonLabel = canSeeLessonIdentity ? (note || "Private Lesson") : "Private Lesson";
                           // Admin (any), or the assigned Pro (owner) only — never another Pro,
-                          // never a Member. Matches only a future, still-confirmed reservation;
-                          // the destination page independently re-derives this from its own
-                          // RPC-scoped data, this is a UX-only pre-filter.
+                          // never a Member. Confirmed, past OR future — viewing lesson detail
+                          // is not time-restricted; the destination's own RPCs (propose_lesson_time,
+                          // cancel_lesson) remain the authoritative gate on which ACTIONS a past
+                          // lesson still permits. The destination page independently re-derives
+                          // eligibility from its own RPC-scoped data, this is a UX-only pre-filter.
                           const canManageLesson =
                             (isAdmin || (userRole === "pro" && isOwn)) &&
-                            res.status === "confirmed" &&
-                            new Date(res.starts_at) > new Date();
+                            res.status === "confirmed";
                           // Phase 34F-D — the owning Member may open their OWN lesson's detail
                           // (assigned Pro, schedule/status, payment badge, Pay Now when
                           // eligible) via the SAME LessonRequestDetail component /my-schedule

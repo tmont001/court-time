@@ -144,9 +144,12 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
       // authoritative for a pending reschedule — it holds the new
       // candidate, not the original lesson's time. The linked reservation
       // itself is the only reliable source of "is the original lesson
-      // still confirmed, same-club, and in the future." Validated
-      // directly here — never inferred from names, notes, owner_user_id,
-      // or a matching court/time.
+      // still confirmed and same-club." Validated directly here — never
+      // inferred from names, notes, owner_user_id, or a matching
+      // court/time. Not time-restricted: a past confirmed lesson is a
+      // valid, viewable lesson too — the mutation RPCs (propose_lesson_time,
+      // cancel_lesson) remain the authoritative gate on which actions a
+      // past lesson still permits, independent of this re-validation.
       const { data: reservation } = await supabase
         .from("reservations")
         .select("id, club_id, reason, status, starts_at")
@@ -159,8 +162,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
         !!reservation &&
         reservation.club_id === clubId &&
         reservation.reason === "pro_lesson" &&
-        reservation.status === "confirmed" &&
-        new Date(reservation.starts_at) > new Date();
+        reservation.status === "confirmed";
 
       if (!reservationEligible) {
         clearLessonIdParam();
