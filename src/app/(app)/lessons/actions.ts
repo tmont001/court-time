@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/user";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { sendEmail, sendRosterOperationalEmail } from "@/lib/email";
@@ -604,6 +605,149 @@ export async function reassignLessonProviderAction(
   return {};
 }
 
+// ─── reassignConfirmedLessonProAction ─────────────────────────────────────────
+//
+// Phase 38A — narrow Admin/Staff action for a CONFIRMED lesson only (the gap
+// reassignLessonProviderAction's pending/proposed-only boundary and
+// adminUpdateMemberLessonAction's no-account-Member-only boundary both
+// deliberately leave open). Wraps admin_reassign_confirmed_lesson_pro (0180)
+// — court/time/duration/member/lesson type are unchanged by that RPC and are
+// not even parameters here. Mirrors cancelLesson's own no-account roster
+// email branch exactly for the case where the lesson's Member has no
+// account: the RPC cannot insert an in-app notification for a null user_id,
+// so the operational email goes directly to roster_members.email instead —
+// no new communications mechanism.
+//
+// Security review correction: accepts ONLY mutation intent (requestId,
+// expectedUpdatedAt, newProId, expectedClubId) from the client. Every
+// identity used for notification ROUTING is derived from trusted
+// server/database state, mirroring getReservationDeepLinkDetail's
+// (calendar/actions.ts) established convention — never accepted as a
+// parameter, so a client can never influence who gets emailed by supplying
+// its own actor/old-pro/member id:
+//   - actorId  -> getAuthUser() (the caller's own authenticated session).
+//   - oldProId -> a pre-mutation read of lesson_requests.pro_id, scoped by
+//                 id + club_id, under the existing lesson_requests_select_
+//                 admin RLS policy (same-club operator) — the only identity
+//                 here the RPC's own POST-mutation return cannot carry,
+//                 since pro_id is exactly the column the mutation
+//                 overwrites. This is a read of authenticated database
+//                 state, not a client-supplied value.
+//   - memberId -> the RPC's own returned row (result.member_id) — trusted
+//                 post-mutation state, safe to reuse because this RPC never
+//                 reassigns the Member (roster_member_id/member_id are not
+//                 even in its SET list — see 0180).
+// 0180 itself required no change: its own authorization (role/status/
+// ownership/eligibility checks) and audit trail (auth.uid(), not a
+// parameter) never trusted a client-supplied identity in the first place —
+// the trust gap was confined entirely to this wrapper's post-RPC
+// notification routing.
+
+export async function reassignConfirmedLessonProAction(params: {
+  requestId:         string;
+  expectedUpdatedAt: string;
+  newProId:          string;
+  expectedClubId:    string;
+}): Promise<{ error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
+  const supabase = await createClient();
+  const actorUser = await getAuthUser();
+  const actorId = actorUser?.id ?? null;
+
+  // Trusted pre-mutation read — see header comment above. Scoped by both id
+  // and club_id under lesson_requests_select_admin (operator, same-club);
+  // this action is only ever reachable by an Admin/Staff caller in the UI,
+  // and 0180's own role gate is independently authoritative regardless of
+  // what this read finds — a failed/empty read here only degrades the old-
+  // Pro email (skipped below), it can never widen what the RPC permits.
+  const { data: before } = await supabase
+    .from("lesson_requests")
+    .select("pro_id")
+    .eq("id", params.requestId)
+    .eq("club_id", params.expectedClubId)
+    .maybeSingle();
+  const oldProId = before?.pro_id ?? null;
+
+  const { data, error } = await supabase.rpc("admin_reassign_confirmed_lesson_pro", {
+    p_request_id:          params.requestId,
+    p_expected_updated_at: params.expectedUpdatedAt,
+    p_new_pro_id:          params.newProId,
+  });
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  const result = data as { id?: string; roster_member_id?: string; member_id?: string | null; proposed_court_id?: string | null } | null;
+  const resultId = result?.id ?? params.requestId;
+  const memberId = result?.member_id ?? null;
+
+  // Notify new pro — always has an account.
+  try {
+    await dispatchLessonEmail(params.newProId, "lesson_provider_reassigned", resultId);
+  } catch { /* non-blocking */ }
+
+  // Notify old pro — trusted from the pre-mutation read above, skipped only
+  // if the old pro is themselves the actor (a Staff/Admin lesson provider
+  // reassigning their own lesson away) — same self-notification-skip
+  // convention cancelLesson already uses for its own actor/pro check.
+  if (oldProId && actorId !== oldProId) {
+    try {
+      await dispatchLessonEmail(oldProId, "lesson_provider_reassigned", resultId);
+    } catch { /* non-blocking */ }
+  }
+
+  // Notify the Member: in-app/email via the same dispatch path when claimed
+  // (has a notification destination); a no-account Member gets the same
+  // operational email cancelLesson already sends directly to their roster
+  // email — reused verbatim, not reinvented. memberId is trusted post-
+  // mutation state (see header comment) — never a client parameter.
+  if (memberId && actorId !== memberId) {
+    try {
+      await dispatchLessonEmail(memberId, "lesson_provider_reassigned", resultId);
+    } catch { /* non-blocking */ }
+  } else if (!memberId && result?.roster_member_id) {
+    try {
+      const { proName } = await resolveLessonDisplayNames(
+        supabase, params.expectedClubId, params.newProId, result.proposed_court_id ?? null,
+      );
+      await sendRosterOperationalEmail(
+        supabase,
+        result.roster_member_id,
+        params.expectedClubId,
+        "lesson_provider_reassigned",
+        (clubName) => rosterOperationalEmailTemplate(
+          clubName,
+          `Lesson pro updated — ${clubName}`,
+          `Your lesson has been reassigned to ${proName}.`,
+        ),
+      );
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath("/events");
+  revalidatePath("/admin/lessons");
+  revalidatePath("/calendar");
+  return {};
+}
+
+// ─── getConfirmedReassignmentProsAction ───────────────────────────────────────
+//
+// Phase 38A multi-club correction — a narrow provider list for the
+// CONFIRMED-lesson reassignment mode only, wrapping
+// get_confirmed_lesson_reassignment_pros() (0180), which sources candidates
+// from club_memberships (canonical) rather than get_admin_club_pros' own
+// profiles-based query. Used ONLY by LessonProSheet's confirmed reassign
+// mode — getClubProsAction/get_admin_club_pros remain completely untouched
+// and still serve pending/proposed reassignment and every other lesson flow.
+
+export async function getConfirmedReassignmentProsAction(): Promise<{ pros?: ClubPro[]; error?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_confirmed_lesson_reassignment_pros");
+  if (error) return { error: mapLessonError(error.message) };
+  return { pros: (data ?? []) as ClubPro[] };
+}
+
 // ─── adminCreateLessonRequestAction ───────────────────────────────────────────
 
 export interface AdminCreateLessonParams {
@@ -897,6 +1041,8 @@ function mapLessonError(msg: string): string {
     same_pro:                       "The request is already assigned to this pro.",
     cannot_assign_to_self:          "Cannot assign the lesson to the member themselves.",
     member_not_found:               "Member not found.",
+    // Phase 38A
+    invalid_status_for_pro_reassign: "Only a future confirmed lesson can have its pro reassigned this way.",
     // Phase 33D1
     no_roster_identity:             "Your Member profile could not be found for this club.",
     roster_member_not_found:        "The selected member could not be found.",

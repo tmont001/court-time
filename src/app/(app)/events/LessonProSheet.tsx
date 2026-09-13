@@ -8,6 +8,7 @@ import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import { createClient } from "@/lib/supabase/client";
 import { isOperator } from "@/lib/auth/roles";
+import { isPastConfirmedLesson } from "@/lib/lessons/lessonAccess";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { formatLessonUnitPrice, calculateLessonTotalCents, formatOperatorPrice } from "@/lib/money";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
@@ -18,6 +19,8 @@ import {
   declineLessonRequest,
   cancelLesson,
   reassignLessonProviderAction,
+  reassignConfirmedLessonProAction,
+  getConfirmedReassignmentProsAction,
   adminUpdateMemberLessonAction,
   type ProLessonRequestRow,
   type ClubPro,
@@ -37,7 +40,7 @@ interface Props {
   currency:     string;
   userRole?:    string;
   pros?:        ClubPro[];
-  initialMode?: "propose";
+  initialMode?: "propose" | "cancel" | "reassign";
   onClose:      () => void;
 }
 
@@ -298,6 +301,12 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
   const [courtId, setCourtId]     = useState<string>(courts[0]?.id ?? "");
   const [reason, setReason]       = useState("");
   const [newProId, setNewProId]   = useState<string>("");
+  // Phase 38A multi-club correction: the confirmed-reassignment mode's own
+  // provider list, lazily fetched from get_confirmed_lesson_reassignment_pros
+  // (club_memberships-canonical) — kept entirely separate from the `pros`
+  // prop (get_admin_club_pros), which pending/proposed reassignment keeps
+  // using unchanged. null = not yet fetched.
+  const [confirmedReassignPros, setConfirmedReassignPros] = useState<ClubPro[] | null>(null);
   const [editProId, setEditProId] = useState<string>(request.pro_id);
   // Phase 34B: admin_edit mode's Duration — the one field this direct-edit
   // flow was missing even though admin_update_member_lesson already
@@ -409,6 +418,21 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
     })();
     return () => { cancelled = true; };
   }, [request.id]);
+
+  // Phase 38A multi-club correction: lazily fetch the confirmed-reassignment
+  // provider list exactly once, the first time the reassign mode becomes
+  // active for a CONFIRMED lesson — regardless of whether that happened via
+  // the sheet's own "Reassign Pro" button or a card's initialMode="reassign".
+  // Pending/proposed reassignment never triggers this fetch and keeps using
+  // the existing `pros` prop untouched.
+  useEffect(() => {
+    if (mode !== "reassign" || request.status !== "confirmed" || confirmedReassignPros !== null) return;
+    let cancelled = false;
+    getConfirmedReassignmentProsAction().then(res => {
+      if (!cancelled) setConfirmedReassignPros(res.pros ?? []);
+    });
+    return () => { cancelled = true; };
+  }, [mode, request.status, confirmedReassignPros]);
 
   // Phase 34B: available duration choices for the admin_edit picker — the
   // Lesson Type's own allowed_durations when it has one, else the same
@@ -731,7 +755,9 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
       {mode === "reassign" && (
         <div className="space-y-3">
           <p className="text-sm text-gray-600 dark:text-gray-300">
-            Assign this request to a different pro. If proposed, the proposal will be cleared.
+            {request.status === "confirmed"
+              ? "Assign this confirmed lesson to a different pro. Court, time, and the member are unchanged."
+              : "Assign this request to a different pro. If proposed, the proposal will be cleared."}
           </p>
           <div>
             <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
@@ -742,8 +768,18 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
               onChange={e => setNewProId(e.target.value)}
               className="w-full ct-input text-base md:text-sm"
             >
-              <option value="">Select a pro…</option>
-              {(pros ?? [])
+              {/* Phase 38A multi-club correction: the confirmed case sources
+                  options from confirmedReassignPros (club_memberships-
+                  canonical, get_confirmed_lesson_reassignment_pros) instead
+                  of the pros prop (get_admin_club_pros) — pending/proposed
+                  keeps using `pros` exactly as before. Same <select>, same
+                  filter/map, only the array differs. */}
+              <option value="">
+                {request.status === "confirmed" && confirmedReassignPros === null
+                  ? "Loading providers…"
+                  : "Select a pro…"}
+              </option>
+              {(request.status === "confirmed" ? (confirmedReassignPros ?? []) : (pros ?? []))
                 .filter(p => p.id !== request.pro_id)
                 .map(p => (
                   <option key={p.id} value={p.id}>
@@ -754,12 +790,19 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
           </div>
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <button
-            onClick={() => doAction(() => reassignLessonProviderAction(
-              request.id,
-              newProId,
-              request.member_id,
-              request.pro_id,
-            ))}
+            onClick={() => doAction(() => request.status === "confirmed"
+              ? reassignConfirmedLessonProAction({
+                  requestId:         request.id,
+                  expectedUpdatedAt: request.updated_at,
+                  newProId,
+                  expectedClubId:    clubId,
+                })
+              : reassignLessonProviderAction(
+                  request.id,
+                  newProId,
+                  request.member_id,
+                  request.pro_id,
+                ))}
             disabled={isPending || !newProId}
             className="w-full bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-xl py-3 text-sm font-semibold hover:brightness-110 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 dark:focus-visible:ring-gray-100"
           >
@@ -893,6 +936,24 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
           {isOperator(userRole) && (pros?.length ?? 0) > 0 &&
             (request.status === "pending" || request.status === "proposed") &&
             !request.linked_reservation_id && (
+            <button
+              onClick={() => { setNewProId(""); setError(""); setMode("reassign"); }}
+              className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700/40 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"
+            >
+              Reassign Pro
+            </button>
+          )}
+
+          {/* Phase 38A: Admin/Staff may also reassign the pro on a FUTURE
+              confirmed lesson — admin_reassign_confirmed_lesson_pro (0180),
+              a narrow, separate RPC from reassign_lesson_provider above
+              (which stays pending/proposed-only, unmodified). Never shown
+              to Pro — Pro must never reassign, including their own lesson.
+              Hidden once the lesson has started, mirroring the RPC's own
+              cannot_reschedule_started_lesson guard. */}
+          {isOperator(userRole) && (pros?.length ?? 0) > 0 &&
+            request.status === "confirmed" &&
+            !isPastConfirmedLesson(request.status, request.proposed_starts_at) && (
             <button
               onClick={() => { setNewProId(""); setError(""); setMode("reassign"); }}
               className="w-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700/40 active:scale-[0.98] motion-safe:transition-all motion-safe:duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-300"

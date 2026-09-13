@@ -5,9 +5,9 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LessonProSheet from "./LessonProSheet";
 import type { ProLessonRequestRow, ClubPro } from "@/app/(app)/lessons/actions";
-import { ACTION_BUTTON_PRIMARY } from "./actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY, ACTION_BUTTON_DESTRUCTIVE } from "./actionButtonStyles";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
-import { lessonDependsOnLiveReservation } from "@/lib/lessons/lessonAccess";
+import { lessonDependsOnLiveReservation, isPastConfirmedLesson } from "@/lib/lessons/lessonAccess";
 
 interface Court {
   id:   string;
@@ -26,9 +26,25 @@ interface Props {
   onCreateRequest?: () => void;
 }
 
-type StatusFilter = "active" | "all";
+type StatusFilter = "active" | "past" | "all";
 
 const ACTIVE_STATUSES = ["pending", "proposed", "confirmed"];
+
+// Phase 38A: a request counts as "Active" for pending/proposed regardless of
+// any date (those aren't tied to a definite scheduled event yet), and for
+// confirmed only when its effective lesson start hasn't passed. "Past" is
+// the complementary confirmed-and-elapsed case. Declined/cancelled/withdrawn
+// requests are neither — they only ever appear under "All", unchanged from
+// before this phase.
+function isActiveRequest(r: Pick<ProLessonRequestRow, "status" | "proposed_starts_at">): boolean {
+  if (!ACTIVE_STATUSES.includes(r.status)) return false;
+  if (r.status !== "confirmed") return true;
+  return !isPastConfirmedLesson(r.status, r.proposed_starts_at);
+}
+
+function isPastRequest(r: Pick<ProLessonRequestRow, "status" | "proposed_starts_at">): boolean {
+  return r.status === "confirmed" && isPastConfirmedLesson(r.status, r.proposed_starts_at);
+}
 
 function statusBadge(status: string) {
   const map: Record<string, string> = {
@@ -60,12 +76,17 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   const searchParams              = useSearchParams();
   const [filter, setFilter]       = useState<StatusFilter>("active");
   const [selected, setSelected]   = useState<ProLessonRequestRow | null>(null);
-  const [proposeMode, setProposeMode] = useState(false);
+  // Phase 38A: generalized from the prior boolean proposeMode so a card
+  // button can jump directly into any of the sheet's existing modes
+  // (propose/reassign/cancel) — never a second implementation of any of
+  // them, just which one LessonProSheet's own initialMode opens into.
+  const [initialSheetMode, setInitialSheetMode] = useState<"propose" | "cancel" | "reassign" | undefined>(undefined);
   const [proFilter, setProFilter] = useState<string>("");
 
   // Use props directly — router.refresh() causes RSC to pass fresh props
   const requests    = initialRequests;
-  const activeCount = requests.filter(r => ACTIVE_STATUSES.includes(r.status)).length;
+  const activeCount = requests.filter(isActiveRequest).length;
+  const pastCount   = requests.filter(isPastRequest).length;
 
   // Phase 30G: Calendar's pro_lesson block click navigates here with
   // ?lessonId=<request id>, auto-opening that exact request's existing
@@ -131,7 +152,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
     // correction restores.
     if (!lessonDependsOnLiveReservation(match.status, match.linked_reservation_id)) {
       setSelected(match);
-      setProposeMode(false);
+      setInitialSheetMode(undefined);
       return;
     }
 
@@ -170,7 +191,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
       }
 
       setSelected(match);
-      setProposeMode(false);
+      setInitialSheetMode(undefined);
     })();
 
     return () => { cancelled = true; };
@@ -184,7 +205,7 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
     : [];
 
   const filtered = requests
-    .filter(r => filter === "active" ? ACTIVE_STATUSES.includes(r.status) : true)
+    .filter(r => filter === "active" ? isActiveRequest(r) : filter === "past" ? isPastRequest(r) : true)
     .filter(r => proFilter ? r.pro_id === proFilter : true);
 
   const visible = filtered;
@@ -206,10 +227,35 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
   // Staff reschedule block, matching this. admin_update_member_lesson
   // (the no-account-Member direct-edit path, unrelated to this button)
   // remains admin-only and deferred.
+  // Phase 38A: additionally excludes a PAST confirmed lesson — the RPC
+  // (propose_lesson_time) already rejected this server-side via
+  // cannot_reschedule_started_lesson, but the card previously still showed
+  // the button. Only applies to status === 'confirmed': a pending
+  // reschedule (status === 'proposed' with linked_reservation_id set) is
+  // always Active regardless of time (its proposed_starts_at holds the new
+  // CANDIDATE time, not the original lesson's time — isPastConfirmedLesson
+  // is never evaluated against that value here).
   const canReschedule = (r: ProLessonRequestRow) =>
     r.member_claimed &&
     lessonDependsOnLiveReservation(r.status, r.linked_reservation_id) &&
-    (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId));
+    (isOperator(userRole) || (userRole === "pro" && r.pro_id === userId)) &&
+    !(r.status === "confirmed" && isPastConfirmedLesson(r.status, r.proposed_starts_at));
+
+  // Phase 38A: card-level Reassign Pro / Cancel Lesson — Admin/Staff only,
+  // a FUTURE confirmed lesson only (never Pro, including their own lesson —
+  // "Pros may NOT reassign themselves or other Pros"; Pro's existing
+  // ability to cancel their OWN lesson is untouched and still reachable via
+  // the full card click into LessonProSheet's own default action list,
+  // unaffected by these two card-level additions).
+  const canReassignFromCard = (r: ProLessonRequestRow) =>
+    isOperator(userRole) &&
+    r.status === "confirmed" &&
+    !isPastConfirmedLesson(r.status, r.proposed_starts_at);
+
+  const canCancelFromCard = (r: ProLessonRequestRow) =>
+    isOperator(userRole) &&
+    r.status === "confirmed" &&
+    !isPastConfirmedLesson(r.status, r.proposed_starts_at);
 
   return (
     <div className="px-4 pb-8 pt-2">
@@ -237,6 +283,16 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
             }`}
           >
             Active {activeCount > 0 && `(${activeCount})`}
+          </button>
+          <button
+            onClick={() => setFilter("past")}
+            className={`px-3 py-1 rounded-md text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
+              filter === "past"
+                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
+                : "text-gray-500 dark:text-gray-400 hover:text-gray-700"
+            }`}
+          >
+            Past {pastCount > 0 && `(${pastCount})`}
           </button>
           <button
             onClick={() => setFilter("all")}
@@ -267,7 +323,11 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
       {visible.length === 0 && (
         <div className="flex flex-col items-center justify-center h-40">
           <p className="text-sm text-gray-400 dark:text-gray-500">
-            {filter === "active" ? "No active lesson requests." : "No lesson requests yet."}
+            {filter === "active"
+              ? "No active lesson requests."
+              : filter === "past"
+              ? "No past lessons yet."
+              : "No lesson requests yet."}
           </p>
         </div>
       )}
@@ -277,14 +337,15 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
         const memberName = [r.member_first_name, r.member_last_name].filter(Boolean).join(" ") || "Member";
         const proName    = [r.pro_first_name, r.pro_last_name].filter(Boolean).join(" ") || "Pro";
         const isActive   = ACTIVE_STATUSES.includes(r.status);
+        const isPastConfirmed = r.status === "confirmed" && isPastConfirmedLesson(r.status, r.proposed_starts_at);
 
         return (
           <div
             key={r.id}
             role="button"
             tabIndex={0}
-            onClick={() => { setSelected(r); setProposeMode(false); }}
-            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setSelected(r); setProposeMode(false); } }}
+            onClick={() => { setSelected(r); setInitialSheetMode(undefined); }}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setSelected(r); setInitialSheetMode(undefined); } }}
             className="ct-card mx-0 mb-3 px-4 py-3 w-full text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 active:bg-gray-100 motion-safe:transition-colors motion-safe:duration-100 cursor-pointer"
           >
             <div className="flex items-center justify-between mb-1">
@@ -329,21 +390,60 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
               </p>
             )}
 
-            {(canPropose(r) || canReschedule(r)) && (
+            {/* Phase 38A: a past confirmed lesson never shows Propose New
+                Time / Reassign Pro / a direct Cancel Lesson button — only a
+                plain View Details affordance into the SAME LessonProSheet
+                (the whole card is already clickable to the same effect;
+                this button just makes that explicit for a card whose other
+                actions have all been intentionally removed). Admin/Staff's
+                historical-correction ability to still cancel a past lesson
+                remains available inside that sheet's own default action
+                list, untouched by this card-level restriction. */}
+            {isPastConfirmed ? (
               <div
                 className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50"
                 onClick={e => e.stopPropagation()}
               >
                 <button
-                  onClick={() => { setSelected(r); setProposeMode(true); }}
-                  className={`w-full md:w-auto ${ACTION_BUTTON_PRIMARY}`}
+                  onClick={() => { setSelected(r); setInitialSheetMode(undefined); }}
+                  className={`w-full md:w-auto ${ACTION_BUTTON_SECONDARY}`}
                 >
-                  {canPropose(r)
-                    ? "Propose a Time"
-                    : r.status === "proposed"
-                    ? "Revise Proposed Time"
-                    : "Propose New Time"}
+                  View Details
                 </button>
+              </div>
+            ) : (canPropose(r) || canReschedule(r) || canReassignFromCard(r) || canCancelFromCard(r)) && (
+              <div
+                className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/50 flex flex-wrap gap-2"
+                onClick={e => e.stopPropagation()}
+              >
+                {(canPropose(r) || canReschedule(r)) && (
+                  <button
+                    onClick={() => { setSelected(r); setInitialSheetMode("propose"); }}
+                    className={`w-full sm:w-auto ${ACTION_BUTTON_PRIMARY}`}
+                  >
+                    {canPropose(r)
+                      ? "Propose a Time"
+                      : r.status === "proposed"
+                      ? "Revise Proposed Time"
+                      : "Propose New Time"}
+                  </button>
+                )}
+                {canReassignFromCard(r) && (
+                  <button
+                    onClick={() => { setSelected(r); setInitialSheetMode("reassign"); }}
+                    className={`w-full sm:w-auto ${ACTION_BUTTON_SECONDARY}`}
+                  >
+                    Reassign Pro
+                  </button>
+                )}
+                {canCancelFromCard(r) && (
+                  <button
+                    onClick={() => { setSelected(r); setInitialSheetMode("cancel"); }}
+                    className={`w-full sm:w-auto ${ACTION_BUTTON_DESTRUCTIVE}`}
+                  >
+                    Cancel Lesson
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -361,8 +461,8 @@ export default function LessonsTab({ initialRequests, courts, userId, userRole, 
           currency={currency}
           userRole={userRole}
           pros={pros}
-          initialMode={proposeMode ? "propose" : undefined}
-          onClose={() => { setSelected(null); setProposeMode(false); clearLessonIdParam(); router.refresh(); }}
+          initialMode={initialSheetMode}
+          onClose={() => { setSelected(null); setInitialSheetMode(undefined); clearLessonIdParam(); router.refresh(); }}
         />
       )}
     </div>

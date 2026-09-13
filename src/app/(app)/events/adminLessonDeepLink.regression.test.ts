@@ -67,7 +67,7 @@ describe("authorization is checked FIRST and is the only gate on whether a match
 describe("state-aware validation: only a live-reservation-dependent state gets the async re-validation", () => {
   it("uses the shared lessonDependsOnLiveReservation predicate — the same one canReschedule uses — rather than a second, potentially-drifting inline condition", () => {
     const s = readSource(TAB_PATH);
-    expect(s).toContain('import { lessonDependsOnLiveReservation } from "@/lib/lessons/lessonAccess";');
+    expect(s).toContain('import { lessonDependsOnLiveReservation, isPastConfirmedLesson } from "@/lib/lessons/lessonAccess";');
     const occurrences = s.split("lessonDependsOnLiveReservation(").length - 1;
     // One call site in canReschedule, one in the auto-open effect.
     expect(occurrences).toBe(2);
@@ -79,7 +79,10 @@ describe("state-aware validation: only a live-reservation-dependent state gets t
     expect(idx).toBeGreaterThan(-1);
     const block = effect.slice(idx, idx + 200);
     expect(block).toContain("setSelected(match);");
-    expect(block).toContain("setProposeMode(false);");
+    // Phase 38A: proposeMode was generalized to initialSheetMode so a card
+    // button can jump directly into any of LessonProSheet's existing modes
+    // (propose/reassign/cancel), not just propose.
+    expect(block).toContain("setInitialSheetMode(undefined);");
     expect(block).toContain("return;");
   });
 
