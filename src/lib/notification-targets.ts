@@ -39,9 +39,11 @@
 import type { Json } from "@/lib/db/types";
 import { isMember } from "@/lib/auth/roles";
 
-/** The 17 kinds currently produced (notifications_kind_check, migration
- * 0099 — the last migration to touch that constraint). Adding a kind here
- * without a matching NOTIFICATION_TARGET_MAP entry is a compile error. */
+/** The 19 kinds currently produced (notifications_kind_check, migration
+ * 0181 — the last migration to touch that constraint; 0099 through
+ * lesson_admin_requested, Phase 38B adds the final two refund-request
+ * kinds). Adding a kind here without a matching NOTIFICATION_TARGET_MAP
+ * entry is a compile error. */
 export type NotificationKind =
   | "reservation_confirmed"
   | "reservation_cancelled_by_admin"
@@ -59,7 +61,9 @@ export type NotificationKind =
   | "lesson_request_declined"
   | "lesson_cancelled"
   | "lesson_provider_reassigned"
-  | "lesson_admin_requested";
+  | "lesson_admin_requested"
+  | "refund_request_rejected"
+  | "refund_request_completed";
 
 export type TargetDomain = "reservation" | "event" | "lesson_request" | "program";
 
@@ -100,6 +104,15 @@ export const NOTIFICATION_TARGET_MAP = {
   lesson_cancelled:                { domain: "lesson_request", idKey: "request_id" },
   lesson_provider_reassigned:      { domain: "lesson_request", idKey: "request_id" },
   lesson_admin_requested:          { domain: "lesson_request", idKey: "request_id" },
+  // Phase 38B — no structured domain (no id-specific deep link is
+  // required in this phase): both producers set metadata.target_path =
+  // '/admin/payments' directly, so resolution falls through to the
+  // legacy target_path fallback below, exactly like `announcement`. A
+  // future phase could add a structured "payment" TargetDomain +
+  // paymentId deep-link (mirroring the lesson ?lessonId= auto-open
+  // pattern) — deliberately out of scope here.
+  refund_request_rejected:         null,
+  refund_request_completed:        null,
 } satisfies Record<NotificationKind, TargetDefinition | readonly TargetDefinition[] | null>;
 
 // Same shape as the local UUID_RE already duplicated per-file across the

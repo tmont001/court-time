@@ -4482,6 +4482,114 @@ export type Database = {
           currency:         string;
         }[];
       };
+      create_refund_request: {
+        // Phase 38B. authenticated, Staff only. Creates a pending refund
+        // request against a specific payment's CURRENT online-refundable
+        // balance (reused from get_online_refundable_amount_for_payments,
+        // never payments.amount_paid_cents). Never mutates payments/
+        // payment_events/payment_refund_attempts/Stripe state. Exactly one
+        // pending request per payment (partial unique index) —
+        // refund_request_already_pending on a duplicate.
+        Args: {
+          p_payment_id:   string;
+          p_amount_cents: number;
+          p_reason:       string;
+          p_notes?:       string | null;
+        };
+        Returns: {
+          id:                     string;
+          club_id:                string;
+          payment_id:             string;
+          requested_by:           string;
+          requested_amount_cents: number;
+          reason:                 string;
+          notes:                  string | null;
+          status:                 "pending" | "completed" | "rejected";
+          reviewed_by:            string | null;
+          reviewed_at:            string | null;
+          rejection_reason:       string | null;
+          refund_attempt_id:      string | null;
+          created_at:             string;
+          updated_at:             string;
+        };
+      };
+      get_pending_refund_requests_for_payments: {
+        // Phase 38B. authenticated, Admin+Staff. The one sanctioned read
+        // path for "which of these payments has a pending Staff refund
+        // request" — scoped to the caller's own current club, joined to
+        // profiles ONLY for the requester's display name and to
+        // payment_refund_attempts ONLY for the linked attempt's own
+        // status (never a duplicated Stripe field).
+        Args: {
+          p_payment_ids: string[];
+        };
+        Returns: {
+          request_id:             string;
+          payment_id:             string;
+          requested_by:           string;
+          requested_by_name:      string;
+          requested_amount_cents: number;
+          reason:                 string;
+          notes:                  string | null;
+          refund_attempt_id:      string | null;
+          attempt_status:         "pending" | "requires_action" | "succeeded" | "failed" | "canceled" | null;
+          created_at:             string;
+        }[];
+      };
+      reject_refund_request: {
+        // Phase 38B. authenticated, Admin only. Requires a non-empty
+        // rejection reason. Never creates a refund attempt, never touches
+        // payments/payment_events/Stripe. Notifies the requesting Staff
+        // member in-app only (refund_request_rejected).
+        Args: {
+          p_request_id:       string;
+          p_rejection_reason: string;
+        };
+        Returns: {
+          id:                     string;
+          club_id:                string;
+          payment_id:             string;
+          requested_by:           string;
+          requested_amount_cents: number;
+          reason:                 string;
+          notes:                  string | null;
+          status:                 "pending" | "completed" | "rejected";
+          reviewed_by:            string | null;
+          reviewed_at:            string | null;
+          rejection_reason:       string | null;
+          refund_attempt_id:      string | null;
+          created_at:             string;
+          updated_at:             string;
+        };
+      };
+      begin_refund_request_execution: {
+        // Phase 38B. service_role only. The single atomic RPC that locks
+        // `payments` FIRST (canonical top-level serialization point),
+        // then locks/revalidates the request row, then decides fresh vs.
+        // reuse vs. heal based on the linked payment_refund_attempts row's
+        // OWN live status — never a browser-supplied amount; always
+        // request.requested_amount_cents. Return shape is IDENTICAL to
+        // open_payment_refund_attempt's own, so the shared Stripe
+        // execution tail (Task 2) can consume either result unchanged.
+        Args: {
+          p_request_id: string;
+          p_club_id:    string;
+          p_actor_id:   string;
+        };
+        Returns: {
+          id:                          string;
+          payment_id:                  string;
+          club_id:                     string;
+          source_checkout_attempt_id:  string;
+          stripe_account_id:           string;
+          livemode:                    boolean;
+          stripe_checkout_session_id:  string | null;
+          stripe_payment_intent_id:    string | null;
+          requested_amount_cents:      number;
+          status:                      "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+          currency:                    string;
+        }[];
+      };
       process_stripe_dispute_webhook_event: {
         // Phase 34E-C. service_role only. The webhook path for charge.
         // dispute.created/updated/closed/funds_withdrawn/funds_reinstated.

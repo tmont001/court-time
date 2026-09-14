@@ -28,12 +28,14 @@ const ALL_KINDS: NotificationKind[] = [
   "lesson_cancelled",
   "lesson_provider_reassigned",
   "lesson_admin_requested",
+  "refund_request_rejected",
+  "refund_request_completed",
 ];
 
 describe("NOTIFICATION_TARGET_MAP", () => {
-  it("has an explicit entry for exactly the 17 authoritative kinds", () => {
+  it("has an explicit entry for exactly the 19 authoritative kinds", () => {
     expect(Object.keys(NOTIFICATION_TARGET_MAP).sort()).toEqual([...ALL_KINDS].sort());
-    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(17);
+    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(19);
   });
 });
 
@@ -155,6 +157,32 @@ describe("resolveNotificationTarget — announcement (informational, no structur
 
   it("still honors a legacy target_path if one happened to be present", () => {
     expect(resolveNotificationTarget("announcement", { target_path: "/events" }, "member")).toBe("/events");
+  });
+});
+
+describe("resolveNotificationTarget — refund_request_rejected / refund_request_completed (Phase 38B, no structured target)", () => {
+  it("both map to null in NOTIFICATION_TARGET_MAP — no structured payment domain is introduced in this phase", () => {
+    expect(NOTIFICATION_TARGET_MAP.refund_request_rejected).toBeNull();
+    expect(NOTIFICATION_TARGET_MAP.refund_request_completed).toBeNull();
+  });
+
+  it("safely deep-link to /admin/payments via the existing target_path fallback — the exact producer-set metadata shape", () => {
+    expect(resolveNotificationTarget("refund_request_rejected", { request_id: REQUEST_ID, target_path: "/admin/payments" }, "staff"))
+      .toBe("/admin/payments");
+    expect(resolveNotificationTarget("refund_request_completed", { request_id: REQUEST_ID, target_path: "/admin/payments" }, "staff"))
+      .toBe("/admin/payments");
+  });
+
+  it("resolve to null when no target_path is present — never fabricates a destination", () => {
+    expect(resolveNotificationTarget("refund_request_rejected", { request_id: REQUEST_ID }, "staff")).toBeNull();
+    expect(resolveNotificationTarget("refund_request_completed", { request_id: REQUEST_ID }, "staff")).toBeNull();
+  });
+
+  it("role-agnostic — the null-domain fallback behaves identically regardless of viewer role", () => {
+    for (const role of ["admin", "staff", "pro", "member", null, undefined]) {
+      expect(resolveNotificationTarget("refund_request_completed", { target_path: "/admin/payments" }, role))
+        .toBe("/admin/payments");
+    }
   });
 });
 
