@@ -68,7 +68,12 @@ describe("A/B/C. createOnlineRefundAction's authoritative club identity is profi
   it("C. expectedClubId appears ONLY in the parameter declaration and the assertActiveClub preflight call — never in any RPC/metadata argument", () => {
     const s = codeOnly(readSource(REFUND_ACTIONS_PATH));
     const fnStart = s.indexOf("export async function createOnlineRefundAction(");
-    const fnBody = s.slice(fnStart);
+    // Bounded to this function's own body only — Phase 38B added further
+    // Server Actions (createRefundRequestAction etc.) after this one in
+    // the same file, each with their own unrelated expectedClubId
+    // parameter/preflight pair, which must not be counted here.
+    const fnEnd = s.indexOf("\nexport async function createRefundRequestAction(", fnStart);
+    const fnBody = s.slice(fnStart, fnEnd);
     const usages = fnBody.split("expectedClubId").length - 1;
     // (1) the parameter declaration itself, (2) the assertActiveClub call.
     expect(usages).toBe(2);

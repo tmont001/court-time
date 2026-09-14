@@ -272,11 +272,36 @@ describe("Concurrency / over-refund protection", () => {
   });
 
   it("over-refund is rejected in the RPC layer BEFORE refundActions.ts ever calls stripe.refunds.create (scenario 6, remote creation)", () => {
+    // Phase 38B Task 2 extraction — the Stripe-calling tail now lives in
+    // its own shared function (executeOnlineRefund), called AFTER
+    // createOnlineRefundAction's own open_payment_refund_attempt call
+    // returns, so a raw whole-file string-index comparison no longer
+    // reflects actual execution order. Verified in two parts instead: (1)
+    // createOnlineRefundAction's own body calls open_payment_refund_
+    // attempt, then hands its result to executeOnlineRefund — never the
+    // reverse; (2) refunds.create only exists inside executeOnlineRefund,
+    // reached exclusively via that hand-off, so it is still transitively
+    // impossible to reach before open_payment_refund_attempt has already
+    // validated/opened the attempt.
     const src = readSource(REFUND_ACTIONS_PATH);
-    const openCallIdx = src.indexOf('privileged.rpc("open_payment_refund_attempt"');
-    const createCallIdx = src.indexOf("context.client.refunds.create(");
-    expect(openCallIdx).toBeGreaterThan(0);
-    expect(openCallIdx).toBeLessThan(createCallIdx);
+    const actionStart = src.indexOf("export async function createOnlineRefundAction(");
+    const actionEnd = src.indexOf("\n}", src.lastIndexOf("return executeOnlineRefund(", src.length));
+    const actionBody = src.slice(actionStart, actionEnd);
+    const openCallIdx = actionBody.indexOf('privileged.rpc("open_payment_refund_attempt"');
+    const handoffIdx = actionBody.indexOf("return executeOnlineRefund(");
+    expect(openCallIdx).toBeGreaterThan(-1);
+    expect(handoffIdx).toBeGreaterThan(openCallIdx);
+
+    const helperStart = src.indexOf("async function executeOnlineRefund(");
+    const helperEnd = src.indexOf("\n}", src.indexOf("return { status: refund.status };", helperStart));
+    const helperBody = src.slice(helperStart, helperEnd);
+    expect(helperBody).toContain("context.client.refunds.create(");
+    // The actual invocation (as opposed to prose mentioning it in
+    // comments elsewhere) appears ONLY inside this one shared helper,
+    // never a second time elsewhere in the file — no duplicated Stripe
+    // call site.
+    const createOccurrences = src.split("context.client.refunds.create(").length - 1;
+    expect(createOccurrences).toBe(1);
   });
 
   it("a DB backstop enforces at most one unresolved refund attempt per payment, mirroring payment_checkout_attempts_one_open_per_payment", () => {
