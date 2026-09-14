@@ -5,6 +5,7 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
+import ClubRulesSection from "./ClubRulesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
@@ -29,7 +30,7 @@ export default async function AdminSettingsPage() {
   const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select("currency, default_court_hourly_rate_cents, payment_mode")
+      .select("currency, default_court_hourly_rate_cents, payment_mode, rules_and_policies")
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -104,6 +105,15 @@ export default async function AdminSettingsPage() {
               All dates and times in the app are displayed in this timezone.
             </p>
             <ClubTimezoneSection currentTimezone={club?.timezone ?? "America/New_York"} />
+          </div>
+
+          <hr className="border-gray-100 dark:border-gray-800" />
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Club Rules & Policies
+            </p>
+            <ClubRulesSection currentRulesAndPolicies={settings?.rules_and_policies ?? null} />
           </div>
         </section>
 

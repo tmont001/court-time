@@ -12,6 +12,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   currency_required:           "Currency is required.",
   invalid_currency:            "Currency must be a 3-letter code (e.g. USD).",
   invalid_rate:                "Rate must be zero or a positive amount.",
+  // 0184
+  rules_and_policies_too_long: "Club Rules & Policies must be 10,000 characters or fewer.",
 };
 
 export async function updateClubTimezone(
@@ -198,6 +200,35 @@ export async function deleteClubLogo(): Promise<{ error?: string }> {
     metadata:    {},
   });
 
+  revalidatePath("/", "layout");
+  return {};
+}
+
+// 0184 — informational-only "Club Rules & Policies" document (court
+// etiquette, dress code, cleanup, ball machine rules, general facility
+// expectations, guest/check-in guidance). NEVER used for cancellation
+// windows, refund rules, booking restrictions, fees, eligibility, or
+// waiver acceptance — those remain structured product policy handled
+// elsewhere. Trim/empty->null and the 10,000-character cap are enforced
+// server-side by the RPC itself; this action only maps its error codes.
+export async function updateClubRulesAndPolicies(
+  rulesAndPolicies: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("update_club_rules_and_policies", {
+    p_rules_and_policies: rulesAndPolicies,
+  });
+  if (error) {
+    const key = error.message.match(/rules_and_policies_too_long|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save Club Rules & Policies." };
+  }
+
+  // Invalidates the whole layout cache, same as every other club_settings/
+  // clubs mutation in this file — covers /admin/settings AND /help (a
+  // separate route under the same root layout) with the one call.
   revalidatePath("/", "layout");
   return {};
 }

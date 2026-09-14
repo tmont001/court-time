@@ -14,13 +14,18 @@ export default async function HelpPage() {
   const { data: settings } = profile?.club_id
     ? await supabase
         .from("club_settings")
-        .select("booking_window_days, cancellation_window_hours")
+        .select("booking_window_days, cancellation_window_hours, rules_and_policies")
         .eq("club_id", profile.club_id)
         .single()
     : { data: null };
 
   const bookingDays   = settings?.booking_window_days       ?? 14;
   const cancelHours   = settings?.cancellation_window_hours ?? 24;
+  // 0184 — informational only, set by the club's own Admin
+  // (/admin/settings). Never a source of enforced policy — cancellation
+  // windows, refunds, booking limits, and fees are the separate, already-
+  // structured fields above/elsewhere, never this free-text field.
+  const rulesAndPolicies = settings?.rules_and_policies ?? null;
 
   const sections = [
     {
@@ -68,6 +73,22 @@ export default async function HelpPage() {
         </Link>
       </div>
       <div className="px-4 py-6 space-y-5 md:max-w-2xl md:mx-auto">
+        {/* 0184 — club-authored, informational only. Never a source of
+            enforced policy (cancellation windows, refunds, booking limits,
+            fees remain the structured sections below/elsewhere). Rendered
+            only when the club's Admin has actually set one. */}
+        {rulesAndPolicies && (
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Club Rules & Policies
+            </p>
+            <div className="ct-card px-4 py-3">
+              <p className="text-sm text-gray-700 dark:text-gray-300 leading-snug whitespace-pre-wrap">
+                {rulesAndPolicies}
+              </p>
+            </div>
+          </div>
+        )}
         {sections.map(section => (
           <div key={section.title}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">

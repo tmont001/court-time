@@ -60,6 +60,7 @@ export type Database = {
           payment_mode: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at: string;
           updated_at: string;
+          rules_and_policies: string | null;  // 0184 — informational only, never enforced
         };
         Insert: {
           id?: string;
@@ -73,6 +74,7 @@ export type Database = {
           payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at?: string;
           updated_at?: string;
+          rules_and_policies?: string | null;  // 0184
         };
         Update: {
           id?: string;
@@ -86,6 +88,7 @@ export type Database = {
           payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
           created_at?: string;
           updated_at?: string;
+          rules_and_policies?: string | null;  // 0184
         };
         Relationships: [
           {
@@ -2355,6 +2358,11 @@ export type Database = {
       };
       update_club_timezone: {
         Args: { p_timezone: string };
+        Returns: undefined;
+      };
+      // 0184 — informational-only "Club Rules & Policies" document
+      update_club_rules_and_policies: {
+        Args: { p_rules_and_policies: string | null };
         Returns: undefined;
       };
       create_event_type: {
