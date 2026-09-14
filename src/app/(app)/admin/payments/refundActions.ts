@@ -438,11 +438,23 @@ export interface StaffRefundRequestSummary {
   createdAt: string;
 }
 
-function mapRefundRequestError(message: string): string {
+// Phase 38B Task 3 correction — `context: "create"` covers the ONE case
+// where the shared ERROR_MESSAGES.insufficient_role copy ("Only an Admin
+// can issue a refund.") would be actively wrong: create_refund_request
+// (0181) raises insufficient_role for anyone who is NOT 'staff' — the
+// opposite requirement from every other caller of this shared map, which
+// all require 'admin'. Rather than forking ERROR_MESSAGES into a second,
+// drifting copy, this is the smallest possible override: one extra key
+// checked only for this one call site, everything else still falls
+// through to the SAME shared map every other action in this file uses.
+function mapRefundRequestError(message: string, context?: "create"): string {
   const key =
     message.match(
       /not_authenticated|insufficient_role|payment_not_found|invalid_refund_amount|no_online_payment_to_refund|refund_exceeds_online_remaining|refund_reason_required|refund_request_already_pending|request_not_found|request_not_pending|rejection_reason_required|refund_request_execution_started|invalid_arguments/,
     )?.[0] ?? "";
+  if (context === "create" && key === "insufficient_role") {
+    return "Only Staff can request a refund.";
+  }
   return ERROR_MESSAGES[key] ?? "Something went wrong. Please try again.";
 }
 
@@ -474,7 +486,7 @@ export async function createRefundRequestAction(
     p_notes: params.notes ?? null,
   });
 
-  if (error) return { error: mapRefundRequestError(error.message) };
+  if (error) return { error: mapRefundRequestError(error.message, "create") };
 
   revalidatePath("/admin/payments");
   return {};

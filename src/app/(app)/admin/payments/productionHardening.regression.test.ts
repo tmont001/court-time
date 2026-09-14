@@ -754,14 +754,22 @@ const REFUND_ACTIONS_PATH_FOR_REFUND = "src/app/(app)/admin/payments/refundActio
 describe("Refund action visibility is Admin-only in the UI, while backend authorization is unchanged (6 items)", () => {
   it("page.tsx reuses the existing isAdmin(role) predicate (never a new/duplicate authorization mechanism) and passes it down as a plain boolean prop", () => {
     const s = codeOnly(readSource(PAGE_PATH_FOR_REFUND));
-    expect(s).toContain('import { isOperator, isAdmin } from "@/lib/auth/roles";');
+    // Correction pass — isStaff joined the same import (an explicit Staff
+    // capability gate, never !isAdmin) alongside the pre-existing isAdmin.
+    expect(s).toContain('import { isOperator, isAdmin, isStaff } from "@/lib/auth/roles";');
     expect(s).toContain("const isAdminRole = isAdmin(profile.role);");
     expect(s).toContain("isAdmin={isAdminRole}");
   });
 
   it("1. Admin can see Refund — the list-row button's condition is `isAdmin && isOnlineRefundEligible(...) && !row.disputeBlocksRefund`, so it renders whenever isAdmin is true and the pre-existing eligibility holds, exactly as before this correction", () => {
     const s = readSource(CLIENT_PATH_FOR_REFUND);
-    expect(s).toContain("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // Phase 38B Task 3 + correction pass — !row.pendingRefundRequest and
+    // refundActionsAvailable were both added to this same condition
+    // (mutual exclusivity with Review, and fail-closed suppression on a
+    // failed pending-request read); this still proves Admin+eligible
+    // renders Refund exactly as before, widened only to reflect the
+    // legitimately new clauses.
+    expect(s).toContain("{isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
   });
 
   it("2. Staff cannot see Refund — isAdmin is false for role='staff' (isAdmin(role) = role === \"admin\" only), so the render condition is false regardless of eligibility, in BOTH surfaces", () => {
@@ -771,10 +779,10 @@ describe("Refund action visibility is Admin-only in the UI, while backend author
     expect(fn).toContain('return role === "admin";');
 
     const clientSrc = readSource(CLIENT_PATH_FOR_REFUND);
-    expect(clientSrc).toMatch(/\{isAdmin && isOnlineRefundEligible/);
+    expect(clientSrc).toMatch(/\{isAdmin && refundActionsAvailable && !row\.pendingRefundRequest && isOnlineRefundEligible/);
 
     const detailSrc = readSource(DETAIL_SHEET_PATH_FOR_REFUND);
-    expect(detailSrc).toContain("const canRefund = isAdmin && isRefundEligible;");
+    expect(detailSrc).toContain("const canRefund = isAdmin && refundActionsAvailable && isRefundEligible && !hasPendingRefundRequest;");
     expect(detailSrc).toContain("{canRefund && (");
   });
 

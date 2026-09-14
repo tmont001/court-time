@@ -39,11 +39,12 @@
 import type { Json } from "@/lib/db/types";
 import { isMember } from "@/lib/auth/roles";
 
-/** The 19 kinds currently produced (notifications_kind_check, migration
- * 0181 — the last migration to touch that constraint; 0099 through
- * lesson_admin_requested, Phase 38B adds the final two refund-request
- * kinds). Adding a kind here without a matching NOTIFICATION_TARGET_MAP
- * entry is a compile error. */
+/** The 20 kinds currently produced (notifications_kind_check, migration
+ * 0183 — the last migration to touch that constraint; 0099 through
+ * lesson_admin_requested, Phase 38B adds refund_request_rejected/
+ * refund_request_completed (0181) and refund_request_submitted (0183).
+ * Adding a kind here without a matching NOTIFICATION_TARGET_MAP entry is a
+ * compile error. */
 export type NotificationKind =
   | "reservation_confirmed"
   | "reservation_cancelled_by_admin"
@@ -63,9 +64,10 @@ export type NotificationKind =
   | "lesson_provider_reassigned"
   | "lesson_admin_requested"
   | "refund_request_rejected"
-  | "refund_request_completed";
+  | "refund_request_completed"
+  | "refund_request_submitted";
 
-export type TargetDomain = "reservation" | "event" | "lesson_request" | "program";
+export type TargetDomain = "reservation" | "event" | "lesson_request" | "program" | "payment_refund_request";
 
 export interface TargetDefinition {
   domain: TargetDomain;
@@ -107,12 +109,21 @@ export const NOTIFICATION_TARGET_MAP = {
   // Phase 38B — no structured domain (no id-specific deep link is
   // required in this phase): both producers set metadata.target_path =
   // '/admin/payments' directly, so resolution falls through to the
-  // legacy target_path fallback below, exactly like `announcement`. A
-  // future phase could add a structured "payment" TargetDomain +
-  // paymentId deep-link (mirroring the lesson ?lessonId= auto-open
-  // pattern) — deliberately out of scope here.
+  // legacy target_path fallback below, exactly like `announcement`. Both
+  // notify only the requesting Staff member, who has no reviewable action
+  // left to take — an id-specific deep link would have nowhere useful to
+  // point. Left unchanged by the Phase 38B notification-polish pass below
+  // (locked: "do not change their behavior").
   refund_request_rejected:         null,
   refund_request_completed:        null,
+  // Phase 38B notification polish (0183) — the ONE refund-request kind
+  // that DOES need an id-specific deep link: it notifies Admins, who have
+  // a real action to take (Review), and request_id is exactly the
+  // metadata key the producing RPC already writes. Mirrors the lesson
+  // ?lessonId= auto-open pattern (LessonsTab.tsx, Phase 30G/36) one
+  // domain over — no new routing framework, just this kind's own
+  // structured target.
+  refund_request_submitted:        { domain: "payment_refund_request", idKey: "request_id" },
 } satisfies Record<NotificationKind, TargetDefinition | readonly TargetDefinition[] | null>;
 
 // Same shape as the local UUID_RE already duplicated per-file across the
@@ -172,6 +183,16 @@ function buildStructuredPath(
       // variant (_advance_program_waitlist_offer's recipient is always a
       // roster member's own claimed_by account).
       return `/events?program=${encodedId}`;
+    case "payment_refund_request":
+      // Phase 38B notification polish — one path for every role, matching
+      // the fact that only Admins ever receive refund_request_submitted
+      // (0183's own recipient-selection predicate: role = 'admin'). No
+      // standalone refund-request page; /admin/payments itself recognizes
+      // this param and auto-opens ReviewRefundRequestSheet for this exact
+      // request (AdminPaymentsClient.tsx), gracefully falling through to a
+      // normal page load if the request has since resolved or the viewer
+      // isn't Admin.
+      return `/admin/payments?refundRequest=${encodedId}`;
   }
 }
 

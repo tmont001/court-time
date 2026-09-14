@@ -73,7 +73,13 @@ describe("Refund action is gated ONLY by real Stripe-refundable provenance, neve
     // authorization boundary), prepended ahead of the pre-existing
     // eligibility condition — see productionHardening.regression.test.ts
     // for the dedicated Admin-visible/Staff-hidden coverage of that gate.
-    const idx = src.indexOf("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // Phase 38B Task 3 — !row.pendingRefundRequest was added to this same
+    // condition (mutual exclusivity with the new Review action), which is
+    // exactly why this assertion is bounded to Refund's own JSX block
+    // (up to its literal button text) rather than a single exact-string
+    // match on the whole condition — a legitimate structural widening,
+    // not a weakening: it still proves lifecycleLabel is never referenced.
+    const idx = src.indexOf("{isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(idx).toBeGreaterThan(0);
     const block = src.slice(idx, src.indexOf("Refund\n", idx));
     expect(block).not.toMatch(/lifecycleLabel/);

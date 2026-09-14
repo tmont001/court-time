@@ -30,12 +30,13 @@ const ALL_KINDS: NotificationKind[] = [
   "lesson_admin_requested",
   "refund_request_rejected",
   "refund_request_completed",
+  "refund_request_submitted",
 ];
 
 describe("NOTIFICATION_TARGET_MAP", () => {
-  it("has an explicit entry for exactly the 19 authoritative kinds", () => {
+  it("has an explicit entry for exactly the 20 authoritative kinds", () => {
     expect(Object.keys(NOTIFICATION_TARGET_MAP).sort()).toEqual([...ALL_KINDS].sort());
-    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(19);
+    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(20);
   });
 });
 
@@ -183,6 +184,34 @@ describe("resolveNotificationTarget — refund_request_rejected / refund_request
       expect(resolveNotificationTarget("refund_request_completed", { target_path: "/admin/payments" }, role))
         .toBe("/admin/payments");
     }
+  });
+});
+
+describe("resolveNotificationTarget — refund_request_submitted (Phase 38B notification polish, structured target)", () => {
+  it("maps to the payment_refund_request domain, keyed on request_id — the SAME metadata key create_refund_request (0183) already writes", () => {
+    expect(NOTIFICATION_TARGET_MAP.refund_request_submitted).toEqual({
+      domain: "payment_refund_request",
+      idKey:  "request_id",
+    });
+  });
+
+  it("resolves to /admin/payments?refundRequest=<request_id> — the structured path wins even when a legacy target_path is also present", () => {
+    expect(resolveNotificationTarget("refund_request_submitted", { request_id: REQUEST_ID, target_path: "/admin/payments" }, "admin"))
+      .toBe(`/admin/payments?refundRequest=${REQUEST_ID}`);
+  });
+
+  it("role-agnostic — the one path is identical for every viewer role (only Admins ever actually receive this kind, per 0183's own recipient selection)", () => {
+    for (const role of ["admin", "staff", "pro", "member", null, undefined]) {
+      expect(resolveNotificationTarget("refund_request_submitted", { request_id: REQUEST_ID }, role))
+        .toBe(`/admin/payments?refundRequest=${REQUEST_ID}`);
+    }
+  });
+
+  it("falls back to the legacy target_path when request_id is missing/invalid — never fabricates a destination, never throws", () => {
+    expect(resolveNotificationTarget("refund_request_submitted", { target_path: "/admin/payments" }, "admin"))
+      .toBe("/admin/payments");
+    expect(resolveNotificationTarget("refund_request_submitted", { request_id: "not-a-uuid" }, "admin"))
+      .toBeNull();
   });
 });
 

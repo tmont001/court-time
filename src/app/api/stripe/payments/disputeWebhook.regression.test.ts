@@ -545,7 +545,9 @@ describe("known dispute states render with the locked hierarchy; unknown states 
 describe("Refund action: unchanged for non-disputed payments, hidden only when Stripe reports the charge is not refundable", () => {
   it("the Refund button condition is isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund — additive, not a replacement of the 34E-B gate (G-D1 additionally prepends a UI-only isAdmin visibility gate, never the authorization boundary)", () => {
     const src = readSource(ADMIN_CLIENT_PATH);
-    expect(src).toContain("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // Phase 38B Task 3 — !row.pendingRefundRequest was added to this same
+    // condition (mutual exclusivity with the new Review action).
+    expect(src).toContain("{isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
   });
 
   it("disputeBlocksRefund is computed from is_charge_refundable = false on ANY dispute for the payment — Stripe's own live signal, never re-derived locally", () => {

@@ -35,7 +35,7 @@ import type { AdminPaymentRow } from "@/app/(app)/admin/payments/AdminPaymentsCl
 const REFUND_EVENT_TYPES = new Set(["refund_recorded", "online_refund_recorded"]);
 
 export default function PaymentDetailSheet({
-  row, clubId, currency, clubTimezone, isAdmin, onClose, onRequestRefund, onRequestRecordPayment,
+  row, clubId, currency, clubTimezone, isAdmin, isStaff, refundActionsAvailable, onClose, onRequestRefund, onRequestRefundRequest, onReviewRefundRequest, onRequestRecordPayment,
 }: {
   row: AdminPaymentRow;
   clubId: string;
@@ -48,8 +48,32 @@ export default function PaymentDetailSheet({
   // in refundActions.ts, unchanged by this — this component still never
   // calls it directly, only hands off via onRequestRefund.
   isAdmin: boolean;
+  // Correction pass — the EXPLICIT Staff capability (page.tsx's own
+  // isStaff(profile.role)), never derived here as !isAdmin. Gates whether
+  // Request Refund is ever rendered — the actual product rule ("Staff may
+  // request refunds"), not an accident of this page's route-level
+  // exclusion of every other role.
+  isStaff: boolean;
+  // Correction pass — mirrors AdminPaymentsClient's own derivation
+  // exactly: false whenever the batched pending-refund-request read
+  // failed server-side, in which case Refund/Request Refund/Review are
+  // ALL suppressed here too (fail closed — never assumed available just
+  // because this sheet happens to be open).
+  refundActionsAvailable: boolean;
   onClose: () => void;
+  // Admin direct refund (existing, 34E-B) — deliberately a DISTINCT
+  // callback from onRequestRefundRequest below. Phase 38B: STAFF MAY
+  // REQUEST, ADMIN CONTROLS THE MONEY — the two flows must never be
+  // conflated into one handler, here or in AdminPaymentsClient.
   onRequestRefund: () => void;
+  // Phase 38B Task 3 — Staff's "Request Refund" handoff. Never executes a
+  // Stripe refund; opens RequestRefundSheet, which calls ONLY
+  // createRefundRequestAction.
+  onRequestRefundRequest: () => void;
+  // Phase 38B Task 3 — Admin's "Review" handoff for a pending Staff
+  // request. Opens ReviewRefundRequestSheet, which is the only path to
+  // approveRefundRequestAction/rejectRefundRequestAction.
+  onReviewRefundRequest: () => void;
   onRequestRecordPayment: () => void;
 }) {
   const [history, setHistory] = useState<PaymentEventHistoryItem[] | null>(null);
@@ -96,7 +120,16 @@ export default function PaymentDetailSheet({
   // server-side/unchanged (the refund Server Action's own admin-only
   // check, refundActions.ts).
   const isRefundEligible = isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund;
-  const canRefund = isAdmin && isRefundEligible;
+  // Phase 38B Task 3 — mutual exclusivity, mirroring AdminPaymentsClient's
+  // own row-action logic exactly: at most ONE of Admin direct Refund /
+  // Admin Review / Staff Request Refund is ever available here. A pending
+  // Staff request suppresses Admin's direct Refund entirely (Review takes
+  // its place) and suppresses Staff's Request Refund entirely (nothing to
+  // request again until the pending one resolves).
+  const hasPendingRefundRequest = row.pendingRefundRequest !== null;
+  const canRefund = isAdmin && refundActionsAvailable && isRefundEligible && !hasPendingRefundRequest;
+  const canReview = isAdmin && refundActionsAvailable && hasPendingRefundRequest;
+  const canRequestRefundRequest = isStaff && refundActionsAvailable && isRefundEligible && !hasPendingRefundRequest;
   // Runtime QA polish — a cancelled parent Event withholds Record Payment
   // eligibility without touching row.state at all (no waive/void/refund,
   // no amount_due_cents/amount_paid_cents mutation) — the balance stays
@@ -167,6 +200,14 @@ export default function PaymentDetailSheet({
             </span>
           )}
           <PaymentStateBadge state={row.state} />
+          {/* Phase 38B Task 3 — shown to BOTH roles whenever a Staff
+              refund request is pending, matching AdminPaymentsClient's
+              own row badge exactly. */}
+          {hasPendingRefundRequest && (
+            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+              Refund requested
+            </span>
+          )}
           {row.dispute && (
             <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${disputeToneClassName(presentDisputeStatus(row.dispute.status).tone)}`}>
               {presentDisputeStatus(row.dispute.status).label} · {formatMoney(row.dispute.amountCents, row.dispute.currency)} · {formatDisputeReason(row.dispute.reason)}
@@ -195,7 +236,7 @@ export default function PaymentDetailSheet({
 
         {/* Safe actions available — reuses the EXISTING 34E-B/34C sheets;
             this component never mutates anything itself. */}
-        {(canRefund || canRecordPayment) && (
+        {(canRefund || canReview || canRequestRefundRequest || canRecordPayment) && (
           <div className="flex gap-2">
             {canRefund && (
               <button
@@ -203,6 +244,22 @@ export default function PaymentDetailSheet({
                 className="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
               >
                 Refund
+              </button>
+            )}
+            {canReview && (
+              <button
+                onClick={onReviewRefundRequest}
+                className="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+              >
+                Review
+              </button>
+            )}
+            {canRequestRefundRequest && (
+              <button
+                onClick={onRequestRefundRequest}
+                className="flex-1 px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+              >
+                Request Refund
               </button>
             )}
             {canRecordPayment && (

@@ -782,64 +782,103 @@ describe("Failure recovery — Stripe success survives a local binding failure (
 // distinctly; only 'succeeded' looks like success
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("RefundPaymentSheet — explicit per-status UI, never treats failed/canceled as success", () => {
+// Phase 38B Task 3 — this per-status switch was extracted VERBATIM out of
+// RefundPaymentSheet into refundConfig.ts's interpretRefundStatus, so it
+// could be reused by ReviewRefundRequestSheet (Staff-request approval)
+// without inventing a second refund-status state machine (see
+// staffRefundRequestUI.regression.test.ts for that reuse coverage). The
+// structural assertions below now target refundConfig.ts, the SAME way
+// the original assertions targeted RefundPaymentSheet's own inline
+// switch — a legitimate widening (the logic moved, the behavior/copy did
+// not), not a weakening.
+describe("interpretRefundStatus (refundConfig.ts) — explicit per-status UI, never treats failed/canceled as success", () => {
   it("switches explicitly on every one of Stripe's five documented statuses", () => {
-    const src = readSource(REFUND_SHEET_PATH);
-    const switchIdx = src.indexOf("switch (result.status) {");
+    const src = readSource(REFUND_CONFIG_PATH);
+    const switchIdx = src.indexOf("switch (status) {");
     expect(switchIdx).toBeGreaterThan(0);
-    const switchBody = src.slice(switchIdx, src.indexOf("\n    }", switchIdx));
+    const switchBody = src.slice(switchIdx, src.indexOf("\n  }", switchIdx));
     for (const status of ["succeeded", "pending", "requires_action", "failed", "canceled"]) {
       expect(switchBody).toContain(`case "${status}":`);
     }
   });
 
-  it("only the 'succeeded' case calls onRefunded — every other case returns without it", () => {
-    const src = readSource(REFUND_SHEET_PATH);
-    const switchIdx = src.indexOf("switch (result.status) {");
+  it("only the 'succeeded' case returns kind: \"success\" — every other case returns a non-success kind", () => {
+    const src = readSource(REFUND_CONFIG_PATH);
+    const switchIdx = src.indexOf("switch (status) {");
     const succeededIdx = src.indexOf('case "succeeded":', switchIdx);
     const pendingIdx = src.indexOf('case "pending":', switchIdx);
     const succeededBranch = src.slice(succeededIdx, pendingIdx);
-    expect(succeededBranch).toContain("onRefunded();");
+    expect(succeededBranch).toContain('{ kind: "success" }');
 
-    const switchEndIdx = src.indexOf("\n    }", switchIdx);
+    const switchEndIdx = src.indexOf("\n  }", switchIdx);
     const restOfSwitch = src.slice(pendingIdx, switchEndIdx);
-    expect(restOfSwitch).not.toMatch(/onRefunded\(\);/);
+    expect(restOfSwitch).not.toMatch(/kind:\s*"success"/);
   });
 
-  it("'failed' sets a clear failure message via setError — never setStatusNotice, never onRefunded", () => {
-    const src = readSource(REFUND_SHEET_PATH);
+  it("'failed' returns a clear failure message with kind: \"error\"", () => {
+    const src = readSource(REFUND_CONFIG_PATH);
     const idx = src.indexOf('case "failed":');
     expect(idx).toBeGreaterThan(0);
     const branch = src.slice(idx, src.indexOf('case "canceled":', idx));
-    expect(branch).toMatch(/setError\("The refund failed\./);
-    expect(branch).not.toMatch(/onRefunded\(\);/);
+    expect(branch).toMatch(/kind:\s*"error"/);
+    expect(branch).toMatch(/The refund failed\./);
   });
 
-  it("'canceled' sets a clear canceled message via setError — never implies money was refunded, never onRefunded", () => {
-    const src = readSource(REFUND_SHEET_PATH);
+  it("'canceled' returns a clear canceled message with kind: \"error\" — never implies money was refunded", () => {
+    const src = readSource(REFUND_CONFIG_PATH);
     const idx = src.indexOf('case "canceled":');
     expect(idx).toBeGreaterThan(0);
     const branch = src.slice(idx, src.indexOf("default:", idx));
-    expect(branch).toMatch(/setError\("The refund was canceled\./);
-    expect(branch).not.toMatch(/onRefunded\(\);/);
+    expect(branch).toMatch(/kind:\s*"error"/);
+    expect(branch).toMatch(/The refund was canceled\./);
   });
 
-  it("'requires_action' shows a distinct non-success notice — never treated as pending's own copy, never onRefunded", () => {
-    const src = readSource(REFUND_SHEET_PATH);
+  it("'requires_action' returns a distinct non-success notice (kind: \"notice\") — never treated as pending's own copy", () => {
+    const src = readSource(REFUND_CONFIG_PATH);
     const idx = src.indexOf('case "requires_action":');
     expect(idx).toBeGreaterThan(0);
     const branch = src.slice(idx, src.indexOf('case "failed":', idx));
-    expect(branch).toMatch(/setStatusNotice\("This refund needs further action/);
-    expect(branch).not.toMatch(/onRefunded\(\);/);
+    expect(branch).toMatch(/kind:\s*"notice"/);
+    expect(branch).toMatch(/This refund needs further action/);
   });
 
-  it("an unrecognized/default status fails closed with an error, never silently succeeds", () => {
-    const src = readSource(REFUND_SHEET_PATH);
+  it("an unrecognized/default status fails closed with kind: \"error\", never silently succeeds", () => {
+    const src = readSource(REFUND_CONFIG_PATH);
     const idx = src.indexOf("default:");
     expect(idx).toBeGreaterThan(0);
-    const branch = src.slice(idx, src.indexOf("}\n  }", idx));
-    expect(branch).toMatch(/setError\(/);
-    expect(branch).not.toMatch(/onRefunded\(\);/);
+    const branch = src.slice(idx, src.indexOf("\n  }", idx));
+    expect(branch).toMatch(/kind:\s*"error"/);
+  });
+});
+
+describe("RefundPaymentSheet — delegates ALL status handling to the shared interpretRefundStatus, no leftover inline switch", () => {
+  it("imports and calls interpretRefundStatus rather than re-implementing the switch inline", () => {
+    const src = readSource(REFUND_SHEET_PATH);
+    expect(src).toContain('import { interpretRefundStatus } from "@/lib/stripe/refundConfig";');
+    expect(src).toContain("interpretRefundStatus(result.status)");
+    expect(src).not.toMatch(/switch\s*\(result\.status\)/);
+  });
+
+  it("calls onRefunded only for a 'success' outcome — never for 'notice' or 'error'", () => {
+    const src = readSource(REFUND_SHEET_PATH);
+    const outcomeIdx = src.indexOf("const outcome = interpretRefundStatus(result.status);");
+    expect(outcomeIdx).toBeGreaterThan(0);
+    const successIdx = src.indexOf('outcome.kind === "success"', outcomeIdx);
+    const onRefundedIdx = src.indexOf("onRefunded();", successIdx);
+    expect(successIdx).toBeGreaterThan(outcomeIdx);
+    expect(onRefundedIdx).toBeGreaterThan(successIdx);
+    // No OTHER onRefunded() call exists in this handler outside the
+    // success branch.
+    expect(src.split("onRefunded();").length - 1).toBe(1);
+  });
+
+  it("routes 'notice' to setStatusNotice and 'error' to setError, never crossed", () => {
+    const src = readSource(REFUND_SHEET_PATH);
+    const fnStart = src.indexOf("async function handleSubmit()");
+    const fnBody = src.slice(fnStart);
+    expect(fnBody).toContain('if (outcome.kind === "notice") {');
+    expect(fnBody).toContain("setStatusNotice(outcome.message);");
+    expect(fnBody).toContain("setError(outcome.message);");
   });
 });
 
@@ -987,7 +1026,9 @@ describe("AdminPaymentsClient — Outstanding is unpaid/partially_paid only; ref
     // prepended isAdmin as a UI-only render gate (never the authorization
     // boundary) — see productionHardening.regression.test.ts for that
     // gate's own dedicated coverage.
-    const btnIdx = src.indexOf("{isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // Phase 38B Task 3 — !row.pendingRefundRequest was added to this same
+    // condition (mutual exclusivity with the new Review action).
+    const btnIdx = src.indexOf("{isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(btnIdx).toBeGreaterThan(0);
     const btnBlock = src.slice(btnIdx, src.indexOf("Refund\n", btnIdx));
     expect(btnBlock).not.toMatch(/isPaymentOpenForRecording/);

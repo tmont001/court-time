@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
-import { isOperator, isAdmin } from "@/lib/auth/roles";
+import { isOperator, isAdmin, isStaff } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import AdminPaymentsClient, { type AdminPaymentRow } from "./AdminPaymentsClient";
 import type { PaymentStateRow } from "@/lib/payments";
@@ -23,6 +23,7 @@ import { fetchAllRowsExhaustively } from "@/lib/supabase/exhaustiveRange";
 import { resolveReportRange } from "../reports/dateRange";
 import { getFinancialRangeSummary, getOutstandingSnapshot } from "./financialSummary";
 import type { FinancialOverviewResult } from "./financialOverviewActions";
+import { fetchPendingRefundRequests } from "./refundActions";
 
 // Phase 34C consolidation — the canonical Admin/Staff operational surface
 // for "who owes money, for what, how much, and can I record a payment" —
@@ -55,6 +56,18 @@ export default async function AdminPaymentsPage() {
   // the rest of the app already uses for Admin-only authority — never a
   // duplicate/parallel authorization mechanism.
   const isAdminRole = isAdmin(profile.role);
+  // Correction pass — Task 3's original Staff "Request Refund" gate used
+  // !isAdmin as a stand-in for "is Staff," which only happened to be
+  // correct because this page's own route-level isOperator(profile.role)
+  // gate (above) already excludes every role except admin/staff. That is
+  // an accident of route composition, not a real capability check — an
+  // explicit isStaff(profile.role) is the actual product rule ("Staff may
+  // request refunds") and is threaded down alongside isAdminRole so
+  // neither AdminPaymentsClient nor PaymentDetailSheet has to re-derive
+  // "Staff" by negating "Admin." Backend authorization (create_refund_
+  // request's own current_user_role() = 'staff' check, 0181) remains the
+  // real, unchanged boundary — this is UI visibility only.
+  const isStaffRole = isStaff(profile.role);
 
   const clubId = profile.club_id ?? "";
   const supabase = await createClient();
@@ -242,6 +255,38 @@ export default async function AdminPaymentsPage() {
   }
   const refundableByPaymentId = new Map(
     (refundableResult.data ?? []).map(r => [r.payment_id, r.refundable_cents]),
+  );
+
+  // Phase 38B Task 3 — the one sanctioned batched read for "which of
+  // these payments currently has a pending Staff refund request." Mirrors
+  // the refundable-amount batched read immediately above exactly: ONE
+  // call for every payment id on this page, never a per-row fetch.
+  // fetchPendingRefundRequests (refundActions.ts) is itself Admin+Staff
+  // (get_pending_refund_requests_for_payments' own authorization, 0181) —
+  // called directly here since it is a plain "use server" function, the
+  // same way fetchPaymentEventHistory is already called from a client
+  // component elsewhere in this feature.
+  const pendingRequestsResult = paymentIds.length > 0
+    ? await fetchPendingRefundRequests(paymentIds)
+    : { data: [] as Awaited<ReturnType<typeof fetchPendingRefundRequests>>["data"] };
+  // Correction pass — a failed read here means we cannot tell whether a
+  // payment has a pending Staff refund request. FAILS CLOSED: never
+  // silently proceed as though every payment had none (which would wrongly
+  // expose Admin's direct Refund and Staff's Request Refund even when a
+  // request may in fact be pending, and race Admin's own separate Refund
+  // against an unseen pending one). refundRequestReadFailed is threaded
+  // down to AdminPaymentsClient, which suppresses Request Refund/Refund/
+  // Review everywhere their mutual exclusivity depends on this data —
+  // never a per-row fallback, never a fabricated request row.
+  const refundRequestReadFailed = Boolean(pendingRequestsResult.error);
+  if (refundRequestReadFailed) {
+    console.error("[refund] fetchPendingRefundRequests failed — failing closed: Refund/Request Refund/Review suppressed until this succeeds", {
+      payment_ids: paymentIds,
+      message: pendingRequestsResult.error,
+    });
+  }
+  const pendingRequestByPaymentId = new Map(
+    (pendingRequestsResult.data ?? []).map(r => [r.paymentId, r]),
   );
 
   // Phase 34E-C — informational Stripe dispute state. Unlike payment_
@@ -491,6 +536,12 @@ export default async function AdminPaymentsPage() {
         evidenceDueBy: currentDispute.evidence_due_by,
       },
       disputeBlocksRefund: disputesForPayment.some(d => !d.is_charge_refundable),
+      // Phase 38B Task 3 — the current pending Staff refund request for
+      // this payment, if any. Null when none exists — gates both the
+      // Staff "Request Refund" action (hidden while pending) and the
+      // Admin "Refund requested"/"Review" treatment (shown while
+      // pending, replacing the direct Refund action).
+      pendingRefundRequest: pendingRequestByPaymentId.get(p.id) ?? null,
       // Phase 34G-C1 — see the bulk query above. Null when no effective
       // (non-reversed) collection event exists yet for this payment —
       // rendered as no badge, never a fabricated default.
@@ -522,6 +573,8 @@ export default async function AdminPaymentsPage() {
             clubTimezone={clubTimezone}
             truncated={truncated}
             isAdmin={isAdminRole}
+            isStaff={isStaffRole}
+            refundRequestReadFailed={refundRequestReadFailed}
             initialFinancialOverview={initialFinancialOverview}
           />
         </div>

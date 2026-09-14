@@ -79,6 +79,47 @@ export function isRefundStatus(value: string | null | undefined): value is Refun
   return value != null && (REFUND_STATUS_VALUES as readonly string[]).includes(value);
 }
 
+// Phase 38B Task 3 — the ONE shared interpretation of a completed refund
+// attempt's Stripe status into UI-facing copy/tone. Extracted verbatim out
+// of RefundPaymentSheet's own original switch (34E-B) so ReviewRefund
+// RequestSheet (Staff-request approval) can reuse the SAME five-state
+// behavior/copy rather than inventing a second refund-status state
+// machine — both sheets call createOnlineRefundAction/approveRefund
+// RequestAction respectively, and both get back the identical
+// CreateRefundResult shape.
+export type RefundOutcome =
+  | { kind: "success" }
+  | { kind: "notice"; message: string }
+  | { kind: "error"; message: string };
+
+export function interpretRefundStatus(status: RefundStatus | undefined): RefundOutcome {
+  switch (status) {
+    case "succeeded":
+      return { kind: "success" };
+    case "pending":
+      // Cards resolve synchronously in the overwhelming majority of
+      // cases — this branch exists for the rare method/timing where
+      // Stripe hasn't finished yet. The signed webhook (0153) will
+      // finish reconciling regardless of whether the sheet stays open.
+      return { kind: "notice", message: "Refund submitted — it will finish processing shortly." };
+    case "requires_action":
+      return {
+        kind: "notice",
+        message: "This refund needs further action in Stripe before it can complete. It has not been refunded yet.",
+      };
+    case "failed":
+      return { kind: "error", message: "The refund failed. No money was returned. Check Stripe for details, or try again." };
+    case "canceled":
+      return { kind: "error", message: "The refund was canceled. No money was returned." };
+    default:
+      // Structurally unreachable (the Server Action only ever returns one
+      // of the five statuses above alongside a non-error result) — fails
+      // closed rather than silently treating an unrecognized status as
+      // success.
+      return { kind: "error", message: "Something went wrong. Please check back before trying again." };
+  }
+}
+
 // Mirrors 0153's own open_payment_refund_attempt gate exactly — used only
 // to decide whether the Admin-facing Refund action should render/be
 // enabled at all. The actual money-relevant step (refund creation) always

@@ -82,7 +82,9 @@ describe("3. cancelled + paid Reservation — Refund eligibility unaffected by r
     expect(canRefundBlock).toContain("isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund");
 
     const clientSrc = readSource(CLIENT_PATH);
-    const refundButtonIdx = clientSrc.indexOf("isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
+    // Phase 38B Task 3 — !row.pendingRefundRequest was added to this same
+    // condition (mutual exclusivity with the new Review action).
+    const refundButtonIdx = clientSrc.indexOf("isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (");
     expect(refundButtonIdx).toBeGreaterThan(-1);
     const refundBlock = clientSrc.slice(refundButtonIdx, refundButtonIdx + 300);
     expect(refundBlock).not.toMatch(/recordPaymentBlocked/);

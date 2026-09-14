@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import RefundPaymentSheet from "@/components/RefundPaymentSheet";
+import RequestRefundSheet from "@/components/RequestRefundSheet";
+import ReviewRefundRequestSheet from "@/components/ReviewRefundRequestSheet";
 import { isPaymentOpenForRecording, toneClassName, type PaymentStateRow } from "@/lib/payments";
 import { isOnlineRefundEligible } from "@/lib/stripe/refundConfig";
 import { presentDisputeStatus, disputeToneClassName, formatDisputeReason } from "@/lib/stripe/disputeConfig";
@@ -14,6 +16,7 @@ import { ACTION_BUTTON_PRIMARY_COMPACT_TOUCH } from "@/components/styles/actionB
 import PaymentDetailSheet from "@/components/PaymentDetailSheet";
 import PaymentExportMenu from "./PaymentExportMenu";
 import { getFinancialOverviewAction, type FinancialOverviewResult } from "./financialOverviewActions";
+import type { StaffRefundRequestSummary } from "./refundActions";
 import type { ReportRange } from "../reports/dateRange";
 
 // Mirrors FINANCIAL_DOMAIN_LABEL in ./financialSummary.ts (a server-only
@@ -71,6 +74,13 @@ export interface AdminPaymentRow {
   // it never misleadingly offers a call that Stripe would reject; Stripe
   // itself remains authoritative for any race after page render.
   disputeBlocksRefund: boolean;
+  // Phase 38B Task 3 — the current pending Staff refund request for this
+  // payment, if any (null when none exists). Drives the mutual-exclusivity
+  // between Staff's "Request Refund", Admin's direct "Refund", and Admin's
+  // "Review" — at most one of the three is ever available for a given
+  // payment. Never reserves money on its own; the live refundableCents
+  // above remains the authoritative current-refundable source.
+  pendingRefundRequest: StaffRefundRequestSummary | null;
   // Phase 34G-C1 — reversal-aware compact collection-source summary
   // ("Stripe" / "Manual · Cash" / "Manual · Multiple" / "Mixed"), derived
   // server-side from payment_events (never from payment_mode_at_creation
@@ -100,7 +110,7 @@ const DOMAIN_LABEL: Record<AdminPaymentRow["domainType"], string> = {
 type Tab = "overview" | "outstanding" | "activity";
 
 export default function AdminPaymentsClient({
-  rows, clubId, currency, clubTimezone, truncated, isAdmin, initialFinancialOverview,
+  rows, clubId, currency, clubTimezone, truncated, isAdmin, isStaff, refundRequestReadFailed, initialFinancialOverview,
 }: {
   rows: AdminPaymentRow[];
   clubId: string;
@@ -126,6 +136,22 @@ export default function AdminPaymentsClient({
   // getFinancialOverviewAction independently re-checks role === "admin"
   // before ever calling it.
   isAdmin: boolean;
+  // Correction pass — the EXPLICIT Staff capability (page.tsx's own
+  // isStaff(profile.role)), never derived here as !isAdmin. Gates Staff's
+  // "Request Refund" action (list row + PaymentDetailSheet) so it renders
+  // for the actual product rule ("Staff may request refunds"), not as an
+  // accident of this page's route-level isOperator gate excluding every
+  // other role. Backend authorization (create_refund_request's own
+  // current_user_role() = 'staff' check, 0181) remains unchanged and is
+  // the real boundary — this is UI visibility only.
+  isStaff: boolean;
+  // Correction pass — true when page.tsx's batched fetchPendingRefundRequests
+  // read failed, meaning pending-request state for every row on this page
+  // is UNKNOWN rather than "none." Fails closed: suppresses Staff Request
+  // Refund, Admin direct Refund, and Admin Review everywhere (their mutual
+  // exclusivity depends entirely on knowing pendingRefundRequest per row) —
+  // never falls through to treating an unknown state as "no request."
+  refundRequestReadFailed: boolean;
   // Server-rendered Overview figures for the default range (7d), or null
   // when isAdmin is false (never fetched for Staff) or the initial fetch
   // failed. The Overview panel's own range switch refetches via
@@ -133,11 +159,76 @@ export default function AdminPaymentsClient({
   initialFinancialOverview: FinancialOverviewResult | null;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>(isAdmin ? "overview" : "outstanding");
   const [query, setQuery]   = useState("");
   const [recordTarget, setRecordTarget] = useState<AdminPaymentRow | null>(null);
   const [refundTarget, setRefundTarget] = useState<AdminPaymentRow | null>(null);
   const [detailTarget, setDetailTarget] = useState<AdminPaymentRow | null>(null);
+  // Phase 38B Task 3 — Staff's Request Refund sheet and Admin's Review
+  // sheet, each its own target state exactly like refundTarget/recordTarget
+  // above, so at most one sheet is ever mounted at a time.
+  const [requestRefundTarget, setRequestRefundTarget] = useState<AdminPaymentRow | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<AdminPaymentRow | null>(null);
+
+  // Correction pass — fail-closed derivation: Request Refund/Refund/
+  // Review all depend on correctly knowing row.pendingRefundRequest, so
+  // ALL THREE are suppressed together whenever that read failed, rather
+  // than falling through to "assume no pending request."
+  const refundActionsAvailable = !refundRequestReadFailed;
+
+  // Phase 38B notification polish — ?refundRequest=<request id> deep link,
+  // following the SAME ?lessonId= auto-open pattern LessonsTab.tsx already
+  // uses (Phase 30G/36): match against `rows` (already the caller's own
+  // RLS/RPC-scoped list, so an unrelated club's request id simply finds no
+  // match — never an independent lookup), fire once per distinct value via
+  // the ref, and strip the param afterward so re-visiting the same URL or
+  // clicking the same notification again can re-open it. Authorization:
+  // the match against `rows` PLUS the isAdmin gate below are the only
+  // checks — a resolved/rejected/missing request, or a non-Admin viewer,
+  // both fall through to "load normally," never a crash or stale state.
+  //
+  // Correction pass — while refundRequestReadFailed is true,
+  // row.pendingRefundRequest is UNKNOWN for every row (fail-closed, see
+  // refundActionsAvailable above), not "none." "No match" must therefore
+  // NEVER be treated as "resolved/missing" here: the request may still
+  // genuinely exist, we simply failed to load pending-request state. In
+  // that case this effect does nothing at all — no auto-open, no
+  // clearRefundRequestParam, no ref write — so the URL param survives
+  // untouched and the SAME deep link can still auto-open correctly once
+  // the user refreshes and the read succeeds.
+  const refundRequestParam = searchParams.get("refundRequest");
+  const autoOpenReviewAttemptRef = useRef<string | null>(null);
+
+  function clearRefundRequestParam() {
+    autoOpenReviewAttemptRef.current = null;
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has("refundRequest")) return;
+    params.delete("refundRequest");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  useEffect(() => {
+    if (!refundRequestParam) return;
+    if (autoOpenReviewAttemptRef.current === refundRequestParam) return;
+    // Fail closed: never mark this param "attempted," never clear it,
+    // never open Review — pendingRefundRequest state is untrustworthy
+    // while the batched read failed. Retried automatically (this effect
+    // re-runs) once refundRequestReadFailed flips back to false.
+    if (refundRequestReadFailed) return;
+    autoOpenReviewAttemptRef.current = refundRequestParam;
+
+    const match = rows.find(r => r.pendingRefundRequest?.requestId === refundRequestParam);
+    if (!match || !isAdmin) {
+      clearRefundRequestParam();
+      return;
+    }
+
+    setReviewTarget(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refundRequestParam, rows, isAdmin, refundRequestReadFailed]);
 
   const [financialOverview, setFinancialOverview] = useState(initialFinancialOverview);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -242,6 +333,18 @@ export default function AdminPaymentsClient({
             </p>
           )}
 
+          {/* Correction pass — fail-closed notice: shown whenever the
+              batched pending-refund-request read failed server-side.
+              Everything else on this page (financial state, Record
+              Payment, Details) is unaffected — only the three refund
+              actions whose mutual exclusivity depends on this data are
+              suppressed. */}
+          {refundRequestReadFailed && (
+            <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-lg px-3 py-2 mb-4">
+              Refund actions unavailable. Refresh and try again.
+            </p>
+          )}
+
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-400 dark:text-gray-500 py-12 text-center">
               {tab === "outstanding" ? "No outstanding balances." : "No payments to show."}
@@ -288,6 +391,15 @@ export default function AdminPaymentsClient({
                       {row.sourceSummary}
                     </span>
                   )}
+                  {/* Phase 38B Task 3 — shown to BOTH roles whenever a
+                      Staff refund request is pending, independent of
+                      isAdmin. This is what makes "Refund requested" and
+                      the direct Refund button mutually exclusive below. */}
+                  {row.pendingRefundRequest && (
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                      Refund requested
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -296,12 +408,36 @@ export default function AdminPaymentsClient({
                   >
                     Details
                   </button>
-                  {isAdmin && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
+                  {/* Correction pass — mutual exclusivity: at most ONE of
+                      Staff "Request Refund" / Admin "Refund" / Admin
+                      "Review" is ever rendered for a given payment. Each
+                      is ALSO gated on refundActionsAvailable — if the
+                      batched pending-request read failed, all three are
+                      suppressed together (fail closed), never assumed
+                      absent. isStaff is the EXPLICIT capability gate for
+                      Request Refund — never !isAdmin. */}
+                  {isStaff && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
+                    <button
+                      onClick={() => setRequestRefundTarget(row)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                    >
+                      Request Refund
+                    </button>
+                  )}
+                  {isAdmin && refundActionsAvailable && !row.pendingRefundRequest && isOnlineRefundEligible(row.refundableCents) && !row.disputeBlocksRefund && (
                     <button
                       onClick={() => setRefundTarget(row)}
                       className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
                     >
                       Refund
+                    </button>
+                  )}
+                  {isAdmin && refundActionsAvailable && row.pendingRefundRequest && (
+                    <button
+                      onClick={() => setReviewTarget(row)}
+                      className="px-3 py-2 rounded-lg text-xs font-semibold text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900 hover:bg-red-50 dark:hover:bg-red-900/20 motion-safe:transition-colors motion-safe:duration-100"
+                    >
+                      Review
                     </button>
                   )}
                   {isPaymentOpenForRecording(row.state) && !row.recordPaymentBlocked && (
@@ -346,6 +482,30 @@ export default function AdminPaymentsClient({
         />
       )}
 
+      {requestRefundTarget && (
+        <RequestRefundSheet
+          paymentId={requestRefundTarget.state.current_payment_id}
+          clubId={clubId}
+          refundableCents={requestRefundTarget.refundableCents}
+          currency={requestRefundTarget.state.current_currency || currency}
+          title={requestRefundTarget.identityName}
+          onClose={() => setRequestRefundTarget(null)}
+          onRequested={() => { setRequestRefundTarget(null); router.refresh(); }}
+        />
+      )}
+
+      {reviewTarget && reviewTarget.pendingRefundRequest && (
+        <ReviewRefundRequestSheet
+          request={reviewTarget.pendingRefundRequest}
+          clubId={clubId}
+          currentRefundableCents={reviewTarget.refundableCents}
+          currency={reviewTarget.state.current_currency || currency}
+          title={reviewTarget.identityName}
+          onClose={() => setReviewTarget(null)}
+          onResolved={() => { setReviewTarget(null); router.refresh(); }}
+        />
+      )}
+
       {detailTarget && (
         <PaymentDetailSheet
           row={detailTarget}
@@ -353,11 +513,18 @@ export default function AdminPaymentsClient({
           currency={currency}
           clubTimezone={clubTimezone}
           isAdmin={isAdmin}
+          isStaff={isStaff}
+          refundActionsAvailable={refundActionsAvailable}
           onClose={() => setDetailTarget(null)}
           // Detail is read-only — any actual mutation hands off to the
-          // SAME existing 34E-B/34C sheets, closing Detail first so only
-          // one sheet is ever open at a time.
+          // SAME existing 34E-B/34C sheets (plus the two new Phase 38B
+          // sheets), closing Detail first so only one sheet is ever open
+          // at a time. onRequestRefund (Admin direct refund) and
+          // onRequestRefundRequest (Staff request) are deliberately
+          // distinct callbacks — never conflated.
           onRequestRefund={() => { setRefundTarget(detailTarget); setDetailTarget(null); }}
+          onRequestRefundRequest={() => { setRequestRefundTarget(detailTarget); setDetailTarget(null); }}
+          onReviewRefundRequest={() => { setReviewTarget(detailTarget); setDetailTarget(null); }}
           onRequestRecordPayment={() => { setRecordTarget(detailTarget); setDetailTarget(null); }}
         />
       )}

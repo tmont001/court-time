@@ -1,32 +1,34 @@
 "use client";
 
-// Phase 34E-B — compact Refund action for Admin only. Only ever rendered
-// when there is eligible online Stripe money (caller gates visibility via
-// isOnlineRefundEligible); this sheet itself does not re-derive that gate
-// — it trusts the caller and lets the RPC be the final authority, exactly
-// mirroring RecordPaymentSheet's own established discipline.
+// Phase 38B Task 3 — Staff-only "Request Refund" sheet. STAFF MAY REQUEST.
+// ADMIN CONTROLS THE MONEY: this sheet never executes a Stripe refund and
+// never calls createOnlineRefundAction/approveRefundRequestAction/
+// rejectRefundRequestAction — it calls ONLY createRefundRequestAction,
+// which itself never reaches Stripe or the privileged client (see
+// refundActions.ts's own header comment). Mirrors RefundPaymentSheet's
+// established responsive interaction pattern and input conventions
+// exactly, so the two sheets read as the same family of control.
 
 import { useState } from "react";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import { createOnlineRefundAction } from "@/app/(app)/admin/payments/refundActions";
+import { createRefundRequestAction } from "@/app/(app)/admin/payments/refundActions";
 import { formatMoney } from "@/lib/money";
 import { STALE_CLUB_MESSAGE } from "@/lib/staleClub";
-import { interpretRefundStatus } from "@/lib/stripe/refundConfig";
 
-function mapRefundError(message: string | undefined): string {
+function mapRequestError(message: string | undefined): string {
   if (!message) return "Something went wrong. Please try again.";
   if (message === STALE_CLUB_MESSAGE) return message;
   return message;
 }
 
-export default function RefundPaymentSheet({
+export default function RequestRefundSheet({
   paymentId,
   clubId,
   refundableCents,
   currency,
   title,
   onClose,
-  onRefunded,
+  onRequested,
 }: {
   paymentId: string;
   clubId: string;
@@ -34,57 +36,42 @@ export default function RefundPaymentSheet({
   currency: string;
   title: string;
   onClose: () => void;
-  onRefunded: () => void;
+  onRequested: () => void;
 }) {
   const [amount, setAmount] = useState(refundableCents > 0 ? (refundableCents / 100).toFixed(2) : "");
   const [reason, setReason] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Correction pass — distinct from `error`: a genuinely non-error
-  // outcome (pending/requires_action) still needs feedback, but must
-  // never be styled/worded like the destructive `failed`/`canceled`
-  // outcomes below it. Kept as its own state rather than folded into
-  // `error` so the two tones can never be conflated.
-  const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
   const amountCents = Math.round(parseFloat(amount || "0") * 100);
-  const canSubmit = !submitting && Number.isFinite(amountCents) && amountCents > 0 && amountCents <= refundableCents;
+  const trimmedReason = reason.trim();
+  const canSubmit =
+    !submitting &&
+    Number.isFinite(amountCents) &&
+    amountCents > 0 &&
+    amountCents <= refundableCents &&
+    trimmedReason.length > 0;
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
-    setStatusNotice(null);
 
-    const result = await createOnlineRefundAction(
-      { paymentId, amountCents, reason: reason.trim() || null },
+    const result = await createRefundRequestAction(
+      { paymentId, amountCents, reason: trimmedReason, notes: notes.trim() || null },
       clubId,
     );
 
     if (result.error) {
-      setError(mapRefundError(result.error));
+      setError(mapRequestError(result.error));
       setSubmitting(false);
       return;
     }
 
-    // Phase 38B Task 3 — every one of Stripe's five documented Refund
-    // statuses is handled explicitly via the ONE shared interpretation
-    // (refundConfig.ts's interpretRefundStatus, also used by
-    // ReviewRefundRequestSheet) — never a second, drifting copy of this
-    // switch. Only 'succeeded' is treated as success (onRefunded); every
-    // other status shows clear, distinct feedback and never calls
-    // onRefunded as though money had moved.
-    const outcome = interpretRefundStatus(result.status);
-    if (outcome.kind === "success") {
-      onRefunded();
-      return;
-    }
-    if (outcome.kind === "notice") {
-      setStatusNotice(outcome.message);
-    } else {
-      setError(outcome.message);
-    }
-    setSubmitting(false);
+    // Success — close through the callback, parent refreshes the payment
+    // data (mirrors RefundPaymentSheet's onRefunded handoff exactly).
+    onRequested();
   }
 
   return (
@@ -92,14 +79,15 @@ export default function RefundPaymentSheet({
       onClose={submitting ? () => {} : onClose}
       variant="modal"
       mobileInteraction="draggable"
-      label="Refund"
-      header={<p className="text-base font-semibold text-gray-900 dark:text-gray-100">Refund</p>}
+      label="Request Refund"
+      header={<p className="text-base font-semibold text-gray-900 dark:text-gray-100">Request Refund</p>}
     >
       <div className="space-y-5 pt-1">
         <p className="text-xs text-gray-500 dark:text-gray-400">{title}</p>
 
         <p className="text-xs text-gray-400 dark:text-gray-500">
-          {formatMoney(refundableCents, currency)} available to refund online
+          {formatMoney(refundableCents, currency)} available to refund online. An Admin must approve this request
+          before any money moves.
         </p>
 
         <div>
@@ -130,26 +118,38 @@ export default function RefundPaymentSheet({
 
         <div>
           <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-            Reason (optional)
+            Reason
           </label>
           <input
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Optional note"
+            placeholder="Why is this refund being requested?"
+            className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white motion-safe:transition-all motion-safe:duration-150 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            Notes (optional)
+          </label>
+          <input
+            type="text"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Optional note for the Admin reviewing this request"
             className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-3 text-base md:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent bg-white motion-safe:transition-all motion-safe:duration-150 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100"
           />
         </div>
 
         {error && <p className="text-xs text-red-500">{error}</p>}
-        {statusNotice && <p className="text-xs text-amber-600 dark:text-amber-400">{statusNotice}</p>}
 
         <button
           disabled={!canSubmit}
           onClick={handleSubmit}
           className="w-full py-3 rounded-xl bg-accent text-white dark:text-gray-900 text-sm font-semibold disabled:opacity-40 hover:brightness-110 motion-safe:hover:-translate-y-0.5 motion-safe:hover:shadow-md active:scale-[0.98] motion-safe:active:translate-y-0 motion-safe:transition-all motion-safe:duration-150"
         >
-          {submitting ? "Refunding…" : "Refund"}
+          {submitting ? "Submitting…" : "Submit Request"}
         </button>
       </div>
     </ResponsiveSheet>
