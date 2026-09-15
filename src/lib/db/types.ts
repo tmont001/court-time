@@ -59,6 +59,7 @@ export type Database = {
           default_court_hourly_rate_cents: number | null;  // Phase 34B
           default_court_hourly_rate_non_member_cents: number | null;  // 0189 — Phase 42B
           payment_mode: "none" | "manual" | "court_time_payments";  // Phase 34C
+          memberships_enabled: boolean;  // 0190 — Phase 42C-1
           created_at: string;
           updated_at: string;
           rules_and_policies: string | null;  // 0184 — informational only, never enforced
@@ -74,6 +75,7 @@ export type Database = {
           default_court_hourly_rate_cents?: number | null;  // Phase 34B
           default_court_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
           payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
+          memberships_enabled?: boolean;  // 0190 — Phase 42C-1
           created_at?: string;
           updated_at?: string;
           rules_and_policies?: string | null;  // 0184
@@ -89,6 +91,7 @@ export type Database = {
           default_court_hourly_rate_cents?: number | null;  // Phase 34B
           default_court_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
           payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
+          memberships_enabled?: boolean;  // 0190 — Phase 42C-1
           created_at?: string;
           updated_at?: string;
           rules_and_policies?: string | null;  // 0184
@@ -2286,16 +2289,19 @@ export type Database = {
       get_members: {
         Args: Record<string, never>;
         Returns: {
-          id:                 string;
-          first_name:         string | null;
-          last_name:          string | null;
-          phone:              string | null;
-          role:               string;
-          status:             string;
-          created_at:         string;
-          email:              string | null;
-          is_lesson_provider: boolean;
-          removed_at:         string | null;
+          id:                    string;
+          first_name:            string | null;
+          last_name:             string | null;
+          phone:                 string | null;
+          role:                  string;
+          status:                string;
+          created_at:            string;
+          email:                 string | null;
+          is_lesson_provider:    boolean;
+          removed_at:            string | null;
+          membership_status:     "active" | "inactive" | "suspended" | "non_member" | null;  // 0190 — Phase 42C-1
+          membership_type_id:    string | null;  // 0190 — Phase 42C-1
+          membership_type_name:  string | null;  // 0190 — Phase 42C-1
         }[];
       };
       remove_club_member: {
@@ -3194,17 +3200,20 @@ export type Database = {
       get_roster_members: {
         Args: { p_include_inactive?: boolean };
         Returns: {
-          id:         string;
-          first_name: string;
-          last_name:  string;
-          email:      string | null;
-          phone:      string | null;
-          role:       string;
-          notes:      string | null;
-          created_by: string;
-          created_at: string;
-          status:     string;
-          removed_at: string | null;
+          id:                    string;
+          first_name:            string;
+          last_name:             string;
+          email:                 string | null;
+          phone:                 string | null;
+          role:                  string;
+          notes:                 string | null;
+          created_by:            string;
+          created_at:            string;
+          status:                string;
+          removed_at:            string | null;
+          membership_status:     "active" | "inactive" | "suspended" | "non_member";  // 0190 — Phase 42C-1
+          membership_type_id:    string | null;  // 0190 — Phase 42C-1
+          membership_type_name:  string | null;  // 0190 — Phase 42C-1
         }[];
       };
       add_roster_member: {
@@ -3826,6 +3835,13 @@ export type Database = {
       update_club_payment_mode: {
         // Phase 34C. Admin only.
         Args: { p_payment_mode: "none" | "manual" | "court_time_payments" };
+        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
+      };
+      update_club_memberships_enabled: {
+        // 0190 — Phase 42C-1. Admin only. Deliberately separate from
+        // update_club_pricing, matching update_club_payment_mode's own
+        // precedent of a dedicated single-purpose toggle RPC.
+        Args: { p_enabled: boolean };
         Returns: Database["public"]["Tables"]["club_settings"]["Row"];
       };
       record_manual_payment: {

@@ -56,14 +56,19 @@ function functionBody(sql: string, name: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("0189 — migration numbering", () => {
-  it("is the next migration after immutable 0188, and no 0190+ migration exists yet", () => {
+  it("is the next migration after immutable 0188", () => {
     expect(() => readSource("supabase/migrations/0188_membership_domain_foundation.sql")).not.toThrow();
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
+  });
 
+  // Phase 42C-1 (0190) is the legitimate next migration once 0189 is
+  // applied — this guard now checks for anything PAST that authorized
+  // boundary, not past 0189 itself.
+  it("no unauthorized 0191+ migration exists yet", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 189;
+      return match !== null && Number(match[1]) > 190;
     });
     expect(laterMigrations).toEqual([]);
   });
