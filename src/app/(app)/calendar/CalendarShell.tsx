@@ -22,6 +22,8 @@ import {
   minutesSinceGridStart,
   getClubLocalDateISO,
   resolveNowIndicatorTop,
+  resolveNowIndicatorPillTop,
+  resolveNowIndicatorOccludedHourSlotIndex,
   resolveSmartScrollTop,
 } from "@/lib/calendar/nowIndicator";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
@@ -48,6 +50,11 @@ const DAY_NAMES  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 // Phase 35D: how often the live "now" indicator's position is recomputed.
 // Minute-level freshness is sufficient — never per-second.
 const NOW_TICK_INTERVAL_MS = 60_000;
+// Calendar polish — the current-time pill's fixed rendered height. Shared
+// between its own JSX (style.height) and the pure clamp/occlusion geometry
+// in nowIndicator.ts so there is exactly one source of truth for this
+// value, never two hardcoded numbers that could drift apart.
+const NOW_INDICATOR_PILL_HEIGHT_PX = 16;
 // Phase 35D: minutes of earlier context left visible above "now" on the
 // one-shot smart initial scroll (roughly 60-90 minutes per product spec;
 // the actual PIXEL offset is always derived from the grid's current row
@@ -754,6 +761,14 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // 3x elsewhere in this file (toLocaleTimeString with clubTimezone,
   // hour: "numeric", minute: "2-digit", hour12: true) — no new formatter,
   // no new timer; derived from the same nowTickMs state as `top`.
+  //
+  // Calendar polish (pill-only fix — the LINE keeps using `top` unchanged):
+  // `pillTop` is `top` boundary-clamped into the grid's own [0, totalGridH]
+  // range so the pill never renders partially off the top/bottom edge at
+  // opening/closing time; `occludedHourSlotIndex` is the single gutter
+  // hour-label row (if any) the pill's ACTUAL (post-clamp) position
+  // visually collides with, so that one ordinary label can be suppressed
+  // in favor of the pill rather than clashing with it.
   const nowIndicator = useMemo(() => {
     if (!isViewingToday || nowTickMs === null) return null;
     const nowDate = new Date(nowTickMs);
@@ -763,8 +778,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     const label = nowDate.toLocaleTimeString("en-US", {
       timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
     });
-    return { top, label };
-  }, [isViewingToday, nowTickMs, clubTimezone, startHour, endHour, rowH]);
+    const pillTop = resolveNowIndicatorPillTop(top, NOW_INDICATOR_PILL_HEIGHT_PX, totalGridH);
+    const occludedHourSlotIndex = resolveNowIndicatorOccludedHourSlotIndex(
+      pillTop + NOW_INDICATOR_PILL_HEIGHT_PX / 2, rowH, NOW_INDICATOR_PILL_HEIGHT_PX,
+    );
+    return { top, label, pillTop, occludedHourSlotIndex };
+  }, [isViewingToday, nowTickMs, clubTimezone, startHour, endHour, rowH, totalGridH]);
 
   const filteredCourts = useMemo(
     () => courts.filter(c => selectedCourtIds.has(c.id)),
@@ -1682,7 +1701,12 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                     className="absolute flex justify-end pr-1.5"
                     style={{ top: i * rowH, height: rowH, width: GUTTER_W, paddingTop: 3 }}
                   >
-                    {slot.isHour && (
+                    {/* Calendar polish: suppress the ONE ordinary hour label
+                        the current-time pill's actual (boundary-clamped)
+                        position visually collides with — the pill takes
+                        precedence rather than clashing with it. Every other
+                        label is completely unaffected. */}
+                    {slot.isHour && i !== nowIndicator?.occludedHourSlotIndex && (
                       <span className="text-[10px] leading-none text-gray-500 dark:text-gray-400">{slot.label}</span>
                     )}
                   </div>
@@ -1702,12 +1726,20 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                     design — a precise time marker, not a status badge — so
                     the court schedule itself stays visually dominant.
                     Purely decorative: pointer-events-none + aria-hidden,
-                    same as the line. */}
+                    same as the line.
+                    Calendar polish: `top` is `nowIndicator.pillTop` —
+                    already clamped into the grid's [0, totalGridH] bounds
+                    (see the nowIndicator memo above) — NOT `nowIndicator.top
+                    - 8`. The red LINE below is intentionally untouched and
+                    keeps using raw `nowIndicator.top`; only the pill's own
+                    position is ever adjusted, so it always stays fully
+                    visible even exactly at opening/closing time while the
+                    line remains mathematically exact. */}
                 {nowIndicator !== null && (
                   <div
                     aria-hidden="true"
                     className="absolute flex items-center justify-center rounded-full pointer-events-none whitespace-nowrap px-1 bg-[#E85D4F]"
-                    style={{ top: nowIndicator.top - 8, right: 3, height: 16 }}
+                    style={{ top: nowIndicator.pillTop, right: 3, height: NOW_INDICATOR_PILL_HEIGHT_PX }}
                   >
                     <span className="text-[9px] font-semibold leading-none tabular-nums text-white">
                       {nowIndicator.label}

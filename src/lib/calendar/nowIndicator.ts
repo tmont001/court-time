@@ -62,6 +62,47 @@ export function resolveNowIndicatorTop(nowMinutes: number, range: GridRange): nu
   return (nowMinutes / 30) * range.rowHeightPx;
 }
 
+/**
+ * Pixel `top` for the now-indicator PILL — centered on `top` (the exact
+ * same value used for the line) but clamped so the entire pill stays
+ * within the grid's own [0, gridHeightPx] bounds even when `top` is at or
+ * near the grid's opening/closing edge. Never changes `top` itself —
+ * callers must keep using the raw, unclamped `top` for the line; only the
+ * pill's own position is adjusted here.
+ */
+export function resolveNowIndicatorPillTop(
+  top: number,
+  pillHeightPx: number,
+  gridHeightPx: number,
+): number {
+  const half = pillHeightPx / 2;
+  const min = 0;
+  const max = Math.max(gridHeightPx - pillHeightPx, 0);
+  return Math.min(Math.max(top - half, min), max);
+}
+
+/**
+ * The gutter hour-label slot index (matching buildTimeSlots's own isHour
+ * convention in CalendarShell.tsx — one label every OTHER 30-minute row,
+ * i.e. slot indices 0, 2, 4, ...) whose label the now-indicator pill
+ * visually collides with, given the pill's ACTUAL rendered center
+ * (post-clamp) — or null when no hour label is close enough to need
+ * suppressing. At most one hour-label row can ever be within
+ * `pillHeightPx` of the pill's center, so this resolves the single
+ * nearest candidate directly rather than scanning every slot.
+ */
+export function resolveNowIndicatorOccludedHourSlotIndex(
+  pillCenter: number,
+  rowHeightPx: number,
+  pillHeightPx: number,
+): number | null {
+  const hourRowHeightPx = rowHeightPx * 2;
+  const hourRowNumber   = Math.round(pillCenter / hourRowHeightPx);
+  const hourSlotTop     = hourRowNumber * hourRowHeightPx;
+  if (Math.abs(pillCenter - hourSlotTop) >= pillHeightPx) return null;
+  return hourRowNumber * 2;
+}
+
 export interface SmartScrollInput extends GridRange {
   /** How many minutes of earlier context to leave visible above "now". */
   contextMinutes: number;

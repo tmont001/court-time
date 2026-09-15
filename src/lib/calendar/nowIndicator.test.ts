@@ -3,6 +3,8 @@ import {
   minutesSinceGridStart,
   getClubLocalDateISO,
   resolveNowIndicatorTop,
+  resolveNowIndicatorPillTop,
+  resolveNowIndicatorOccludedHourSlotIndex,
   resolveSmartScrollTop,
 } from "./nowIndicator";
 
@@ -137,6 +139,99 @@ describe("resolveSmartScrollTop — smart-scroll target and clamping", () => {
     const a = resolveSmartScrollTop(300, { ...range, rowHeightPx: 40 });
     const b = resolveSmartScrollTop(300, { ...range, rowHeightPx: 64 });
     expect(a).not.toBe(b);
+  });
+});
+
+describe("resolveNowIndicatorPillTop — pill-only boundary clamping (calendar polish)", () => {
+  const gridHeightPx = 24 * 48; // 24 rows (12 hours) at 48px each
+  const pillHeightPx = 16;
+
+  it("ordinary middle-of-day position: matches the line's centered position exactly, no clamping applied", () => {
+    // Line top = 288 (6 hours in). Pill naturally centers 8px above/below.
+    expect(resolveNowIndicatorPillTop(288, pillHeightPx, gridHeightPx)).toBe(288 - 8);
+  });
+
+  it("exact opening boundary: line top = 0 (resolveNowIndicatorTop's own return value at the grid start) clamps the pill DOWN to 0, never negative", () => {
+    expect(resolveNowIndicatorPillTop(0, pillHeightPx, gridHeightPx)).toBe(0);
+  });
+
+  it("just after opening: still clamped to 0 until there is enough room for the pill to center without going negative", () => {
+    // Natural center would put the pill at -3 (5 - 8); still clamped to 0.
+    expect(resolveNowIndicatorPillTop(5, pillHeightPx, gridHeightPx)).toBe(0);
+    // At exactly half the pill's height, clamping just stops mattering.
+    expect(resolveNowIndicatorPillTop(8, pillHeightPx, gridHeightPx)).toBe(0);
+    expect(resolveNowIndicatorPillTop(9, pillHeightPx, gridHeightPx)).toBe(1);
+  });
+
+  it("exact closing boundary: line top = gridHeightPx clamps the pill UP so its bottom edge never exceeds the grid", () => {
+    const top = resolveNowIndicatorPillTop(gridHeightPx, pillHeightPx, gridHeightPx);
+    expect(top).toBe(gridHeightPx - pillHeightPx);
+    expect(top + pillHeightPx).toBe(gridHeightPx); // entire pill stays in bounds
+  });
+
+  it("just before closing: still clamped so the pill's bottom edge never exceeds the grid", () => {
+    const top = resolveNowIndicatorPillTop(gridHeightPx - 5, pillHeightPx, gridHeightPx);
+    expect(top + pillHeightPx).toBeLessThanOrEqual(gridHeightPx);
+  });
+
+  it("never returns a value whose entire [top, top+height] span falls outside [0, gridHeightPx], for any input", () => {
+    for (const top of [-50, 0, 1, 8, 100, gridHeightPx - 1, gridHeightPx, gridHeightPx + 50]) {
+      const pillTop = resolveNowIndicatorPillTop(top, pillHeightPx, gridHeightPx);
+      expect(pillTop).toBeGreaterThanOrEqual(0);
+      expect(pillTop + pillHeightPx).toBeLessThanOrEqual(gridHeightPx);
+    }
+  });
+
+  it("CRITICAL: the line's own position function is completely independent of the pill clamp — calling resolveNowIndicatorPillTop never alters what resolveNowIndicatorTop returns for the same inputs", () => {
+    const range = { gridStartHour: 8, gridEndHour: 20, rowHeightPx: 48 };
+    const lineTopBefore = resolveNowIndicatorTop(0, range);
+    resolveNowIndicatorPillTop(lineTopBefore!, pillHeightPx, gridHeightPx); // pill clamp call
+    const lineTopAfter = resolveNowIndicatorTop(0, range);
+    expect(lineTopAfter).toBe(lineTopBefore);
+    expect(lineTopAfter).toBe(0); // the line stays mathematically exact regardless
+  });
+
+  it("scales with the grid's actual current row height / total height, not a fixed pixel value", () => {
+    const a = resolveNowIndicatorPillTop(0, pillHeightPx, 10 * 40);
+    const b = resolveNowIndicatorPillTop(0, pillHeightPx, 10 * 64);
+    // Both clamp to 0 at the opening boundary regardless of grid height —
+    // exercise the closing boundary instead, where grid height matters.
+    expect(resolveNowIndicatorPillTop(10 * 40, pillHeightPx, 10 * 40)).toBe(10 * 40 - pillHeightPx);
+    expect(resolveNowIndicatorPillTop(10 * 64, pillHeightPx, 10 * 64)).toBe(10 * 64 - pillHeightPx);
+    expect(a).toBe(b); // both 0 — sanity check on the opening side
+  });
+});
+
+describe("resolveNowIndicatorOccludedHourSlotIndex — pill/hour-label collision", () => {
+  const rowHeightPx = 48;
+  const pillHeightPx = 16;
+
+  it("returns null when the pill is safely in the middle of a 30-minute row, far from any hour label", () => {
+    // Hour row 3 (slot index 6) starts at 3*96=288; a pill centered at
+    // 288+24=312 (a quarter into the following half-hour) is 24px away —
+    // outside the 16px collision threshold.
+    expect(resolveNowIndicatorOccludedHourSlotIndex(312, rowHeightPx, pillHeightPx)).toBeNull();
+  });
+
+  it("returns the hour slot index when the pill's center exactly coincides with an hour label's row top", () => {
+    // Hour row 2 (slot index 4) starts at 2*96=192.
+    expect(resolveNowIndicatorOccludedHourSlotIndex(192, rowHeightPx, pillHeightPx)).toBe(4);
+  });
+
+  it("returns the hour slot index when the pill is merely CLOSE to (not exactly on) an hour label", () => {
+    // 5px away from hour row 0 (slot index 0, top=0) — inside the 16px threshold.
+    expect(resolveNowIndicatorOccludedHourSlotIndex(5, rowHeightPx, pillHeightPx)).toBe(0);
+  });
+
+  it("returns null just outside the collision threshold", () => {
+    // Hour row 0 top=0; 16px away is right at the boundary (strict <), so
+    // exactly pillHeightPx away must NOT collide.
+    expect(resolveNowIndicatorOccludedHourSlotIndex(pillHeightPx, rowHeightPx, pillHeightPx)).toBeNull();
+  });
+
+  it("resolves slot index 0 at the exact opening boundary (pill clamped to the grid's very top)", () => {
+    // pillCenter = pillTop(0) + pillHeight/2 = 8.
+    expect(resolveNowIndicatorOccludedHourSlotIndex(8, rowHeightPx, pillHeightPx)).toBe(0);
   });
 });
 
