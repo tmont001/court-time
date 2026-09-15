@@ -123,6 +123,24 @@ function mapCancelError(message: string): string {
   if (message === STALE_CLUB_CONTEXT_ERROR)  return STALE_CLUB_MESSAGE;
   if (message === "reservation_not_found") return "This booking has already been cancelled.";
   if (message === "insufficient_role")     return "You do not have permission to cancel this booking.";
+  // Correction pass (Phase 41A runtime QA): admin_cancel_reservation_v2
+  // now resolves+locks this reservation's payment and can raise
+  // open_checkout_requires_resolution before mutating — adminCancelReservation
+  // resolves that via Stripe and retries once, but a genuinely-blocking
+  // outcome (Stripe reports the Session still processing/completed, or
+  // Court Time could not safely verify it) surfaces as one of these two
+  // short codes. Same copy as EditReservationSheet.tsx's own identical
+  // mapEditError cases — checkoutInvalidation.ts is server-only and can't
+  // be imported here to share the literal, so the text is duplicated
+  // exactly, matching that established precedent. Previously both of
+  // these fell through to the generic fallback below, showing "Something
+  // went wrong" for a correctly-blocked (fail-closed, by design)
+  // cancellation attempt with zero indication that a refresh/retry would
+  // likely succeed once the payment finishes reconciling.
+  if (message === "checkout_still_processing")
+    return "An online payment is already processing or completed. Refresh the payment before making another change.";
+  if (message === "checkout_resolution_failed")
+    return "Court Time could not verify the online payment status. No changes were made. Please try again.";
   return "Something went wrong. Please try again.";
 }
 
@@ -319,6 +337,14 @@ export default function ReservationDetailSheet({
     if (result?.error) {
       setError(mapCancelError(result.error));
       setLoading(false);
+      // Correction pass (Phase 41A runtime QA): a failed cancel attempt —
+      // especially the checkout_still_processing/checkout_resolution_failed
+      // cases, whose own copy above literally says "refresh the payment"
+      // — means the displayed paymentState (fetched once on mount, never
+      // otherwise refreshed) may now be stale. Refresh it so the sheet
+      // never keeps showing e.g. "Unpaid" after the payment has actually
+      // reconciled in the background.
+      loadPaymentState();
       return;
     }
     onCancelled();
@@ -332,6 +358,10 @@ export default function ReservationDetailSheet({
     if (result?.error) {
       setError(result.error === STALE_CLUB_CONTEXT_ERROR ? STALE_CLUB_MESSAGE : result.error);
       setLoading(false);
+      // Same stale-payment-state correction as handleAdminCancel above —
+      // this sheet shares the identical paymentState/loadPaymentState
+      // state regardless of which mode it's rendered in.
+      loadPaymentState();
       return;
     }
     onCancelled();

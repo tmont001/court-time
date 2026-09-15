@@ -626,10 +626,36 @@ export async function adminCancelReservation(
 
   const supabase = await createClient();
 
-  const { data, error: rpcError } = await supabase.rpc(
+  let { data, error: rpcError } = await supabase.rpc(
     "admin_cancel_reservation_v2",
     { p_reservation_id: reservationId }
   );
+
+  // Phase 41A: admin_cancel_reservation_v2 now resolves+locks this
+  // reservation's current payment and runs the existing Checkout-
+  // invalidation guard before mutating — a bound, potentially still-
+  // payable Stripe Checkout Session is resolved via Stripe (never a
+  // silent local override) before safely retrying once, mirroring
+  // updateMemberReservationAdmin's own identical handshake exactly.
+  if (rpcError?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("reservation", [reservationId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to cancel reservation." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    // Correction pass: return resolved.code (the short machine code), not
+    // resolved.error (a full human sentence from a server-only module
+    // ReservationDetailSheet.tsx cannot import) — matching
+    // updateMemberReservationAdmin's own established convention exactly,
+    // so mapCancelError below can translate it the same way mapEditError
+    // already does for the identical two codes.
+    if (!resolved.ok) return { error: resolved.code };
+
+    ({ data, error: rpcError } = await supabase.rpc(
+      "admin_cancel_reservation_v2",
+      { p_reservation_id: reservationId }
+    ));
+  }
 
   if (rpcError) return { error: rpcError.message };
 
@@ -1235,10 +1261,28 @@ export async function cancelMemberReservation(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "You must be signed in." };
 
-  const { data, error: rpcError } = await supabase.rpc("cancel_member_reservation", {
+  let { data, error: rpcError } = await supabase.rpc("cancel_member_reservation", {
     p_reservation_id:   reservationId,
     p_expected_club_id: expectedClubId,
   });
+
+  // Phase 41A: cancel_member_reservation now resolves+locks this
+  // reservation's current payment and runs the existing Checkout-
+  // invalidation guard before mutating — same retry-once handshake as
+  // adminCancelReservation/updateMemberReservationAdmin above.
+  if (rpcError?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("reservation", [reservationId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to cancel reservation." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+
+    ({ data, error: rpcError } = await supabase.rpc("cancel_member_reservation", {
+      p_reservation_id:   reservationId,
+      p_expected_club_id: expectedClubId,
+    }));
+  }
 
   if (rpcError) return { error: rpcError.message };
 
