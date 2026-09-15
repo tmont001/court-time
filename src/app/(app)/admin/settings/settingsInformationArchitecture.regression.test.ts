@@ -79,16 +79,17 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     expect(s).toContain('.from("club-logos")');
   });
 
-  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the five now-current RPCs (the four pre-34G-B ones plus 0184's own update_club_rules_and_policies), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
+  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the six now-current RPCs (the five pre-42C-2 ones plus 42C-2's own update_club_memberships_enabled), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
     // Deliberately not a "highest migration === N" check — see this file's
     // own header comment on why that pattern is invalid across checkpoints.
-    // 0184 correction pass — this count is intentionally NOT frozen at 4
-    // forever: it tracks the actual, current RPC surface of this file, and
-    // is bumped deliberately (with a comment) whenever a real, reviewed
-    // RPC is added — exactly as it was bumped here.
+    // This count is intentionally NOT frozen forever: it tracks the actual,
+    // current RPC surface of this file, and is bumped deliberately (with a
+    // comment) whenever a real, reviewed RPC is added — exactly as it was
+    // bumped here (Phase 42C-2 added updateClubMembershipsEnabled).
     const s = readSource("src/app/(app)/admin/settings/actions.ts");
-    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(5);
+    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(6);
     expect(s).toContain('supabase.rpc("update_club_rules_and_policies", {');
+    expect(s).toContain('supabase.rpc("update_club_memberships_enabled", {');
   });
 
   it("19. no payment-domain mutation was introduced — page.tsx itself performs no .rpc( or mutation, only reads plus prop-passing to unchanged child components", () => {

@@ -166,17 +166,32 @@ describe("7. existing Court management actions/RPCs are unchanged", () => {
     expect(s).toContain('supabase.rpc("rename_court", { p_court_id: courtId, p_name: name })');
     expect(s).toContain('supabase.rpc("reorder_courts", { p_court_order: courtOrder })');
     expect(s).toMatch(/supabase\.rpc\("set_court_active", \{\s*p_court_id: courtId,\s*p_is_active: isActive,\s*\}\)/);
-    expect(s).toMatch(/supabase\.rpc\("set_court_hourly_rate", \{\s*p_court_id: courtId,\s*p_hourly_rate_cents: hourlyRateCents,\s*\}\)/);
+    // Phase 42C-2: widened to 0189's current 3-argument shape (adds
+    // p_hourly_rate_non_member_cents) — the call still names p_court_id
+    // and p_hourly_rate_cents exactly as before. A later 42C-2 correction
+    // pass resolves the third arg through a server-side preservation
+    // variable (nonMemberRateCents) rather than passing the raw
+    // hourlyRateNonMemberCents param straight through — see this file's
+    // own membershipSettingsPricingUI.regression.test.ts for the
+    // dedicated coverage of that preservation logic.
+    expect(s).toMatch(/supabase\.rpc\("set_court_hourly_rate", \{\s*p_court_id: courtId,\s*p_hourly_rate_cents: hourlyRateCents,\s*p_hourly_rate_non_member_cents: nonMemberRateCents,\s*\}\)/);
     expect(s).toContain('supabase.rpc("delete_court", { p_court_id: courtId })');
   });
 
   it("every original court action still calls assertActiveClub as its first guard, unchanged", () => {
+    // Sliced up to the next `export async function` (or end of file)
+    // rather than a fixed character window — Phase 42C-2's widened
+    // signatures/return types (e.g. setCourtHourlyRate's
+    // nonMemberRatePreserved/effectiveNonMemberRateCents) legitimately
+    // push the guard call further into the function body than a fixed
+    // window can assume.
     const s = readSource(COURTS_ACTIONS_PATH);
     const courtActionNames = ["addCourt", "renameCourt", "reorderCourts", "setCourtActive", "setCourtHourlyRate", "deleteCourt"];
     for (const name of courtActionNames) {
       const start = s.indexOf(`export async function ${name}(`);
       expect(start, `${name} not found`).toBeGreaterThan(-1);
-      const body = s.slice(start, start + 300);
+      const nextExportIdx = s.indexOf("\nexport async function", start + 1);
+      const body = s.slice(start, nextExportIdx > -1 ? nextExportIdx : undefined);
       expect(body, `${name} no longer guards with assertActiveClub`).toContain("assertActiveClub");
     }
   });

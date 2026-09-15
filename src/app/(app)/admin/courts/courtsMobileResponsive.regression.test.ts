@@ -40,9 +40,13 @@ describe("1. court names are not forced into the same cramped mobile action row"
     expect(section).toContain("flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between");
   });
 
-  it("the name/badge/rate block is a distinct flex item from the action-button block, not interleaved with buttons", () => {
+  it("the name/status/pricing block is a distinct flex item from the action-button block, not interleaved with buttons", () => {
+    // Phase 42C-2 UX polish pass restructured the former single-line
+    // "Name + badge + rate" comment into "Name + status, then pricing on
+    // its own compact row" — the underlying invariant (this block is a
+    // separate flex item from the action-button block) is unchanged.
     const section = normalRowSection();
-    const nameBlockIdx = section.indexOf("Name + badge + rate");
+    const nameBlockIdx = section.indexOf("Name + status, then pricing");
     const actionsBlockIdx = section.indexOf("Action buttons");
     expect(nameBlockIdx).toBeGreaterThan(-1);
     expect(actionsBlockIdx).toBeGreaterThan(nameBlockIdx);

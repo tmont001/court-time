@@ -315,9 +315,15 @@ describe("/admin/settings page.tsx — ClubRulesSection wired under Club Profile
     expect(s).toContain('if (profile?.role !== "admin") redirect("/calendar");');
   });
 
-  it("selects rules_and_policies alongside the existing club_settings columns — one additional column, no new query", () => {
+  it("selects rules_and_policies alongside the existing club_settings columns — no new query", () => {
+    // Phase 42C-2 later reformatted this .select() onto multiple lines and
+    // added default_court_hourly_rate_non_member_cents/memberships_enabled
+    // to the SAME query — still no new club_settings fetch, just more
+    // columns on the one that already existed.
     const s = readSource(SETTINGS_PAGE_PATH);
-    expect(s).toContain('.select("currency, default_court_hourly_rate_cents, payment_mode, rules_and_policies")');
+    expect(s).toContain("rules_and_policies");
+    const matches = s.match(/\.from\("club_settings"\)/g) ?? [];
+    expect(matches.length).toBe(1);
   });
 
   it("renders ClubRulesSection under the Club Profile group, after Timezone, passing settings?.rules_and_policies", () => {

@@ -7,6 +7,7 @@ import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
 import ClubRulesSection from "./ClubRulesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
+import MembershipsSection from "./MembershipsSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -30,7 +31,9 @@ export default async function AdminSettingsPage() {
   const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select("currency, default_court_hourly_rate_cents, payment_mode, rules_and_policies")
+      .select(
+        "currency, default_court_hourly_rate_cents, default_court_hourly_rate_non_member_cents, memberships_enabled, payment_mode, rules_and_policies"
+      )
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -130,6 +133,15 @@ export default async function AdminSettingsPage() {
 
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Memberships
+            </p>
+            <MembershipsSection enabled={settings?.memberships_enabled ?? true} />
+          </div>
+
+          <hr className="border-gray-100 dark:border-gray-800" />
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Pricing
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -138,6 +150,8 @@ export default async function AdminSettingsPage() {
             <PricingSettingsForm
               currency={currency}
               defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
+              membershipsEnabled={settings?.memberships_enabled ?? true}
+              defaultCourtHourlyRateNonMemberCents={settings?.default_court_hourly_rate_non_member_cents ?? null}
             />
           </div>
 

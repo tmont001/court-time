@@ -48,13 +48,13 @@ export default async function AdminCourtsPage({
   const [{ data: courts, error }, { data: settings }, { data: club }] = await Promise.all([
     supabase
       .from("courts")
-      .select("id, name, display_order, is_active, hourly_rate_cents")
+      .select("id, name, display_order, is_active, hourly_rate_cents, hourly_rate_non_member_cents")
       .eq("club_id", clubId)
       .order("display_order", { ascending: true }),
     supabase
       .from("club_settings")
       .select(
-        "currency, default_court_hourly_rate_cents, booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours"
+        "currency, default_court_hourly_rate_cents, default_court_hourly_rate_non_member_cents, memberships_enabled, booking_window_days, cancellation_window_hours, cancellation_grace_minutes, waitlist_offer_window_hours"
       )
       .eq("club_id", clubId)
       .single(),
@@ -124,6 +124,8 @@ export default async function AdminCourtsPage({
               clubId={clubId}
               currency={settings?.currency ?? "USD"}
               defaultHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
+              membershipsEnabled={settings?.memberships_enabled ?? true}
+              defaultHourlyRateNonMemberCents={settings?.default_court_hourly_rate_non_member_cents ?? null}
             />
           </div>
         )}
