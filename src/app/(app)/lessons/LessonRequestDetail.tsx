@@ -10,6 +10,8 @@ import {
   acceptLessonProposal,
   declineLessonProposal,
   cancelLesson,
+  previewMemberLessonCancellationPolicy,
+  cancelMemberLessonConfirmed,
   type LessonRequestRow,
 } from "./actions";
 import { fetchPaymentStates } from "@/app/(app)/admin/payments/actions";
@@ -56,11 +58,49 @@ function fmt(iso: string, tz: string): string {
   });
 }
 
+// Phase 41B completion — authoritative Member cancellation copy, keyed off
+// the server-verified policy state from previewMemberLessonCancellationPolicy.
+// Never computes in_policy/late itself — policy is a parameter, not a
+// derivation. Lessons never have grace (cancel_lesson's Member branch
+// always passes 0 grace minutes), so there is no grace case here. Payment
+// collected/outstanding phrasing uses the ALREADY-FETCHED paymentState —
+// never re-derives policy classification from payment data.
+function memberLessonCancelCopy(
+  policy: { state: "in_policy" | "late" } | null,
+  payment: PaymentStateRow | null,
+): string {
+  if (!policy) return "Checking this lesson's cancellation policy…";
+
+  if (policy.state === "in_policy") {
+    return "This will release the lesson and court slot. If you paid online, a refund request is automatically created for the club to review — actual refund processing still requires Admin approval.";
+  }
+
+  // late
+  if (payment && isPaymentOpenForRecording(payment)) {
+    return "This cancellation is outside the club's cancellation window. The lesson will be released, but your outstanding balance remains due — cancelling does not erase it.";
+  }
+  if (payment && payment.current_amount_paid_cents > 0) {
+    return "This cancellation is outside the club's cancellation window. The lesson will be released, but no refund request will be created — your payment will not be automatically refunded. You can still contact the club to ask about a manual refund.";
+  }
+  return "This cancellation is outside the club's cancellation window. The lesson will be released.";
+}
+
 export default function LessonRequestDetail({ request, userId: _userId, clubId, clubTimezone, currency, onClose }: Props) {
   const router = useRouter();
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [confirmCancel,   setConfirmCancel]   = useState(false);
   const [cancelReason,    setCancelReason]    = useState("");
+  // Phase 41B completion — this component is only ever rendered for a
+  // viewer managing THEIR OWN lesson (Member or the assigned Pro; Admin/
+  // Staff lesson management is a separate surface, LessonProSheet.tsx).
+  // request.pro_id === userId is the same distinguishing signal cancel_
+  // lesson's own v_actor_role computation uses for the 'pro' case — a Pro
+  // gets simple operational confirmation; anyone else viewing their own
+  // lesson here is the Member and gets the authoritative policy preview.
+  const isViewerPro = request.pro_id === _userId;
+  const [policyPreview, setPolicyPreview] = useState<{ state: "in_policy" | "late" } | null>(null);
+  const [policyPreviewLoading, setPolicyPreviewLoading] = useState(false);
+  const [policyChangedNotice, setPolicyChangedNotice]   = useState(false);
   const [error, setError] = useState("");
   const [isPending, startTransition] = useTransition();
 
@@ -155,6 +195,62 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
     setError("");
     startTransition(async () => {
       const res = await fn();
+      if (res.error) { setError(res.error); return; }
+      router.refresh();
+      onClose();
+    });
+  }
+
+  // Phase 41B completion — fetches the authoritative in_policy/late preview
+  // fresh; never computed client-side. Returns whether it succeeded so the
+  // caller can decide whether to open the confirm panel.
+  async function loadPolicyPreview(): Promise<boolean> {
+    setPolicyPreviewLoading(true);
+    setError("");
+    const result = await previewMemberLessonCancellationPolicy(request.id, clubId);
+    setPolicyPreviewLoading(false);
+    if (result.error || !result.data) {
+      setError(result.error ?? "Something went wrong. Please try again.");
+      return false;
+    }
+    setPolicyPreview({ state: result.data.state });
+    return true;
+  }
+
+  // Cancel trigger click — the assigned Pro opens the confirm panel
+  // immediately (simple operational confirmation, no policy data needed);
+  // the Member fetches the authoritative preview FIRST.
+  async function handleCancelTriggerClick() {
+    if (!isViewerPro) {
+      const ok = await loadPolicyPreview();
+      if (!ok) return;
+    }
+    setConfirmCancel(true);
+  }
+
+  function handleMemberCancelConfirmed() {
+    if (!policyPreview) return;
+    setError("");
+    setPolicyChangedNotice(false);
+    startTransition(async () => {
+      const res = await cancelMemberLessonConfirmed({
+        requestId:           request.id,
+        memberId:            _userId,
+        proId:               request.pro_id,
+        actorId:             _userId,
+        reason:              cancelReason.trim() || null,
+        expectedClubId:      clubId,
+        expectedPolicyState: policyPreview.state,
+      });
+      if (res.policyChanged) {
+        // Phase 41B completion — no silent retry across a changed
+        // financial outcome. Re-fetch the preview so the confirm panel's
+        // copy/CTA reflect the NEW authoritative state, and require the
+        // Member to confirm again explicitly.
+        setPolicyChangedNotice(true);
+        await loadPolicyPreview();
+        return;
+      }
       if (res.error) { setError(res.error); return; }
       router.refresh();
       onClose();
@@ -383,21 +479,33 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
         )}
 
         {/* Confirmed, or a pending reschedule proposal on an otherwise-
-            confirmed lesson: cancel outright. */}
+            confirmed lesson: cancel outright.
+            Phase 41B completion: the Member's trigger fetches the
+            authoritative in_policy/late preview first (0187) — the
+            assigned Pro's trigger opens the panel immediately (simple
+            operational confirmation). */}
         {(request.status === "confirmed" ||
           (request.status === "proposed" && request.linked_reservation_id)) && !confirmCancel && (
           <button
-            onClick={() => setConfirmCancel(true)}
-            className="w-full border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl py-3 text-sm font-medium"
+            onClick={handleCancelTriggerClick}
+            disabled={policyPreviewLoading}
+            className="w-full border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-xl py-3 text-sm font-medium disabled:opacity-50"
           >
-            Cancel Lesson
+            {policyPreviewLoading ? "Checking cancellation policy…" : "Cancel Lesson"}
           </button>
         )}
 
         {confirmCancel && (
           <div className="space-y-2">
+            {!isViewerPro && policyChangedNotice && (
+              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                This lesson&apos;s cancellation status changed while you were reviewing — please confirm again.
+              </p>
+            )}
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Cancel this confirmed lesson? This will remove it from the calendar.
+              {isViewerPro
+                ? "Cancel this confirmed lesson? This will remove it from the calendar."
+                : memberLessonCancelCopy(policyPreview, paymentState)}
             </p>
             <textarea
               value={cancelReason}
@@ -408,22 +516,29 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
               className="w-full ct-input text-base md:text-sm resize-none"
             />
             <button
-              onClick={() => action(() => cancelLesson({
-                requestId: request.id,
-                memberId:  _userId,
-                proId:     request.pro_id,
-                actorId:   _userId,
-                reason:    cancelReason.trim() || null,
-                expectedClubId: clubId,
-              }))}
-              disabled={isPending}
+              onClick={isViewerPro
+                ? () => action(() => cancelLesson({
+                    requestId: request.id,
+                    memberId:  _userId,
+                    proId:     request.pro_id,
+                    actorId:   _userId,
+                    reason:    cancelReason.trim() || null,
+                    expectedClubId: clubId,
+                  }))
+                : handleMemberCancelConfirmed}
+              disabled={isPending || (!isViewerPro && !policyPreview)}
               className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-50"
             >
-              {isPending ? "Cancelling…" : "Confirm Cancellation"}
+              {isPending
+                ? "Cancelling…"
+                : !isViewerPro && policyPreview?.state === "late"
+                ? "Cancel Anyway"
+                : "Confirm Cancellation"}
             </button>
             <button
-              onClick={() => setConfirmCancel(false)}
-              className="w-full text-sm text-gray-500"
+              onClick={() => { setConfirmCancel(false); setError(""); setPolicyChangedNotice(false); }}
+              disabled={isPending}
+              className="w-full text-sm text-gray-500 disabled:opacity-50"
             >
               Keep Lesson
             </button>

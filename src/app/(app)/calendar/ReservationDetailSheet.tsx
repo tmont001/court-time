@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { adminCancelReservation } from "./actions";
+import { adminCancelReservation, previewMemberReservationCancellationPolicy } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
 import EditMaintenanceSheet from "./EditMaintenanceSheet";
@@ -113,8 +113,16 @@ interface Props {
   onCancelled:    () => void;
   // Phase 30B1: fired after a successful admin edit.
   onUpdated:      () => void;
-  // When provided, the sheet operates in member-cancel mode (instead of admin).
-  onMemberCancel?: () => Promise<{ error?: string }>;
+  // When provided, the sheet operates in member-cancel mode (instead of
+  // admin). Phase 41B completion: now takes the policy state (in_policy/
+  // grace/late) the Member explicitly confirmed against — CalendarShell
+  // binds this to cancelMemberReservationConfirmed, which re-verifies that
+  // state server-side (inside cancel_member_reservation_confirmed, 0187)
+  // before ever delegating to the actual cancellation. policyChanged is
+  // returned (never a generic error) when the authoritative state no
+  // longer matches what the Member confirmed — the sheet must re-preview
+  // and require a fresh confirm, never silently retry.
+  onMemberCancel?: (expectedPolicyState: string) => Promise<{ error?: string; policyChanged?: boolean }>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -144,6 +152,37 @@ function mapCancelError(message: string): string {
   return "Something went wrong. Please try again.";
 }
 
+// Phase 41B completion — authoritative Member cancellation-copy, keyed off
+// the server-verified policy state from previewMemberReservationCancellationPolicy.
+// Never computes in_policy/grace/late itself — policy is a prop, not a
+// derivation. Payment collected/outstanding phrasing uses the ALREADY-
+// FETCHED paymentState (existing get_payment_states_for_domains read
+// boundary) — never re-derives policy classification from payment data,
+// which are two independent concepts.
+function memberReservationCancelCopy(
+  policy: { state: "in_policy" | "grace" | "late" } | null,
+  payment: PaymentStateRow | null,
+): string {
+  if (!policy) return "Checking this booking's cancellation policy…";
+
+  if (policy.state === "in_policy") {
+    return "This will release the court. If you paid online, a refund request is automatically created for the club to review — actual refund processing still requires Admin approval.";
+  }
+  if (policy.state === "grace") {
+    return "You're cancelling within this booking's grace period, so it's treated the same as an in-policy cancellation. This will release the court, and if you paid online, a refund request is automatically created for the club to review.";
+  }
+
+  // late
+  if (payment && isPaymentOpenForRecording(payment)) {
+    const outstanding = payment.current_amount_due_cents - payment.current_amount_paid_cents;
+    return `This cancellation is outside the club's cancellation window. The court will be released, but your outstanding balance of ${formatMoney(outstanding, payment.current_currency)} remains due — cancelling does not erase it.`;
+  }
+  if (payment && payment.current_amount_paid_cents > 0) {
+    return "This cancellation is outside the club's cancellation window. The court will be released, but no refund request will be created — your payment will not be automatically refunded. You can still contact the club to ask about a manual refund.";
+  }
+  return "This cancellation is outside the club's cancellation window. The court will be released.";
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
@@ -155,6 +194,25 @@ export default function ReservationDetailSheet({
   const [error, setError]                 = useState<string | null>(null);
   const [memberDisplay, setMemberDisplay] = useState<MemberDisplay | null>(null);
   const [editOpen, setEditOpen]           = useState(false);
+  // Phase 41B: reservation cancellation (both admin and member mode)
+  // requires an explicit confirm step before mutating — mirrors
+  // LessonRequestDetail.tsx's own established confirmCancel pattern
+  // exactly (inline panel within the same sheet, not a second stacked
+  // ResponsiveSheet). Admin/Staff/Pro get simple, policy-neutral copy —
+  // no Member in_policy/grace/late language.
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  // Phase 41B completion — the authoritative in_policy/grace/late preview
+  // (previewMemberReservationCancellationPolicy, delegating entirely to
+  // _evaluate_cancellation_policy via 0187) fetched fresh every time the
+  // Member opens the confirm panel, and again if the server reports the
+  // policy changed between confirm and mutation. Never set from any
+  // client-side computation.
+  const [policyPreview, setPolicyPreview] = useState<{
+    state:       "in_policy" | "grace" | "late";
+    withinGrace: boolean;
+  } | null>(null);
+  const [policyPreviewLoading, setPolicyPreviewLoading] = useState(false);
+  const [policyChangedNotice, setPolicyChangedNotice]   = useState(false);
 
   // Phase 34C — payment state, fetched via the sanitized batched read
   // boundary. Only meaningful for member_booking reservations (the only
@@ -350,13 +408,51 @@ export default function ReservationDetailSheet({
     onCancelled();
   }
 
-  async function handleMemberCancel() {
-    if (!onMemberCancel) return;
+  // Phase 41B completion — fetches the authoritative preview fresh; never
+  // computed client-side. Returns whether it succeeded so the caller can
+  // decide whether to open the confirm panel.
+  async function loadPolicyPreview(): Promise<boolean> {
+    setPolicyPreviewLoading(true);
+    setError(null);
+    const result = await previewMemberReservationCancellationPolicy(reservation.id, clubId);
+    setPolicyPreviewLoading(false);
+    if (result.error || !result.data) {
+      setError(mapCancelError(result.error ?? ""));
+      return false;
+    }
+    setPolicyPreview({ state: result.data.state, withinGrace: result.data.withinGrace });
+    return true;
+  }
+
+  // Cancel trigger click — admin mode opens the confirm panel immediately
+  // (no policy data needed); member mode fetches the authoritative preview
+  // FIRST, so the confirm panel never renders with stale/placeholder copy.
+  async function handleCancelTriggerClick() {
+    if (onMemberCancel) {
+      const ok = await loadPolicyPreview();
+      if (!ok) return;
+    }
+    setConfirmCancel(true);
+  }
+
+  async function handleMemberCancelConfirmed() {
+    if (!onMemberCancel || !policyPreview) return;
     setLoading(true);
     setError(null);
-    const result = await onMemberCancel();
+    setPolicyChangedNotice(false);
+    const result = await onMemberCancel(policyPreview.state);
+    if (result?.policyChanged) {
+      // Phase 41B completion — no silent retry across a changed financial
+      // outcome. Re-fetch the preview so the confirm panel's copy/CTA
+      // reflect the NEW authoritative state, and require the Member to
+      // confirm again explicitly.
+      setLoading(false);
+      setPolicyChangedNotice(true);
+      await loadPolicyPreview();
+      return;
+    }
     if (result?.error) {
-      setError(result.error === STALE_CLUB_CONTEXT_ERROR ? STALE_CLUB_MESSAGE : result.error);
+      setError(mapCancelError(result.error));
       setLoading(false);
       // Same stale-payment-state correction as handleAdminCancel above —
       // this sheet shares the identical paymentState/loadPaymentState
@@ -597,15 +693,57 @@ export default function ReservationDetailSheet({
         {/* Cancel — member mode or admin mode. Not offered once the
             reservation is already cancelled (Phase 36B) — there is
             nothing left to cancel, and re-cancelling would only surface a
-            confusing "already cancelled" error. */}
-        {!isCancelled && (
+            confusing "already cancelled" error.
+            Phase 41B: both modes open an inline confirm panel (mirrors
+            LessonRequestDetail.tsx's own established confirmCancel
+            pattern) instead of cancelling immediately. Member mode fetches
+            the authoritative in_policy/grace/late preview BEFORE the panel
+            opens (Phase 41B completion, 0187) — the panel never renders
+            with placeholder copy. Admin/Staff copy stays simple and
+            policy-neutral. */}
+        {!isCancelled && !confirmCancel && (
           <button
-            disabled={loading}
-            onClick={onMemberCancel ? handleMemberCancel : handleAdminCancel}
+            disabled={loading || policyPreviewLoading}
+            onClick={handleCancelTriggerClick}
             className={`w-full py-3 rounded-xl text-sm font-semibold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 disabled:opacity-40 ${(canEdit || canEditMaintenance) ? "mt-3" : "mt-5"}`}
           >
-            {loading ? "Cancelling…" : reservation.reason === "maintenance" ? "Cancel Block" : "Cancel Booking"}
+            {policyPreviewLoading
+              ? "Checking cancellation policy…"
+              : reservation.reason === "maintenance" ? "Cancel Block" : "Cancel Booking"}
           </button>
+        )}
+
+        {!isCancelled && confirmCancel && (
+          <div className={`space-y-2 ${(canEdit || canEditMaintenance) ? "mt-3" : "mt-5"}`}>
+            {onMemberCancel && policyChangedNotice && (
+              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                This booking&apos;s cancellation status changed while you were reviewing — please confirm again.
+              </p>
+            )}
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              {onMemberCancel
+                ? memberReservationCancelCopy(policyPreview, paymentState)
+                : `Cancel this ${reservation.reason === "maintenance" ? "block" : "booking"}? This will remove it from the calendar.`}
+            </p>
+            <button
+              onClick={onMemberCancel ? handleMemberCancelConfirmed : handleAdminCancel}
+              disabled={loading || (!!onMemberCancel && !policyPreview)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl py-3 text-sm font-semibold disabled:opacity-50"
+            >
+              {loading
+                ? "Cancelling…"
+                : onMemberCancel && policyPreview?.state === "late"
+                ? "Cancel Anyway"
+                : "Confirm Cancellation"}
+            </button>
+            <button
+              onClick={() => { setConfirmCancel(false); setError(null); setPolicyChangedNotice(false); }}
+              disabled={loading}
+              className="w-full text-sm text-gray-500 disabled:opacity-50"
+            >
+              {reservation.reason === "maintenance" ? "Keep Block" : "Keep Booking"}
+            </button>
+          </div>
         )}
 
       </ResponsiveSheet>

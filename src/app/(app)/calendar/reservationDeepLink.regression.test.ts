@@ -161,12 +161,15 @@ describe("ReservationDetailSheet.tsx — cancelled reservation renders read-only
     expect(block).toContain("<span");
   });
 
-  it("never renders the Cancel button once already cancelled", () => {
+  it("never renders the Cancel button (or its Phase 41B confirm panel) once already cancelled", () => {
     const s = src();
     const idx = s.indexOf("{/* Cancel — member mode or admin mode");
     expect(idx).toBeGreaterThan(-1);
-    const block = s.slice(idx, idx + 400);
-    expect(block).toContain("{!isCancelled && (");
+    const block = s.slice(idx, s.indexOf("</ResponsiveSheet>", idx));
+    // Phase 41B split the single cancel block into a trigger button and a
+    // confirm panel — both remain independently gated on !isCancelled.
+    expect(block).toContain("{!isCancelled && !confirmCancel && (");
+    expect(block).toContain("{!isCancelled && confirmCancel && (");
   });
 
   it("never renders Pay Now or Record Payment once already cancelled", () => {

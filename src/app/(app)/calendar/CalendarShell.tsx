@@ -15,7 +15,7 @@ import LessonRequestDetail from "@/app/(app)/lessons/LessonRequestDetail";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
-import { createReservation, adminCreateMemberReservation, cancelMemberReservation, getReservationDeepLinkDetail } from "./actions";
+import { createReservation, adminCreateMemberReservation, cancelMemberReservationConfirmed, getReservationDeepLinkDetail } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import {
@@ -2213,10 +2213,16 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             // reservation (0110) independently re-derives and enforces this
             // same ownership match server-side; this is a UI-eligibility
             // mirror, not the authorization boundary itself.
+            // Phase 41B completion: the sheet fetches the authoritative
+            // in_policy/grace/late preview itself and passes the state the
+            // Member explicitly confirmed here — cancel_member_reservation_
+            // confirmed (0187) re-verifies it server-side before ever
+            // delegating to the actual cancellation.
             (selectedReservation.owner_user_id === userId ||
               (userRosterMemberId !== null && selectedReservation.roster_member_id === userRosterMemberId)) &&
             (userRole === "member" || userRole === "pro")
-              ? async () => cancelMemberReservation(selectedReservation.id, clubId)
+              ? (expectedPolicyState: string) =>
+                  cancelMemberReservationConfirmed(selectedReservation.id, clubId, expectedPolicyState)
               : undefined
           }
         />

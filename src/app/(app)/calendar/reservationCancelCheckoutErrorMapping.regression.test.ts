@@ -57,7 +57,7 @@ describe("adminCancelReservation — returns the short machine code, not the raw
     expect(fn).not.toContain("if (!resolved.ok) return { error: resolved.error };");
   });
 
-  it("cancelMemberReservation is untouched — it still returns resolved.error, and ReservationDetailSheet's handleMemberCancel displays it raw (no mapCancelError), so that path was never broken and must not be changed", () => {
+  it("cancelMemberReservation is untouched — it still returns resolved.error, still used by /my-schedule's own quick-cancel form action (a separate surface, out of Phase 41B's scope)", () => {
     const src = readSource(ACTIONS_PATH);
     const fn = functionSource(src, "export async function cancelMemberReservation(");
     expect(fn).toContain("if (!resolved.ok) return { error: resolved.error };");
@@ -129,8 +129,8 @@ describe("stale payment-state display — refreshed after a failed cancel attemp
     expect(refreshIdx).toBeLessThan(returnIdx);
   });
 
-  it("handleMemberCancel refreshes paymentState identically — same shared state, same component", () => {
-    const fn = handlerSource("handleMemberCancel");
+  it("handleMemberCancelConfirmed (Phase 41B completion rename of the former handleMemberCancel) refreshes paymentState identically — same shared state, same component", () => {
+    const fn = handlerSource("handleMemberCancelConfirmed");
     const errorBranch = fn.slice(fn.indexOf("if (result?.error)"));
     expect(errorBranch).toContain("loadPaymentState();");
   });

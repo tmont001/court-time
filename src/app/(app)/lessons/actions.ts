@@ -543,6 +543,141 @@ export async function cancelLesson(params: {
   return {};
 }
 
+// ─── previewMemberLessonCancellationPolicy / cancelMemberLessonConfirmed ───
+// Phase 41B completion — authoritative Member cancellation-policy preview
+// and expected-state-guarded confirmation, mirroring the reservation-side
+// pair in calendar/actions.ts exactly. The preview RPC (0187) delegates
+// entirely to the same private _evaluate_cancellation_policy helper
+// cancel_lesson itself uses (grace hard-disabled, matching cancel_lesson's
+// own Member branch) — never a client-side or duplicated re-derivation.
+// Assigned Pro/Admin/Staff never call either of these — they keep using
+// cancelLesson directly with simple, policy-neutral confirmation.
+
+export interface LessonCancellationPolicyPreview {
+  state:       "in_policy" | "late";
+  cutoffAt:    string;
+  withinGrace: boolean;
+}
+
+export async function previewMemberLessonCancellationPolicy(
+  requestId: string,
+  expectedClubId: string,
+): Promise<{ data?: LessonCancellationPolicyPreview; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("preview_member_lesson_cancellation_policy", {
+    p_request_id: requestId,
+  });
+  if (error) return { error: mapLessonError(error.message) };
+
+  const row = (data as unknown as { state: string; cutoff_at: string; within_grace: boolean }[] | null)?.[0];
+  if (!row) return { error: "This request could not be found." };
+
+  return {
+    data: {
+      state:       row.state as LessonCancellationPolicyPreview["state"],
+      cutoffAt:    row.cutoff_at,
+      withinGrace: row.within_grace,
+    },
+  };
+}
+
+export async function cancelMemberLessonConfirmed(params: {
+  requestId:            string;
+  memberId:             string | null;
+  proId:                string;
+  actorId:              string;
+  reason?:              string | null;
+  expectedClubId:       string;
+  expectedPolicyState:  string;
+}): Promise<{ error?: string; policyChanged?: boolean }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: mapLessonError(guard.error) };
+
+  const supabase = await createClient();
+
+  let { data, error } = await supabase.rpc("cancel_member_lesson_confirmed", {
+    p_request_id:            params.requestId,
+    p_reason:                params.reason ?? null,
+    p_expected_policy_state: params.expectedPolicyState,
+  });
+
+  // Same retry-once Checkout-resolution handshake as cancelLesson — the
+  // retry re-invokes the SAME confirmed wrapper (never the raw
+  // cancel_lesson) so a policy change during the Stripe round-trip is
+  // still caught, not silently bypassed.
+  if (error?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("lesson_request", [params.requestId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to cancel lesson." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, params.expectedClubId);
+    if (!resolved.ok) return { error: resolved.error };
+
+    ({ data, error } = await supabase.rpc("cancel_member_lesson_confirmed", {
+      p_request_id:            params.requestId,
+      p_reason:                params.reason ?? null,
+      p_expected_policy_state: params.expectedPolicyState,
+    }));
+  }
+
+  if (error?.message.includes("cancellation_policy_changed")) {
+    return { policyChanged: true };
+  }
+
+  if (error) return { error: mapLessonError(error.message) };
+
+  // Same notification/side-effect semantics as cancelLesson's own success
+  // path — reused deliberately, not reimplemented.
+  if (params.memberId && params.actorId !== params.memberId) {
+    try {
+      await dispatchLessonEmail(params.memberId, "lesson_cancelled", params.requestId);
+    } catch { /* non-blocking */ }
+  } else if (!params.memberId && data?.roster_member_id) {
+    try {
+      const { proName, courtName } = await resolveLessonDisplayNames(
+        supabase, params.expectedClubId, data.pro_id, data.proposed_court_id,
+      );
+      const lines = [`Your lesson with ${proName} has been cancelled.`, ""];
+      if (data.proposed_starts_at && data.proposed_ends_at) {
+        const { day, timeRange } = await formatLessonWhen(
+          supabase, params.expectedClubId, data.proposed_starts_at, data.proposed_ends_at,
+        );
+        lines.push(day, timeRange);
+        if (courtName) lines.push(courtName);
+      }
+      if (params.reason?.trim()) {
+        lines.push("", `Reason: ${params.reason.trim()}`);
+      }
+      await sendRosterOperationalEmail(
+        supabase,
+        data.roster_member_id,
+        params.expectedClubId,
+        "lesson_cancelled",
+        (clubName) => rosterOperationalEmailTemplate(
+          clubName,
+          `Lesson cancelled — ${clubName}`,
+          lines.join("\n"),
+        ),
+      );
+    } catch { /* non-blocking */ }
+  }
+  if (params.actorId !== params.proId) {
+    try {
+      await dispatchLessonEmail(params.proId, "lesson_cancelled", params.requestId);
+    } catch { /* non-blocking */ }
+  }
+
+  revalidatePath("/lessons");
+  revalidatePath("/events");
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+  revalidatePath("/admin/lessons");
+  return {};
+}
+
 // ─── getClubProsAction ────────────────────────────────────────────────────────
 
 export interface ClubPro {

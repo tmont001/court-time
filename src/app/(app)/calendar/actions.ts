@@ -1309,6 +1309,120 @@ export async function cancelMemberReservation(
 }
 
 // ---------------------------------------------------------------------------
+// previewMemberReservationCancellationPolicy / cancelMemberReservationConfirmed
+// Phase 41B completion — authoritative Member cancellation-policy preview
+// and expected-state-guarded confirmation. The preview RPC (0187) delegates
+// entirely to the same private _evaluate_cancellation_policy helper
+// cancel_member_reservation itself uses — never a client-side or duplicated
+// re-derivation of that arithmetic. The confirmed RPC re-evaluates the
+// SAME policy fresh, inside one transaction, before delegating to the
+// existing, unmodified cancel_member_reservation — see 0187's own header
+// comment for why PostgreSQL's transaction-stable now() makes this safe
+// against a cutoff crossing between the Member's confirm click and the
+// actual mutation.
+// ---------------------------------------------------------------------------
+export interface ReservationCancellationPolicyPreview {
+  state:       "in_policy" | "grace" | "late";
+  cutoffAt:    string;
+  withinGrace: boolean;
+}
+
+export async function previewMemberReservationCancellationPolicy(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: ReservationCancellationPolicyPreview; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("preview_member_reservation_cancellation_policy", {
+    p_reservation_id:   reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  const row = (data as unknown as { state: string; cutoff_at: string; within_grace: boolean }[] | null)?.[0];
+  if (!row) return { error: "reservation_not_found" };
+
+  return {
+    data: {
+      state:       row.state as ReservationCancellationPolicyPreview["state"],
+      cutoffAt:    row.cutoff_at,
+      withinGrace: row.within_grace,
+    },
+  };
+}
+
+export async function cancelMemberReservationConfirmed(
+  reservationId: string,
+  expectedClubId: string,
+  expectedPolicyState: string,
+): Promise<{ error?: string; policyChanged?: boolean }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "You must be signed in." };
+
+  let { data, error: rpcError } = await supabase.rpc("cancel_member_reservation_confirmed", {
+    p_reservation_id:        reservationId,
+    p_expected_club_id:      expectedClubId,
+    p_expected_policy_state: expectedPolicyState,
+  });
+
+  // Same retry-once Checkout-resolution handshake as adminCancelReservation/
+  // cancelMemberReservation — the underlying cancel_member_reservation call
+  // this wrapper delegates to can still raise open_checkout_requires_
+  // resolution. The retry re-invokes the SAME confirmed wrapper (never the
+  // raw cancel_member_reservation) so a policy change that happens to occur
+  // during the Stripe round-trip is still caught by the wrapper's own
+  // expected-state guard, not silently bypassed.
+  if (rpcError?.message.includes(OPEN_CHECKOUT_REQUIRES_RESOLUTION)) {
+    const { data: states } = await fetchPaymentStates("reservation", [reservationId]);
+    const paymentId = states?.[0]?.current_payment_id;
+    if (!paymentId) return { error: "Failed to cancel reservation." };
+
+    const resolved = await resolveBlockingCheckoutBeforeMutation(paymentId, expectedClubId);
+    if (!resolved.ok) return { error: resolved.code };
+
+    ({ data, error: rpcError } = await supabase.rpc("cancel_member_reservation_confirmed", {
+      p_reservation_id:        reservationId,
+      p_expected_club_id:      expectedClubId,
+      p_expected_policy_state: expectedPolicyState,
+    }));
+  }
+
+  if (rpcError?.message.includes("cancellation_policy_changed")) {
+    return { policyChanged: true };
+  }
+
+  if (rpcError) return { error: rpcError.message };
+
+  const result = data as unknown as ReservationMutationResult | null;
+  const notificationId = result?.notification_id ?? null;
+
+  if (notificationId) {
+    try {
+      await dispatchMemberCancelSms(user.id, notificationId);
+    } catch {
+      // SMS dispatch must never block or surface errors.
+    }
+
+    try {
+      await dispatchMemberCancelEmail(user.id, notificationId);
+    } catch {
+      // Email dispatch must never block or surface errors.
+    }
+  }
+
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+  return {};
+}
+
+// ---------------------------------------------------------------------------
 // Phase 37D — reservation participant/guest roster.
 //
 // Thin server-action wrappers over the six Phase 37C (0179) SECURITY

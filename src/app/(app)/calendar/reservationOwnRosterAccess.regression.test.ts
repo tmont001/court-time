@@ -226,7 +226,10 @@ describe("ReservationDetailSheet's Players & Guests render gate", () => {
   it("17&18. Admin/Staff and Member's existing detail-sheet fields (Edit, Cancel, Price) are structurally unchanged", () => {
     const d = detail();
     expect(d).toContain("async function handleAdminCancel()");
-    expect(d).toContain("async function handleMemberCancel()");
+    // Phase 41B completion renamed handleMemberCancel to
+    // handleMemberCancelConfirmed (it now calls onMemberCancel with the
+    // Member-confirmed policy state) — same cancel-flow role, new name.
+    expect(d).toContain("async function handleMemberCancelConfirmed()");
     expect(d).toContain("const canEdit =");
     expect(d).toContain('{!onMemberCancel && reservation.reason === "member_booking" && (');
   });

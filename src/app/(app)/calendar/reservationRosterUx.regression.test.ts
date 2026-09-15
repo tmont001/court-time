@@ -509,7 +509,10 @@ describe("compatibility — no non-UI scope creep in Phase 37D", () => {
   it("ReservationDetailSheet's existing Edit/Cancel/Price/Payment logic is untouched aside from the new insertion", () => {
     const d = detail();
     expect(d).toContain("async function handleAdminCancel()");
-    expect(d).toContain("async function handleMemberCancel()");
+    // Phase 41B completion renamed handleMemberCancel to
+    // handleMemberCancelConfirmed (it now calls onMemberCancel with the
+    // Member-confirmed policy state) — same cancel-flow role, new name.
+    expect(d).toContain("async function handleMemberCancelConfirmed()");
     expect(d).toContain("const canEdit =");
   });
 });

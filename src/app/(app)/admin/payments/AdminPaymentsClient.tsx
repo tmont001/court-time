@@ -394,9 +394,13 @@ export default function AdminPaymentsClient({
                   {/* Phase 38B Task 3 — shown to BOTH roles whenever a
                       Staff refund request is pending, independent of
                       isAdmin. This is what makes "Refund requested" and
-                      the direct Refund button mutually exclusive below. */}
+                      the direct Refund button mutually exclusive below.
+                      Phase 41B: amber ("warning" tone) — a pending refund
+                      is an attention-required state Admin should be able
+                      to scan for, distinct from an error (red) and from
+                      the plain informational neutral pills around it. */}
                   {row.pendingRefundRequest && (
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("neutral")}`}>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${toneClassName("warning")}`}>
                       Refund requested
                     </span>
                   )}

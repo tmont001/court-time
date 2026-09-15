@@ -2174,6 +2174,27 @@ export type Database = {
         };
         Returns: Json;
       };
+      // Phase 41B completion (0187) — hand-added ahead of `supabase gen
+      // types` regeneration: the migration is authored and reviewed but
+      // deliberately not yet applied (STOP-before-apply checkpoint). Same
+      // Returns shape as cancel_member_reservation above (this wrapper
+      // delegates to it verbatim on a matching policy state).
+      preview_member_reservation_cancellation_policy: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: {
+          state:        string; // 'in_policy' | 'grace' | 'late'
+          cutoff_at:    string;
+          within_grace: boolean;
+        }[];
+      };
+      cancel_member_reservation_confirmed: {
+        Args: {
+          p_reservation_id: string;
+          p_expected_club_id: string;
+          p_expected_policy_state: string;
+        };
+        Returns: Json;
+      };
       // Phase 37C (0179) — reservation roster RPCs.
       get_reservation_roster: {
         Args: { p_reservation_id: string; p_expected_club_id: string };
@@ -3524,6 +3545,34 @@ export type Database = {
           // were previously omitted from this narrower type but are used
           // to resolve the no-account cancellation email's Pro/court/time
           // details server-side, from this same trusted return value.
+          roster_member_id:  string;
+          pro_id:             string;
+          proposed_starts_at: string | null;
+          proposed_ends_at:   string | null;
+          proposed_court_id:  string | null;
+        };
+      };
+      // Phase 41B completion (0187) — hand-added ahead of `supabase gen
+      // types` regeneration: the migration is authored and reviewed but
+      // deliberately not yet applied (STOP-before-apply checkpoint).
+      preview_member_lesson_cancellation_policy: {
+        Args: { p_request_id: string };
+        Returns: {
+          state:        string; // 'in_policy' | 'late'
+          cutoff_at:    string;
+          within_grace: boolean;
+        }[];
+      };
+      // Same Returns shape as cancel_lesson above (this wrapper delegates
+      // to it verbatim on a matching policy state).
+      cancel_member_lesson_confirmed: {
+        Args: {
+          p_request_id: string;
+          p_reason?:    string | null;
+          p_expected_policy_state: string;
+        };
+        Returns: {
+          id: string; status: string; cancellation_reason: string | null; cancelled_at: string | null; updated_at: string;
           roster_member_id:  string;
           pro_id:             string;
           proposed_starts_at: string | null;
