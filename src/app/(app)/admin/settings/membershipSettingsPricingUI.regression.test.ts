@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 42C-2 — Membership Settings + Member/Non-Member Court Pricing UI.
@@ -754,9 +754,15 @@ describe("10. no membership-management or Member Detail scope creep", () => {
     expect(s).not.toMatch(/import .*MembershipType|<MembershipType/);
   });
 
-  it("0188/0189/0190 are not modified by this checkpoint — no 0191 migration exists", () => {
-    const dir = join(process.cwd(), "supabase/migrations");
-    const files = readdirSync(dir);
-    expect(files.some((f) => f.startsWith("0191"))).toBe(false);
+  it("0188/0189/0190 are not modified by this checkpoint", () => {
+    // Not a "no 0191 exists" blanket check — a later, legitimate
+    // checkpoint (Phase 42C-3A, migration 0191) truthfully added one.
+    // This checkpoint's own concern is narrower and still holds: none of
+    // ITS files touch 0188/0189/0190's owned RPCs, and it introduced no
+    // migration of its own.
+    for (const path of [SETTINGS_ACTIONS_PATH, COURTS_ACTIONS_PATH, PRICING_FORM_PATH, COURT_MANAGEMENT_LIST_PATH, MEMBERSHIPS_SECTION_PATH]) {
+      const s = readSource(path);
+      expect(s).not.toMatch(/create or replace function|drop function|alter table/i);
+    }
   });
 });

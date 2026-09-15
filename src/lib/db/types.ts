@@ -3405,6 +3405,9 @@ export type Database = {
           event_no_show_count:         number;
           completed_lesson_count:      number;
           member_lesson_no_show_count: number;
+          membership_status:           "active" | "inactive" | "suspended" | "non_member" | null;  // 0191 — Phase 42C-3A
+          membership_type_id:          string | null;  // 0191 — Phase 42C-3A
+          membership_type_name:        string | null;  // 0191 — Phase 42C-3A
         }[];
       };
       get_member_upcoming_activity: {
