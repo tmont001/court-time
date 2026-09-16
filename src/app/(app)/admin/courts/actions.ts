@@ -23,6 +23,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_cancellation_window: "Cancellation window must be between 0 and 168 hours.",
   invalid_grace_period:        "Grace period must be between 0 and 60 minutes.",
   invalid_offer_window:        "Waitlist offer window must be between 1 and 72 hours.",
+  // Phase 42C-2
+  settings_unavailable:        "Could not load current club settings. Please try again.",
 };
 
 function revalidateCourts() {
@@ -117,11 +119,39 @@ export async function setCourtActive(
 // Phase 34B: optional per-court hourly rate override. A court override may
 // exist even when the club default is null — null clears the override,
 // falling back to the club default (or unpriced, if that's also null).
+// Phase 42C-2: widened to 0189's current 3-argument set_court_hourly_rate.
+//
+// Correction pass: same server-side preservation as updateClubPricing
+// (settings/actions.ts) — client-side hidden/stale state alone is not
+// sufficient. When memberships_enabled is currently false, this action
+// ignores whatever the client sent for the Non-Member override and
+// re-reads the CURRENT stored value from this court's own row instead,
+// same-club scoped (using the club already confirmed active by
+// assertActiveClub above — no new/duplicated authorization check). When
+// memberships_enabled is true, the explicit client value is used as-is,
+// including NULL (an Admin may intentionally clear the override while its
+// field is visible).
+//
+// Second correction pass: both preservation reads must FAIL CLOSED, not
+// fail open. There is no longer a state where a failed/empty settings
+// read or a failed/missing court read causes the client's Non-Member
+// value to be trusted — either read erroring, or either required row
+// being absent, now returns an error and never calls
+// set_court_hourly_rate at all.
+//
+// UX polish pass: returns nonMemberRatePreserved (true when the OFF
+// branch above fired) and effectiveNonMemberRateCents (whatever was
+// actually sent to the RPC, and is therefore now the true stored value) —
+// so a stale caller (a Courts tab open in another window/tab, unaware
+// Memberships were just turned off) can tell it was NOT what the caller
+// typed, resync its own local state to the authoritative value, and show
+// accurate feedback instead of a misleading plain "saved".
 export async function setCourtHourlyRate(
   courtId: string,
   hourlyRateCents: number | null,
+  hourlyRateNonMemberCents: number | null,
   expectedClubId: string,
-): Promise<{ error?: string }> {
+): Promise<{ error?: string; nonMemberRatePreserved?: boolean; effectiveNonMemberRateCents?: number | null }> {
   const guard = await assertActiveClub(expectedClubId);
   if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
 
@@ -129,9 +159,39 @@ export async function setCourtHourlyRate(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: ERROR_MESSAGES.not_authenticated };
 
+  const [
+    { data: currentSettings, error: settingsError },
+    { data: currentCourt, error: courtError },
+  ] = await Promise.all([
+    supabase
+      .from("club_settings")
+      .select("memberships_enabled")
+      .eq("club_id", expectedClubId)
+      .single(),
+    supabase
+      .from("courts")
+      .select("hourly_rate_non_member_cents")
+      .eq("id", courtId)
+      .eq("club_id", expectedClubId)
+      .single(),
+  ]);
+
+  if (settingsError || !currentSettings) {
+    return { error: ERROR_MESSAGES.settings_unavailable };
+  }
+  if (courtError || !currentCourt) {
+    return { error: ERROR_MESSAGES.invalid_court };
+  }
+
+  const nonMemberRatePreserved = currentSettings.memberships_enabled === false;
+  const nonMemberRateCents = nonMemberRatePreserved
+    ? currentCourt.hourly_rate_non_member_cents
+    : hourlyRateNonMemberCents;
+
   const { error } = await supabase.rpc("set_court_hourly_rate", {
     p_court_id: courtId,
     p_hourly_rate_cents: hourlyRateCents,
+    p_hourly_rate_non_member_cents: nonMemberRateCents,
   });
   if (error) {
     const key = error.message.match(/not_authenticated|insufficient_role|invalid_court|invalid_rate/)?.[0] ?? "";
@@ -139,7 +199,7 @@ export async function setCourtHourlyRate(
   }
 
   revalidateCourts();
-  return {};
+  return { nonMemberRatePreserved, effectiveNonMemberRateCents: nonMemberRateCents };
 }
 
 export async function deleteCourt(courtId: string, expectedClubId: string): Promise<{ error?: string }> {

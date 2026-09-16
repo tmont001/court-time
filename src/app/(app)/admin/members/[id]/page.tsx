@@ -31,7 +31,14 @@ export default async function MemberDetailPage({ params }: Props) {
   const supabase  = await createClient();
   const clubId    = profile.activeClubId ?? "";
 
-  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, settingsResult, prosResult, courtsResult, lessonTypesResult, rosterResult] =
+  // Phase 42C-3B: the Admin Type editor's newly-assignable pool. Admin
+  // only — matches membership_types' own admin-only RLS (0188), never
+  // broadened for Staff here. Staff's read-only Membership block needs no
+  // separate membership_types read at all: 0191's get_admin_member_detail
+  // already returns membership_type_name directly.
+  const isAdmin = profile.role === "admin";
+
+  const [detailResult, upcomingResult, historyResult, notesResult, clubResult, settingsResult, prosResult, courtsResult, lessonTypesResult, rosterResult, membershipTypesResult] =
     await Promise.all([
       supabase.rpc("get_admin_member_detail", { p_member_id: id }),
       supabase.rpc("get_member_upcoming_activity", { p_member_id: id }),
@@ -41,7 +48,7 @@ export default async function MemberDetailPage({ params }: Props) {
         ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
         : Promise.resolve({ data: null }),
       clubId
-        ? supabase.from("club_settings").select("currency").eq("club_id", clubId).single()
+        ? supabase.from("club_settings").select("currency, memberships_enabled").eq("club_id", clubId).single()
         : Promise.resolve({ data: null }),
       supabase.rpc("get_admin_club_pros"),
       clubId
@@ -62,6 +69,9 @@ export default async function MemberDetailPage({ params }: Props) {
       clubId
         ? supabase.from("roster_members").select("id").eq("club_id", clubId).eq("claimed_by", id).maybeSingle()
         : Promise.resolve({ data: null }),
+      isAdmin && clubId
+        ? supabase.from("membership_types").select("id, name").eq("club_id", clubId).eq("is_active", true).order("name")
+        : Promise.resolve({ data: [] }),
     ]);
 
   if (detailResult.error) {
@@ -134,8 +144,10 @@ export default async function MemberDetailPage({ params }: Props) {
     id: string; name: string; allowed_durations: number[] | null;
     pricing_basis: "flat" | "hourly"; unit_price_amount_cents: number | null;
   }[];
-  const currency = (settingsResult as { data: { currency: string } | null })?.data?.currency ?? "USD";
+  const currency = (settingsResult as { data: { currency: string; memberships_enabled: boolean } | null })?.data?.currency ?? "USD";
+  const membershipsEnabled = (settingsResult as { data: { currency: string; memberships_enabled: boolean } | null })?.data?.memberships_enabled ?? true;
   const rosterMemberId = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
+  const membershipTypes = (membershipTypesResult.data ?? []) as { id: string; name: string }[];
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
 
@@ -159,6 +171,9 @@ export default async function MemberDetailPage({ params }: Props) {
             rosterMemberId={rosterMemberId}
             adminId={user.id}
             paymentStateByActivityKey={Object.fromEntries(paymentStateByActivityKey)}
+            membershipsEnabled={membershipsEnabled}
+            membershipTypes={membershipTypes}
+            userRole={profile.role ?? "staff"}
           />
         </div>
       </div>

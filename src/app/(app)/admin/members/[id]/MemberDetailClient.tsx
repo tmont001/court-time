@@ -13,6 +13,16 @@ import {
   type AddedNote,
   type HistoryItem,
 } from "./actions";
+// Phase 42C-3B — shared with MembersClient's unclaimed-roster Membership
+// editor (admin/members/actions.ts, one directory up): both surfaces
+// mutate the same roster_members row through the same two 0188 RPCs, so
+// this imports the existing thin wrappers directly rather than
+// duplicating the RPC-call/error-mapping logic in this file's own
+// actions.ts. Not a new abstraction layer — a plain function import.
+import {
+  setRosterMemberMembershipStatusAction,
+  setRosterMemberMembershipTypeAction,
+} from "../actions";
 import type { ClubPro } from "@/app/(app)/lessons/actions";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import type { PaymentStateRow } from "@/lib/payments";
@@ -34,7 +44,17 @@ export interface MemberDetail {
   event_no_show_count:         number;
   completed_lesson_count:      number;
   member_lesson_no_show_count: number;
+  // Phase 42C-3B — 0191 widened get_admin_member_detail to return these.
+  // Nullable: a legacy/edge-case claimed profile with no matching
+  // roster_members row (0191's own LEFT JOIN) reports null, not a
+  // fabricated default — distinct from roster_members.status above,
+  // which is club_memberships lifecycle status, never Membership Status.
+  membership_status:    "active" | "inactive" | "suspended" | "non_member" | null;
+  membership_type_id:   string | null;
+  membership_type_name: string | null;
 }
+
+export type MembershipTypeOption = { id: string; name: string };
 
 export interface UpcomingItem {
   activity_id:         string;
@@ -107,6 +127,20 @@ interface Props {
   // domain's own detail sheet (Reservation/Lesson/Event roster), not
   // duplicated here; this is a summary view, not a management surface.
   paymentStateByActivityKey: Record<string, PaymentStateRow>;
+  // Phase 42C-3B
+  membershipsEnabled: boolean;
+  // Active Membership Types only (the newly-assignable pool) — empty for
+  // a Staff caller (page.tsx never queries membership_types for Staff,
+  // admin-only RLS, never broadened here). Staff's read-only display
+  // needs no separate list at all: member.membership_type_name already
+  // has what it needs from 0191.
+  membershipTypes: MembershipTypeOption[];
+  // Gates edit vs. read-only rendering of the Membership block below —
+  // isOperator (admin+staff) already gates the whole route; this
+  // distinguishes the two within it. Never used for anything but that
+  // render decision — the real enforcement is server-side (0188's RPCs
+  // are Admin-only regardless of what this value says).
+  userRole: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -126,6 +160,13 @@ function fmtDate(iso: string | null, tz: string): string {
   });
 }
 
+// UX correction pass — the member-lifecycle call site below now pairs
+// this with a separate muted "Club status" label rather than baking a
+// "Club status: " prefix into the pill itself (which made the pill too
+// wide on mobile) — matching the same label+badge split already used on
+// /admin/members' claimed cards. statusBadge() itself is unchanged from
+// its long-standing shape/signature, shared as-is with event/lesson
+// status badges elsewhere in this file (upcoming/history items).
 function statusBadge(status: string) {
   const map: Record<string, string> = {
     active:    "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
@@ -145,6 +186,38 @@ function statusBadge(status: string) {
     </span>
   );
 }
+
+// Phase 42C-3B — same label map as MembersClient's own membershipLine
+// helper (admin/members/MembersClient.tsx), duplicated rather than
+// imported: these are two separate client component files, and this
+// project's established convention is small per-file display helpers
+// (no shared Badge/formatting module exists anywhere in this codebase).
+const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
+  active:     "Active",
+  inactive:   "Inactive",
+  suspended:  "Suspended",
+  non_member: "Non-Member",
+};
+
+// UX polish pass — subtle/soft badge tones (border + 50-weight bg, not the
+// more saturated 100-weight fills ProfileCard/Lesson Pro use elsewhere for
+// LIFECYCLE status): Membership Status is a deliberately quieter signal
+// than account access, so it gets a visually calmer treatment. Same
+// palette shape as the existing toneClassName soft-badge convention
+// (src/lib/payments.ts) — border + bg-50/900-20 + text — reused here as
+// the same visual LANGUAGE, not the same function (different domain/type).
+const MEMBERSHIP_STATUS_BADGE_CLASSES: Record<string, string> = {
+  active:     "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800",
+  suspended:  "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800",
+  inactive:   "text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700",
+  non_member: "text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700",
+};
+
+// Membership Type is NOT a status — deliberately non-semantic: a neutral
+// outlined pill, the same regardless of which type or its active state,
+// so it can never be mistaken for a status color.
+const MEMBERSHIP_TYPE_BADGE_CLASSES =
+  "text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600";
 
 const OUTCOME_LABELS: Record<string, string> = {
   completed:      "Completed",
@@ -180,6 +253,9 @@ export default function MemberDetailClient({
   rosterMemberId,
   adminId,
   paymentStateByActivityKey,
+  membershipsEnabled,
+  membershipTypes,
+  userRole,
 }: Props) {
   const [tab, setTab] = useState<"upcoming" | "history" | "notes">("upcoming");
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -224,9 +300,42 @@ export default function MemberDetailClient({
   const [lessonProviderLoading, setLessonProviderLoading] = useState(false);
   const [lessonProviderError,  setLessonProviderError]  = useState("");
 
+  // Phase 42C-3B — Membership block (Admin edit / Staff read-only). Local
+  // state resynced optimistically on a successful mutation, matching the
+  // Lesson Pro block's own pattern above — this shared roster action
+  // (setRosterMemberMembershipStatusAction/setRosterMemberMembershipTypeAction,
+  // "../actions") only revalidates the LIST route, not this detail route,
+  // so local state is what keeps this page's own display current.
+  const [membershipStatus, setMembershipStatus] =
+    useState<"active" | "inactive" | "suspended" | "non_member" | null>(member.membership_status);
+  const [membershipTypeId, setMembershipTypeId] = useState<string | null>(member.membership_type_id);
+  const [membershipTypeName, setMembershipTypeName] = useState<string | null>(member.membership_type_name);
+  const [membershipStatusLoading, setMembershipStatusLoading] = useState(false);
+  const [membershipTypeLoading, setMembershipTypeLoading] = useState(false);
+  const [membershipStatusError, setMembershipStatusError] = useState("");
+  const [membershipTypeError, setMembershipTypeError] = useState("");
+
   const [, startTransition] = useTransition();
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
+
+  // Phase 42C-3B — same "currently-assigned inactive type stays visibly
+  // selectable, no other inactive type does" rule as MembersClient's
+  // roster editor. membershipTypes (prop) is already active-only.
+  const isMembershipAdmin = userRole === "admin";
+  const membershipTypeOptions: (MembershipTypeOption & { inactive?: boolean })[] = [
+    ...membershipTypes,
+    ...(membershipTypeId && !membershipTypes.some((t) => t.id === membershipTypeId)
+      ? [{ id: membershipTypeId, name: membershipTypeName ?? "Unknown type", inactive: true }]
+      : []),
+  ];
+  // UX polish pass — only computable for Admin (membershipTypes is the
+  // active-only pool, empty for Staff by design — see this file's own
+  // Props comment on membershipTypes). Never annotate for Staff: with an
+  // empty pool, this would otherwise evaluate true for EVERY assigned
+  // type, not just genuinely inactive ones.
+  const isCurrentTypeInactive =
+    isMembershipAdmin && membershipTypeId !== null && !membershipTypes.some((t) => t.id === membershipTypeId);
 
   // ── History: load more ──────────────────────────────────────────────────────
 
@@ -353,98 +462,252 @@ export default function MemberDetailClient({
     });
   }
 
+  // ── Membership (Admin edit only — Staff never calls these; the block
+  //    below renders read-only for Staff with no onClick handlers at all) ──
+
+  function handleMembershipStatusChange(status: "active" | "inactive" | "suspended" | "non_member") {
+    if (!rosterMemberId) return;
+    setMembershipStatusLoading(true);
+    setMembershipStatusError("");
+    startTransition(async () => {
+      const res = await setRosterMemberMembershipStatusAction(rosterMemberId, status);
+      setMembershipStatusLoading(false);
+      if (res.error) {
+        setMembershipStatusError(res.error);
+        return;
+      }
+      setMembershipStatus(status);
+    });
+  }
+
+  function handleMembershipTypeChange(typeId: string, typeName: string | null) {
+    if (!rosterMemberId) return;
+    setMembershipTypeLoading(true);
+    setMembershipTypeError("");
+    startTransition(async () => {
+      const res = await setRosterMemberMembershipTypeAction(rosterMemberId, typeId || null);
+      setMembershipTypeLoading(false);
+      if (res.error) {
+        setMembershipTypeError(res.error);
+        return;
+      }
+      setMembershipTypeId(typeId || null);
+      setMembershipTypeName(typeId ? typeName : null);
+    });
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="pb-8">
       {/* Profile header */}
       <div className="px-4 pt-4 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{fullName}</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              {member.email ?? "—"} · {member.phone ?? "—"}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
-              {" · Joined "}
-              {fmtDate(member.created_at, clubTimezone)}
-            </p>
+        {/* UX correction pass — Member Detail mobile hierarchy. Three
+            clearly separated groups (Identity, Lesson Pro, Membership),
+            each with its own border-t + pt-3 breathing room once it has
+            a prior group above it, replacing the previous single
+            undifferentiated column where all three ran together with
+            only 1-2 unit margins between them. Club status moved out of
+            the top-right corner (where it forced a two-column
+            items-start layout for the whole header) down into the
+            Identity group itself, right under role/joined — and split
+            into a muted "Club status" label + the existing compact
+            semantic badge (statusBadge, unprefixed) rather than one wide
+            pill carrying the whole phrase, matching the same treatment
+            already used on /admin/members' claimed cards. */}
 
-            {/* Lesson Pro designation — contextual per role */}
-            {member.role === "member" && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Lesson Pro: Not eligible (Member role)
-              </p>
-            )}
-            {member.role === "pro" && (
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Lesson Pro: Enabled automatically (Pro role)
-              </p>
-            )}
-            {/* Phase 34A: Staff's provider status is optional, unlike Pro's
-                automatic grant — same toggle as Admin's block below.
-                set_lesson_provider_status (0131) already accepts role in
-                ('admin','staff') as a valid toggle target. Deliberately
-                worded as a "designation"/"capability", never a "role" —
-                this toggle changes lesson-provider eligibility only, not
-                the member's own Staff/Admin role. State (Enabled/Not
-                enabled) and action (Enable/Disable) are kept visually
-                distinct so the enabled state can't be mistaken for inert
-                metadata, reusing the same green/gray pill tokens as
-                statusBadge and the shared compact action-button styles. */}
-            {(member.role === "admin" || member.role === "staff") && (
-              <div className="mt-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Lesson Pro</span>
-                  {lessonProviderStatus ? (
-                    <>
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                        Enabled
-                      </span>
-                      <button
-                        disabled={lessonProviderLoading}
-                        onClick={() => handleLessonProviderToggle(false)}
-                        className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
-                        aria-label="Disable Lesson Pro designation"
-                      >
-                        {lessonProviderLoading ? "Saving…" : "Disable"}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
-                        Not enabled
-                      </span>
-                      <button
-                        disabled={lessonProviderLoading}
-                        onClick={() => handleLessonProviderToggle(true)}
-                        className={ACTION_BUTTON_PRIMARY_COMPACT}
-                        aria-label="Enable Lesson Pro designation"
-                      >
-                        {lessonProviderLoading ? "Saving…" : "Enable"}
-                      </button>
-                    </>
-                  )}
-                </div>
-                {lessonProviderError && (
-                  <p className="text-xs text-red-600 dark:text-red-400 mt-1" role="alert">
-                    {lessonProviderError}
-                  </p>
-                )}
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  Enables this {member.role} to receive and manage lesson assignments.
-                </p>
-                {member.status !== "active" && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                    This member&apos;s status is {member.status.charAt(0).toUpperCase() + member.status.slice(1)} — they won&apos;t appear in provider selectors until their membership is Active.
-                  </p>
+        {/* ── Identity group ── */}
+        <div>
+          <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">{fullName}</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {member.email ?? "—"} · {member.phone ?? "—"}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+            {" · Joined "}
+            {fmtDate(member.created_at, clubTimezone)}
+          </p>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <span className="text-[11px] text-gray-400 dark:text-gray-500">Club status</span>
+            {statusBadge(member.status)}
+          </div>
+        </div>
+
+        {/* ── Lesson Pro group — contextual per role ── */}
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Lesson Pro</p>
+          {member.role === "member" && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Not eligible (Member role)
+            </p>
+          )}
+          {member.role === "pro" && (
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Enabled automatically (Pro role)
+            </p>
+          )}
+          {/* Phase 34A: Staff's provider status is optional, unlike Pro's
+              automatic grant — same toggle as Admin's block below.
+              set_lesson_provider_status (0131) already accepts role in
+              ('admin','staff') as a valid toggle target. Deliberately
+              worded as a "designation"/"capability", never a "role" —
+              this toggle changes lesson-provider eligibility only, not
+              the member's own Staff/Admin role. State (Enabled/Not
+              enabled) and action (Enable/Disable) are kept visually
+              distinct so the enabled state can't be mistaken for inert
+              metadata, reusing the same green/gray pill tokens as
+              statusBadge and the shared compact action-button styles. */}
+          {(member.role === "admin" || member.role === "staff") && (
+            <div className="mt-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {lessonProviderStatus ? (
+                  <>
+                    <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      Enabled
+                    </span>
+                    <button
+                      disabled={lessonProviderLoading}
+                      onClick={() => handleLessonProviderToggle(false)}
+                      className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                      aria-label="Disable Lesson Pro designation"
+                    >
+                      {lessonProviderLoading ? "Saving…" : "Disable"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                      Not enabled
+                    </span>
+                    <button
+                      disabled={lessonProviderLoading}
+                      onClick={() => handleLessonProviderToggle(true)}
+                      className={ACTION_BUTTON_PRIMARY_COMPACT}
+                      aria-label="Enable Lesson Pro designation"
+                    >
+                      {lessonProviderLoading ? "Saving…" : "Enable"}
+                    </button>
+                  </>
                 )}
               </div>
-            )}
-          </div>
-          {statusBadge(member.status)}
+              {lessonProviderError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1" role="alert">
+                  {lessonProviderError}
+                </p>
+              )}
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Enables this {member.role} to receive and manage lesson assignments.
+              </p>
+              {member.status !== "active" && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                  This member&apos;s status is {member.status.charAt(0).toUpperCase() + member.status.slice(1)} — they won&apos;t appear in provider selectors until their membership is Active.
+                </p>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* ── Membership group (Phase 42C-3B) ──
+            Distinct heading ("Membership") and field labels ("Membership
+            Status" / "Membership Type") so this can never be confused
+            with member.status above (roster/lifecycle status — a
+            different concept entirely, never renamed or merged with
+            this). Hidden entirely when Memberships are off; nothing here
+            ever clears membership_status/membership_type_id — hiding is
+            a display gate only.
+            Pill+select redundancy removed: each role sees exactly ONE
+            representation per field. Staff (or Admin with no
+            rosterMemberId to edit) sees a read-only pill — semantic
+            color for Status, neutral for Type. Admin sees ONLY the
+            editable <select>, itself styled with the same
+            semantic/neutral color classes the pill used to carry, so the
+            select IS the "pill" now rather than sitting beside a
+            separate one. Type's "(inactive type)" suffix appears in both
+            the pill and the select's own option text — never implying
+            the PERSON's membership is inactive, only the assigned type
+            itself.
+            UX correction pass — Admin's selects now use the available
+            width on mobile (w-full) rather than a tiny compact pill,
+            settling back to compact/auto-width at sm+ where there's
+            plenty of room; Staff's read-only pills are unaffected (they
+            were never the width problem). */}
+        {membershipsEnabled && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Membership</p>
+
+            <div className="mt-1.5">
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">Membership Status</p>
+              <div className="mt-0.5">
+                {isMembershipAdmin && rosterMemberId ? (
+                  <select
+                    value={membershipStatus ?? ""}
+                    disabled={membershipStatusLoading}
+                    onChange={(e) => handleMembershipStatusChange(e.target.value as "active" | "inactive" | "suspended" | "non_member")}
+                    className={`w-full sm:w-auto px-2.5 py-1 rounded-full border text-[11px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${MEMBERSHIP_STATUS_BADGE_CLASSES[membershipStatus ?? "inactive"] ?? MEMBERSHIP_STATUS_BADGE_CLASSES.inactive}`}
+                  >
+                    {!membershipStatus && <option value="" disabled>—</option>}
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="non_member">Non-Member</option>
+                  </select>
+                ) : membershipStatus ? (
+                  <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-semibold ${MEMBERSHIP_STATUS_BADGE_CLASSES[membershipStatus] ?? MEMBERSHIP_STATUS_BADGE_CLASSES.inactive}`}>
+                    {MEMBERSHIP_STATUS_LABELS[membershipStatus] ?? membershipStatus}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400 dark:text-gray-500">—</span>
+                )}
+              </div>
+              {membershipStatusLoading && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Saving…</p>
+              )}
+              {membershipStatusError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5" role="alert">
+                  {membershipStatusError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-2.5">
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">Membership Type</p>
+              <div className="mt-0.5">
+                {isMembershipAdmin && rosterMemberId ? (
+                  <select
+                    value={membershipTypeId ?? ""}
+                    disabled={membershipTypeLoading}
+                    onChange={(e) => {
+                      const opt = membershipTypeOptions.find((t) => t.id === e.target.value);
+                      handleMembershipTypeChange(e.target.value, opt?.name ?? null);
+                    }}
+                    className={`w-full sm:w-auto px-2.5 py-1 rounded-full border text-[11px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${MEMBERSHIP_TYPE_BADGE_CLASSES}`}
+                  >
+                    <option value="">None</option>
+                    {membershipTypeOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}{t.inactive ? " (inactive type)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : membershipTypeName ? (
+                  <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-semibold ${MEMBERSHIP_TYPE_BADGE_CLASSES}`}>
+                    {membershipTypeName}{isCurrentTypeInactive ? " (inactive type)" : ""}
+                  </span>
+                ) : (
+                  <span className="text-sm text-gray-400 dark:text-gray-500">None</span>
+                )}
+              </div>
+              {membershipTypeLoading && (
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Saving…</p>
+              )}
+              {membershipTypeError && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5" role="alert">
+                  {membershipTypeError}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="mt-3 grid grid-cols-4 gap-2">
