@@ -74,6 +74,19 @@ export default async function MemberDetailPage({ params }: Props) {
         : Promise.resolve({ data: [] }),
     ]);
 
+  // Phase 43A-2 — Admin-only compliance visibility (locked decision).
+  // Staff must NEVER receive this — gated on isAdmin here, not merely
+  // isOperator, so Staff's request never even calls get_member_waiver_
+  // status. Depends on rosterResult (this Member's roster_member_id),
+  // resolved above, so this read happens after that Promise.all rather
+  // than inside it. No edit/accept control is ever rendered from this —
+  // display only.
+  const rosterMemberIdForWaiver = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
+  const waiverStatusResult =
+    isAdmin && rosterMemberIdForWaiver
+      ? await supabase.rpc("get_member_waiver_status", { p_roster_member_id: rosterMemberIdForWaiver })
+      : { data: null };
+
   if (detailResult.error) {
     const msg = detailResult.error.message ?? "";
     if (msg.includes("member_not_found")) notFound();
@@ -148,6 +161,14 @@ export default async function MemberDetailPage({ params }: Props) {
   const membershipsEnabled = (settingsResult as { data: { currency: string; memberships_enabled: boolean } | null })?.data?.memberships_enabled ?? true;
   const rosterMemberId = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
   const membershipTypes = (membershipTypesResult.data ?? []) as { id: string; name: string }[];
+  const waiverStatusRawRow = (waiverStatusResult.data ?? [])[0] ?? null;
+  const waiverStatusRow = waiverStatusRawRow
+    ? {
+        status:        waiverStatusRawRow.status,
+        versionNumber: waiverStatusRawRow.version_number,
+        acceptedAt:    waiverStatusRawRow.accepted_at,
+      }
+    : null;
 
   const fullName = [member.first_name, member.last_name].filter(Boolean).join(" ") || "Member";
 
@@ -174,6 +195,7 @@ export default async function MemberDetailPage({ params }: Props) {
             membershipsEnabled={membershipsEnabled}
             membershipTypes={membershipTypes}
             userRole={profile.role ?? "staff"}
+            waiverStatus={waiverStatusRow}
           />
         </div>
       </div>

@@ -1225,10 +1225,10 @@ describe("MEMBER DETAIL 11. Club status uses label + compact badge", () => {
 });
 
 describe("MEMBER DETAIL 12. identity/Lesson Pro/Membership groups have explicit spacing hierarchy", () => {
-  it("Lesson Pro and Membership are each introduced by their own mt-3 pt-3 border-t group divider — clearer separation than the prior flat mt-2 stack", () => {
+  it("Lesson Pro, Membership, and (Phase 43A-2) Waiver are each introduced by their own mt-3 pt-3 border-t group divider — clearer separation than the prior flat mt-2 stack", () => {
     const s = memberDetailSource();
     const dividerOccurrences = (s.match(/className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800"/g) ?? []).length;
-    expect(dividerOccurrences).toBe(2); // Lesson Pro group + Membership group
+    expect(dividerOccurrences).toBe(3); // Lesson Pro group + Membership group + Waiver group
   });
 
   it("the group order is Identity, then Lesson Pro, then Membership, then Stats — matching the locked hierarchy exactly", () => {

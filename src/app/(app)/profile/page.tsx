@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuthUser, getAuthProfile, getMyClubMemberships } from "@/lib/supabase/user";
+import { createClient } from "@/lib/supabase/server";
 import Header from "@/components/Header";
 import ClubMembershipList from "@/components/ClubMembershipList";
 import SignOutButton from "./SignOutButton";
 import ProfileEditForm from "./ProfileEditForm";
+import WaiverStatusCard from "./WaiverStatusCard";
 
 const ROLE_LABELS: Record<string, string> = {
   member: "Member",
@@ -58,6 +60,15 @@ export default async function ProfilePage() {
   // action used by the desktop and mobile switchers.
   const memberships = await getMyClubMemberships();
   const hasMultipleClubs = memberships.length > 1;
+
+  // Phase 43A-2 — role-agnostic (decision 6): resolves the caller's OWN
+  // claimed roster identity server-side, regardless of Member/Pro/Staff/
+  // Admin role. A caller with no claimed roster identity (no_roster_
+  // identity) simply gets no waiver card — same quiet omission as
+  // not_required, never an error banner on this page.
+  const supabase = await createClient();
+  const { data: waiverStatusRows } = await supabase.rpc("get_my_member_waiver_status");
+  const waiverStatus = waiverStatusRows?.[0] ?? null;
 
   return (
     <>
@@ -138,6 +149,18 @@ export default async function ProfilePage() {
               : "You don't currently have an active club membership."}
           </p>
         </div>
+
+        {waiverStatus && waiverStatus.status !== "not_required" && (
+          <>
+            <hr className="border-gray-100 dark:border-gray-800" />
+            <WaiverStatusCard
+              status={waiverStatus.status}
+              title={waiverStatus.title}
+              versionNumber={waiverStatus.version_number}
+              acceptedAt={waiverStatus.accepted_at}
+            />
+          </>
+        )}
 
         {hasMultipleClubs && (
           <>

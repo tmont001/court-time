@@ -86,21 +86,30 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     expect(s).toContain('.from("club-logos")');
   });
 
-  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the nine now-current RPCs (the six pre-42C-3B ones plus 42C-3B's own three Membership Types RPCs), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
+  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the thirteen now-current RPCs (the nine pre-43A-2 ones plus 43A-2's own four Member Waiver authoring RPCs), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
     // Deliberately not a "highest migration === N" check — see this file's
     // own header comment on why that pattern is invalid across checkpoints.
     // This count is intentionally NOT frozen forever: it tracks the actual,
     // current RPC surface of this file, and is bumped deliberately (with a
     // comment) whenever a real, reviewed RPC is added — exactly as it was
     // bumped here (Phase 42C-3B added createMembershipTypeAction/
-    // updateMembershipTypeAction/setMembershipTypeActiveAction).
+    // updateMembershipTypeAction/setMembershipTypeActiveAction), and again
+    // here (Phase 43A-2 added createMemberWaiverDraftAction/
+    // updateMemberWaiverDraftAction/publishMemberWaiverVersionAction/
+    // setMemberWaiverRequiredAction — no Admin-proxy acceptance action
+    // exists in this file or anywhere else).
     const s = readSource("src/app/(app)/admin/settings/actions.ts");
-    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(9);
+    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(13);
     expect(s).toContain('supabase.rpc("update_club_rules_and_policies", {');
     expect(s).toContain('supabase.rpc("update_club_memberships_enabled", {');
     expect(s).toContain('supabase.rpc("create_membership_type", {');
     expect(s).toContain('supabase.rpc("update_membership_type", {');
     expect(s).toContain('supabase.rpc("set_membership_type_active", {');
+    expect(s).toContain('supabase.rpc("create_member_waiver_draft", {');
+    expect(s).toContain('supabase.rpc("update_member_waiver_draft", {');
+    expect(s).toContain('supabase.rpc("publish_member_waiver_version", {');
+    expect(s).toContain('supabase.rpc("set_member_waiver_required", {');
+    expect(s).not.toMatch(/accept_member_waiver/);
   });
 
   it("19. no payment-domain mutation was introduced — page.tsx itself performs no .rpc( or mutation, only reads plus prop-passing to unchanged child components", () => {

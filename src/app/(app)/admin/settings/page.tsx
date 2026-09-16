@@ -9,6 +9,10 @@ import ClubRulesSection from "./ClubRulesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import MembershipsSection from "./MembershipsSection";
 import MembershipTypesSection from "./MembershipTypesSection";
+import MemberWaiverSection, {
+  type CurrentWaiverVersion,
+  type DraftWaiverVersion,
+} from "./MemberWaiverSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -63,6 +67,40 @@ export default async function AdminSettingsPage() {
   const settings   = settingsResult.data;
   const club       = clubResult.data;
   const membershipTypes = membershipTypesResult.data ?? [];
+
+  // Phase 43A-2 — Member Waiver: Admin-only RLS-scoped direct table reads
+  // (0192), not a new RPC. Fetches only what the UI needs (waiver
+  // metadata, current published version, current draft if any) — no
+  // roster-wide acceptance/compliance data belongs on this page.
+  const { data: waiverRow } = await supabase
+    .from("waivers")
+    .select("id, is_required, current_version_id")
+    .eq("club_id", clubId)
+    .eq("audience", "member")
+    .maybeSingle();
+
+  let currentWaiverVersion: CurrentWaiverVersion | null = null;
+  let draftWaiverVersion: DraftWaiverVersion | null = null;
+  if (waiverRow) {
+    const { data: versions } = await supabase
+      .from("waiver_versions")
+      .select("id, version_number, title, body, status, published_at")
+      .eq("waiver_id", waiverRow.id)
+      .order("version_number", { ascending: false });
+    const draft = versions?.find((v) => v.status === "draft") ?? null;
+    const current = versions?.find((v) => v.id === waiverRow.current_version_id) ?? null;
+    if (draft) {
+      draftWaiverVersion = {
+        id: draft.id, versionNumber: draft.version_number, title: draft.title, body: draft.body,
+      };
+    }
+    if (current) {
+      currentWaiverVersion = {
+        id: current.id, versionNumber: current.version_number, title: current.title,
+        body: current.body, publishedAt: current.published_at ?? "",
+      };
+    }
+  }
   const currency = settings?.currency ?? "USD";
   const membershipsEnabled = settings?.memberships_enabled ?? true;
   const stripeStatus = stripeConnectResult.status;
@@ -167,6 +205,27 @@ export default async function AdminSettingsPage() {
               <MembershipTypesSection initialTypes={membershipTypes} />
             </div>
           )}
+
+          {/* Phase 43A-2 — Member Waiver. Deliberately NOT gated behind
+              membershipsEnabled: waiver acceptance is a legal-agreement
+              concept independent of the club-business "Membership"
+              program toggle above — a club with Memberships off can still
+              require a Member waiver. */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Member Waiver
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              A club-authored document Members review and accept. Published versions are
+              immutable — publishing a new version requires Members to accept it again.
+            </p>
+            <MemberWaiverSection
+              waiverId={waiverRow?.id ?? null}
+              isRequired={waiverRow?.is_required ?? true}
+              currentVersion={currentWaiverVersion}
+              draftVersion={draftWaiverVersion}
+            />
+          </div>
         </section>
 
         <hr className="border-gray-200 dark:border-gray-700" />
