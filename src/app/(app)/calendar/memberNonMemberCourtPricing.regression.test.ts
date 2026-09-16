@@ -61,15 +61,15 @@ describe("0189 — migration numbering", () => {
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
   });
 
-  // Phase 42C-1 (0190), 42C-3A (0191), 43A-1 (0192), and its 0193 hotfix
-  // are the legitimate next migrations once 0189 is applied — this guard
-  // now checks for anything PAST that authorized boundary, not past 0189
-  // itself.
-  it("no unauthorized 0194+ migration exists yet", () => {
+  // Phase 42C-1 (0190), 42C-3A (0191), 43A-1 (0192), its 0193 hotfix, and
+  // 43B-1A (0194) are the legitimate next migrations once 0189 is applied
+  // — this guard now checks for anything PAST that authorized boundary,
+  // not past 0189 itself.
+  it("no unauthorized 0195+ migration exists yet", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 193;
+      return match !== null && Number(match[1]) > 194;
     });
     expect(laterMigrations).toEqual([]);
   });
