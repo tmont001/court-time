@@ -1539,6 +1539,96 @@ export type Database = {
           }
         ];
       };
+      // Phase 43A-1 — 0192. Admin Settings reads these two directly (RLS-
+      // scoped admin-only SELECT); Member-side reads go through the
+      // get_my_member_waiver_status()/get_member_waiver_status() RPCs
+      // instead, never this table directly. waiver_acceptances has no
+      // Tables entry — nothing in this checkpoint's UI reads it directly.
+      waivers: {
+        Row: {
+          id: string;
+          club_id: string;
+          audience: string;
+          current_version_id: string | null;
+          is_required: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          club_id: string;
+          audience?: string;
+          current_version_id?: string | null;
+          is_required?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          club_id?: string;
+          audience?: string;
+          current_version_id?: string | null;
+          is_required?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "waivers_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      waiver_versions: {
+        Row: {
+          id: string;
+          waiver_id: string;
+          version_number: number;
+          title: string;
+          body: string;
+          status: "draft" | "published";
+          published_at: string | null;
+          published_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          waiver_id: string;
+          version_number: number;
+          title: string;
+          body: string;
+          status?: "draft" | "published";
+          published_at?: string | null;
+          published_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          waiver_id?: string;
+          version_number?: number;
+          title?: string;
+          body?: string;
+          status?: "draft" | "published";
+          published_at?: string | null;
+          published_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "waiver_versions_waiver_id_fkey";
+            columns: ["waiver_id"];
+            isOneToOne: false;
+            referencedRelation: "waivers";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       // Phase 24A
       member_notes: {
         Row: {
@@ -3279,6 +3369,60 @@ export type Database = {
           p_membership_status: "active" | "inactive" | "suspended" | "non_member";
         };
         Returns: undefined;
+      };
+      // Phase 43A-1 — Member Waiver RPCs (0192, accepted_at fix in 0193 —
+      // no contract change). _evaluate_member_waiver_status is
+      // intentionally NOT exposed here — private helper, revoked from
+      // authenticated, never client-callable.
+      create_member_waiver_draft: {
+        Args: { p_title: string; p_body: string };
+        Returns: string;
+      };
+      update_member_waiver_draft: {
+        Args: { p_version_id: string; p_title: string; p_body: string };
+        Returns: undefined;
+      };
+      publish_member_waiver_version: {
+        Args: { p_version_id: string };
+        Returns: undefined;
+      };
+      set_member_waiver_required: {
+        Args: { p_required: boolean };
+        Returns: undefined;
+      };
+      // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —
+      // resolves only the caller's own claimed roster identity server-side.
+      // No proxy-acceptance variant exists.
+      accept_member_waiver: {
+        Args: { p_waiver_version_id: string };
+        Returns: string;
+      };
+      get_my_member_waiver_status: {
+        Args: Record<string, never>;
+        Returns: {
+          status:             "not_required" | "current" | "outdated" | "never_accepted";
+          waiver_id:          string | null;
+          current_version_id: string | null;
+          version_number:     number | null;
+          title:              string | null;
+          body:               string | null;
+          published_at:       string | null;
+          accepted_at:        string | null;
+          is_required:        boolean;
+        }[];
+      };
+      get_member_waiver_status: {
+        Args: { p_roster_member_id: string };
+        Returns: {
+          status:             "not_required" | "current" | "outdated" | "never_accepted";
+          waiver_id:          string | null;
+          current_version_id: string | null;
+          version_number:     number | null;
+          title:              string | null;
+          published_at:       string | null;
+          accepted_at:        string | null;
+          is_required:        boolean;
+        }[];
       };
       // Phase 21I-C-A: member notes + roster members in events
       set_member_notes: {

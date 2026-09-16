@@ -451,11 +451,11 @@ describe("24. AddMemberSheet is untouched", () => {
 });
 
 describe("25. no new migration", () => {
-  it("no 0192+ migration file exists — this checkpoint is frontend-only, building on immutable 0188-0191", () => {
+  it("no unauthorized 0194+ migration file exists — this checkpoint was frontend-only, building on immutable 0188-0191; 0192 (Phase 43A-1, member waiver foundation) and its 0193 hotfix are later, unrelated migrations", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 191;
+      return match !== null && Number(match[1]) > 193;
     });
     expect(laterMigrations).toEqual([]);
   });
@@ -968,11 +968,11 @@ describe("12. mobile layout does not overflow", () => {
 });
 
 describe("13. no DB/RPC/business-logic change in this polish pass", () => {
-  it("no migration file beyond 0191 exists", () => {
+  it("no unauthorized migration file beyond 0193 exists (0192 and its 0193 hotfix are Phase 43A-1, later, unrelated migrations)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 191;
+      return match !== null && Number(match[1]) > 193;
     });
     expect(laterMigrations).toEqual([]);
   });
@@ -1225,10 +1225,10 @@ describe("MEMBER DETAIL 11. Club status uses label + compact badge", () => {
 });
 
 describe("MEMBER DETAIL 12. identity/Lesson Pro/Membership groups have explicit spacing hierarchy", () => {
-  it("Lesson Pro and Membership are each introduced by their own mt-3 pt-3 border-t group divider — clearer separation than the prior flat mt-2 stack", () => {
+  it("Lesson Pro, Membership, and (Phase 43A-2) Waiver are each introduced by their own mt-3 pt-3 border-t group divider — clearer separation than the prior flat mt-2 stack", () => {
     const s = memberDetailSource();
     const dividerOccurrences = (s.match(/className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800"/g) ?? []).length;
-    expect(dividerOccurrences).toBe(2); // Lesson Pro group + Membership group
+    expect(dividerOccurrences).toBe(3); // Lesson Pro group + Membership group + Waiver group
   });
 
   it("the group order is Identity, then Lesson Pro, then Membership, then Stats — matching the locked hierarchy exactly", () => {
@@ -1296,11 +1296,11 @@ describe("MEMBER DETAIL 16. no Book Lesson change", () => {
 });
 
 describe("MEMBER DETAIL 17. no business/data/RPC changes", () => {
-  it("no migration beyond 0191 exists", () => {
+  it("no unauthorized migration beyond 0193 exists (0192 and its 0193 hotfix are Phase 43A-1, later, unrelated migrations)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 191;
+      return match !== null && Number(match[1]) > 193;
     });
     expect(laterMigrations).toEqual([]);
   });

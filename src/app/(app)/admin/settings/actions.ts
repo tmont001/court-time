@@ -24,6 +24,17 @@ const ERROR_MESSAGES: Record<string, string> = {
   membership_type_name_taken:  "A Membership Type with that name already exists.",
   membership_type_not_found:   "Membership Type not found.",
   is_active_required:          "Please choose Active or Inactive.",
+  // Phase 43A-2 — Member Waiver authoring (0192/0193 RPCs)
+  title_required:               "Please enter a title.",
+  body_required:                "Please enter the waiver text.",
+  title_too_long:                "Title must be 300 characters or fewer.",
+  body_too_long:                 "Waiver text must be 20,000 characters or fewer.",
+  draft_already_exists:          "A draft already exists — edit or publish it before starting another.",
+  waiver_version_not_found:      "That waiver version could not be found.",
+  version_not_editable:          "Published waiver wording can't be edited — start a new version instead.",
+  version_not_draft:             "That version is already published.",
+  waiver_not_found:              "No Member waiver has been created yet.",
+  required_flag_required:        "Please choose whether the waiver is required.",
 };
 
 export async function updateClubTimezone(
@@ -379,6 +390,98 @@ export async function setMembershipTypeActiveAction(
   if (error) {
     const key = error.message.match(/is_active_required|membership_type_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to update Membership Type." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+// ── Member Waiver management (Phase 43A-2) ───────────────────────────────
+// Thin wrappers around 0192/0193's five Admin-facing RPCs. Every waiver
+// business rule (exactly one draft at a time, published-version
+// immutability, atomic publish + repoint, version-based reacceptance, no
+// unpublish) lives entirely in the RPC layer — nothing here re-derives or
+// re-checks any of it. No Admin proxy-acceptance action exists in this
+// file or anywhere else: acceptance is a separate, role-agnostic,
+// self-only action (acceptMemberWaiverAction, src/app/(app)/waivers/
+// member/actions.ts) that only ever acts on the CALLER's own identity.
+
+export async function createMemberWaiverDraftAction(
+  title: string,
+  body: string
+): Promise<{ error?: string; versionId?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data, error } = await supabase.rpc("create_member_waiver_draft", {
+    p_title: title,
+    p_body: body,
+  });
+  if (error) {
+    const key = error.message.match(/title_required|body_required|title_too_long|body_too_long|draft_already_exists|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save draft." };
+  }
+
+  revalidatePath("/admin/settings");
+  return { versionId: data ?? undefined };
+}
+
+export async function updateMemberWaiverDraftAction(
+  versionId: string,
+  title: string,
+  body: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("update_member_waiver_draft", {
+    p_version_id: versionId,
+    p_title: title,
+    p_body: body,
+  });
+  if (error) {
+    const key = error.message.match(/title_required|body_required|title_too_long|body_too_long|waiver_version_not_found|version_not_editable|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save draft." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function publishMemberWaiverVersionAction(
+  versionId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("publish_member_waiver_version", {
+    p_version_id: versionId,
+  });
+  if (error) {
+    const key = error.message.match(/waiver_version_not_found|version_not_draft|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to publish waiver." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function setMemberWaiverRequiredAction(
+  required: boolean
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_member_waiver_required", {
+    p_required: required,
+  });
+  if (error) {
+    const key = error.message.match(/required_flag_required|waiver_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to update waiver requirement." };
   }
 
   revalidatePath("/admin/settings");

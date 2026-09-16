@@ -141,6 +141,19 @@ interface Props {
   // render decision — the real enforcement is server-side (0188's RPCs
   // are Admin-only regardless of what this value says).
   userRole: string;
+  // Phase 43A-2 — Admin-only compliance visibility (locked decision).
+  // null for a Staff caller (page.tsx never calls get_member_waiver_status
+  // for Staff at all — this is a display gate backed by an actual absent
+  // fetch, not merely a hidden prop) or when no Member waiver exists yet.
+  // Display only — no edit/accept control is ever rendered from this;
+  // Admin cannot accept on a Member's behalf.
+  waiverStatus: MemberWaiverStatus | null;
+}
+
+export interface MemberWaiverStatus {
+  status:        "not_required" | "current" | "outdated" | "never_accepted";
+  versionNumber: number | null;
+  acceptedAt:    string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -256,6 +269,7 @@ export default function MemberDetailClient({
   membershipsEnabled,
   membershipTypes,
   userRole,
+  waiverStatus,
 }: Props) {
   const [tab, setTab] = useState<"upcoming" | "history" | "notes">("upcoming");
   const [requestSheetOpen, setRequestSheetOpen] = useState(false);
@@ -704,6 +718,50 @@ export default function MemberDetailClient({
                 <p className="text-xs text-red-600 dark:text-red-400 mt-0.5" role="alert">
                   {membershipTypeError}
                 </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Waiver group (Phase 43A-2) ──
+            Admin-only (isMembershipAdmin) — Staff never sees this at all:
+            waiverStatus is null for a Staff caller because page.tsx never
+            even calls get_member_waiver_status for one (locked decision:
+            compliance visibility is Admin-only in 43A). Display only — no
+            edit/accept control; Admin cannot accept on a Member's behalf. */}
+        {isMembershipAdmin && waiverStatus && (
+          <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Waiver</p>
+            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+              {waiverStatus.status === "current" && (
+                <>
+                  <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                    Current
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Accepted {fmtDate(waiverStatus.acceptedAt, clubTimezone)}
+                  </span>
+                </>
+              )}
+              {waiverStatus.status === "never_accepted" && (
+                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  Needs acceptance
+                </span>
+              )}
+              {waiverStatus.status === "outdated" && (
+                <>
+                  <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    Updated waiver needs acceptance
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    An older version was accepted; the current version has not been.
+                  </span>
+                </>
+              )}
+              {waiverStatus.status === "not_required" && (
+                <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                  Not required
+                </span>
               )}
             </div>
           </div>
