@@ -3424,6 +3424,18 @@ export type Database = {
           is_required:        boolean;
         }[];
       };
+      // Phase 43B-1A (0194) — bulk, set-based roster compliance read for
+      // /admin/members. Admin+Staff only (server-enforced); waiver_
+      // configured distinguishes "no Member waiver document" from "waiver
+      // exists but not required/published" — status alone never does.
+      get_club_member_waiver_compliance: {
+        Args: Record<string, never>;
+        Returns: {
+          roster_member_id:  string;
+          waiver_configured: boolean;
+          status:             "not_required" | "current" | "outdated" | "never_accepted";
+        }[];
+      };
       // Phase 21I-C-A: member notes + roster members in events
       set_member_notes: {
         Args: { p_target_user_id: string; p_notes: string | null };

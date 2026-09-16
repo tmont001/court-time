@@ -26,6 +26,7 @@ import {
 import type { ClubPro } from "@/app/(app)/lessons/actions";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import type { PaymentStateRow } from "@/lib/payments";
+import { isOperator } from "@/lib/auth/roles";
 import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/components/styles/actionButtonStyles";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -336,7 +337,15 @@ export default function MemberDetailClient({
   // Phase 42C-3B — same "currently-assigned inactive type stays visibly
   // selectable, no other inactive type does" rule as MembersClient's
   // roster editor. membershipTypes (prop) is already active-only.
+  // isMembershipAdmin stays Admin-only forever — it also gates Membership
+  // Status/Type editing, which Staff must never gain.
   const isMembershipAdmin = userRole === "admin";
+  // Phase 43B-1B — deliberately SEPARATE from isMembershipAdmin. 0194
+  // widened get_member_waiver_status's own server-side authorization to
+  // Admin-or-Staff; this mirrors that on the client so Staff can see the
+  // (still fully read-only) Waiver block without gaining any Admin-only
+  // capability isMembershipAdmin also happens to gate.
+  const canViewWaiverCompliance = isOperator(userRole);
   const membershipTypeOptions: (MembershipTypeOption & { inactive?: boolean })[] = [
     ...membershipTypes,
     ...(membershipTypeId && !membershipTypes.some((t) => t.id === membershipTypeId)
@@ -723,13 +732,18 @@ export default function MemberDetailClient({
           </div>
         )}
 
-        {/* ── Waiver group (Phase 43A-2) ──
-            Admin-only (isMembershipAdmin) — Staff never sees this at all:
-            waiverStatus is null for a Staff caller because page.tsx never
-            even calls get_member_waiver_status for one (locked decision:
-            compliance visibility is Admin-only in 43A). Display only — no
-            edit/accept control; Admin cannot accept on a Member's behalf. */}
-        {isMembershipAdmin && waiverStatus && (
+        {/* ── Waiver group (Phase 43A-2, widened to Staff in 43B-1B) ──
+            canViewWaiverCompliance (Admin OR Staff, isOperator) — 0194
+            widened get_member_waiver_status's own server-side
+            authorization the same way, and page.tsx's fetch gate matches
+            it, so Staff genuinely receives waiverStatus now, not just a
+            client-side reveal of nothing. Deliberately NOT isMembershipAdmin
+            — that stays Admin-only because it also gates Membership
+            Status/Type editing below, which Staff must never gain. This
+            block remains fully read-only either way — no edit/accept
+            control; neither Admin nor Staff can accept on a Member's
+            behalf. */}
+        {canViewWaiverCompliance && waiverStatus && (
           <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
             <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Waiver</p>
             <div className="mt-1.5 flex items-center gap-2 flex-wrap">

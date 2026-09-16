@@ -44,6 +44,42 @@ function membershipLine(
   return `Membership: ${statusLabel}${membershipTypeName ? ` · ${membershipTypeName}` : ""}`;
 }
 
+// Phase 43B-1B — Member waiver compliance pill (0194's bulk read). Reuses
+// the exact same pill vocabulary as the "Club status" badge above (inline-
+// block, rounded, px-2 py-0.5, text-xs font-medium) — no new design
+// system. Amber for both "needs acceptance" states (never red — this is
+// not an error/blocking condition per the locked product decision). Court
+// Time records acceptance here, never a legal signature — the labels
+// below must never use that other word for it.
+const WAIVER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  current: {
+    label: "Accepted",
+    className: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400",
+  },
+  never_accepted: {
+    label: "Needs acceptance",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  outdated: {
+    label: "Updated waiver",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  not_required: {
+    label: "Not required",
+    className: "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400",
+  },
+};
+
+function WaiverPill({ status }: { status: string }) {
+  const config = WAIVER_STATUS_CONFIG[status];
+  if (!config) return null;
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>
+      {config.label}
+    </span>
+  );
+}
+
 export type MembershipTypeOption = { id: string; name: string };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -116,6 +152,13 @@ type Member = {
   membership_status:    "active" | "inactive" | "suspended" | "non_member" | null;
   membership_type_id:   string | null;
   membership_type_name: string | null;
+  // Phase 43B-1B — merged server-side (page.tsx) from 0194's bulk
+  // get_club_member_waiver_compliance(), joined by roster_member_id. null
+  // when no compliance row was found for this identity (e.g. a legacy
+  // claimed profile with no matching roster_members row) — never
+  // fabricated. The club-wide "is any Member waiver even configured"
+  // fact lives on Props.hasMemberWaiverConfigured, not here.
+  waiverStatus: { status: string } | null;
 };
 
 // Phase 26D2: the four member-membership actions this club's Admin can take
@@ -175,6 +218,10 @@ export type RosterMember = {
   membership_status:    "active" | "inactive" | "suspended" | "non_member";
   membership_type_id:   string | null;
   membership_type_name: string | null;
+  // Phase 43B-1B — merged server-side from 0194's bulk compliance read,
+  // joined by this row's own id (which IS roster_members.id already for
+  // an unclaimed identity — no separate lookup needed, unlike Member).
+  waiverStatus: { status: string } | null;
 };
 
 type PendingInvite = {
@@ -227,6 +274,11 @@ interface Props {
   // here); RosterCard's editor is itself gated to userRole === "admin",
   // so an empty list is never actually rendered for Staff.
   membershipTypes:    MembershipTypeOption[];
+  // Phase 43B-1B — club-wide: true iff a Member waiver document exists at
+  // all (0194's waiver_configured, hoisted once server-side). When false,
+  // the Waiver indicator is omitted entirely from every row — never a
+  // roster full of meaningless "Not required" pills.
+  hasMemberWaiverConfigured: boolean;
 }
 
 export default function MembersClient({
@@ -239,6 +291,7 @@ export default function MembersClient({
   userRole,
   membershipsEnabled,
   membershipTypes,
+  hasMemberWaiverConfigured,
 }: Props) {
   const router = useRouter();
   const [inviteSheetOpen, setInviteSheetOpen]   = useState(false);
@@ -844,6 +897,7 @@ export default function MembersClient({
                 menuOpen={actionsMenuOpenId === item.data.id}
                 onToggleMenu={() => toggleActionsMenu(item.data.id)}
                 onCloseMenu={() => setActionsMenuOpenId(null)}
+                hasMemberWaiverConfigured={hasMemberWaiverConfigured}
               />
             ) : (
               <RosterCard
@@ -861,6 +915,7 @@ export default function MembersClient({
                 onTypeChange={handleMembershipTypeChange}
                 pending={membershipPendingId === item.data.id}
                 error={membershipErrors[item.data.id]}
+                hasMemberWaiverConfigured={hasMemberWaiverConfigured}
               />
             )
           )}
@@ -1251,6 +1306,7 @@ function ProfileCard({
   menuOpen,
   onToggleMenu,
   onCloseMenu,
+  hasMemberWaiverConfigured,
 }: {
   member:           Member;
   currentUserId:    string;
@@ -1263,6 +1319,7 @@ function ProfileCard({
   menuOpen:      boolean;
   onToggleMenu:  () => void;
   onCloseMenu:   () => void;
+  hasMemberWaiverConfigured: boolean;
 }) {
   const fullName =
     [m.first_name, m.last_name].filter(Boolean).join(" ") || "Unnamed member";
@@ -1412,6 +1469,22 @@ function ProfileCard({
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
             {membershipLine(m.membership_status, m.membership_type_name)}
           </p>
+        )}
+        {/* Phase 43B-1B — omitted entirely when the club has no Member
+            waiver document at all (hasMemberWaiverConfigured), when this
+            identity has no compliance row (waiverStatus null), AND
+            (locked polish decision) when status is not_required — a
+            configured-but-not-required waiver is deliberately silent
+            noise on this list view. Member Detail is unaffected — it
+            still shows Not required explicitly (richer, single-Member
+            view, not a roster scan). This is a display suppression only;
+            waiver_configured vs. status=not_required remain two distinct
+            backend facts, untouched. */}
+        {hasMemberWaiverConfigured && m.waiverStatus && m.waiverStatus.status !== "not_required" && (
+          <div className="mt-0.5 flex items-center gap-1">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
+            <WaiverPill status={m.waiverStatus.status} />
+          </div>
         )}
       </div>
 
@@ -1586,6 +1659,7 @@ function RosterCard({
   onTypeChange,
   pending,
   error,
+  hasMemberWaiverConfigured,
 }: {
   roster:   RosterMember;
   onEdit:   (rm: RosterMember) => void;
@@ -1600,6 +1674,7 @@ function RosterCard({
   onTypeChange:        (rm: RosterMember, membershipTypeId: string) => void;
   pending:             boolean;
   error?:              string;
+  hasMemberWaiverConfigured: boolean;
 }) {
   const fullName = [rm.first_name, rm.last_name].filter(Boolean).join(" ");
   const details = [rm.email, rm.phone].filter(Boolean).join(" · ");
@@ -1648,6 +1723,17 @@ function RosterCard({
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
             {membershipLine(rm.membership_status, rm.membership_type_name)}
           </p>
+        )}
+        {/* Phase 43B-1B — same visibility rule as ProfileCard's pill:
+            omitted entirely when no Member waiver document exists, when
+            this identity has no compliance row, or when status is
+            not_required (locked polish decision — Member Detail still
+            shows Not required explicitly; this list view stays quiet). */}
+        {hasMemberWaiverConfigured && rm.waiverStatus && rm.waiverStatus.status !== "not_required" && (
+          <div className="mt-0.5 flex items-center gap-1">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
+            <WaiverPill status={rm.waiverStatus.status} />
+          </div>
         )}
       </div>
 

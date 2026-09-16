@@ -446,17 +446,18 @@ describe("WaiverAcceptanceClient — Accept button, stale-version Refresh path, 
 // ADMIN MEMBER DETAIL — Admin-only, Staff never fetches, no proxy control
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("Admin Member Detail page.tsx — get_member_waiver_status is Admin-only, Staff never calls it", () => {
+describe("Admin Member Detail page.tsx — get_member_waiver_status widened to Admin+Staff (43B-1A/43B-1B)", () => {
   const s = readSource(MEMBER_DETAIL_PAGE_PATH);
 
-  it("the RPC call is gated on isAdmin && rosterMemberIdForWaiver — not merely isOperator (Staff is admin+staff, and would pass an isOperator-only gate)", () => {
+  it("the RPC call is gated on isOperator(profile.role) && rosterMemberIdForWaiver — Phase 43B-1B widened this from the original isAdmin-only gate, matching 0194's own server-side Admin-or-Staff widening", () => {
     const idx = s.indexOf('supabase.rpc("get_member_waiver_status"');
     expect(idx).toBeGreaterThan(-1);
     const precedingBlock = s.slice(Math.max(0, idx - 200), idx);
-    expect(precedingBlock).toContain("isAdmin && rosterMemberIdForWaiver");
+    expect(precedingBlock).toContain("isOperator(profile.role) && rosterMemberIdForWaiver");
+    expect(precedingBlock).not.toContain("isAdmin && rosterMemberIdForWaiver");
   });
 
-  it("a Staff caller (isAdmin === false) gets data: null for this read — never an empty-but-attempted call", () => {
+  it("a Member/Pro caller (isOperator === false) gets data: null for this read — never an empty-but-attempted call (the whole route already redirects non-operators before this point)", () => {
     const idx = s.indexOf('supabase.rpc("get_member_waiver_status"');
     const ternaryBlock = s.slice(idx - 250, idx + 300);
     expect(ternaryBlock).toContain(": { data: null }");
@@ -467,18 +468,19 @@ describe("Admin Member Detail page.tsx — get_member_waiver_status is Admin-onl
   });
 });
 
-describe("MemberDetailClient — Waiver display is Admin-only, read-only, no proxy accept control", () => {
+describe("MemberDetailClient — Waiver display is Admin+Staff (canViewWaiverCompliance), read-only, no proxy accept control", () => {
   const s = readSource(MEMBER_DETAIL_CLIENT_PATH);
 
-  it("the Waiver block is gated on isMembershipAdmin (userRole === 'admin') — the SAME gate as the existing Membership edit controls, so Staff sees neither", () => {
-    const idx = s.indexOf("Waiver group (Phase 43A-2)");
+  it("the Waiver block is gated on canViewWaiverCompliance, deliberately NOT isMembershipAdmin — Staff now sees this read-only block while still never gaining Membership Status/Type editing (which stays on isMembershipAdmin)", () => {
+    const idx = s.indexOf("Waiver group (Phase 43A-2");
     expect(idx).toBeGreaterThan(-1);
-    const blockStart = s.indexOf("{isMembershipAdmin && waiverStatus", idx);
+    const blockStart = s.indexOf("{canViewWaiverCompliance && waiverStatus", idx);
     expect(blockStart).toBeGreaterThan(idx);
+    expect(s).not.toMatch(/\{isMembershipAdmin && waiverStatus/);
   });
 
   it("renders all FOUR locked semantic states: Current (+accepted date), Needs acceptance, Updated waiver needs acceptance, and Not required", () => {
-    const idx = s.indexOf("Waiver group (Phase 43A-2)");
+    const idx = s.indexOf("Waiver group (Phase 43A-2");
     const blockEnd = s.indexOf("{/* Stats */}", idx);
     const block = s.slice(idx, blockEnd);
     expect(block).toContain("Current");
@@ -488,14 +490,16 @@ describe("MemberDetailClient — Waiver display is Admin-only, read-only, no pro
     expect(block).toMatch(/waiverStatus\.status === "not_required"[\s\S]*?Not required/);
   });
 
-  it("the Waiver block renders for EVERY waiverStatus (including not_required) once isMembershipAdmin — no longer gated on status !== not_required", () => {
-    const idx = s.indexOf("Waiver group (Phase 43A-2)");
-    const gateLine = s.slice(idx, s.indexOf("\n", s.indexOf("{isMembershipAdmin && waiverStatus", idx)));
+  it("the Waiver block renders for EVERY waiverStatus (including not_required) once canViewWaiverCompliance — no longer gated on status !== not_required", () => {
+    const idx = s.indexOf("Waiver group (Phase 43A-2");
+    const gateIdx = s.indexOf("{canViewWaiverCompliance && waiverStatus", idx);
+    expect(gateIdx).toBeGreaterThan(idx);
+    const gateLine = s.slice(gateIdx, s.indexOf("\n", gateIdx));
     expect(gateLine).not.toMatch(/status !== "not_required"/);
   });
 
-  it("no edit or accept control exists anywhere in the Waiver block — display only, Admin cannot accept for the Member", () => {
-    const idx = s.indexOf("Waiver group (Phase 43A-2)");
+  it("no edit or accept control exists anywhere in the Waiver block — display only, neither Admin nor Staff can accept for the Member", () => {
+    const idx = s.indexOf("Waiver group (Phase 43A-2");
     const blockEnd = s.indexOf("{/* Stats */}", idx);
     const block = s.slice(idx, blockEnd);
     expect(block).not.toMatch(/<button|<select|<input|onClick/);

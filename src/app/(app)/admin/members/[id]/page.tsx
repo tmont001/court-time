@@ -74,16 +74,17 @@ export default async function MemberDetailPage({ params }: Props) {
         : Promise.resolve({ data: [] }),
     ]);
 
-  // Phase 43A-2 — Admin-only compliance visibility (locked decision).
-  // Staff must NEVER receive this — gated on isAdmin here, not merely
-  // isOperator, so Staff's request never even calls get_member_waiver_
-  // status. Depends on rosterResult (this Member's roster_member_id),
-  // resolved above, so this read happens after that Promise.all rather
-  // than inside it. No edit/accept control is ever rendered from this —
-  // display only.
+  // Phase 43B-1A widened get_member_waiver_status's own server-side
+  // authorization from Admin-only to Admin-or-Staff (0194). This gate is
+  // updated to match: isOperator(profile.role), not isAdmin — Member/Pro
+  // still never reach this fetch (the whole route already redirects
+  // non-operators above). Depends on rosterResult (this Member's
+  // roster_member_id), resolved above, so this read happens after that
+  // Promise.all rather than inside it. No edit/accept control is ever
+  // rendered from this — display only, for both Admin and Staff.
   const rosterMemberIdForWaiver = (rosterResult as { data: { id: string } | null })?.data?.id ?? null;
   const waiverStatusResult =
-    isAdmin && rosterMemberIdForWaiver
+    isOperator(profile.role) && rosterMemberIdForWaiver
       ? await supabase.rpc("get_member_waiver_status", { p_roster_member_id: rosterMemberIdForWaiver })
       : { data: null };
 

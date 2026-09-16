@@ -469,18 +469,20 @@ describe("26. no authorization change", () => {
     expect(detailPage).toContain('if (!profile || !isOperator(profile.role)) redirect("/calendar");');
   });
 
-  it("no new role-check helper or bypass was introduced — Admin-vs-Staff is a pure display decision (userRole prop), never a substitute for the 0188 RPCs' own server-side admin-only enforcement", () => {
-    // Checks actual usage (a function call) rather than bare-word
-    // matching — MemberDetailClient.tsx's own pre-existing comments
-    // legitimately mention "isOperator" in prose (describing the page-
-    // level gate these client components don't duplicate); neither
-    // client component actually imports or calls it.
-    const clientFiles = [MEMBERS_CLIENT_PATH, DETAIL_CLIENT_PATH];
-    for (const path of clientFiles) {
-      const s = readSource(path);
-      expect(s).not.toMatch(/isOperator\(|hasAdminAuthority\(/);
-      expect(s).not.toMatch(/from ["']@\/lib\/auth\/roles["']/);
-    }
+  it("Membership Status/Type editing specifically is unchanged: no new role-check helper or bypass was introduced for it — Admin-vs-Staff there is still a pure display decision (userRole === 'admin'), never a substitute for the 0188 RPCs' own server-side admin-only enforcement", () => {
+    // Phase 43B-1B legitimately adds a real isOperator import/call to
+    // MemberDetailClient.tsx (canViewWaiverCompliance — a DIFFERENT,
+    // unrelated concern: read-only waiver compliance visibility, mirroring
+    // 0194's own server-side Admin-or-Staff widening). This test now
+    // checks only that MEMBERSHIP editing (isMembershipAdmin) still uses
+    // the plain 'admin' check, not that isOperator is absent from the file
+    // entirely — MembersClient.tsx (which has no waiver-compliance
+    // concern of its own; that lives in the parent page.tsx) is
+    // unaffected either way.
+    const detailSource = readSource(DETAIL_CLIENT_PATH);
+    expect(detailSource).toContain('const isMembershipAdmin = userRole === "admin";');
+    expect(readSource(MEMBERS_CLIENT_PATH)).not.toMatch(/isOperator\(|hasAdminAuthority\(/);
+    expect(readSource(MEMBERS_CLIENT_PATH)).not.toMatch(/from ["']@\/lib\/auth\/roles["']/);
   });
 
   it("the two shared Server Actions add no authorization of their own beyond the not_authenticated guard — the 0188 RPCs remain the sole admin-only enforcement", () => {
