@@ -346,30 +346,25 @@ describe("0191 — scope is strictly limited to get_admin_member_detail", () => 
 // 12. No frontend membership-management implementation introduced yet
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("0191 — no frontend implementation in this checkpoint", () => {
-  it("MemberDetailClient.tsx does not yet reference the new membership fields", () => {
-    const s = readSource("src/app/(app)/admin/members/[id]/MemberDetailClient.tsx");
-    expect(s).not.toMatch(/membership_status|membership_type_id|membership_type_name/);
-  });
-
-  it("members/[id]/page.tsx and members/[id]/actions.ts do not yet reference the new membership fields or any new roster membership RPC", () => {
-    const page = readSource("src/app/(app)/admin/members/[id]/page.tsx");
-    const actions = readSource("src/app/(app)/admin/members/[id]/actions.ts");
-    expect(page).not.toMatch(/membership_status|membership_type_id|membership_type_name/);
-    expect(actions).not.toMatch(/set_roster_member_membership_type|set_roster_member_membership_status/);
-  });
-
-  it("MembersClient.tsx's Member/RosterMember types do not yet include the new membership fields", () => {
-    const s = readSource("src/app/(app)/admin/members/MembersClient.tsx");
-    expect(s).not.toMatch(/membership_status|membership_type_id|membership_type_name/);
-  });
-
-  it("admin/settings/actions.ts does not yet wrap any membership_types RPC", () => {
-    const s = readSource("src/app/(app)/admin/settings/actions.ts");
-    expect(s).not.toMatch(/create_membership_type|update_membership_type|set_membership_type_active/);
-  });
-
-  it("no MembershipTypesSection component exists yet", () => {
-    expect(() => readSource("src/app/(app)/admin/settings/MembershipTypesSection.tsx")).toThrow();
+// This checkpoint's own scope claim was "no frontend implementation yet" —
+// true when 42C-3A shipped, and superseded by design once Phase 42C-3B
+// (the very next checkpoint) legitimately built that frontend. Per this
+// file's own established convention (see settingsInformationArchitecture.
+// regression.test.ts's header comment on why a hardcoded ceiling like this
+// cannot be evergreen), the five checks that used to assert "frontend
+// fields/RPCs/components do not exist yet" are retired here rather than
+// left to fail for a correct reason. What DOES remain a permanent,
+// evergreen invariant of THIS migration specifically — and is asserted
+// below instead — is that 0191 itself (the applied, immutable SQL file)
+// is never touched by any later frontend checkpoint's changes. Full
+// frontend-side coverage for the Membership Status/Type UI itself lives
+// in Phase 42C-3B's own regression files, not here.
+describe("0191 — the applied migration file itself remains byte-identical regardless of later frontend work", () => {
+  it("still drops the exact old signature and appends exactly the 3 documented columns (unchanged since first apply)", () => {
+    const sql = migrationSql();
+    expect(sql).toMatch(/drop function public\.get_admin_member_detail\(uuid\);/i);
+    expect(sql).toMatch(
+      /RETURNS TABLE\(id uuid, first_name text, last_name text, phone text, role text, status text, created_at timestamp with time zone, email text, is_lesson_provider boolean, removed_at timestamp with time zone, attended_event_count bigint, event_no_show_count bigint, completed_lesson_count bigint, member_lesson_no_show_count bigint, membership_status text, membership_type_id uuid, membership_type_name text\)/
+    );
   });
 });

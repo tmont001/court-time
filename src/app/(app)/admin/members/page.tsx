@@ -21,14 +21,30 @@ export default async function AdminMembersPage() {
   if (!isOperator(profile?.role)) redirect("/calendar");
 
   const supabase = await createClient();
+  const clubId = profile?.club_id ?? "";
+  // Phase 42C-3B: the unclaimed-roster Membership editor is Admin-only
+  // (matches get_roster_members' own admin-only RPC gate, and
+  // membership_types' admin-only RLS policy) — Staff never reaches this
+  // condition, so this query is never even attempted for them, rather
+  // than attempted and silently failing closed. Active types only: this
+  // is the pool of newly-assignable options for the editor, not the full
+  // Membership Types management list (that's /admin/settings, Admin-only,
+  // shows inactive types too).
+  const isAdmin = profile?.role === "admin";
 
-  const [membersResult, invitesResult, rosterResult] = await Promise.all([
+  const [membersResult, invitesResult, rosterResult, settingsResult, membershipTypesResult] = await Promise.all([
     supabase.rpc("get_members"),
     supabase.rpc("get_club_invites"),
     // Phase 33E2: this CRM listing wants to see every unclaimed identity,
     // including inactive ones, so staff can view/manage them — active-only
     // filtering is for picker use (EventRosterSheet's bare, default call).
     supabase.rpc("get_roster_members", { p_include_inactive: true }),
+    clubId
+      ? supabase.from("club_settings").select("memberships_enabled").eq("club_id", clubId).single()
+      : Promise.resolve({ data: null }),
+    isAdmin && clubId
+      ? supabase.from("membership_types").select("id, name").eq("club_id", clubId).eq("is_active", true).order("name")
+      : Promise.resolve({ data: [] }),
   ]);
 
   // Include expired invites so admins can see them and resend. Active invites
@@ -37,6 +53,9 @@ export default async function AdminMembersPage() {
   const pendingInvites = (invitesResult.data ?? []).filter(
     (inv) => !inv.accepted_at && !inv.revoked_at
   );
+
+  const membershipsEnabled = (settingsResult as { data: { memberships_enabled: boolean } | null })?.data?.memberships_enabled ?? true;
+  const membershipTypes = membershipTypesResult.data ?? [];
 
   return (
     <>
@@ -54,6 +73,8 @@ export default async function AdminMembersPage() {
             membersError={membersResult.error?.message ?? null}
             invitesError={invitesResult.error?.message ?? null}
             userRole={profile?.role ?? "member"}
+            membershipsEnabled={membershipsEnabled}
+            membershipTypes={membershipTypes}
           />
         </div>
       </div>

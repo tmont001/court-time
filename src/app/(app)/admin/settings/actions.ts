@@ -18,6 +18,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Phase 42C-2
   enabled_required:            "Please choose whether Memberships are on or off.",
   settings_unavailable:        "Could not load current club settings. Please try again.",
+  // Phase 42C-3B — Membership Types management (0188 RPCs)
+  name_required:               "Please enter a name.",
+  name_too_long:                "Name must be 100 characters or fewer.",
+  membership_type_name_taken:  "A Membership Type with that name already exists.",
+  membership_type_not_found:   "Membership Type not found.",
+  is_active_required:          "Please choose Active or Inactive.",
 };
 
 export async function updateClubTimezone(
@@ -317,5 +323,64 @@ export async function updateClubRulesAndPolicies(
   // clubs mutation in this file — covers /admin/settings AND /help (a
   // separate route under the same root layout) with the one call.
   revalidatePath("/", "layout");
+  return {};
+}
+
+// ── Membership Types management (Phase 42C-3B) ──────────────────────────
+// Thin wrappers around 0188's three Admin-only, same-club membership_types
+// RPCs — no delete action exists on either side (soft lifecycle only, per
+// the locked domain model: inactive types stay visible/renamable/
+// reactivatable, never hard deleted).
+
+export async function createMembershipTypeAction(
+  name: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("create_membership_type", { p_name: name });
+  if (error) {
+    const key = error.message.match(/name_required|name_too_long|membership_type_name_taken|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to add Membership Type." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function updateMembershipTypeAction(
+  id: string,
+  name: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("update_membership_type", { p_id: id, p_name: name });
+  if (error) {
+    const key = error.message.match(/name_required|name_too_long|membership_type_name_taken|membership_type_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to rename Membership Type." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function setMembershipTypeActiveAction(
+  id: string,
+  isActive: boolean
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_membership_type_active", { p_id: id, p_is_active: isActive });
+  if (error) {
+    const key = error.message.match(/is_active_required|membership_type_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to update Membership Type." };
+  }
+
+  revalidatePath("/admin/settings");
   return {};
 }

@@ -79,9 +79,15 @@ describe("2. /admin/settings reads and passes memberships_enabled", () => {
   });
 
   it("MembershipsSection is rendered with the resolved enabled value", () => {
+    // Phase 42C-3B moved this component into its own top-level Settings
+    // group and introduced a named `membershipsEnabled` local (reused by
+    // both MembershipsSection and the new Membership Types visibility
+    // gate) — the resolved value is still `settings?.memberships_enabled
+    // ?? true`, just no longer inlined at this exact call site.
     const s = readSource(SETTINGS_PAGE_PATH);
     expect(s).toContain('import MembershipsSection from "./MembershipsSection";');
-    expect(s).toContain("<MembershipsSection enabled={settings?.memberships_enabled ?? true} />");
+    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
+    expect(s).toContain("<MembershipsSection enabled={membershipsEnabled} />");
   });
 
   it("does not add a duplicate club_settings/courts fetch — reuses the existing Promise.all query", () => {
@@ -727,12 +733,28 @@ describe("10. no membership-management or Member Detail scope creep", () => {
   }
 
   it("MembershipsSection and PricingSettingsForm never call a membership-type/roster-membership RPC", () => {
-    for (const path of [MEMBERSHIPS_SECTION_PATH, PRICING_FORM_PATH, SETTINGS_ACTIONS_PATH]) {
+    for (const path of [MEMBERSHIPS_SECTION_PATH, PRICING_FORM_PATH]) {
       const calledNames = rpcNamesCalled(readSource(path));
       for (const forbidden of FORBIDDEN_RPC_NAMES) {
         expect(calledNames).not.toContain(forbidden);
       }
     }
+  });
+
+  it("settings/actions.ts (Phase 42C-3B) legitimately calls the three membership_TYPE RPCs, but never a roster-membership mutation RPC", () => {
+    // Membership Types management is genuinely owned by admin/settings —
+    // this checkpoint's own scope claim was narrower (42C-2 predates
+    // Membership Types UI entirely) than what the codebase correctly
+    // grew into one checkpoint later. What must stay permanently true is
+    // the boundary itself: settings/actions.ts manages TYPES, never an
+    // individual roster member's status/type assignment — that stays in
+    // admin/members/actions.ts exclusively.
+    const calledNames = rpcNamesCalled(readSource(SETTINGS_ACTIONS_PATH));
+    expect(calledNames).toContain("create_membership_type");
+    expect(calledNames).toContain("update_membership_type");
+    expect(calledNames).toContain("set_membership_type_active");
+    expect(calledNames).not.toContain("set_roster_member_membership_status");
+    expect(calledNames).not.toContain("set_roster_member_membership_type");
   });
 
   it("CourtManagementList and courts actions never call a membership-type/roster-membership RPC", () => {

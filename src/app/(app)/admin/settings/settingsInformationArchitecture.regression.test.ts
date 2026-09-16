@@ -47,11 +47,18 @@ function subsectionMarker(label: string): string {
 }
 
 const GROUP_CLUB_PROFILE = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Club Profile</h2>';
+const GROUP_MEMBERSHIPS = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships</h2>';
 const GROUP_PRICING_PAYMENTS = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Pricing & Payments</h2>';
 const GROUP_PLAN_ACCESS = '<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Plan & Access</h2>';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1-11 — the final three-group Club Settings IA (Admin IA Checkpoint 5)
+// 1-11 — the final Club Settings IA (Admin IA Checkpoint 5, then Phase
+// 42C-3B's Memberships split-out). The original three-group design
+// (Club Profile, Pricing & Payments, Plan & Access) gained a fourth group,
+// Memberships, between Club Profile and Pricing & Payments — a frontend-
+// only reorganization moving the existing MembershipsSection toggle out
+// of Pricing & Payments and adding Membership Types management alongside
+// it, per the locked 42C-3B product direction.
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("1. /admin/settings remains Admin-only", () => {
@@ -79,17 +86,21 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     expect(s).toContain('.from("club-logos")');
   });
 
-  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the six now-current RPCs (the five pre-42C-2 ones plus 42C-2's own update_club_memberships_enabled), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
+  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the nine now-current RPCs (the six pre-42C-3B ones plus 42C-3B's own three Membership Types RPCs), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
     // Deliberately not a "highest migration === N" check — see this file's
     // own header comment on why that pattern is invalid across checkpoints.
     // This count is intentionally NOT frozen forever: it tracks the actual,
     // current RPC surface of this file, and is bumped deliberately (with a
     // comment) whenever a real, reviewed RPC is added — exactly as it was
-    // bumped here (Phase 42C-2 added updateClubMembershipsEnabled).
+    // bumped here (Phase 42C-3B added createMembershipTypeAction/
+    // updateMembershipTypeAction/setMembershipTypeActiveAction).
     const s = readSource("src/app/(app)/admin/settings/actions.ts");
-    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(6);
+    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(9);
     expect(s).toContain('supabase.rpc("update_club_rules_and_policies", {');
     expect(s).toContain('supabase.rpc("update_club_memberships_enabled", {');
+    expect(s).toContain('supabase.rpc("create_membership_type", {');
+    expect(s).toContain('supabase.rpc("update_membership_type", {');
+    expect(s).toContain('supabase.rpc("set_membership_type_active", {');
   });
 
   it("19. no payment-domain mutation was introduced — page.tsx itself performs no .rpc( or mutation, only reads plus prop-passing to unchanged child components", () => {
@@ -99,22 +110,25 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
   });
 });
 
-describe("3-4. exactly three top-level visual groups exist, in the locked order: Club Profile, Pricing & Payments, Plan & Access", () => {
-  it("all three group headings exist exactly once each", () => {
+describe("3-4. exactly four top-level visual groups exist, in the locked order: Club Profile, Memberships, Pricing & Payments, Plan & Access", () => {
+  it("all four group headings exist exactly once each", () => {
     const s = readSource(PAGE_PATH);
-    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(4);
     expect(s).toContain(GROUP_CLUB_PROFILE);
+    expect(s).toContain(GROUP_MEMBERSHIPS);
     expect(s).toContain(GROUP_PRICING_PAYMENTS);
     expect(s).toContain(GROUP_PLAN_ACCESS);
   });
 
-  it("group order is Club Profile, then Pricing & Payments, then Plan & Access", () => {
+  it("group order is Club Profile, then Memberships, then Pricing & Payments, then Plan & Access", () => {
     const s = readSource(PAGE_PATH);
     const clubProfileIdx = s.indexOf(GROUP_CLUB_PROFILE);
+    const membershipsIdx = s.indexOf(GROUP_MEMBERSHIPS);
     const pricingPaymentsIdx = s.indexOf(GROUP_PRICING_PAYMENTS);
     const planAccessIdx = s.indexOf(GROUP_PLAN_ACCESS);
     expect(clubProfileIdx).toBeGreaterThan(-1);
-    expect(pricingPaymentsIdx).toBeGreaterThan(clubProfileIdx);
+    expect(membershipsIdx).toBeGreaterThan(clubProfileIdx);
+    expect(pricingPaymentsIdx).toBeGreaterThan(membershipsIdx);
     expect(planAccessIdx).toBeGreaterThan(pricingPaymentsIdx);
   });
 
@@ -123,6 +137,41 @@ describe("3-4. exactly three top-level visual groups exist, in the locked order:
     expect(s).not.toMatch(/searchParams/);
     expect(s).not.toMatch(/<details/);
     expect(s).not.toMatch(/\?tab=/);
+  });
+});
+
+describe("4a. Memberships group (Phase 42C-3B) — toggle always visible, Membership Types hidden when off", () => {
+  function membershipsGroup(): string {
+    const s = readSource(PAGE_PATH);
+    const groupStart = s.indexOf(GROUP_MEMBERSHIPS);
+    const groupEnd = s.indexOf(GROUP_PRICING_PAYMENTS);
+    return s.slice(groupStart, groupEnd);
+  }
+
+  it("MembershipsSection (the toggle) is rendered unconditionally — never gated behind membershipsEnabled itself", () => {
+    const group = membershipsGroup();
+    const membershipsSectionIdx = group.indexOf("<MembershipsSection");
+    expect(membershipsSectionIdx).toBeGreaterThan(-1);
+    // Not preceded by a `{membershipsEnabled && (` gate immediately above it.
+    const precedingSlice = group.slice(0, membershipsSectionIdx);
+    expect(precedingSlice.trimEnd().endsWith("{membershipsEnabled && (")).toBe(false);
+  });
+
+  it("Membership Types management (MembershipTypesSection) is gated behind membershipsEnabled", () => {
+    const group = membershipsGroup();
+    expect(group).toContain("{membershipsEnabled && (");
+    expect(group).toContain("<MembershipTypesSection");
+    const gateIdx = group.indexOf("{membershipsEnabled && (");
+    const sectionIdx = group.indexOf("<MembershipTypesSection");
+    expect(sectionIdx).toBeGreaterThan(gateIdx);
+  });
+
+  it("membership_types is read via a plain RLS-scoped table select, not a new RPC — no duplicate club_settings fetch either", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).toContain('.from("membership_types")');
+    expect(s).not.toMatch(/\.rpc\(\s*"[a-z_]*membership_type/i);
+    const clubSettingsMatches = s.match(/\.from\("club_settings"\)/g) ?? [];
+    expect(clubSettingsMatches.length).toBe(1);
   });
 });
 
@@ -240,9 +289,9 @@ describe("12-16. Courts, Event Types, Lesson Types, Announcements, and Delivery 
     expect(s).not.toContain("DeliveryDiagnosticsSection");
   });
 
-  it("exactly three group headings exist — no fourth/fifth group for any relocated domain re-emerged", () => {
+  it("exactly the four locked group headings exist — no fifth/sixth group for any relocated domain re-emerged (Memberships, Phase 42C-3B, is the one legitimate fourth group)", () => {
     const s = readSource(PAGE_PATH);
-    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(4);
   });
 });
 
@@ -271,9 +320,9 @@ describe("20. responsive grouping stacks vertically at every width — no horizo
   it("the page's outer container and every group are plain vertical flex/space-y stacks — no grid/flex-row wrapping the groups themselves", () => {
     const s = readSource(PAGE_PATH);
     expect(s).toContain('<div className="px-4 py-6 space-y-8 md:max-w-2xl md:mx-auto dark:text-gray-100">');
-    // Each of the three <section> groups uses space-y (vertical stacking),
+    // Each of the four <section> groups uses space-y (vertical stacking),
     // never a grid or flex-row at the group level.
-    expect((s.match(/<section className="space-y-4">/g) ?? []).length).toBe(3);
+    expect((s.match(/<section className="space-y-4">/g) ?? []).length).toBe(4);
   });
 
   it("no group or subsection wraps its content in a multi-column grid at any breakpoint", () => {

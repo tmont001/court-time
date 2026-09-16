@@ -38,6 +38,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   roster_email_required:         "Add an email to this member's roster record before sending an invite.",
   // Phase 33F3B — a Staff-Managed club cannot invite a new Member account.
   capability_not_available:      "This club is on the Staff-Managed plan, which doesn't include Member self-service accounts. Contact support to enable it.",
+  // Phase 42C-3B — roster membership status/type (0188 RPCs)
+  invalid_membership_status:     "Invalid Membership Status value.",
+  membership_type_not_found:     "Membership Type not found.",
+  membership_type_inactive:      "That Membership Type is inactive and can't be newly assigned.",
 };
 
 function mapError(message: string): string {
@@ -167,6 +171,56 @@ export async function restoreMemberAction(
 
   revalidatePath("/admin/members");
   revalidatePath(`/admin/members/${targetUserId}`);
+  return {};
+}
+
+// Phase 42C-3B — roster membership status/type. Membership Status/Type are
+// properties of the durable roster_members row, never of profiles/
+// club_memberships — so these two actions take a rosterMemberId, not a
+// user/member id, and are the SAME two RPC wrappers used by BOTH the
+// unclaimed-roster editor on this page's own list (MembersClient.tsx,
+// same directory) and the claimed-person Membership block on Member
+// Detail (admin/members/[id]/MemberDetailClient.tsx, imported from here
+// as "../actions" — a shared thin wrapper, not a new abstraction layer,
+// avoiding a duplicate copy of this RPC-wrapping logic in two files). The
+// two mutations are independent, matching the two separate 0188 RPCs —
+// changing Status never touches Type and vice versa. Both RPCs are
+// Admin-only at the database layer (0188); this file adds no additional
+// authorization of its own, and the frontend is responsible for never
+// rendering the controls that call these for a Staff caller.
+export async function setRosterMemberMembershipStatusAction(
+  rosterMemberId: string,
+  membershipStatus: "active" | "inactive" | "suspended" | "non_member"
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_roster_member_membership_status", {
+    p_roster_member_id: rosterMemberId,
+    p_membership_status: membershipStatus,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
+  return {};
+}
+
+export async function setRosterMemberMembershipTypeAction(
+  rosterMemberId: string,
+  membershipTypeId: string | null
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_roster_member_membership_type", {
+    p_roster_member_id: rosterMemberId,
+    p_membership_type_id: membershipTypeId,
+  });
+  if (error) return { error: mapError(error.message) };
+
+  revalidatePath("/admin/members");
   return {};
 }
 

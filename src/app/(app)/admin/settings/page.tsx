@@ -8,6 +8,7 @@ import ClubTimezoneSection from "./ClubTimezoneSection";
 import ClubRulesSection from "./ClubRulesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
 import MembershipsSection from "./MembershipsSection";
+import MembershipTypesSection from "./MembershipTypesSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -28,7 +29,7 @@ export default async function AdminSettingsPage() {
   // — see the Operating Model section below.
   const memberSelfService = profile?.memberSelfService ?? false;
 
-  const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
+  const [settingsResult, clubResult, stripeConnectResult, membershipTypesResult] = await Promise.all([
     supabase
       .from("club_settings")
       .select(
@@ -46,11 +47,24 @@ export default async function AdminSettingsPage() {
     // reads through the service-role RPC, scoped to the server's own
     // configured Stripe mode (never a client-selectable value).
     getStripeConnectStatusForAdmin(),
+    // Phase 42C-3B — membership_types is a plain RLS-scoped table read
+    // (admin-only, same-club policy, 0188), not an RPC: this whole page
+    // is already Admin-gated above, so no extra role check is needed
+    // here. Shows ALL types (active and inactive) — Membership Types
+    // management is the one surface where an inactive type must remain
+    // fully visible/renamable/reactivatable, never hidden.
+    supabase
+      .from("membership_types")
+      .select("id, name, is_active")
+      .eq("club_id", clubId)
+      .order("name"),
   ]);
 
   const settings   = settingsResult.data;
   const club       = clubResult.data;
+  const membershipTypes = membershipTypesResult.data ?? [];
   const currency = settings?.currency ?? "USD";
+  const membershipsEnabled = settings?.memberships_enabled ?? true;
   const stripeStatus = stripeConnectResult.status;
   // Phase 34D-C: the SAME derivation StripeConnectSection's own state
   // already uses, computed once here so PaymentTrackingSection's
@@ -70,10 +84,10 @@ export default async function AdminSettingsPage() {
             domain-specific configuration has moved out of this page
             (Courts -> /admin/courts, Event Types -> /events, Lesson Types
             -> /admin/lessons, Announcements/Delivery Diagnostics ->
-            /admin/communications), so what remains is exactly three groups
-            of true club-wide configuration: Club Profile, Pricing &
-            Payments, Plan & Access. No tabs, no accordions, no subroutes —
-            one page, vertically grouped, with a bold group heading above
+            /admin/communications), so what remains is true club-wide
+            configuration: Club Profile, Memberships, Pricing & Payments,
+            Plan & Access. No tabs, no accordions, no subroutes — one
+            page, vertically grouped, with a bold group heading above
             each group's own small-caps subsection labels (the existing
             "text-xs font-semibold uppercase tracking-wider" treatment,
             reused here as the SUBSECTION level rather than the group
@@ -81,6 +95,9 @@ export default async function AdminSettingsPage() {
             of "CLUB PROFILE" / "CLUB BRANDING". Every child component
             below is presentation-neutral (no component renders its own
             top-level heading), so this is a pure JSX/copy reorganization —
+            Phase 42C-3B split the former Memberships subsection (inside
+            Pricing & Payments) out into its own top-level group and added
+            Membership Types management alongside the existing toggle —
             no component's props, state, or Server Action calls changed. ══ */}
 
         {/* ── Group 1: Club Profile ── */}
@@ -122,7 +139,39 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-200 dark:border-gray-700" />
 
-        {/* ── Group 2: Pricing & Payments ──
+        {/* ── Group 2: Memberships (Phase 42C-3B) ──
+            Moved out of Pricing & Payments — frontend-only reorganization,
+            no data-fetching or Server Action change (memberships_enabled
+            was already selected above; membership_types is a new read,
+            but on the SAME already-Admin-gated page). The On/Off toggle
+            is ALWAYS visible, even when off — Membership Types management
+            hides entirely when off, but nothing in the database is ever
+            cleared by hiding it (0188's soft-lifecycle RPCs are the only
+            thing that can change a type's own is_active, never this
+            visibility gate). */}
+        <section className="space-y-4">
+          <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships</h2>
+
+          <MembershipsSection enabled={membershipsEnabled} />
+
+          {membershipsEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Membership Types
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Club-configurable membership categories (e.g. Adult, Junior, Senior). Deactivating a
+                type keeps it attached to anyone who already has it — it just can&apos;t be newly
+                assigned.
+              </p>
+              <MembershipTypesSection initialTypes={membershipTypes} />
+            </div>
+          )}
+        </section>
+
+        <hr className="border-gray-200 dark:border-gray-700" />
+
+        {/* ── Group 3: Pricing & Payments ──
             Locked product distinction: Pricing = what the club charges;
             Payments = how the club tracks/collects money. Global/default
             pricing stays here — domain-specific pricing (court overrides,
@@ -130,15 +179,6 @@ export default async function AdminSettingsPage() {
             domain page and is never duplicated here. */}
         <section className="space-y-4">
           <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Pricing & Payments</h2>
-
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Memberships
-            </p>
-            <MembershipsSection enabled={settings?.memberships_enabled ?? true} />
-          </div>
-
-          <hr className="border-gray-100 dark:border-gray-800" />
 
           <div className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
@@ -150,7 +190,7 @@ export default async function AdminSettingsPage() {
             <PricingSettingsForm
               currency={currency}
               defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
-              membershipsEnabled={settings?.memberships_enabled ?? true}
+              membershipsEnabled={membershipsEnabled}
               defaultCourtHourlyRateNonMemberCents={settings?.default_court_hourly_rate_non_member_cents ?? null}
             />
           </div>
@@ -208,7 +248,7 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-200 dark:border-gray-700" />
 
-        {/* ── Group 3: Plan & Access (Phase 34G-A2) ──
+        {/* ── Group 4: Plan & Access (Phase 34G-A2) ──
             Read-only — sourced from the same profile.memberSelfService
             value every capability check already uses
             (src/lib/supabase/user.ts, current_club_has_capability RPC,
