@@ -52,11 +52,11 @@ describe("0194 — migration numbering", () => {
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
   });
 
-  it("no unauthorized 0196+ migration exists yet", () => {
+  it("no unauthorized 0197+ migration exists yet", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 195;
+      return match !== null && Number(match[1]) > 196;
     });
     expect(laterMigrations).toEqual([]);
   });

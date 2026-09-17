@@ -65,11 +65,11 @@ describe("0189 — migration numbering", () => {
   // 43B-1A (0194) are the legitimate next migrations once 0189 is applied
   // — this guard now checks for anything PAST that authorized boundary,
   // not past 0189 itself.
-  it("no unauthorized 0196+ migration exists yet", () => {
+  it("no unauthorized 0197+ migration exists yet", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 195;
+      return match !== null && Number(match[1]) > 196;
     });
     expect(laterMigrations).toEqual([]);
   });

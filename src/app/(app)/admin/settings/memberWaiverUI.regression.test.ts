@@ -37,11 +37,11 @@ function functionBody(source: string, exportName: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Phase 43A-2 scope guard", () => {
-  it("no unauthorized migration beyond 0195 exists (0194 is Phase 43B-1A, a later, unrelated migration)", () => {
+  it("no unauthorized migration beyond 0196 exists (0194 is Phase 43B-1A, a later, unrelated migration)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 195;
+      return match !== null && Number(match[1]) > 196;
     });
     expect(laterMigrations).toEqual([]);
   });

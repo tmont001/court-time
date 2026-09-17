@@ -39,7 +39,7 @@ describe("Phase 43B-2B scope guard", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 195;
+      return match !== null && Number(match[1]) > 196;
     });
     expect(laterMigrations).toEqual([]);
   });
