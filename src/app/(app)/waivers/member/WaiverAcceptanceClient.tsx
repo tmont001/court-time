@@ -7,25 +7,41 @@
 // version id, so it can never accept a client-guessed/stale version; the
 // backend's own stale_waiver_version rejection is the authoritative
 // backstop if a concurrent publish lands while this page is open.
+//
+// Phase 43B-3B — PDF-only product pivot. For a PDF-backed current version
+// (isPdfBacked=true), no body text is rendered by the page above, so this
+// component instead offers a "View waiver PDF" action (a short-lived
+// signed URL, minted fresh server-side on each click — never a permanent
+// Storage URL) and requires an explicit agreement checkbox before Accept
+// is enabled. accept_member_waiver itself (0192/0193, applied/immutable)
+// is completely unchanged — still called against the exact same
+// currentVersionId either way; this component only adds a UI gate in
+// front of the identical call. Legacy text acceptance is unchanged: no
+// checkbox, same one-click Accept as before.
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { acceptMemberWaiverAction } from "./actions";
+import { acceptMemberWaiverAction, getMemberWaiverPdfViewUrlAction } from "./actions";
 import { ACTION_BUTTON_PRIMARY, ACTION_BUTTON_SECONDARY } from "@/components/styles/actionButtonStyles";
 
 interface Props {
   currentVersionId: string;
   initialStatus: "current" | "never_accepted" | "outdated";
   initialAcceptedAt: string | null;
+  isPdfBacked: boolean;
 }
 
-export default function WaiverAcceptanceClient({ currentVersionId, initialStatus, initialAcceptedAt }: Props) {
+export default function WaiverAcceptanceClient({
+  currentVersionId, initialStatus, initialAcceptedAt, isPdfBacked,
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState(initialStatus);
   const [acceptedAt, setAcceptedAt] = useState(initialAcceptedAt);
   const [error, setError] = useState<string | null>(null);
   const [isStale, setIsStale] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [viewPending, setViewPending] = useState(false);
 
   function handleAccept() {
     setError(null);
@@ -41,6 +57,18 @@ export default function WaiverAcceptanceClient({ currentVersionId, initialStatus
       setAcceptedAt(result.acceptedAt ?? new Date().toISOString());
       router.refresh();
     });
+  }
+
+  async function handleViewPdf() {
+    setError(null);
+    setViewPending(true);
+    const result = await getMemberWaiverPdfViewUrlAction();
+    setViewPending(false);
+    if (result.error || !result.url) {
+      setError(result.error ?? "Could not open the PDF. Please try again.");
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
   }
 
   if (status === "current") {
@@ -61,6 +89,29 @@ export default function WaiverAcceptanceClient({ currentVersionId, initialStatus
           {error}
         </div>
       )}
+
+      {isPdfBacked && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-3">
+          <button
+            type="button"
+            onClick={handleViewPdf}
+            disabled={viewPending}
+            className={ACTION_BUTTON_SECONDARY}
+          >
+            {viewPending ? "Opening…" : "View waiver PDF"}
+          </button>
+          <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="mt-0.5"
+            />
+            I have read and agree to the waiver.
+          </label>
+        </div>
+      )}
+
       <div className="flex items-center gap-3">
         {isStale ? (
           <button
@@ -74,7 +125,7 @@ export default function WaiverAcceptanceClient({ currentVersionId, initialStatus
           <button
             type="button"
             onClick={handleAccept}
-            disabled={isPending}
+            disabled={isPending || (isPdfBacked && !agreed)}
             className={ACTION_BUTTON_PRIMARY}
           >
             {isPending ? "Accepting…" : "I Accept"}

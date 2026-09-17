@@ -146,13 +146,25 @@ describe("Admin Settings page.tsx — Member Waiver data read and placement", ()
     expect(pricingGroupStart).toBeGreaterThan(waiverComponentIdx);
   });
 
-  it("passes waiverId/isRequired/currentVersion/draftVersion — the exact shape MemberWaiverSection expects", () => {
+  it("passes waiverId/isRequired/currentDocument/legacyDraft — the exact shape MemberWaiverSection expects (Phase 43B-3B PDF pivot)", () => {
     const propsIdx = s.indexOf("<MemberWaiverSection");
     const propsBlock = s.slice(propsIdx, s.indexOf("/>", propsIdx));
     expect(propsBlock).toContain("waiverId={waiverRow?.id ?? null}");
     expect(propsBlock).toContain("isRequired={waiverRow?.is_required ?? true}");
-    expect(propsBlock).toContain("currentVersion={currentWaiverVersion}");
-    expect(propsBlock).toContain("draftVersion={draftWaiverVersion}");
+    expect(propsBlock).toContain("currentDocument={currentMemberDocument}");
+    expect(propsBlock).toContain("legacyDraft={legacyMemberDraft}");
+  });
+
+  it("derives PDF-backed vs legacy text from body === null on the already-read version row — no new RPC/query for this distinction", () => {
+    expect(s).toContain("doc !== null");
+    expect(s).toContain('.from("waiver_document_files")');
+  });
+
+  it("waiver_document_files is read via the privileged client, never the normal RLS-scoped one — that table has zero authenticated table access (0196)", () => {
+    expect(s).toContain("createPrivilegedClient()");
+    const privIdx = s.indexOf("createPrivilegedClient()");
+    const privBlock = s.slice(privIdx, s.indexOf('.from("waiver_document_files")', privIdx) + 40);
+    expect(privBlock).not.toMatch(/^\s*$/);
   });
 
   it("page.tsx itself performs no waiver mutation — only reads plus prop-passing (all writes live in Server Actions)", () => {
@@ -166,115 +178,78 @@ describe("Admin Settings page.tsx — Member Waiver data read and placement", ()
 // ADMIN SETTINGS — MemberWaiverSection component states
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("MemberWaiverSection — state machine, draft/published separation, confirmation", () => {
+describe("MemberWaiverSection — PDF-only upload/replace, legacy text compatibility (Phase 43B-3B)", () => {
   const s = readSource(WAIVER_SECTION_PATH);
 
-  it("state 1 (no waiver yet): shows explanation + Create button, gated on waiverId === null", () => {
-    expect(s).toContain('waiverId === null && editorMode === "none"');
-    expect(s).toContain("No Member waiver has been created yet.");
-    expect(s).toContain("Create Member Waiver");
+  it("no current waiver: shows a compact empty state and an Upload action, gated on !currentDocument", () => {
+    expect(s).toContain('!currentDocument && mode === "none"');
+    expect(s).toContain("No Member waiver has been added yet.");
+    expect(s).toContain("Upload Waiver");
   });
 
-  it("the current published version block is READ-ONLY — renders as plain text (<p>), never inside an <input>/<textarea>", () => {
-    const blockStart = s.indexOf("CURRENT PUBLISHED VERSION");
-    const blockEnd = s.indexOf("Update Waiver");
+  it("never shows Version N anywhere in rendered JSX text — internal version_number stays evidence/history only", () => {
+    expect(s).not.toMatch(/>\s*Version \{/);
+    expect(s).not.toMatch(/>\s*Version \d/);
+  });
+
+  it("no free-text authoring UI remains — no title input, no body textarea, no character counter", () => {
+    expect(s).not.toMatch(/<textarea/);
+    expect(s).not.toMatch(/\{body\.length\}\/\{BODY_MAX\}/);
+    expect(s).not.toContain("Waiver Text");
+  });
+
+  it("PDF-backed current waiver shows filename + Last updated + View PDF + Replace Waiver, no inline PDF contents", () => {
+    const blockStart = s.indexOf("currentDocument && currentDocument.isPdfBacked");
+    const blockEnd = s.indexOf("legacy TEXT-backed waiver", blockStart);
     const block = s.slice(blockStart, blockEnd);
+    expect(block).toContain("currentDocument.originalFilename");
+    expect(block).toContain("Last updated");
+    expect(block).toContain("View PDF");
+    expect(block).toContain("Replace Waiver");
+    expect(block).not.toMatch(/<iframe|<embed|<object/);
+  });
+
+  it("legacy text current waiver shows 'Legacy text waiver' + View Waiver + Replace with PDF — never a text re-authoring editor", () => {
+    const blockStart = s.indexOf("currentDocument && !currentDocument.isPdfBacked");
+    const blockEnd = s.indexOf("Upload / Replace panel", blockStart);
+    const block = s.slice(blockStart, blockEnd);
+    expect(block).toContain("Legacy text waiver");
+    expect(block).toContain("View Waiver");
+    expect(block).toContain("Replace with PDF");
     expect(block).not.toMatch(/<textarea|<input/);
-    expect(block).toContain("whitespace-pre-wrap");
   });
 
-  it("the action label is 'Update Waiver' — the old 'Start New Version' user-facing label is gone", () => {
-    expect(s).toContain("Update Waiver");
-    expect(s).not.toMatch(/>\s*Start New Version\s*</);
+  it("View Waiver toggles a compact historical-text panel using the legacyTitle/legacyBody props, not a live editable draft", () => {
+    expect(s).toContain("showingLegacyText");
+    expect(s).toContain("currentDocument.legacyTitle");
+    expect(s).toContain("currentDocument.legacyBody");
   });
 
-  it("opening Update Waiver shows helper copy naming the current version number and stating the published waiver stays unchanged until publish", () => {
-    expect(s).toMatch(/Creates a draft based on Version \{currentVersion(\?\.)?\.versionNumber\}/);
-    expect(s).toContain("The currently published waiver stays unchanged until you publish the update.");
+  it("Replace Waiver flow shows explicit re-agreement confirmation copy before upload", () => {
+    expect(s).toContain('mode === "replacing"');
+    expect(s).toContain("will require Members to agree to the new waiver");
   });
 
-  it("'Update Waiver' only appears when published with no draft (state 3), and prefills title/body from currentVersion", () => {
-    expect(s).toContain("currentVersion && !draftVersion && editorMode === \"none\"");
-    const fnStart = s.indexOf("function startNewVersion()");
-    const fnEnd = s.indexOf("\n  }", fnStart);
-    const fn = s.slice(fnStart, fnEnd);
-    expect(fn).toContain("setTitle(currentVersion.title);");
-    expect(fn).toContain("setBody(currentVersion.body);");
+  it("actual upload/finalize sequencing is delegated to the shared useWaiverPdfUpload hook, scoped to audience 'member' — this component never calls Storage or the finalize RPC itself", () => {
+    expect(s).toContain('useWaiverPdfUpload("member"');
+    expect(s).not.toMatch(/createSignedUploadUrl|uploadToSignedUrl/);
+    expect(s).not.toMatch(/\.rpc\(\s*["']publish_waiver_pdf_version["']/);
   });
 
-  it("the draft editor (editable Title/Body + Save Draft) renders for states 2/3(mid-new-version)/4 — never for the read-only current version", () => {
-    expect(s).toContain('const isEditingDraft = editorMode === "edit-draft" || editorMode === "new-version" || editorMode === "create";');
-    const editorStart = s.indexOf("isEditingDraft &&");
-    const editorEnd = s.indexOf("Requirement toggle", editorStart);
-    const editorBlock = s.slice(editorStart, editorEnd);
-    expect(editorBlock).toContain("<input");
-    expect(editorBlock).toContain("<textarea");
-    expect(editorBlock).toContain("Save Draft");
+  it("an unpublished legacy text draft is NEVER silently discarded — it blocks upload and requires an explicit, confirmed discard action", () => {
+    expect(s).toContain("const canUploadNow = legacyDraft === null;");
+    expect(s).toContain("confirmingDiscard");
+    expect(s).toContain("discardWaiverDraftAction(legacyDraft.id)");
+    expect(s).toContain("This permanently deletes the unpublished draft text. This cannot be undone.");
   });
 
-  it("Publish requires an explicit inline confirmation before calling the RPC — the confirm step's text differs for a first-ever publish vs. a new-version publish, and both mention reacceptance", () => {
-    expect(s).toContain("confirmingPublish ?");
-    expect(s).toContain("Publishing will make this waiver current and Members will need to accept it.");
-    expect(s).toContain("Publishing will make this the current waiver version. Members who accepted the previous version will need to accept this one.");
+  it("the legacy-draft discard panel is only rendered when a draft actually exists", () => {
+    expect(s).toContain("{legacyDraft && (");
   });
 
-  it("Publish is only reachable from a REAL saved draft (draftVersion prop, not the ephemeral new-version prefill) — handlePublish guards on draftVersion, and always publishes draftVersion.id, never a locally-edited value", () => {
-    const fnStart = s.indexOf("function handlePublish()");
-    const fnEnd = s.indexOf("\n  }", fnStart);
-    const fn = s.slice(fnStart, fnEnd + 4);
-    expect(fn).toContain("if (!draftVersion || isDraftDirty) return;");
-    expect(fn).toContain('publishMemberWaiverVersionAction(draftVersion.id)');
-  });
-
-  it("isDraftDirty compares the live editor title/body against the authoritative saved draftVersion.title/body — only meaningful in edit-draft mode with a real draft", () => {
-    const constStart = s.indexOf("const isDraftDirty =");
-    const constEnd = s.indexOf(";", s.indexOf("draftVersion.body", constStart));
-    const block = s.slice(constStart, constEnd);
-    expect(block).toContain('editorMode === "edit-draft"');
-    expect(block).toContain("draftVersion !== null");
-    expect(block).toContain("title !== draftVersion.title");
-    expect(block).toContain("body !== draftVersion.body");
-  });
-
-  it("Publish is disabled whenever isDraftDirty is true — an unsaved edit cannot be published, only the last-saved wording can", () => {
-    const idx = s.indexOf('onClick={() => setConfirmingPublish(true)}');
-    expect(idx).toBeGreaterThan(-1);
-    const button = s.slice(s.lastIndexOf("<button", idx), s.indexOf(">", s.indexOf("Publish", idx)));
-    expect(button).toContain("disabled={isPending || isDraftDirty}");
-  });
-
-  it("dirty state shows concise helper copy telling the Admin to save first", () => {
-    expect(s).toContain("{isDraftDirty && (");
-    expect(s).toContain("Save your changes before publishing.");
-  });
-
-  it("editing while the publish confirmation is open auto-closes the confirmation (a stale confirmation can never be clicked through to publish unsaved wording)", () => {
-    const fnStart = s.indexOf("if (isDraftDirty && confirmingPublish) setConfirmingPublish(false);");
-    expect(fnStart).toBeGreaterThan(-1);
-  });
-
-  it("Save Draft remains unchanged: it alone can clear the dirty state, and Publish never triggers a save itself — no combined save+publish action exists", () => {
-    const publishFn = s.slice(s.indexOf("function handlePublish()"), s.indexOf("\n  }", s.indexOf("function handlePublish()")) + 4);
-    expect(publishFn).not.toMatch(/createMemberWaiverDraftAction|updateMemberWaiverDraftAction|handleSaveDraft\(\)/);
-    const saveDraftFn = s.slice(s.indexOf("function handleSaveDraft()"), s.indexOf("\n  }", s.indexOf("function handleSaveDraft()")) + 4);
-    expect(saveDraftFn).not.toMatch(/publishMemberWaiverVersionAction|handlePublish\(\)/);
-  });
-
-  it("an unchanged saved draft is publishable: on load AND immediately after a successful Save Draft, the resync effect sets title/body to EXACTLY draftVersion's own values, so isDraftDirty evaluates false and Publish is enabled again", () => {
-    const effectStart = s.indexOf("if (draftVersion) {");
-    const effectEnd = s.indexOf("}", s.indexOf("setConfirmingPublish(false);", effectStart));
-    const effect = s.slice(effectStart, effectEnd);
-    expect(effect).toContain("setTitle(draftVersion.title);");
-    expect(effect).toContain("setBody(draftVersion.body);");
-  });
-
-  it("Save Draft branches update vs. create by editor mode — 'edit-draft' updates the existing draft id, anything else creates a new one", () => {
-    const fnStart = s.indexOf("function handleSaveDraft()");
-    const fnEnd = s.indexOf("\n  }", fnStart);
-    const fn = s.slice(fnStart, fnEnd);
-    expect(fn).toContain('editorMode === "edit-draft" && draftVersion');
-    expect(fn).toContain("updateMemberWaiverDraftAction(draftVersion.id, trimmedTitle, trimmedBody)");
-    expect(fn).toContain("createMemberWaiverDraftAction(trimmedTitle, trimmedBody)");
+  it("View PDF calls the Admin-scoped view-url action for audience 'member' and opens the result in a new tab — never a permanent/embedded URL", () => {
+    expect(s).toContain('getAdminWaiverPdfViewUrlAction("member")');
+    expect(s).toContain('window.open(result.url, "_blank", "noopener,noreferrer")');
   });
 
   it("the Required toggle calls setMemberWaiverRequiredAction and never references waiver_versions/waiver_acceptances/publish/draft RPCs — preserves the locked model semantics (disable/re-enable never touches acceptance history)", () => {
@@ -328,13 +303,14 @@ describe("WaiverStatusCard — four states, quiet not_required, accepted date sh
     expect(s).toContain('if (status === "not_required") return null;');
   });
 
-  it("never_accepted shows 'needs your acceptance' with current title/version, action links to /waivers/member", () => {
-    expect(s).toContain("Waiver needs your acceptance");
+  it("never_accepted shows the waiver title with a 'Needs acceptance' status line, action links to /waivers/member — no Version N wording (Phase 43B-3B)", () => {
+    expect(s).toContain("Needs acceptance");
     expect(s).toContain("Review & Accept");
+    expect(s).not.toMatch(/Version\s*\{|>\s*Version \d/);
   });
 
   it("outdated clearly explains a newer version now requires review, distinct action label", () => {
-    expect(s).toContain("The club published an updated waiver");
+    expect(s).toContain("Updated waiver needs acceptance");
     expect(s).toContain("Review Updated Waiver");
   });
 

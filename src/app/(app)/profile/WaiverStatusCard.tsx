@@ -6,15 +6,19 @@ import Link from "next/link";
 // resolve identically), fetched once by profile/page.tsx and passed in.
 // Never fetches/mutates anything itself; never exposes a draft (the RPC
 // itself only ever returns a published version's title/body).
+//
+// Phase 43B-3B — PDF-only product pivot: normal UI never shows "Version
+// N" (internal version_number stays evidence/history only). versionNumber
+// is no longer accepted as a prop — this card's own copy never needed it
+// for anything beyond that removed parenthetical.
 
 export interface MyWaiverStatus {
   status:        "not_required" | "current" | "outdated" | "never_accepted";
   title:         string | null;
-  versionNumber: number | null;
   acceptedAt:    string | null;
 }
 
-export default function WaiverStatusCard({ status, title, versionNumber, acceptedAt }: MyWaiverStatus) {
+export default function WaiverStatusCard({ status, title, acceptedAt }: MyWaiverStatus) {
   // not_required: no current required waiver exists — keep the UI quiet
   // rather than show an empty/reassuring card. Omitting the section
   // entirely is the calmest possible treatment.
@@ -45,14 +49,10 @@ export default function WaiverStatusCard({ status, title, versionNumber, accepte
         {(status === "never_accepted" || status === "outdated") && (
           <div className="px-4 py-3 space-y-2">
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              {status === "never_accepted"
-                ? "Waiver needs your acceptance"
-                : "The club published an updated waiver"}
+              {title ?? "Member Waiver"}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {status === "never_accepted"
-                ? `${title ?? "Member Waiver"}${versionNumber ? ` (Version ${versionNumber})` : ""}`
-                : "Your previous acceptance is on file, but a newer version now requires your review."}
+              {status === "never_accepted" ? "Needs acceptance" : "Updated waiver needs acceptance"}
             </p>
           </div>
         )}

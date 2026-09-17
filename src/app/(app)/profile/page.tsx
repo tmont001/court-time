@@ -156,7 +156,6 @@ export default async function ProfilePage() {
             <WaiverStatusCard
               status={waiverStatus.status}
               title={waiverStatus.title}
-              versionNumber={waiverStatus.version_number}
               acceptedAt={waiverStatus.accepted_at}
             />
           </>

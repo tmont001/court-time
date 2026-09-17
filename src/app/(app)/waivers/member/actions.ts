@@ -9,6 +9,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { resolveWaiverPdfViewUrl } from "@/lib/waivers/pdfViewUrl";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:         "You must be signed in.",
@@ -38,4 +39,32 @@ export async function acceptMemberWaiverAction(
   revalidatePath("/waivers/member");
   revalidatePath("/profile");
   return { acceptedAt: data ?? undefined };
+}
+
+// Phase 43B-3B — self-only, PDF-backed current Member waiver viewing. No
+// parameters: re-derives the caller's own current version_id server-side
+// via get_my_member_waiver_status() (already self/club-scoped, role-
+// agnostic) — this can never be used to request the Guest document or a
+// version from another club. Short-lived signed URL only, never a
+// permanent Storage URL. Returns not_pdf_backed (silently, via the shared
+// helper) when the current version is legacy text — callers must check
+// isPdfBacked (derivable from body === null) before offering this action.
+export async function getMemberWaiverPdfViewUrlAction(): Promise<{
+  error?: string;
+  url?: string;
+  originalFilename?: string;
+}> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { data: rows } = await supabase.rpc("get_my_member_waiver_status");
+  const currentVersionId = rows?.[0]?.current_version_id ?? null;
+  if (!currentVersionId) return { error: "There is no current waiver to view." };
+
+  const result = await resolveWaiverPdfViewUrl(currentVersionId);
+  if (result.error || !result.url) {
+    return { error: "Could not open the PDF. Please try again." };
+  }
+  return { url: result.url, originalFilename: result.originalFilename };
 }

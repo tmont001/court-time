@@ -1588,7 +1588,10 @@ export type Database = {
           waiver_id: string;
           version_number: number;
           title: string;
-          body: string;
+          // Phase 43B-3B (0196) — additive nullable relaxation. NULL for
+          // every PDF-backed version (publish_waiver_pdf_version always
+          // inserts body = null); populated only for legacy text versions.
+          body: string | null;
           status: "draft" | "published";
           published_at: string | null;
           published_by: string | null;
@@ -1600,7 +1603,7 @@ export type Database = {
           waiver_id: string;
           version_number: number;
           title: string;
-          body: string;
+          body?: string | null;
           status?: "draft" | "published";
           published_at?: string | null;
           published_by?: string | null;
@@ -1612,7 +1615,7 @@ export type Database = {
           waiver_id?: string;
           version_number?: number;
           title?: string;
-          body?: string;
+          body?: string | null;
           status?: "draft" | "published";
           published_at?: string | null;
           published_by?: string | null;
@@ -1625,6 +1628,54 @@ export type Database = {
             columns: ["waiver_id"];
             isOneToOne: false;
             referencedRelation: "waivers";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
+      // Phase 43B-3B — 0196. 1:1 immutable PDF artifact record for a
+      // waiver_versions row (waiver_version_id IS the primary key). All
+      // direct table access revoked from public/anon/authenticated — only
+      // reachable via createPrivilegedClient() (src/lib/waivers/
+      // pdfViewUrl.ts, src/app/(app)/admin/settings/page.tsx's own
+      // batched read). No Row-returning application code should ever
+      // reach this table through the normal RLS-scoped client.
+      waiver_document_files: {
+        Row: {
+          waiver_version_id: string;
+          storage_path: string;
+          original_filename: string;
+          mime_type: string;
+          file_size_bytes: number;
+          sha256_digest: string;
+          uploaded_by: string;
+          uploaded_at: string;
+        };
+        Insert: {
+          waiver_version_id: string;
+          storage_path: string;
+          original_filename: string;
+          mime_type?: string;
+          file_size_bytes: number;
+          sha256_digest: string;
+          uploaded_by: string;
+          uploaded_at?: string;
+        };
+        Update: {
+          waiver_version_id?: string;
+          storage_path?: string;
+          original_filename?: string;
+          mime_type?: string;
+          file_size_bytes?: number;
+          sha256_digest?: string;
+          uploaded_by?: string;
+          uploaded_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "waiver_document_files_waiver_version_id_fkey";
+            columns: ["waiver_version_id"];
+            isOneToOne: true;
+            referencedRelation: "waiver_versions";
             referencedColumns: ["id"];
           }
         ];
@@ -3407,6 +3458,39 @@ export type Database = {
       };
       set_guest_waiver_required: {
         Args: { p_required: boolean };
+        Returns: undefined;
+      };
+      // Phase 43B-3B (0196) — PDF-only authoring. service_role ONLY —
+      // never callable from the browser or an ordinary authenticated
+      // Server Action client; only the finalize Server Action's
+      // createPrivilegedClient() call may invoke this. Actor/club are
+      // explicit params, independently verified against club_memberships
+      // (never auth.uid()/current_user_role(), meaningless for a
+      // service_role caller acting on a different, already-verified
+      // user's behalf).
+      publish_waiver_pdf_version: {
+        Args: {
+          p_actor_user_id: string;
+          p_club_id: string;
+          p_audience: "member" | "guest";
+          p_version_id: string;
+          p_original_filename: string;
+          p_title: string;
+          p_file_size_bytes: number;
+          p_sha256_digest: string;
+        };
+        Returns: {
+          version_id: string;
+          version_number: number;
+          storage_path: string;
+          published_at: string;
+        }[];
+      };
+      // Phase 43B-3B (0196) — authenticated, Admin-only. Explicit,
+      // deliberate discard of a pre-PDF-pivot unpublished text draft —
+      // never called implicitly from publish_waiver_pdf_version.
+      discard_waiver_draft: {
+        Args: { p_version_id: string };
         Returns: undefined;
       };
       // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —

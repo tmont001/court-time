@@ -1,24 +1,30 @@
 "use client";
 
-// Phase 43A-2 — Admin authoring UI for the club's one Member waiver
-// (0192/0193 RPCs). Draft/published-only, exactly one waiver document per
-// club, exactly one draft at a time — all enforced server-side; this
-// component only ever calls create/update/publish/set-required, never
-// re-derives those rules. Publishing (first-ever or a new version) always
-// requires an explicit inline confirmation before the RPC is called — a
-// published version is immutable, so the confirmation step is the last
-// chance to catch a mistake. Body content renders as plain text
-// (whitespace-pre-wrap on a <p>, never dangerouslySetInnerHTML) — matches
-// ClubRulesSection/help's own established pattern for club-authored text.
+// Phase 43B-3B — Admin authoring UI for the club's one Member waiver,
+// rewritten for the PDF-only product pivot. Court Time is NOT a waiver-
+// authoring product: new revisions are PDF uploads only, normal UI never
+// shows "Version N", and internal version_number/status stay purely
+// evidence/history (still driven entirely by publish_waiver_pdf_version /
+// discard_waiver_draft, 0196, applied/immutable — this component never
+// re-derives any of that business logic).
+//
+// A pre-existing, unpublished TEXT draft (from the retired 43A-2 editor)
+// may still exist for a club that hasn't touched this page since the
+// pivot — it is NEVER silently discarded. This component surfaces it and
+// requires an explicit, confirmed Admin action (discardWaiverDraftAction)
+// before a PDF can be uploaded.
+//
+// Actual upload sequencing (authorize -> direct browser upload -> finalize)
+// lives in the shared useWaiverPdfUpload hook — see that file's header for
+// why this one piece is shared while everything else here (JSX, copy,
+// props) remains fully independent of GuestWaiverSection, per the existing
+// full-duplication precedent for this pair of components.
 
-import { useState, useTransition, useEffect } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import {
-  createMemberWaiverDraftAction,
-  updateMemberWaiverDraftAction,
-  publishMemberWaiverVersionAction,
-  setMemberWaiverRequiredAction,
-} from "./actions";
+import { setMemberWaiverRequiredAction } from "./actions";
+import { discardWaiverDraftAction, getAdminWaiverPdfViewUrlAction } from "./waiverPdfActions";
+import { useWaiverPdfUpload } from "./useWaiverPdfUpload";
 import {
   ACTION_BUTTON_PRIMARY,
   ACTION_BUTTON_SECONDARY,
@@ -26,142 +32,95 @@ import {
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
 } from "@/components/styles/actionButtonStyles";
 
-const TITLE_MAX = 300;
-const BODY_MAX = 20000;
-
-export interface CurrentWaiverVersion {
-  id:            string;
-  versionNumber: number;
-  title:         string;
-  body:          string;
-  publishedAt:   string;
+export interface CurrentWaiverDocument {
+  versionId:        string;
+  publishedAt:       string;
+  isPdfBacked:        boolean;
+  originalFilename:   string | null; // present only when isPdfBacked
+  legacyTitle:        string | null; // present only when !isPdfBacked
+  legacyBody:         string | null; // present only when !isPdfBacked
 }
 
-export interface DraftWaiverVersion {
-  id:            string;
-  versionNumber: number;
-  title:         string;
-  body:          string;
+export interface LegacyDraftVersion {
+  id:    string;
+  title: string;
+  body:  string;
 }
 
 interface Props {
   waiverId:       string | null;
   isRequired:     boolean;
-  currentVersion: CurrentWaiverVersion | null;
-  draftVersion:   DraftWaiverVersion | null;
+  currentDocument: CurrentWaiverDocument | null;
+  legacyDraft:     LegacyDraftVersion | null;
 }
 
 type Status = { type: "success" | "error"; message: string };
 
-// Which editable form, if any, is showing. "new-version" is a LOCAL-ONLY
-// pre-fill (copied from currentVersion) — nothing exists server-side for
-// it until Save Draft is actually clicked, at which point it becomes a
-// real draft via createMemberWaiverDraftAction (not an update).
-type EditorMode = "none" | "create" | "edit-draft" | "new-version";
-
 export default function MemberWaiverSection({
-  waiverId, isRequired, currentVersion, draftVersion,
+  waiverId, isRequired, currentDocument, legacyDraft,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status | null>(null);
-
-  // Lazy initializers so the very first render (including SSR — effects
-  // never run server-side) already shows a real draft's editor, rather
-  // than flashing "none" until the resync effect below fires post-hydration.
-  const [editorMode, setEditorMode] = useState<EditorMode>(() => (draftVersion ? "edit-draft" : "none"));
-  const [title, setTitle] = useState(() => draftVersion?.title ?? "");
-  const [body, setBody] = useState(() => draftVersion?.body ?? "");
-  const [confirmingPublish, setConfirmingPublish] = useState(false);
   const [requiredPending, setRequiredPending] = useState(false);
 
-  // A real, server-saved draft is ALWAYS immediately editable — no explicit
-  // "start editing" click required (states 2 and 4 both show the editor by
-  // default). This also supersedes any local ephemeral "new-version"/
-  // "create" pre-fill the instant createMemberWaiverDraftAction succeeds
-  // and the page re-renders with a real draftVersion — same
-  // resync-after-router.refresh() pattern MembershipTypesSection already
-  // uses (an effect keyed on the prop object, which only changes on a
-  // fresh server render, never while the Admin is actively typing).
-  useEffect(() => {
-    if (draftVersion) {
-      setEditorMode("edit-draft");
-      setTitle(draftVersion.title);
-      setBody(draftVersion.body);
-      setConfirmingPublish(false);
-    } else {
-      setEditorMode((mode) => (mode === "edit-draft" ? "none" : mode));
-    }
-  }, [draftVersion]);
+  const [mode, setMode] = useState<"none" | "uploading" | "replacing">("none");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [showingLegacyText, setShowingLegacyText] = useState(false);
+  const [viewPending, setViewPending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const upload = useWaiverPdfUpload("member", () => {
+    setMode("none");
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setStatus({ type: "success", message: "Member waiver published." });
+    router.refresh();
+  });
 
   function showStatus(s: Status) {
     setStatus(s);
     if (s.type === "success") setTimeout(() => setStatus(null), 2500);
   }
 
-  function startCreate() {
+  function startUpload() {
     setStatus(null);
-    setTitle("");
-    setBody("");
-    setEditorMode("create");
+    setSelectedFile(null);
+    setMode("uploading");
   }
 
-  function startNewVersion() {
-    if (!currentVersion) return;
+  function startReplace() {
     setStatus(null);
-    setTitle(currentVersion.title);
-    setBody(currentVersion.body);
-    setEditorMode("new-version");
+    setSelectedFile(null);
+    setMode("replacing");
   }
 
-  function cancelEditor() {
-    if (editorMode === "edit-draft" && draftVersion) {
-      // A real, server-saved draft is always editable — "Cancel" here
-      // discards unsaved local edits (reverts to the last saved draft
-      // text) rather than hiding the editor, which must stay visible.
-      setTitle(draftVersion.title);
-      setBody(draftVersion.body);
-    } else {
-      setEditorMode("none");
-    }
-    setConfirmingPublish(false);
-    setStatus(null);
+  function cancelUploadPanel() {
+    setMode("none");
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    upload.reset();
   }
 
-  function handleSaveDraft() {
-    const trimmedTitle = title.trim();
-    const trimmedBody = body.trim();
-    if (!trimmedTitle || !trimmedBody) return;
-    setStatus(null);
+  function handleFileChosen(file: File | null) {
+    setSelectedFile(file);
+  }
+
+  function handleConfirmUpload() {
+    if (!selectedFile) return;
+    upload.upload(selectedFile);
+  }
+
+  function handleDiscardDraft() {
+    if (!legacyDraft) return;
     startTransition(async () => {
-      const result =
-        editorMode === "edit-draft" && draftVersion
-          ? await updateMemberWaiverDraftAction(draftVersion.id, trimmedTitle, trimmedBody)
-          : await createMemberWaiverDraftAction(trimmedTitle, trimmedBody);
+      const result = await discardWaiverDraftAction(legacyDraft.id);
+      setConfirmingDiscard(false);
       if (result.error) {
         showStatus({ type: "error", message: result.error });
       } else {
-        showStatus({ type: "success", message: "Draft saved." });
-        router.refresh();
-      }
-    });
-  }
-
-  function handlePublish() {
-    // Defense in depth: the Publish button is already disabled/hidden
-    // whenever this would be true, but handlePublish must never publish
-    // anything but the exact, already-saved draft wording, regardless of
-    // how it's invoked.
-    if (!draftVersion || isDraftDirty) return;
-    setStatus(null);
-    startTransition(async () => {
-      const result = await publishMemberWaiverVersionAction(draftVersion.id);
-      if (result.error) {
-        showStatus({ type: "error", message: result.error });
-      } else {
-        setEditorMode("none");
-        setConfirmingPublish(false);
-        showStatus({ type: "success", message: "Waiver published." });
+        showStatus({ type: "success", message: "Old draft discarded." });
         router.refresh();
       }
     });
@@ -185,25 +144,19 @@ export default function MemberWaiverSection({
     });
   }
 
-  const isEditingDraft = editorMode === "edit-draft" || editorMode === "new-version" || editorMode === "create";
+  async function handleViewPdf() {
+    setStatus(null);
+    setViewPending(true);
+    const result = await getAdminWaiverPdfViewUrlAction("member");
+    setViewPending(false);
+    if (result.error || !result.url) {
+      showStatus({ type: "error", message: "Could not open the PDF. Please try again." });
+      return;
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
+  }
 
-  // A saved draft may only be published as EXACTLY what was saved — never
-  // whatever happens to be sitting in the editor at the moment Publish is
-  // clicked. If the editor differs from draftVersion.title/body, the Admin
-  // has unsaved edits: Publish must be disabled until an explicit Save
-  // Draft brings the saved draft back in sync with what's on screen.
-  const isDraftDirty =
-    editorMode === "edit-draft" &&
-    draftVersion !== null &&
-    (title !== draftVersion.title || body !== draftVersion.body);
-
-  // If the Admin edits Title/Body while the publish confirmation is open,
-  // the confirmation is no longer about the currently-visible wording —
-  // close it immediately rather than leave a disabled Publish button
-  // sitting inside an already-open confirmation panel.
-  useEffect(() => {
-    if (isDraftDirty && confirmingPublish) setConfirmingPublish(false);
-  }, [isDraftDirty, confirmingPublish]);
+  const canUploadNow = legacyDraft === null;
 
   return (
     <div className="space-y-3">
@@ -217,168 +170,184 @@ export default function MemberWaiverSection({
         </div>
       )}
 
-      {/* ── 1. NO WAIVER YET ── */}
-      {waiverId === null && editorMode === "none" && (
+      {/* ── Legacy unpublished text draft — must be explicitly discarded before any PDF upload ── */}
+      {legacyDraft && (
+        <div className="rounded-xl border border-amber-300 dark:border-amber-800/60 px-4 py-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
+            Old text draft found
+          </p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            &quot;{legacyDraft.title}&quot; is an unpublished draft from before PDF waivers. It must be
+            discarded before you can upload a PDF.
+          </p>
+          {confirmingDiscard ? (
+            <div className="space-y-2 rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-3">
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                This permanently deletes the unpublished draft text. This cannot be undone.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDiscard(false)}
+                  className={ACTION_BUTTON_SECONDARY_COMPACT}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscardDraft}
+                  disabled={isPending}
+                  className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                >
+                  {isPending ? "Discarding…" : "Discard Draft"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDiscard(true)}
+              className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+            >
+              Discard Old Draft
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── No current waiver yet ── */}
+      {!currentDocument && mode === "none" && (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-600 px-4 py-5 text-center space-y-3">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            No Member waiver has been created yet. Draft one below — it won&apos;t be visible to
-            Members until you publish it.
+            No Member waiver has been added yet.
           </p>
-          <button type="button" onClick={startCreate} className={ACTION_BUTTON_PRIMARY}>
-            Create Member Waiver
-          </button>
+          {canUploadNow && (
+            <button type="button" onClick={startUpload} className={ACTION_BUTTON_PRIMARY}>
+              Upload Waiver
+            </button>
+          )}
         </div>
       )}
 
-      {/* ── CURRENT PUBLISHED VERSION (read-only) — states 3 and 4 ── */}
-      {currentVersion && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 flex items-center justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Current Published Version
-              </p>
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate mt-0.5">
-                {currentVersion.title}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400">
-                Version {currentVersion.versionNumber}
-              </span>
-            </div>
-          </div>
-          <div className="px-4 py-3 space-y-2">
-            <p className="text-[11px] text-gray-400 dark:text-gray-500">
-              Published {new Date(currentVersion.publishedAt).toLocaleDateString()}
-            </p>
-            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-              {currentVersion.body}
-            </p>
+      {/* ── Current PDF-backed waiver ── */}
+      {currentDocument && currentDocument.isPdfBacked && mode === "none" && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Member Waiver
+          </p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+            {currentDocument.originalFilename ?? "waiver.pdf"}
+          </p>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            Last updated {new Date(currentDocument.publishedAt).toLocaleDateString()}
+          </p>
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button
+              type="button"
+              onClick={handleViewPdf}
+              disabled={viewPending}
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
+            >
+              {viewPending ? "Opening…" : "View PDF"}
+            </button>
+            {canUploadNow && (
+              <button type="button" onClick={startReplace} className={ACTION_BUTTON_SECONDARY_COMPACT}>
+                Replace Waiver
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── Update Waiver (state 3 only: published, no draft) ── */}
-      {currentVersion && !draftVersion && editorMode === "none" && (
-        <button type="button" onClick={startNewVersion} className={ACTION_BUTTON_SECONDARY}>
-          Update Waiver
-        </button>
+      {/* ── Current legacy TEXT-backed waiver — no text re-authoring, only View/Replace-with-PDF ── */}
+      {currentDocument && !currentDocument.isPdfBacked && mode === "none" && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Current waiver
+          </p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Legacy text waiver
+          </p>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            Last updated {new Date(currentDocument.publishedAt).toLocaleDateString()}
+          </p>
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button
+              type="button"
+              onClick={() => setShowingLegacyText((v) => !v)}
+              className={ACTION_BUTTON_SECONDARY_COMPACT}
+            >
+              {showingLegacyText ? "Hide Waiver" : "View Waiver"}
+            </button>
+            {canUploadNow && (
+              <button type="button" onClick={startReplace} className={ACTION_BUTTON_SECONDARY_COMPACT}>
+                Replace with PDF
+              </button>
+            )}
+          </div>
+          {showingLegacyText && (
+            <div className="mt-2 rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-3 max-h-64 overflow-y-auto">
+              <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                {currentDocument.legacyTitle}
+              </p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                {currentDocument.legacyBody}
+              </p>
+            </div>
+          )}
+        </div>
       )}
 
-      {/* ── DRAFT editor — states 2, 3 (mid-new-version), and 4 ── */}
-      {isEditingDraft && (
-        <div className="rounded-xl border border-amber-300 dark:border-amber-800/60 overflow-hidden">
-          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800/60">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
-              Draft — not visible to Members
-            </p>
-          </div>
+      {/* ── Upload / Replace panel ── */}
+      {(mode === "uploading" || mode === "replacing") && (
+        <div className="rounded-xl border border-accent/40 overflow-hidden">
           <div className="px-4 py-3 space-y-3">
-            {editorMode === "new-version" && currentVersion && (
+            {mode === "replacing" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Replacing the current waiver will require Members to agree to the new waiver.
+                The current document stays in effect until this upload finishes successfully.
+              </p>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => handleFileChosen(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-gray-500 dark:text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-accent file:text-white dark:file:text-gray-900"
+            />
+            {selectedFile && (
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Creates a draft based on Version {currentVersion.versionNumber}. The currently published waiver stays unchanged until you publish the update.
+                {selectedFile.name} · {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
               </p>
             )}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Title
-              </label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={TITLE_MAX}
-                placeholder="Member Waiver"
-                className="ct-input"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-                Waiver Text
-              </label>
-              <textarea
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                maxLength={BODY_MAX}
-                rows={10}
-                placeholder="Enter the full waiver text Members will review and accept…"
-                className="ct-input resize-y"
-              />
-              <p className="mt-1 text-[11px] text-gray-400 dark:text-gray-500 text-right tabular-nums">
-                {body.length}/{BODY_MAX}
-              </p>
-            </div>
-
-            {confirmingPublish ? (
-              /* ── Publish confirmation ── */
-              <div className="space-y-2 rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-3">
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  {draftVersion?.versionNumber === 1
-                    ? "Publishing will make this waiver current and Members will need to accept it."
-                    : "Publishing will make this the current waiver version. Members who accepted the previous version will need to accept this one."}
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setConfirmingPublish(false)}
-                    className={ACTION_BUTTON_SECONDARY_COMPACT}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handlePublish}
-                    disabled={isPending}
-                    className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
-                  >
-                    {isPending ? "Publishing…" : "Publish"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={handleSaveDraft}
-                    disabled={isPending || !title.trim() || !body.trim()}
-                    className={ACTION_BUTTON_PRIMARY}
-                  >
-                    {isPending ? "Saving…" : "Save Draft"}
-                  </button>
-                  {draftVersion && editorMode === "edit-draft" && (
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingPublish(true)}
-                      disabled={isPending || isDraftDirty}
-                      className={ACTION_BUTTON_SECONDARY}
-                    >
-                      Publish
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={cancelEditor}
-                    className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                {/* Published versions are immutable — Publish must only
-                    ever act on the exact wording last saved, never on
-                    whatever is currently sitting unsaved in the editor. */}
-                {isDraftDirty && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Save your changes before publishing.
-                  </p>
-                )}
-              </div>
+            {upload.error && (
+              <p className="text-xs text-red-600 dark:text-red-400">{upload.error}</p>
             )}
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleConfirmUpload}
+                disabled={!selectedFile || upload.state === "authorizing" || upload.state === "uploading" || upload.state === "finalizing"}
+                className={ACTION_BUTTON_PRIMARY}
+              >
+                {upload.state === "authorizing" ? "Preparing…"
+                  : upload.state === "uploading" ? "Uploading…"
+                  : upload.state === "finalizing" ? "Finalizing…"
+                  : mode === "replacing" ? "Upload & Replace" : "Upload"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelUploadPanel}
+                className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── Requirement toggle — any waiver identity, real or ephemeral-pending ── */}
+      {/* ── Requirement toggle ── */}
       {waiverId !== null && (
         <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3 flex items-center justify-between gap-4">
           <div className="min-w-0">

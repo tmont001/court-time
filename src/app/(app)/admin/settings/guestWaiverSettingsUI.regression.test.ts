@@ -49,9 +49,14 @@ describe("Phase 43B-2B scope guard", () => {
   });
 
   it("no Guest acceptance action, invitation/token work, or public route exists in any touched file", () => {
+    // createPrivilegedClient() is excluded from this guard as of Phase
+    // 43B-3B: admin/settings/page.tsx legitimately uses it for a narrow
+    // waiver_document_files metadata read (PDF filenames), unrelated to
+    // Guest bearer invitations/tokens — those remain absent and are
+    // checked by name below.
     for (const path of [SETTINGS_PAGE_PATH, SETTINGS_ACTIONS_PATH, GUEST_WAIVER_SECTION_PATH]) {
       const s = readSource(path);
-      expect(s).not.toMatch(/accept_guest_waiver|guest_waiver_invitation|guest_waiver_acceptance|token_hash|createPrivilegedClient/i);
+      expect(s).not.toMatch(/accept_guest_waiver|guest_waiver_invitation|guest_waiver_acceptance|token_hash/i);
     }
   });
 
@@ -143,13 +148,13 @@ describe("admin/settings/page.tsx — Guest Waiver subsection placement", () => 
     expect(groupHeadings.length).toBe(4);
   });
 
-  it("MemberWaiverSection's own JSX block is untouched in position/props — same waiverId/isRequired/currentVersion/draftVersion props it already had", () => {
+  it("MemberWaiverSection renders strictly before GuestWaiverSection with its own independent waiverId/isRequired/currentDocument/legacyDraft props (Phase 43B-3B prop shape — MemberWaiverSection itself is legitimately rewritten by that later checkpoint, unlike 43B-2B where it stayed untouched)", () => {
     const idx = s.indexOf("<MemberWaiverSection");
     const block = s.slice(idx, s.indexOf("/>", idx) + 2);
     expect(block).toContain("waiverId={waiverRow?.id ?? null}");
     expect(block).toContain("isRequired={waiverRow?.is_required ?? true}");
-    expect(block).toContain("currentVersion={currentWaiverVersion}");
-    expect(block).toContain("draftVersion={draftWaiverVersion}");
+    expect(block).toContain("currentDocument={currentMemberDocument}");
+    expect(block).toContain("legacyDraft={legacyMemberDraft}");
   });
 });
 
@@ -158,64 +163,67 @@ describe("admin/settings/page.tsx — Guest Waiver subsection placement", () => 
 //      Required for Guests toggle
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("GuestWaiverSection — mirrors the proven MemberWaiverSection state machine with Guest-specific copy", () => {
+describe("GuestWaiverSection — PDF-only upload/replace, legacy text compatibility (Phase 43B-3B)", () => {
   const s = readSource(GUEST_WAIVER_SECTION_PATH);
 
-  it("state 1 (no Guest waiver): shows a create-first-waiver empty state with Guest-specific copy", () => {
-    expect(s).toContain('waiverId === null && editorMode === "none"');
-    expect(s).toMatch(/No Guest waiver has been created yet/);
-    expect(s).toMatch(/Create Guest Waiver/);
+  it("no current waiver: shows a compact empty state and an Upload action, gated on !currentDocument", () => {
+    expect(s).toContain('!currentDocument && mode === "none"');
+    expect(s).toContain("No Guest waiver has been added yet.");
+    expect(s).toContain("Upload Waiver");
   });
 
-  it("state 2/4: draft is editable (Title/Body inputs present) whenever isEditingDraft", () => {
-    const editorStart = s.indexOf("isEditingDraft &&");
-    expect(editorStart).toBeGreaterThan(-1);
-    const editorEnd = s.indexOf("Requirement toggle", editorStart);
-    const editorBlock = s.slice(editorStart, editorEnd);
-    expect(editorBlock).toContain("<input");
-    expect(editorBlock).toContain("<textarea");
-    expect(editorBlock).toContain("Save Draft");
+  it("never shows Version N anywhere in rendered JSX text — internal version_number stays evidence/history only", () => {
+    expect(s).not.toMatch(/>\s*Version \{/);
+    expect(s).not.toMatch(/>\s*Version \d/);
   });
 
-  it("dirty-draft guard preserved: Publish is disabled and shows helper copy when the editor differs from the saved draft", () => {
-    expect(s).toMatch(/const isDraftDirty =/);
-    expect(s).toMatch(/disabled=\{isPending \|\| isDraftDirty\}/);
-    expect(s).toContain("Save your changes before publishing.");
+  it("no free-text authoring UI remains — no title input, no body textarea, no character counter", () => {
+    expect(s).not.toMatch(/<textarea/);
+    expect(s).not.toMatch(/\{body\.length\}\/\{BODY_MAX\}/);
+    expect(s).not.toContain("Waiver Text");
   });
 
-  it("handlePublish still only ever publishes the authoritative saved draft id, guarded by isDraftDirty", () => {
-    const fnStart = s.indexOf("function handlePublish()");
-    const fnEnd = s.indexOf("\n  }", fnStart);
-    const fn = s.slice(fnStart, fnEnd + 4);
-    expect(fn).toContain("if (!draftVersion || isDraftDirty) return;");
-    expect(fn).toContain("publishGuestWaiverVersionAction(draftVersion.id)");
+  it("PDF-backed current waiver shows filename + Last updated + View PDF + Replace Waiver, no inline PDF contents", () => {
+    const blockStart = s.indexOf("currentDocument && currentDocument.isPdfBacked");
+    const blockEnd = s.indexOf("legacy TEXT-backed waiver", blockStart);
+    const block = s.slice(blockStart, blockEnd);
+    expect(block).toContain("currentDocument.originalFilename");
+    expect(block).toContain("Last updated");
+    expect(block).toContain("View PDF");
+    expect(block).toContain("Replace Waiver");
+    expect(block).not.toMatch(/<iframe|<embed|<object/);
   });
 
-  it("state 3: published version is read-only (no <input>/<textarea> in that block) and 'Update Waiver' starts a new-draft workflow prefilled from the current version", () => {
-    const blockStart = s.indexOf("CURRENT PUBLISHED VERSION");
-    const blockEnd = s.indexOf("Update Waiver");
-    expect(blockStart).toBeGreaterThan(-1);
-    expect(blockEnd).toBeGreaterThan(blockStart);
-    const readOnlyBlock = s.slice(blockStart, blockEnd);
-    expect(readOnlyBlock).not.toMatch(/<textarea|<input/);
-    expect(s).toContain("Update Waiver");
-    const fnStart = s.indexOf("function startNewVersion()");
-    const fnEnd = s.indexOf("\n  }", fnStart);
-    const fn = s.slice(fnStart, fnEnd);
-    expect(fn).toContain("setTitle(currentVersion.title);");
-    expect(fn).toContain("setBody(currentVersion.body);");
+  it("legacy text current waiver shows 'Legacy text waiver' + View Waiver + Replace with PDF — never a text re-authoring editor", () => {
+    const blockStart = s.indexOf("currentDocument && !currentDocument.isPdfBacked");
+    const blockEnd = s.indexOf("Upload / Replace panel", blockStart);
+    const block = s.slice(blockStart, blockEnd);
+    expect(block).toContain("Legacy text waiver");
+    expect(block).toContain("View Waiver");
+    expect(block).toContain("Replace with PDF");
+    expect(block).not.toMatch(/<textarea|<input/);
   });
 
-  it("state 4: current published version remains visible/rendered even while a draft exists (no gating on !draftVersion for the read-only block)", () => {
-    const readOnlyGateIdx = s.indexOf("{currentVersion && (");
-    expect(readOnlyGateIdx).toBeGreaterThan(-1);
-    const gateLine = s.slice(readOnlyGateIdx, s.indexOf("\n", readOnlyGateIdx));
-    expect(gateLine).not.toMatch(/!draftVersion/);
+  it("Replace Waiver flow shows explicit re-agreement confirmation copy before upload, using Guest-specific wording", () => {
+    expect(s).toContain('mode === "replacing"');
+    expect(s).toContain("will require Guests to agree to the new waiver");
   });
 
-  it("publish confirmation copy never claims Guests will be required to accept — no acceptance mechanism exists yet", () => {
-    expect(s).not.toMatch(/Guests will need to accept|Guests who accepted/);
-    expect(s).toMatch(/currently published Guest waiver stays unchanged/);
+  it("actual upload/finalize sequencing is delegated to the shared useWaiverPdfUpload hook, scoped to audience 'guest' — this component never calls Storage or the finalize RPC itself", () => {
+    expect(s).toContain('useWaiverPdfUpload("guest"');
+    expect(s).not.toMatch(/createSignedUploadUrl|uploadToSignedUrl/);
+    expect(s).not.toMatch(/\.rpc\(\s*["']publish_waiver_pdf_version["']/);
+  });
+
+  it("an unpublished legacy text draft is NEVER silently discarded — it blocks upload and requires an explicit, confirmed discard action", () => {
+    expect(s).toContain("const canUploadNow = legacyDraft === null;");
+    expect(s).toContain("confirmingDiscard");
+    expect(s).toContain("discardWaiverDraftAction(legacyDraft.id)");
+  });
+
+  it("View PDF calls the Admin-scoped view-url action for audience 'guest' and opens the result in a new tab — never a permanent/embedded URL", () => {
+    expect(s).toContain('getAdminWaiverPdfViewUrlAction("guest")');
+    expect(s).toContain('window.open(result.url, "_blank", "noopener,noreferrer")');
   });
 
   it("Required for Guests toggle calls setGuestWaiverRequiredAction, and its rendered copy never implies booking/event/check-in enforcement (the file's own top-of-file design-rationale comment mentioning future 'enforcement' is expected and excluded — this checks only the user-facing toggle copy)", () => {

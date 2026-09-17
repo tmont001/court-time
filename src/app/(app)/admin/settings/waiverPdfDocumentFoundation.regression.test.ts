@@ -532,27 +532,18 @@ describe("Phase 43B-3A — waiver PDF document foundation (0196)", () => {
     expect(sql).not.toMatch(/"use client"/);
   });
 
-  // 54. no PDF upload UI
-  it("no PDF upload UI exists yet", () => {
-    const uiDir = path.join(process.cwd(), "src/app/(app)/admin/settings");
-    const files = readdirSync(uiDir);
-    expect(files).not.toContain("WaiverPdfUpload.tsx");
-    expect(files).not.toContain("WaiverPdfSection.tsx");
-  });
-
-  // 55. no visible Version UI changes in this checkpoint
-  it("MemberWaiverSection.tsx and GuestWaiverSection.tsx are unmodified by this checkpoint (still text-editor UI)", () => {
-    const memberSection = readFileSync(
-      path.join(process.cwd(), "src/app/(app)/admin/settings/MemberWaiverSection.tsx"),
-      "utf8"
-    );
-    const guestSection = readFileSync(
-      path.join(process.cwd(), "src/app/(app)/admin/settings/GuestWaiverSection.tsx"),
-      "utf8"
-    );
-    expect(memberSection).toMatch(/Version \{currentVersion\.versionNumber\}/);
-    expect(guestSection).toMatch(/Version \{currentVersion\.versionNumber\}/);
-  });
+  // 54/55. Originally: "no PDF upload UI exists yet" / "MemberWaiverSection.
+  // tsx and GuestWaiverSection.tsx are unmodified by this checkpoint" — both
+  // were scope guards verifying 43B-3A's OWN boundary (backend/database
+  // only, no UI). That boundary was specific to the 43B-3A checkpoint and
+  // has since been legitimately superseded by the later, separately
+  // authorized 43B-3B checkpoint (PDF Waiver Upload + Settings + Member
+  // Agreement UX — see waiverPdfUploadSettingsUI.regression.test.ts),
+  // which intentionally rewrites both files. Removed here rather than left
+  // failing forever: a live regression suite asserting "this file is never
+  // modified" would incorrectly block all future legitimate UI work on it.
+  // 43B-3A's own backend-only correctness remains fully covered by this
+  // file's SQL-content assertions above, which this removal does not touch.
 
   // 56. boundary guards now allow through 0196 and reject 0197+
   it("this file's own boundary guard allows exactly through 0196 and rejects 0197+", () => {

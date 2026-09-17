@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
+import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
@@ -10,12 +11,12 @@ import PricingSettingsForm from "./PricingSettingsForm";
 import MembershipsSection from "./MembershipsSection";
 import MembershipTypesSection from "./MembershipTypesSection";
 import MemberWaiverSection, {
-  type CurrentWaiverVersion,
-  type DraftWaiverVersion,
+  type CurrentWaiverDocument,
+  type LegacyDraftVersion,
 } from "./MemberWaiverSection";
 import GuestWaiverSection, {
-  type CurrentGuestWaiverVersion,
-  type DraftGuestWaiverVersion,
+  type CurrentGuestWaiverDocument,
+  type LegacyGuestDraftVersion,
 } from "./GuestWaiverSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
@@ -74,8 +75,8 @@ export default async function AdminSettingsPage() {
 
   // Phase 43A-2 — Member Waiver: Admin-only RLS-scoped direct table reads
   // (0192), not a new RPC. Fetches only what the UI needs (waiver
-  // metadata, current published version, current draft if any) — no
-  // roster-wide acceptance/compliance data belongs on this page.
+  // metadata, current published version, an unpublished draft if any) —
+  // no roster-wide acceptance/compliance data belongs on this page.
   const { data: waiverRow } = await supabase
     .from("waivers")
     .select("id, is_required, current_version_id")
@@ -83,35 +84,10 @@ export default async function AdminSettingsPage() {
     .eq("audience", "member")
     .maybeSingle();
 
-  let currentWaiverVersion: CurrentWaiverVersion | null = null;
-  let draftWaiverVersion: DraftWaiverVersion | null = null;
-  if (waiverRow) {
-    const { data: versions } = await supabase
-      .from("waiver_versions")
-      .select("id, version_number, title, body, status, published_at")
-      .eq("waiver_id", waiverRow.id)
-      .order("version_number", { ascending: false });
-    const draft = versions?.find((v) => v.status === "draft") ?? null;
-    const current = versions?.find((v) => v.id === waiverRow.current_version_id) ?? null;
-    if (draft) {
-      draftWaiverVersion = {
-        id: draft.id, versionNumber: draft.version_number, title: draft.title, body: draft.body,
-      };
-    }
-    if (current) {
-      currentWaiverVersion = {
-        id: current.id, versionNumber: current.version_number, title: current.title,
-        body: current.body, publishedAt: current.published_at ?? "",
-      };
-    }
-  }
-
   // Phase 43B-2B — Guest Waiver: an INDEPENDENT audience='guest' read,
   // same RLS-scoped direct table reads as the Member read above, never
-  // derived from waiverRow/currentWaiverVersion/draftWaiverVersion. Guest
-  // and Member are separate waivers rows (0195, unique(club_id,
-  // audience)) — this block reads only waivers/waiver_versions, no
-  // acceptance-evidence table, and calls no new RPC.
+  // derived from waiverRow. Guest and Member are separate waivers rows
+  // (0195, unique(club_id, audience)).
   const { data: guestWaiverRow } = await supabase
     .from("waivers")
     .select("id, is_required, current_version_id")
@@ -119,25 +95,91 @@ export default async function AdminSettingsPage() {
     .eq("audience", "guest")
     .maybeSingle();
 
-  let currentGuestWaiverVersion: CurrentGuestWaiverVersion | null = null;
-  let draftGuestWaiverVersion: DraftGuestWaiverVersion | null = null;
+  const [{ data: memberVersions }, { data: guestVersions }] = await Promise.all([
+    waiverRow
+      ? supabase
+          .from("waiver_versions")
+          .select("id, title, body, status, published_at")
+          .eq("waiver_id", waiverRow.id)
+      : Promise.resolve({ data: null }),
+    guestWaiverRow
+      ? supabase
+          .from("waiver_versions")
+          .select("id, title, body, status, published_at")
+          .eq("waiver_id", guestWaiverRow.id)
+      : Promise.resolve({ data: null }),
+  ]);
+
+  // Phase 43B-3B — waiver_document_files has ALL direct table access
+  // revoked (0196) — its lookup goes through the privileged (service_
+  // role) client, never the normal RLS-scoped one above. This is a plain
+  // narrow read keyed ONLY by version ids this Server Component already
+  // resolved from the admin-RLS-scoped waivers table a moment ago —
+  // never a client-supplied id — so no new RPC is needed; a batched `in`
+  // query avoids N+1 for the (at most two) current versions. See this
+  // checkpoint's own report for why this was preferred over a new 0197
+  // RPC: the read is narrow, server-only, and keyed by already-verified
+  // ids, exactly the case createPrivilegedClient() exists for.
+  const currentVersionIds = [waiverRow?.current_version_id, guestWaiverRow?.current_version_id].filter(
+    (id): id is string => Boolean(id)
+  );
+  let documentByVersionId = new Map<string, { originalFilename: string }>();
+  if (currentVersionIds.length > 0) {
+    const privileged = createPrivilegedClient();
+    if (privileged) {
+      const { data: docs } = await privileged
+        .from("waiver_document_files")
+        .select("waiver_version_id, original_filename")
+        .in("waiver_version_id", currentVersionIds);
+      documentByVersionId = new Map(
+        (docs ?? []).map((d) => [d.waiver_version_id, { originalFilename: d.original_filename }])
+      );
+    }
+  }
+
+  // PDF-backed vs legacy text: a PDF-backed version always has body = NULL
+  // (0196's publish_waiver_pdf_version always inserts body = null) and a
+  // matching waiver_document_files row; a legacy text version has a
+  // populated body and no document row. No new query is needed for this
+  // distinction — it falls directly out of data already read above.
+  let currentMemberDocument: CurrentWaiverDocument | null = null;
+  let legacyMemberDraft: LegacyDraftVersion | null = null;
+  if (waiverRow) {
+    const draft = memberVersions?.find((v) => v.status === "draft") ?? null;
+    const current = memberVersions?.find((v) => v.id === waiverRow.current_version_id) ?? null;
+    if (draft) {
+      legacyMemberDraft = { id: draft.id, title: draft.title, body: draft.body ?? "" };
+    }
+    if (current) {
+      const doc = documentByVersionId.get(current.id) ?? null;
+      currentMemberDocument = {
+        versionId: current.id,
+        publishedAt: current.published_at ?? "",
+        isPdfBacked: doc !== null,
+        originalFilename: doc?.originalFilename ?? null,
+        legacyTitle: doc ? null : current.title,
+        legacyBody: doc ? null : current.body,
+      };
+    }
+  }
+
+  let currentGuestDocument: CurrentGuestWaiverDocument | null = null;
+  let legacyGuestDraft: LegacyGuestDraftVersion | null = null;
   if (guestWaiverRow) {
-    const { data: guestVersions } = await supabase
-      .from("waiver_versions")
-      .select("id, version_number, title, body, status, published_at")
-      .eq("waiver_id", guestWaiverRow.id)
-      .order("version_number", { ascending: false });
     const guestDraft = guestVersions?.find((v) => v.status === "draft") ?? null;
     const guestCurrent = guestVersions?.find((v) => v.id === guestWaiverRow.current_version_id) ?? null;
     if (guestDraft) {
-      draftGuestWaiverVersion = {
-        id: guestDraft.id, versionNumber: guestDraft.version_number, title: guestDraft.title, body: guestDraft.body,
-      };
+      legacyGuestDraft = { id: guestDraft.id, title: guestDraft.title, body: guestDraft.body ?? "" };
     }
     if (guestCurrent) {
-      currentGuestWaiverVersion = {
-        id: guestCurrent.id, versionNumber: guestCurrent.version_number, title: guestCurrent.title,
-        body: guestCurrent.body, publishedAt: guestCurrent.published_at ?? "",
+      const doc = documentByVersionId.get(guestCurrent.id) ?? null;
+      currentGuestDocument = {
+        versionId: guestCurrent.id,
+        publishedAt: guestCurrent.published_at ?? "",
+        isPdfBacked: doc !== null,
+        originalFilename: doc?.originalFilename ?? null,
+        legacyTitle: doc ? null : guestCurrent.title,
+        legacyBody: doc ? null : guestCurrent.body,
       };
     }
   }
@@ -257,14 +299,14 @@ export default async function AdminSettingsPage() {
               Member Waiver
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              A club-authored document Members review and accept. Published versions are
-              immutable — publishing a new version requires Members to accept it again.
+              Upload your club&apos;s Member waiver as a PDF for Members to review and agree to.
+              Replacing it requires Members to agree again.
             </p>
             <MemberWaiverSection
               waiverId={waiverRow?.id ?? null}
               isRequired={waiverRow?.is_required ?? true}
-              currentVersion={currentWaiverVersion}
-              draftVersion={draftWaiverVersion}
+              currentDocument={currentMemberDocument}
+              legacyDraft={legacyMemberDraft}
             />
           </div>
 
@@ -280,14 +322,13 @@ export default async function AdminSettingsPage() {
               Guest Waiver
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              A separate club-authored document for Guests, independently versioned from the
-              Member waiver above. Published versions are immutable.
+              Upload a separate PDF waiver for Guests, independent from the Member waiver above.
             </p>
             <GuestWaiverSection
               waiverId={guestWaiverRow?.id ?? null}
               isRequired={guestWaiverRow?.is_required ?? true}
-              currentVersion={currentGuestWaiverVersion}
-              draftVersion={draftGuestWaiverVersion}
+              currentDocument={currentGuestDocument}
+              legacyDraft={legacyGuestDraft}
             />
           </div>
         </section>
