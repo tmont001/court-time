@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 43B-1B — Member Waiver Compliance UI. Frontend only: wires 0194's
@@ -26,14 +26,14 @@ const DETAIL_CLIENT_PATH  = "src/app/(app)/admin/members/[id]/MemberDetailClient
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Phase 43B-1B scope guard", () => {
-  it("no migration 0195 (or beyond) was created in this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
+  // "no migration 0195 (or beyond) was created in this checkpoint" was
+  // previously asserted here as a hardcoded ceiling. Removed: that pattern
+  // cannot hold as an evergreen invariant across later, unrelated
+  // checkpoints (0197 has since been added by the Phase 43B-3F Member
+  // Waiver Notifications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup, and memberWaiverNotifications.regression.test.ts for 0197's
+  // own contract coverage.
 
   it("0194 still exists untouched — this is a frontend-only checkpoint", () => {
     expect(() => readSource("supabase/migrations/0194_member_waiver_compliance_operations.sql")).not.toThrow();

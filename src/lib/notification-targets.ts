@@ -39,10 +39,11 @@
 import type { Json } from "@/lib/db/types";
 import { isMember } from "@/lib/auth/roles";
 
-/** The 20 kinds currently produced (notifications_kind_check, migration
- * 0183 — the last migration to touch that constraint; 0099 through
+/** The 21 kinds currently produced (notifications_kind_check, migration
+ * 0197 — the last migration to touch that constraint; 0099 through
  * lesson_admin_requested, Phase 38B adds refund_request_rejected/
- * refund_request_completed (0181) and refund_request_submitted (0183).
+ * refund_request_completed (0181) and refund_request_submitted (0183),
+ * Phase 43B-3F adds member_waiver_requires_acceptance (0197).
  * Adding a kind here without a matching NOTIFICATION_TARGET_MAP entry is a
  * compile error. */
 export type NotificationKind =
@@ -65,7 +66,8 @@ export type NotificationKind =
   | "lesson_admin_requested"
   | "refund_request_rejected"
   | "refund_request_completed"
-  | "refund_request_submitted";
+  | "refund_request_submitted"
+  | "member_waiver_requires_acceptance";
 
 export type TargetDomain = "reservation" | "event" | "lesson_request" | "program" | "payment_refund_request";
 
@@ -124,6 +126,12 @@ export const NOTIFICATION_TARGET_MAP = {
   // domain over — no new routing framework, just this kind's own
   // structured target.
   refund_request_submitted:        { domain: "payment_refund_request", idKey: "request_id" },
+  // Phase 43B-3F — single static destination (/waivers/member), no
+  // per-object id: the producing RPC (_notify_member_waiver_requires_
+  // acceptance, migration 0197) writes metadata.target_path directly,
+  // same precedent as announcement/refund_request_rejected/
+  // refund_request_completed above.
+  member_waiver_requires_acceptance: null,
 } satisfies Record<NotificationKind, TargetDefinition | readonly TargetDefinition[] | null>;
 
 // Same shape as the local UUID_RE already duplicated per-file across the

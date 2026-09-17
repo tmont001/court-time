@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 42C-1 — regression coverage for the memberships enable/disable DB
@@ -52,21 +52,17 @@ function functionBody(sql: string, name: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("0190 — migration numbering", () => {
-  it("is the next migration after immutable 0189, and no unauthorized 0197+ migration exists yet", () => {
-    // Phase 42C-3A (0191), 43A-1 (0192), its 0193 hotfix, and 43B-1A
-    // (0194) are the legitimate next migrations once 0190 is applied —
-    // this guard now checks for anything PAST that authorized boundary,
-    // not past 0190 itself.
+  it("is the next migration after immutable 0189", () => {
     expect(() => readSource("supabase/migrations/0189_member_non_member_court_pricing.sql")).not.toThrow();
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
-
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
   });
+
+  // "no unauthorized 0197+ migration exists yet" was previously asserted
+  // here as a hardcoded ceiling. Removed: that pattern cannot hold as an
+  // evergreen invariant across later, unrelated checkpoints (0197 has
+  // since been added by the Phase 43B-3F Member Waiver Notifications
+  // checkpoint) — see topLevelBackLinkCleanup.regression.test.ts's own
+  // note on this same cleanup.
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -31,12 +31,13 @@ const ALL_KINDS: NotificationKind[] = [
   "refund_request_rejected",
   "refund_request_completed",
   "refund_request_submitted",
+  "member_waiver_requires_acceptance",
 ];
 
 describe("NOTIFICATION_TARGET_MAP", () => {
-  it("has an explicit entry for exactly the 20 authoritative kinds", () => {
+  it("has an explicit entry for exactly the 21 authoritative kinds", () => {
     expect(Object.keys(NOTIFICATION_TARGET_MAP).sort()).toEqual([...ALL_KINDS].sort());
-    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(20);
+    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(21);
   });
 });
 

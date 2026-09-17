@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 42C-3B — Complete Membership Management Frontend (Members list +
@@ -450,16 +450,14 @@ describe("24. AddMemberSheet is untouched", () => {
   });
 });
 
-describe("25. no new migration", () => {
-  it("no unauthorized 0197+ migration file exists — this checkpoint was frontend-only, building on immutable 0188-0191; 0192 (Phase 43A-1, member waiver foundation), its 0193 hotfix, and 0194 (Phase 43B-1A) are later, unrelated migrations", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
-});
+// 25. "no new migration" was previously asserted here as a hardcoded
+// "highest migration === 196" ceiling. Removed: that pattern cannot hold
+// as an evergreen invariant across later, unrelated checkpoints (0197 has
+// since been added by the Phase 43B-3F Member Waiver Notifications
+// checkpoint) — see topLevelBackLinkCleanup.regression.test.ts's own note
+// on this same cleanup. This checkpoint (frontend-only, building on
+// immutable 0188-0191) truthfully added no migration itself, which
+// remains true and is unaffected by this removal.
 
 describe("26. no authorization change", () => {
   it("members/page.tsx and [id]/page.tsx still gate on isOperator, unchanged", () => {
@@ -970,14 +968,13 @@ describe("12. mobile layout does not overflow", () => {
 });
 
 describe("13. no DB/RPC/business-logic change in this polish pass", () => {
-  it("no unauthorized migration file beyond 0196 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
+  // "no unauthorized migration file beyond 0196 exists" was previously
+  // asserted here as a hardcoded ceiling. Removed: that pattern cannot
+  // hold as an evergreen invariant across later, unrelated checkpoints
+  // (0197 has since been added by the Phase 43B-3F Member Waiver
+  // Notifications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup.
 
   it("MemberDetailClient.tsx and MembersClient.tsx still call only the same RPCs as before this pass — no new .rpc( surface introduced by presentation changes", () => {
     // Both mutation actions this page/list already used remain the only
@@ -1298,14 +1295,12 @@ describe("MEMBER DETAIL 16. no Book Lesson change", () => {
 });
 
 describe("MEMBER DETAIL 17. no business/data/RPC changes", () => {
-  it("no unauthorized migration beyond 0196 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
+  // "no unauthorized migration beyond 0196 exists" was previously asserted
+  // here as a hardcoded ceiling. Removed: that pattern cannot hold as an
+  // evergreen invariant across later, unrelated checkpoints (0197 has
+  // since been added by the Phase 43B-3F Member Waiver Notifications
+  // checkpoint) — see topLevelBackLinkCleanup.regression.test.ts's own
+  // note on this same cleanup.
 
   it("the two shared roster membership actions are byte-unchanged in RPC wiring by this presentation-only pass", () => {
     const s = readSource(MEMBERS_ACTIONS_PATH);

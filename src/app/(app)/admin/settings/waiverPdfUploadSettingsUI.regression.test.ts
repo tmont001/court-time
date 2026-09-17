@@ -390,14 +390,13 @@ describe("PDF viewing security (Admin Settings + Member acceptance page)", () =>
     expect(waiverRelated).toEqual([]);
   });
 
-  it("49. no broad Storage write policy was added — this checkpoint created no new migration at all", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const beyond0196 = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond0196).toEqual([]);
-  });
+  // 49. "no broad Storage write policy was added — this checkpoint created
+  // no new migration at all" was previously asserted here via a hardcoded
+  // ceiling. Removed: that pattern cannot hold as an evergreen invariant
+  // across later, unrelated checkpoints (0197 has since been added by the
+  // Phase 43B-3F Member Waiver Notifications checkpoint, which touches no
+  // Storage policy) — see topLevelBackLinkCleanup.regression.test.ts's own
+  // note on this same cleanup.
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -481,14 +480,10 @@ describe("Phase 43B-3B scope guard", () => {
     expect(migrationSql).toContain("create or replace function public.discard_waiver_draft(");
   });
 
-  it("51. no 0197 (or beyond) migration exists — no new migration was created by this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const beyond = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond).toEqual([]);
-  });
+  // 51. "no 0197 (or beyond) migration exists — no new migration was
+  // created by this checkpoint" was previously asserted here via a
+  // hardcoded ceiling. Removed for the same reason as guard 49 above —
+  // 0197 now legitimately exists (Phase 43B-3F).
 
   it("52. no Guest invitation/acceptance backend exists anywhere in the touched files", () => {
     for (const source of [pdfActions, readSource(UPLOAD_HOOK_PATH), readSource(PDF_VIEW_URL_PATH)]) {

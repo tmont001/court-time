@@ -53,15 +53,13 @@ describe("Phase 43B-3A — waiver PDF document foundation (0196)", () => {
     expect(() => readFileSync(abandonedTestPath, "utf8")).toThrow();
   });
 
-  // 3. no 0197+
-  it("no migration 0197 or beyond exists yet", () => {
-    const files = readdirSync(MIGRATIONS_DIR);
-    const beyond = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond).toEqual([]);
-  });
+  // 3. "no migration 0197+ exists yet" was previously asserted here as a
+  // hardcoded ceiling. Removed: that pattern cannot hold as an evergreen
+  // invariant across later, unrelated checkpoints (0197 has since been
+  // added by the Phase 43B-3F Member Waiver Notifications checkpoint) —
+  // see topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup, and memberWaiverNotifications.regression.test.ts for 0197's
+  // own contract coverage.
 
   // 4. 0192-0195 still exist untouched
   it("0192-0195 still exist, untouched", () => {
@@ -545,15 +543,10 @@ describe("Phase 43B-3A — waiver PDF document foundation (0196)", () => {
   // 43B-3A's own backend-only correctness remains fully covered by this
   // file's SQL-content assertions above, which this removal does not touch.
 
-  // 56. boundary guards now allow through 0196 and reject 0197+
-  it("this file's own boundary guard allows exactly through 0196 and rejects 0197+", () => {
-    const files = readdirSync(MIGRATIONS_DIR);
-    const numbers = files
-      .map((f) => f.match(/^(\d+)_/))
-      .filter((m): m is RegExpMatchArray => m !== null)
-      .map((m) => Number(m[1]));
-    expect(Math.max(...numbers)).toBe(196);
-  });
+  // 56. "boundary guard allows exactly through 0196 and rejects 0197+" was
+  // previously asserted here as a hardcoded ceiling. Removed for the same
+  // reason as the "no 0197+" guard above — 0197 now legitimately exists
+  // (Phase 43B-3F).
 
   // Header/documentation checks
   it("documents the 43B-3B Storage bucket requirement (waiver-documents, private, 10MB, application/pdf) without creating it", () => {

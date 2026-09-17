@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 43B-3C — Member Profile waiver-card attention state + Club
@@ -146,14 +146,15 @@ describe("Profile page.tsx — Club Membership domain-read polish (Phase 43B-3C)
     expect(card).toMatch(/rounded-full border/);
   });
 
-  it("14. no migration was created for this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const beyond = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond).toEqual([]);
-  });
+  // 14. "no migration was created for this checkpoint" was previously
+  // asserted here as a hardcoded "highest migration === 196" ceiling.
+  // Removed: that pattern cannot hold as an evergreen invariant across
+  // later, unrelated checkpoints (0197 has since been added by the Phase
+  // 43B-3F Member Waiver Notifications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup, and memberWaiverNotifications.regression.test.ts for 0197's
+  // own contract coverage. This checkpoint (43B-3C) truthfully added no
+  // migration itself, which remains true and is unaffected by this removal.
 
   it("15. 0196 remains untouched", () => {
     const migrationSql = readSource(MIGRATION_0196_PATH);

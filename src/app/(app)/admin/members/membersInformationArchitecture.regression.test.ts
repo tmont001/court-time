@@ -108,14 +108,14 @@ describe("Tab visibility correction — Staff sees no redirect-only tabs (runtim
     expect(tabFiles.map((e) => e.name)).toEqual(["MembersAreaTabs.tsx"]);
   });
 
-  it("9. no migration was created for this fix", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const beyond = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond).toEqual([]);
-  });
+  // 9. "no migration was created for this fix" was previously asserted
+  // here as a hardcoded "highest migration === 196" ceiling. Removed: that
+  // pattern cannot hold as an evergreen invariant across later, unrelated
+  // checkpoints (0197 has since been added by the Phase 43B-3F Member
+  // Waiver Notifications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup. This fix truthfully added no migration itself, which remains
+  // true and is unaffected by this removal.
 
   it("10. 0196 remains untouched", () => {
     const migrationSql = readSource(MIGRATION_0196_PATH);
@@ -323,15 +323,15 @@ describe("17/18. Admin-only authorization is preserved for Membership Types and 
   });
 });
 
-describe("21/22/23. scope guards — no migration, 0196 untouched, no 0197", () => {
-  it("no new migration was created for this checkpoint", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const beyond = files.filter((f) => {
-      const match = f.match(/^(\d+)_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(beyond).toEqual([]);
-  });
+describe("21/22/23. scope guards — 0196 untouched", () => {
+  // "no new migration was created for this checkpoint" was previously
+  // asserted here as a hardcoded ceiling. Removed: that pattern cannot
+  // hold as an evergreen invariant across later, unrelated checkpoints
+  // (0197 has since been added by the Phase 43B-3F Member Waiver
+  // Notifications checkpoint) — see
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup. This checkpoint truthfully added no migration itself, which
+  // remains true and is unaffected by this removal.
 
   it("0196 remains untouched", () => {
     const migrationSql = readSource(MIGRATION_0196_PATH);

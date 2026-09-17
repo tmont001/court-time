@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 43B-2A — Guest Waiver Document Foundation. Backend only: widens
@@ -53,14 +53,13 @@ describe("0195 — migration numbering and prior-migration immutability", () => 
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
   });
 
-  it("no unauthorized 0197+ migration exists yet", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
+  // "no unauthorized 0197+ migration exists yet" was previously asserted
+  // here as a hardcoded ceiling. Removed: that pattern cannot hold as an
+  // evergreen invariant across later, unrelated checkpoints (0197 has
+  // since been added by the Phase 43B-3F Member Waiver Notifications
+  // checkpoint) — see topLevelBackLinkCleanup.regression.test.ts's own
+  // note on this same cleanup, and memberWaiverNotifications.regression.
+  // test.ts for 0197's own contract coverage.
 
   it("0192, 0193, and 0194 all still exist untouched", () => {
     expect(() => readSource("supabase/migrations/0192_member_waiver_foundation.sql")).not.toThrow();

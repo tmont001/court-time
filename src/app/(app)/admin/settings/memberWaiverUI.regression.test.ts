@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 43A-2 — Member Waiver UI. Admin authoring (Settings -> Memberships),
@@ -38,14 +38,12 @@ function functionBody(source: string, exportName: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("Phase 43A-2 scope guard", () => {
-  it("no unauthorized migration beyond 0196 exists (0194 is Phase 43B-1A, a later, unrelated migration)", () => {
-    const files = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const laterMigrations = files.filter((f) => {
-      const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 196;
-    });
-    expect(laterMigrations).toEqual([]);
-  });
+  // "no unauthorized migration beyond 0196 exists" was previously asserted
+  // here as a hardcoded ceiling. Removed: that pattern cannot hold as an
+  // evergreen invariant across later, unrelated checkpoints (0197 has
+  // since been added by the Phase 43B-3F Member Waiver Notifications
+  // checkpoint) — see topLevelBackLinkCleanup.regression.test.ts's own
+  // note on this same cleanup.
 
   it("0192 and 0193 both still exist untouched — this UI pass reads/calls them, never edits them", () => {
     expect(() => readSource("supabase/migrations/0192_member_waiver_foundation.sql")).not.toThrow();
