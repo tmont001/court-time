@@ -3390,6 +3390,25 @@ export type Database = {
         Args: { p_required: boolean };
         Returns: undefined;
       };
+      // Phase 43B-2A (0195) — Guest waiver authoring RPCs, audience='guest'
+      // mirror of the four Member ones above. Admin-only. No Guest read/
+      // acceptance RPC exists yet (later checkpoint).
+      create_guest_waiver_draft: {
+        Args: { p_title: string; p_body: string };
+        Returns: string;
+      };
+      update_guest_waiver_draft: {
+        Args: { p_version_id: string; p_title: string; p_body: string };
+        Returns: undefined;
+      };
+      publish_guest_waiver_version: {
+        Args: { p_version_id: string };
+        Returns: undefined;
+      };
+      set_guest_waiver_required: {
+        Args: { p_required: boolean };
+        Returns: undefined;
+      };
       // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —
       // resolves only the caller's own claimed roster identity server-side.
       // No proxy-acceptance variant exists.

@@ -13,6 +13,10 @@ import MemberWaiverSection, {
   type CurrentWaiverVersion,
   type DraftWaiverVersion,
 } from "./MemberWaiverSection";
+import GuestWaiverSection, {
+  type CurrentGuestWaiverVersion,
+  type DraftGuestWaiverVersion,
+} from "./GuestWaiverSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -101,6 +105,43 @@ export default async function AdminSettingsPage() {
       };
     }
   }
+
+  // Phase 43B-2B — Guest Waiver: an INDEPENDENT audience='guest' read,
+  // same RLS-scoped direct table reads as the Member read above, never
+  // derived from waiverRow/currentWaiverVersion/draftWaiverVersion. Guest
+  // and Member are separate waivers rows (0195, unique(club_id,
+  // audience)) — this block reads only waivers/waiver_versions, no
+  // acceptance-evidence table, and calls no new RPC.
+  const { data: guestWaiverRow } = await supabase
+    .from("waivers")
+    .select("id, is_required, current_version_id")
+    .eq("club_id", clubId)
+    .eq("audience", "guest")
+    .maybeSingle();
+
+  let currentGuestWaiverVersion: CurrentGuestWaiverVersion | null = null;
+  let draftGuestWaiverVersion: DraftGuestWaiverVersion | null = null;
+  if (guestWaiverRow) {
+    const { data: guestVersions } = await supabase
+      .from("waiver_versions")
+      .select("id, version_number, title, body, status, published_at")
+      .eq("waiver_id", guestWaiverRow.id)
+      .order("version_number", { ascending: false });
+    const guestDraft = guestVersions?.find((v) => v.status === "draft") ?? null;
+    const guestCurrent = guestVersions?.find((v) => v.id === guestWaiverRow.current_version_id) ?? null;
+    if (guestDraft) {
+      draftGuestWaiverVersion = {
+        id: guestDraft.id, versionNumber: guestDraft.version_number, title: guestDraft.title, body: guestDraft.body,
+      };
+    }
+    if (guestCurrent) {
+      currentGuestWaiverVersion = {
+        id: guestCurrent.id, versionNumber: guestCurrent.version_number, title: guestCurrent.title,
+        body: guestCurrent.body, publishedAt: guestCurrent.published_at ?? "",
+      };
+    }
+  }
+
   const currency = settings?.currency ?? "USD";
   const membershipsEnabled = settings?.memberships_enabled ?? true;
   const stripeStatus = stripeConnectResult.status;
@@ -224,6 +265,29 @@ export default async function AdminSettingsPage() {
               isRequired={waiverRow?.is_required ?? true}
               currentVersion={currentWaiverVersion}
               draftVersion={draftWaiverVersion}
+            />
+          </div>
+
+          {/* Phase 43B-2B — Guest Waiver. An independently versioned
+              document from the Member waiver above — separate waivers
+              row (audience='guest'), separate draft/publish lifecycle,
+              separate Required toggle. Not a variation picker inside the
+              Member editor. No Guest acceptance flow exists yet — this
+              section only manages the document; nothing here implies
+              booking/event/check-in enforcement. */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Guest Waiver
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              A separate club-authored document for Guests, independently versioned from the
+              Member waiver above. Published versions are immutable.
+            </p>
+            <GuestWaiverSection
+              waiverId={guestWaiverRow?.id ?? null}
+              isRequired={guestWaiverRow?.is_required ?? true}
+              currentVersion={currentGuestWaiverVersion}
+              draftVersion={draftGuestWaiverVersion}
             />
           </div>
         </section>

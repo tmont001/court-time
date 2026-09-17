@@ -37,6 +37,25 @@ const ERROR_MESSAGES: Record<string, string> = {
   required_flag_required:        "Please choose whether the waiver is required.",
 };
 
+// Phase 43B-2B — Guest Waiver authoring error copy. A SEPARATE map, not a
+// reuse of ERROR_MESSAGES: the underlying 0195 RPCs raise the same
+// generic codes (e.g. waiver_not_found) the Member RPCs already use, so
+// sharing one lookup would show "No Member waiver..." for a Guest error.
+const GUEST_ERROR_MESSAGES: Record<string, string> = {
+  not_authenticated:             "You must be signed in.",
+  insufficient_role:             "Admin access required.",
+  title_required:                "Please enter a title.",
+  body_required:                 "Please enter the waiver text.",
+  title_too_long:                "Title must be 300 characters or fewer.",
+  body_too_long:                 "Waiver text must be 20,000 characters or fewer.",
+  draft_already_exists:          "A draft already exists — edit or publish it before starting another.",
+  waiver_version_not_found:      "That waiver version could not be found.",
+  version_not_editable:          "Published waiver wording can't be edited — start a new version instead.",
+  version_not_draft:             "That version is already published.",
+  waiver_not_found:              "No Guest waiver has been created yet.",
+  required_flag_required:        "Please choose whether the waiver is required.",
+};
+
 export async function updateClubTimezone(
   timezone: string
 ): Promise<{ error?: string }> {
@@ -482,6 +501,95 @@ export async function setMemberWaiverRequiredAction(
   if (error) {
     const key = error.message.match(/required_flag_required|waiver_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to update waiver requirement." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+// ── Guest Waiver management (Phase 43B-2B) ───────────────────────────────
+// Thin wrappers around 0195's four Admin-facing Guest RPCs — mirrors the
+// Member waiver actions above exactly, scoped to audience='guest'. Every
+// waiver business rule lives entirely in the RPC layer. No Guest
+// acceptance action exists in this file or anywhere else yet — that is a
+// later checkpoint.
+
+export async function createGuestWaiverDraftAction(
+  title: string,
+  body: string
+): Promise<{ error?: string; versionId?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: GUEST_ERROR_MESSAGES.not_authenticated };
+
+  const { data, error } = await supabase.rpc("create_guest_waiver_draft", {
+    p_title: title,
+    p_body: body,
+  });
+  if (error) {
+    const key = error.message.match(/title_required|body_required|title_too_long|body_too_long|draft_already_exists|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to save draft." };
+  }
+
+  revalidatePath("/admin/settings");
+  return { versionId: data ?? undefined };
+}
+
+export async function updateGuestWaiverDraftAction(
+  versionId: string,
+  title: string,
+  body: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: GUEST_ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("update_guest_waiver_draft", {
+    p_version_id: versionId,
+    p_title: title,
+    p_body: body,
+  });
+  if (error) {
+    const key = error.message.match(/title_required|body_required|title_too_long|body_too_long|waiver_version_not_found|version_not_editable|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to save draft." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function publishGuestWaiverVersionAction(
+  versionId: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: GUEST_ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("publish_guest_waiver_version", {
+    p_version_id: versionId,
+  });
+  if (error) {
+    const key = error.message.match(/waiver_version_not_found|version_not_draft|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to publish waiver." };
+  }
+
+  revalidatePath("/admin/settings");
+  return {};
+}
+
+export async function setGuestWaiverRequiredAction(
+  required: boolean
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: GUEST_ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_guest_waiver_required", {
+    p_required: required,
+  });
+  if (error) {
+    const key = error.message.match(/required_flag_required|waiver_not_found|not_authenticated|insufficient_role/)?.[0] ?? "";
+    return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to update waiver requirement." };
   }
 
   revalidatePath("/admin/settings");
