@@ -418,8 +418,8 @@ describe("/waivers/member — PDF-backed vs legacy text detection and rendering"
     expect(bodyBlockIdx).toBeGreaterThan(-1);
   });
 
-  it("35/38. offers a 'View waiver PDF' action, never Version N, on the acceptance page", () => {
-    expect(client).toContain("View waiver PDF");
+  it("35/38. offers a PDF-review action, never Version N, on the acceptance page (Phase 43B-3D renamed 'View waiver PDF' to 'Review Waiver PDF' as part of the review-before-agreement gate)", () => {
+    expect(client).toContain("Review Waiver PDF");
     expect(client).not.toMatch(/>\s*Version \{/);
     expect(client).not.toMatch(/>\s*Version \d/);
     expect(page).not.toMatch(/>\s*Version \{/);
