@@ -240,7 +240,7 @@ export async function finalizeWaiverPdfUploadAction(
     return { error: friendlyError(key, "Failed to publish the waiver. Please try again.") };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   revalidatePath("/waivers/member");
   revalidatePath("/profile");
   return {};
@@ -306,7 +306,7 @@ export async function discardWaiverDraftAction(
     return { error: friendlyError(key, "Failed to discard the draft.") };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 

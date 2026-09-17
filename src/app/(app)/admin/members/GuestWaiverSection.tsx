@@ -1,5 +1,9 @@
 "use client";
 
+// Phase 43B-3E — relocated from src/app/(app)/admin/settings/ into the
+// new Admin Members hub's Waivers tab (/admin/members/waivers). Pure
+// route relocation: no business logic changed.
+//
 // Phase 43B-3B — Admin authoring UI for the club's one Guest waiver,
 // rewritten for the PDF-only product pivot. Deliberately duplicated from
 // MemberWaiverSection (JSX/copy/props) rather than shared, matching the
@@ -15,8 +19,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setGuestWaiverRequiredAction } from "./actions";
-import { discardWaiverDraftAction, getAdminWaiverPdfViewUrlAction } from "./waiverPdfActions";
+import { setGuestWaiverRequiredAction } from "@/app/(app)/admin/settings/actions";
+import { discardWaiverDraftAction, getAdminWaiverPdfViewUrlAction } from "@/app/(app)/admin/settings/waiverPdfActions";
 import { useWaiverPdfUpload } from "./useWaiverPdfUpload";
 import {
   ACTION_BUTTON_PRIMARY,

@@ -18,7 +18,7 @@ function readSource(relativePath: string): string {
 }
 
 const PDF_ACTIONS_PATH   = "src/app/(app)/admin/settings/waiverPdfActions.ts";
-const UPLOAD_HOOK_PATH   = "src/app/(app)/admin/settings/useWaiverPdfUpload.ts";
+const UPLOAD_HOOK_PATH   = "src/app/(app)/admin/members/useWaiverPdfUpload.ts";
 const PDF_VIEW_URL_PATH  = "src/lib/waivers/pdfViewUrl.ts";
 const CONSTANTS_PATH     = "src/lib/waivers/constants.ts";
 const MEMBER_PAGE_PATH   = "src/app/(app)/waivers/member/page.tsx";
@@ -297,9 +297,9 @@ describe("finalizeWaiverPdfUploadAction — publish RPC contract and orphan clea
     });
   });
 
-  it("22. successful publication revalidates Settings and Member-facing surfaces", () => {
+  it("22. successful publication revalidates the Admin Members Waivers tab and Member-facing surfaces (Phase 43B-3E relocated the Admin waiver management surface from /admin/settings to /admin/members/waivers)", () => {
     const tail = fn.slice(fn.indexOf("revalidatePath"));
-    expect(tail).toContain('revalidatePath("/admin/settings");');
+    expect(tail).toContain('revalidatePath("/admin/members/waivers");');
     expect(tail).toContain('revalidatePath("/waivers/member");');
     expect(tail).toContain('revalidatePath("/profile");');
   });

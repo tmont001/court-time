@@ -19,8 +19,9 @@ function readSource(relativePath: string): string {
 }
 
 const SETTINGS_PAGE_PATH        = "src/app/(app)/admin/settings/page.tsx";
+const MEMBERS_WAIVERS_PAGE_PATH = "src/app/(app)/admin/members/waivers/page.tsx";
 const SETTINGS_ACTIONS_PATH     = "src/app/(app)/admin/settings/actions.ts";
-const GUEST_WAIVER_SECTION_PATH  = "src/app/(app)/admin/settings/GuestWaiverSection.tsx";
+const GUEST_WAIVER_SECTION_PATH  = "src/app/(app)/admin/members/GuestWaiverSection.tsx";
 
 function functionBody(source: string, exportName: string): string {
   const start = source.indexOf(`export async function ${exportName}(`);
@@ -80,8 +81,8 @@ describe("Phase 43B-2B scope guard", () => {
 // B. Settings data read — independent audience='guest' load
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("admin/settings/page.tsx — independent audience='guest' Settings read", () => {
-  const s = readSource(SETTINGS_PAGE_PATH);
+describe("Admin Members Waivers page.tsx — independent audience='guest' read (Phase 43B-3E relocated from /admin/settings)", () => {
+  const s = readSource(MEMBERS_WAIVERS_PAGE_PATH);
 
   it("reads waivers/waiver_versions a second time, scoped to audience='guest', as its own independent query (not derived from the Member read)", () => {
     const guestQueryIdx = s.indexOf('.eq("audience", "guest")');
@@ -127,8 +128,8 @@ describe("admin/settings/page.tsx — independent audience='guest' Settings read
 // C. Settings placement — separate subsection, after Member, no redesign
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("admin/settings/page.tsx — Guest Waiver subsection placement", () => {
-  const s = readSource(SETTINGS_PAGE_PATH);
+describe("Admin Members Waivers page.tsx — Guest Waiver subsection placement (Phase 43B-3E relocated from /admin/settings)", () => {
+  const s = readSource(MEMBERS_WAIVERS_PAGE_PATH);
 
   it("'Guest Waiver' subsection label appears strictly after 'Member Waiver' and GuestWaiverSection renders strictly after MemberWaiverSection", () => {
     const memberLabelIdx = s.indexOf("Member Waiver");
@@ -141,11 +142,15 @@ describe("admin/settings/page.tsx — Guest Waiver subsection placement", () => 
     expect(guestComponentIdx).toBeGreaterThan(guestLabelIdx);
   });
 
-  it("Guest Waiver stays inside the existing Memberships group — no new top-level section/group heading was introduced", () => {
+  it("this page has no top-level group headings of its own — it is a single-purpose Waivers tab page, not a multi-group Settings-style layout", () => {
     const groupHeadings = s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">[^<]+<\/h2>/g) ?? [];
-    // Still exactly the four locked top-level groups: Club Profile,
-    // Memberships, Pricing & Payments, Plan & Access.
-    expect(groupHeadings.length).toBe(4);
+    expect(groupHeadings.length).toBe(0);
+  });
+
+  it("the former Settings page no longer renders a 'Memberships' group heading or GuestWaiverSection at all — no duplicate live management surface", () => {
+    const settingsSource = readSource(SETTINGS_PAGE_PATH);
+    expect(settingsSource).not.toMatch(/<h2[^>]*>Memberships<\/h2>/);
+    expect(settingsSource).not.toMatch(/<GuestWaiverSection/);
   });
 
   it("MemberWaiverSection renders strictly before GuestWaiverSection with its own independent waiverId/isRequired/currentDocument/legacyDraft props (Phase 43B-3B prop shape — MemberWaiverSection itself is legitimately rewritten by that later checkpoint, unlike 43B-2B where it stayed untouched)", () => {
@@ -301,13 +306,13 @@ describe("actions.ts — Guest Waiver Server Actions", () => {
     expect(s).not.toMatch(/accept_guest_waiver/);
   });
 
-  it("all four Guest actions revalidate /admin/settings on success, exactly like the Member actions", () => {
+  it("all four Guest actions revalidate /admin/members/waivers on success, exactly like the Member actions (Phase 43B-3E relocated Admin waiver management from /admin/settings)", () => {
     for (const name of [
       "createGuestWaiverDraftAction", "updateGuestWaiverDraftAction",
       "publishGuestWaiverVersionAction", "setGuestWaiverRequiredAction",
     ]) {
       const fn = functionBody(s, name);
-      expect(fn).toContain('revalidatePath("/admin/settings");');
+      expect(fn).toContain('revalidatePath("/admin/members/waivers");');
     }
   });
 

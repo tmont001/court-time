@@ -126,25 +126,23 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
   });
 });
 
-describe("3-4. exactly four top-level visual groups exist, in the locked order: Club Profile, Memberships, Pricing & Payments, Plan & Access", () => {
-  it("all four group headings exist exactly once each", () => {
+describe("3-4. exactly three top-level visual groups exist, in the locked order: Club Profile, Pricing & Payments, Plan & Access (Phase 43B-3E relocated the former fourth group, Memberships, out of this page entirely)", () => {
+  it("all three group headings exist exactly once each, and Memberships is no longer one of them", () => {
     const s = readSource(PAGE_PATH);
-    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(4);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
     expect(s).toContain(GROUP_CLUB_PROFILE);
-    expect(s).toContain(GROUP_MEMBERSHIPS);
+    expect(s).not.toContain(GROUP_MEMBERSHIPS);
     expect(s).toContain(GROUP_PRICING_PAYMENTS);
     expect(s).toContain(GROUP_PLAN_ACCESS);
   });
 
-  it("group order is Club Profile, then Memberships, then Pricing & Payments, then Plan & Access", () => {
+  it("group order is Club Profile, then Pricing & Payments, then Plan & Access", () => {
     const s = readSource(PAGE_PATH);
     const clubProfileIdx = s.indexOf(GROUP_CLUB_PROFILE);
-    const membershipsIdx = s.indexOf(GROUP_MEMBERSHIPS);
     const pricingPaymentsIdx = s.indexOf(GROUP_PRICING_PAYMENTS);
     const planAccessIdx = s.indexOf(GROUP_PLAN_ACCESS);
     expect(clubProfileIdx).toBeGreaterThan(-1);
-    expect(membershipsIdx).toBeGreaterThan(clubProfileIdx);
-    expect(pricingPaymentsIdx).toBeGreaterThan(membershipsIdx);
+    expect(pricingPaymentsIdx).toBeGreaterThan(clubProfileIdx);
     expect(planAccessIdx).toBeGreaterThan(pricingPaymentsIdx);
   });
 
@@ -156,38 +154,36 @@ describe("3-4. exactly four top-level visual groups exist, in the locked order: 
   });
 });
 
-describe("4a. Memberships group (Phase 42C-3B) — toggle always visible, Membership Types hidden when off", () => {
-  function membershipsGroup(): string {
+describe("4a. Memberships & Waivers (Phase 43B-3E) — relocated to /admin/members/*, only a lightweight discoverability link remains on Settings", () => {
+  it("no Memberships control (toggle, Membership Types, Member Waiver, Guest Waiver) renders on /admin/settings — no duplicate live management surface", () => {
     const s = readSource(PAGE_PATH);
-    const groupStart = s.indexOf(GROUP_MEMBERSHIPS);
-    const groupEnd = s.indexOf(GROUP_PRICING_PAYMENTS);
-    return s.slice(groupStart, groupEnd);
-  }
-
-  it("MembershipsSection (the toggle) is rendered unconditionally — never gated behind membershipsEnabled itself", () => {
-    const group = membershipsGroup();
-    const membershipsSectionIdx = group.indexOf("<MembershipsSection");
-    expect(membershipsSectionIdx).toBeGreaterThan(-1);
-    // Not preceded by a `{membershipsEnabled && (` gate immediately above it.
-    const precedingSlice = group.slice(0, membershipsSectionIdx);
-    expect(precedingSlice.trimEnd().endsWith("{membershipsEnabled && (")).toBe(false);
+    expect(s).not.toMatch(/<MembershipsSection|<MembershipTypesSection|<MemberWaiverSection|<GuestWaiverSection/);
+    expect(s).not.toMatch(/import MembershipsSection|import MembershipTypesSection|import MemberWaiverSection|import GuestWaiverSection/);
   });
 
-  it("Membership Types management (MembershipTypesSection) is gated behind membershipsEnabled", () => {
-    const group = membershipsGroup();
-    expect(group).toContain("{membershipsEnabled && (");
-    expect(group).toContain("<MembershipTypesSection");
-    const gateIdx = group.indexOf("{membershipsEnabled && (");
-    const sectionIdx = group.indexOf("<MembershipTypesSection");
-    expect(sectionIdx).toBeGreaterThan(gateIdx);
+  it("a lightweight 'Memberships & Waivers' link to /admin/members exists between Club Profile and Pricing & Payments", () => {
+    const s = readSource(PAGE_PATH);
+    const clubProfileIdx = s.indexOf(GROUP_CLUB_PROFILE);
+    const pricingIdx = s.indexOf(GROUP_PRICING_PAYMENTS);
+    const linkIdx = s.indexOf("Memberships & Waivers", clubProfileIdx);
+    expect(linkIdx).toBeGreaterThan(clubProfileIdx);
+    expect(linkIdx).toBeLessThan(pricingIdx);
+    expect(s).toContain('href="/admin/members"');
   });
 
-  it("membership_types is read via a plain RLS-scoped table select, not a new RPC — no duplicate club_settings fetch either", () => {
+  it("membership_types is read only on its new home (/admin/members/types), not duplicated on /admin/settings", () => {
+    const settingsSource = readSource(PAGE_PATH);
+    expect(settingsSource).not.toMatch(/\.from\("membership_types"\)/);
+    const typesPageSource = readSource("src/app/(app)/admin/members/types/page.tsx");
+    expect(typesPageSource).toContain('.from("membership_types")');
+    expect(typesPageSource).not.toMatch(/\.rpc\(\s*"[a-z_]*membership_type/i);
+  });
+
+  it("/admin/settings still reads club_settings exactly once — memberships_enabled is still needed there for PricingSettingsForm's own non-member-pricing display", () => {
     const s = readSource(PAGE_PATH);
-    expect(s).toContain('.from("membership_types")');
-    expect(s).not.toMatch(/\.rpc\(\s*"[a-z_]*membership_type/i);
     const clubSettingsMatches = s.match(/\.from\("club_settings"\)/g) ?? [];
     expect(clubSettingsMatches.length).toBe(1);
+    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
   });
 });
 
@@ -305,9 +301,9 @@ describe("12-16. Courts, Event Types, Lesson Types, Announcements, and Delivery 
     expect(s).not.toContain("DeliveryDiagnosticsSection");
   });
 
-  it("exactly the four locked group headings exist — no fifth/sixth group for any relocated domain re-emerged (Memberships, Phase 42C-3B, is the one legitimate fourth group)", () => {
+  it("exactly the three locked group headings exist — no fourth/fifth/sixth group for any relocated domain re-emerged (Memberships, formerly the fourth group as of Phase 42C-3B, moved OUT entirely as of Phase 43B-3E and does not count as a group here)", () => {
     const s = readSource(PAGE_PATH);
-    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(4);
+    expect((s.match(/<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">/g) ?? []).length).toBe(3);
   });
 });
 
@@ -336,9 +332,12 @@ describe("20. responsive grouping stacks vertically at every width — no horizo
   it("the page's outer container and every group are plain vertical flex/space-y stacks — no grid/flex-row wrapping the groups themselves", () => {
     const s = readSource(PAGE_PATH);
     expect(s).toContain('<div className="px-4 py-6 space-y-8 md:max-w-2xl md:mx-auto dark:text-gray-100">');
-    // Each of the four <section> groups uses space-y (vertical stacking),
-    // never a grid or flex-row at the group level.
-    expect((s.match(/<section className="space-y-4">/g) ?? []).length).toBe(4);
+    // Each of the three <section> groups uses space-y (vertical stacking),
+    // never a grid or flex-row at the group level (the lightweight
+    // Memberships & Waivers discoverability link uses its own smaller
+    // space-y-2 section, counted separately below).
+    expect((s.match(/<section className="space-y-4">/g) ?? []).length).toBe(3);
+    expect((s.match(/<section className="space-y-2">/g) ?? []).length).toBe(1);
   });
 
   it("no group or subsection wraps its content in a multi-column grid at any breakpoint", () => {

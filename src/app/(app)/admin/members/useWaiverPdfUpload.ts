@@ -1,5 +1,9 @@
 "use client";
 
+// Phase 43B-3E — relocated from src/app/(app)/admin/settings/ alongside
+// MemberWaiverSection/GuestWaiverSection into the Admin Members hub's
+// Waivers tab (/admin/members/waivers). Pure route relocation.
+//
 // Phase 43B-3B — shared upload orchestration for the Member/Guest PDF
 // waiver flow. Deliberately a plain hook (no JSX, no copy, no audience-
 // specific presentation) shared between MemberWaiverSection and
@@ -17,7 +21,7 @@
 
 import { useCallback, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { authorizeWaiverPdfUploadAction, finalizeWaiverPdfUploadAction } from "./waiverPdfActions";
+import { authorizeWaiverPdfUploadAction, finalizeWaiverPdfUploadAction } from "@/app/(app)/admin/settings/waiverPdfActions";
 import { WAIVER_PDF_BUCKET, WAIVER_PDF_MAX_BYTES } from "@/lib/waivers/constants";
 
 export type WaiverPdfUploadState =

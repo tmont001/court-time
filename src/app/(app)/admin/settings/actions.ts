@@ -375,7 +375,7 @@ export async function createMembershipTypeAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to add Membership Type." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/types");
   return {};
 }
 
@@ -393,7 +393,7 @@ export async function updateMembershipTypeAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to rename Membership Type." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/types");
   return {};
 }
 
@@ -411,7 +411,7 @@ export async function setMembershipTypeActiveAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to update Membership Type." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/types");
   return {};
 }
 
@@ -442,7 +442,7 @@ export async function createMemberWaiverDraftAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to save draft." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return { versionId: data ?? undefined };
 }
 
@@ -465,7 +465,7 @@ export async function updateMemberWaiverDraftAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to save draft." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 
@@ -484,7 +484,7 @@ export async function publishMemberWaiverVersionAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to publish waiver." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 
@@ -503,7 +503,7 @@ export async function setMemberWaiverRequiredAction(
     return { error: ERROR_MESSAGES[key] ?? "Failed to update waiver requirement." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 
@@ -531,7 +531,7 @@ export async function createGuestWaiverDraftAction(
     return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to save draft." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return { versionId: data ?? undefined };
 }
 
@@ -554,7 +554,7 @@ export async function updateGuestWaiverDraftAction(
     return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to save draft." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 
@@ -573,7 +573,7 @@ export async function publishGuestWaiverVersionAction(
     return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to publish waiver." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }
 
@@ -592,6 +592,6 @@ export async function setGuestWaiverRequiredAction(
     return { error: GUEST_ERROR_MESSAGES[key] ?? "Failed to update waiver requirement." };
   }
 
-  revalidatePath("/admin/settings");
+  revalidatePath("/admin/members/waivers");
   return {};
 }

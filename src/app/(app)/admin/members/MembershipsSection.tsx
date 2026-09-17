@@ -14,7 +14,7 @@
 // here.
 
 import { useEffect, useState, useTransition } from "react";
-import { updateClubMembershipsEnabled } from "./actions";
+import { updateClubMembershipsEnabled } from "@/app/(app)/admin/settings/actions";
 
 function ToggleSwitch({
   checked,

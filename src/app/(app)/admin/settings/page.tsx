@@ -2,22 +2,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
-import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
 import ClubRulesSection from "./ClubRulesSection";
 import PricingSettingsForm from "./PricingSettingsForm";
-import MembershipsSection from "./MembershipsSection";
-import MembershipTypesSection from "./MembershipTypesSection";
-import MemberWaiverSection, {
-  type CurrentWaiverDocument,
-  type LegacyDraftVersion,
-} from "./MemberWaiverSection";
-import GuestWaiverSection, {
-  type CurrentGuestWaiverDocument,
-  type LegacyGuestDraftVersion,
-} from "./GuestWaiverSection";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -38,7 +27,7 @@ export default async function AdminSettingsPage() {
   // — see the Operating Model section below.
   const memberSelfService = profile?.memberSelfService ?? false;
 
-  const [settingsResult, clubResult, stripeConnectResult, membershipTypesResult] = await Promise.all([
+  const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
       .select(
@@ -56,133 +45,10 @@ export default async function AdminSettingsPage() {
     // reads through the service-role RPC, scoped to the server's own
     // configured Stripe mode (never a client-selectable value).
     getStripeConnectStatusForAdmin(),
-    // Phase 42C-3B — membership_types is a plain RLS-scoped table read
-    // (admin-only, same-club policy, 0188), not an RPC: this whole page
-    // is already Admin-gated above, so no extra role check is needed
-    // here. Shows ALL types (active and inactive) — Membership Types
-    // management is the one surface where an inactive type must remain
-    // fully visible/renamable/reactivatable, never hidden.
-    supabase
-      .from("membership_types")
-      .select("id, name, is_active")
-      .eq("club_id", clubId)
-      .order("name"),
   ]);
 
-  const settings   = settingsResult.data;
-  const club       = clubResult.data;
-  const membershipTypes = membershipTypesResult.data ?? [];
-
-  // Phase 43A-2 — Member Waiver: Admin-only RLS-scoped direct table reads
-  // (0192), not a new RPC. Fetches only what the UI needs (waiver
-  // metadata, current published version, an unpublished draft if any) —
-  // no roster-wide acceptance/compliance data belongs on this page.
-  const { data: waiverRow } = await supabase
-    .from("waivers")
-    .select("id, is_required, current_version_id")
-    .eq("club_id", clubId)
-    .eq("audience", "member")
-    .maybeSingle();
-
-  // Phase 43B-2B — Guest Waiver: an INDEPENDENT audience='guest' read,
-  // same RLS-scoped direct table reads as the Member read above, never
-  // derived from waiverRow. Guest and Member are separate waivers rows
-  // (0195, unique(club_id, audience)).
-  const { data: guestWaiverRow } = await supabase
-    .from("waivers")
-    .select("id, is_required, current_version_id")
-    .eq("club_id", clubId)
-    .eq("audience", "guest")
-    .maybeSingle();
-
-  const [{ data: memberVersions }, { data: guestVersions }] = await Promise.all([
-    waiverRow
-      ? supabase
-          .from("waiver_versions")
-          .select("id, title, body, status, published_at")
-          .eq("waiver_id", waiverRow.id)
-      : Promise.resolve({ data: null }),
-    guestWaiverRow
-      ? supabase
-          .from("waiver_versions")
-          .select("id, title, body, status, published_at")
-          .eq("waiver_id", guestWaiverRow.id)
-      : Promise.resolve({ data: null }),
-  ]);
-
-  // Phase 43B-3B — waiver_document_files has ALL direct table access
-  // revoked (0196) — its lookup goes through the privileged (service_
-  // role) client, never the normal RLS-scoped one above. This is a plain
-  // narrow read keyed ONLY by version ids this Server Component already
-  // resolved from the admin-RLS-scoped waivers table a moment ago —
-  // never a client-supplied id — so no new RPC is needed; a batched `in`
-  // query avoids N+1 for the (at most two) current versions. See this
-  // checkpoint's own report for why this was preferred over a new 0197
-  // RPC: the read is narrow, server-only, and keyed by already-verified
-  // ids, exactly the case createPrivilegedClient() exists for.
-  const currentVersionIds = [waiverRow?.current_version_id, guestWaiverRow?.current_version_id].filter(
-    (id): id is string => Boolean(id)
-  );
-  let documentByVersionId = new Map<string, { originalFilename: string }>();
-  if (currentVersionIds.length > 0) {
-    const privileged = createPrivilegedClient();
-    if (privileged) {
-      const { data: docs } = await privileged
-        .from("waiver_document_files")
-        .select("waiver_version_id, original_filename")
-        .in("waiver_version_id", currentVersionIds);
-      documentByVersionId = new Map(
-        (docs ?? []).map((d) => [d.waiver_version_id, { originalFilename: d.original_filename }])
-      );
-    }
-  }
-
-  // PDF-backed vs legacy text: a PDF-backed version always has body = NULL
-  // (0196's publish_waiver_pdf_version always inserts body = null) and a
-  // matching waiver_document_files row; a legacy text version has a
-  // populated body and no document row. No new query is needed for this
-  // distinction — it falls directly out of data already read above.
-  let currentMemberDocument: CurrentWaiverDocument | null = null;
-  let legacyMemberDraft: LegacyDraftVersion | null = null;
-  if (waiverRow) {
-    const draft = memberVersions?.find((v) => v.status === "draft") ?? null;
-    const current = memberVersions?.find((v) => v.id === waiverRow.current_version_id) ?? null;
-    if (draft) {
-      legacyMemberDraft = { id: draft.id, title: draft.title, body: draft.body ?? "" };
-    }
-    if (current) {
-      const doc = documentByVersionId.get(current.id) ?? null;
-      currentMemberDocument = {
-        versionId: current.id,
-        publishedAt: current.published_at ?? "",
-        isPdfBacked: doc !== null,
-        originalFilename: doc?.originalFilename ?? null,
-        legacyTitle: doc ? null : current.title,
-        legacyBody: doc ? null : current.body,
-      };
-    }
-  }
-
-  let currentGuestDocument: CurrentGuestWaiverDocument | null = null;
-  let legacyGuestDraft: LegacyGuestDraftVersion | null = null;
-  if (guestWaiverRow) {
-    const guestDraft = guestVersions?.find((v) => v.status === "draft") ?? null;
-    const guestCurrent = guestVersions?.find((v) => v.id === guestWaiverRow.current_version_id) ?? null;
-    if (guestDraft) {
-      legacyGuestDraft = { id: guestDraft.id, title: guestDraft.title, body: guestDraft.body ?? "" };
-    }
-    if (guestCurrent) {
-      const doc = documentByVersionId.get(guestCurrent.id) ?? null;
-      currentGuestDocument = {
-        versionId: guestCurrent.id,
-        publishedAt: guestCurrent.published_at ?? "",
-        isPdfBacked: doc !== null,
-        originalFilename: doc?.originalFilename ?? null,
-        legacyTitle: doc ? null : guestCurrent.title,
-        legacyBody: doc ? null : guestCurrent.body,
-      };
-    }
-  }
+  const settings = settingsResult.data;
+  const club     = clubResult.data;
 
   const currency = settings?.currency ?? "USD";
   const membershipsEnabled = settings?.memberships_enabled ?? true;
@@ -206,20 +72,25 @@ export default async function AdminSettingsPage() {
             (Courts -> /admin/courts, Event Types -> /events, Lesson Types
             -> /admin/lessons, Announcements/Delivery Diagnostics ->
             /admin/communications), so what remains is true club-wide
-            configuration: Club Profile, Memberships, Pricing & Payments,
-            Plan & Access. No tabs, no accordions, no subroutes — one
-            page, vertically grouped, with a bold group heading above
-            each group's own small-caps subsection labels (the existing
-            "text-xs font-semibold uppercase tracking-wider" treatment,
-            reused here as the SUBSECTION level rather than the group
-            level) so the hierarchy reads as two tiers, not a flat repeat
-            of "CLUB PROFILE" / "CLUB BRANDING". Every child component
-            below is presentation-neutral (no component renders its own
-            top-level heading), so this is a pure JSX/copy reorganization —
-            Phase 42C-3B split the former Memberships subsection (inside
-            Pricing & Payments) out into its own top-level group and added
-            Membership Types management alongside the existing toggle —
-            no component's props, state, or Server Action calls changed. ══ */}
+            configuration: Club Profile, Pricing & Payments, Plan & Access.
+            No tabs, no accordions, no subroutes — one page, vertically
+            grouped, with a bold group heading above each group's own
+            small-caps subsection labels (the existing "text-xs font-
+            semibold uppercase tracking-wider" treatment, reused here as
+            the SUBSECTION level rather than the group level) so the
+            hierarchy reads as two tiers, not a flat repeat of "CLUB
+            PROFILE" / "CLUB BRANDING". Every child component below is
+            presentation-neutral (no component renders its own top-level
+            heading), so this is a pure JSX/copy reorganization.
+
+            Phase 43B-3E — Members Information Architecture: the former
+            "Memberships" group (toggle, Membership Types, Member Waiver,
+            Guest Waiver) has moved OUT of this page entirely into a new
+            Admin Members hub (/admin/members/types, /admin/members/
+            waivers) — membership management belongs with Members, not
+            general club Settings. Only a small discoverability link
+            remains here; no control from that group is duplicated on
+            this page. ══ */}
 
         {/* ── Group 1: Club Profile ── */}
         <section className="space-y-4">
@@ -260,76 +131,29 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-200 dark:border-gray-700" />
 
-        {/* ── Group 2: Memberships (Phase 42C-3B) ──
-            Moved out of Pricing & Payments — frontend-only reorganization,
-            no data-fetching or Server Action change (memberships_enabled
-            was already selected above; membership_types is a new read,
-            but on the SAME already-Admin-gated page). The On/Off toggle
-            is ALWAYS visible, even when off — Membership Types management
-            hides entirely when off, but nothing in the database is ever
-            cleared by hiding it (0188's soft-lifecycle RPCs are the only
-            thing that can change a type's own is_active, never this
-            visibility gate). */}
-        <section className="space-y-4">
-          <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships</h2>
-
-          <MembershipsSection enabled={membershipsEnabled} />
-
-          {membershipsEnabled && (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Membership Types
+        {/* ── Memberships & Waivers — Phase 43B-3E relocated the entire
+            former "Memberships" group (toggle, Membership Types, Member
+            Waiver, Guest Waiver) into its own Admin Members hub
+            (/admin/members/types, /admin/members/waivers) — this is
+            deliberately just a lightweight discoverability link, not a
+            re-creation of any of those controls; no duplicate live
+            management surface exists here or anywhere else. */}
+        <section className="space-y-2">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Memberships & Waivers
               </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Club-configurable membership categories (e.g. Adult, Junior, Senior). Deactivating a
-                type keeps it attached to anyone who already has it — it just can&apos;t be newly
-                assigned.
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Manage members, membership types, and waivers.
               </p>
-              <MembershipTypesSection initialTypes={membershipTypes} />
             </div>
-          )}
-
-          {/* Phase 43A-2 — Member Waiver. Deliberately NOT gated behind
-              membershipsEnabled: waiver acceptance is a legal-agreement
-              concept independent of the club-business "Membership"
-              program toggle above — a club with Memberships off can still
-              require a Member waiver. */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Member Waiver
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Upload your club&apos;s Member waiver as a PDF for Members to review and agree to.
-              Replacing it requires Members to agree again.
-            </p>
-            <MemberWaiverSection
-              waiverId={waiverRow?.id ?? null}
-              isRequired={waiverRow?.is_required ?? true}
-              currentDocument={currentMemberDocument}
-              legacyDraft={legacyMemberDraft}
-            />
-          </div>
-
-          {/* Phase 43B-2B — Guest Waiver. An independently versioned
-              document from the Member waiver above — separate waivers
-              row (audience='guest'), separate draft/publish lifecycle,
-              separate Required toggle. Not a variation picker inside the
-              Member editor. No Guest acceptance flow exists yet — this
-              section only manages the document; nothing here implies
-              booking/event/check-in enforcement. */}
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Guest Waiver
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Upload a separate PDF waiver for Guests, independent from the Member waiver above.
-            </p>
-            <GuestWaiverSection
-              waiverId={guestWaiverRow?.id ?? null}
-              isRequired={guestWaiverRow?.is_required ?? true}
-              currentDocument={currentGuestDocument}
-              legacyDraft={legacyGuestDraft}
-            />
+            <Link
+              href="/admin/members"
+              className="shrink-0 text-sm text-accent hover:underline whitespace-nowrap"
+            >
+              Manage Members →
+            </Link>
           </div>
         </section>
 

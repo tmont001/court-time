@@ -15,8 +15,9 @@ function readSource(relativePath: string): string {
 }
 
 const SETTINGS_ACTIONS_PATH   = "src/app/(app)/admin/settings/actions.ts";
-const WAIVER_SECTION_PATH     = "src/app/(app)/admin/settings/MemberWaiverSection.tsx";
+const WAIVER_SECTION_PATH     = "src/app/(app)/admin/members/MemberWaiverSection.tsx";
 const SETTINGS_PAGE_PATH      = "src/app/(app)/admin/settings/page.tsx";
+const MEMBERS_WAIVERS_PAGE_PATH = "src/app/(app)/admin/members/waivers/page.tsx";
 const PROFILE_PAGE_PATH       = "src/app/(app)/profile/page.tsx";
 const WAIVER_CARD_PATH        = "src/app/(app)/profile/WaiverStatusCard.tsx";
 const WAIVER_PAGE_PATH         = "src/app/(app)/waivers/member/page.tsx";
@@ -107,13 +108,13 @@ describe("Admin Settings actions.ts — Member Waiver RPC wrappers", () => {
     expect(s).toContain("waiver_not_found:              \"No Member waiver has been created yet.\",");
   });
 
-  it("all four waiver actions revalidate /admin/settings after a successful mutation", () => {
+  it("all four waiver actions revalidate /admin/members/waivers after a successful mutation (Phase 43B-3E relocated Admin waiver management from /admin/settings)", () => {
     for (const name of [
       "createMemberWaiverDraftAction", "updateMemberWaiverDraftAction",
       "publishMemberWaiverVersionAction", "setMemberWaiverRequiredAction",
     ]) {
       const fn = functionBody(s, name);
-      expect(fn).toContain('revalidatePath("/admin/settings");');
+      expect(fn).toContain('revalidatePath("/admin/members/waivers");');
     }
   });
 });
@@ -122,8 +123,8 @@ describe("Admin Settings actions.ts — Member Waiver RPC wrappers", () => {
 // ADMIN SETTINGS — data read (page.tsx) and section placement
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("Admin Settings page.tsx — Member Waiver data read and placement", () => {
-  const s = readSource(SETTINGS_PAGE_PATH);
+describe("Admin Members Waivers page.tsx — Member Waiver data read and placement (Phase 43B-3E relocated from /admin/settings)", () => {
+  const s = readSource(MEMBERS_WAIVERS_PAGE_PATH);
 
   it("reads waivers and waiver_versions directly (Admin RLS-scoped table reads), not a new RPC", () => {
     expect(s).toContain('.from("waivers")');
@@ -135,15 +136,17 @@ describe("Admin Settings page.tsx — Member Waiver data read and placement", ()
     expect(s).not.toMatch(/waiver_acceptances/);
   });
 
-  it("MemberWaiverSection is rendered inside the Memberships group, after Membership Types, with its own 'Member Waiver' subsection label", () => {
-    const membershipsGroupStart = s.indexOf('<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships</h2>');
-    const pricingGroupStart = s.indexOf('<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Pricing & Payments</h2>');
-    const waiverLabelIdx = s.indexOf("Member Waiver", membershipsGroupStart);
+  it("MemberWaiverSection renders with its own 'Member Waiver' subsection label, before GuestWaiverSection", () => {
+    const waiverLabelIdx = s.indexOf("Member Waiver");
     const waiverComponentIdx = s.indexOf("<MemberWaiverSection");
-    expect(membershipsGroupStart).toBeGreaterThan(-1);
-    expect(waiverLabelIdx).toBeGreaterThan(membershipsGroupStart);
+    const guestComponentIdx = s.indexOf("<GuestWaiverSection");
+    expect(waiverLabelIdx).toBeGreaterThan(-1);
     expect(waiverComponentIdx).toBeGreaterThan(waiverLabelIdx);
-    expect(pricingGroupStart).toBeGreaterThan(waiverComponentIdx);
+    expect(guestComponentIdx).toBeGreaterThan(waiverComponentIdx);
+  });
+
+  it("this page renders the shared Members-area tab navigation", () => {
+    expect(s).toContain("<MembersAreaTabs");
   });
 
   it("passes waiverId/isRequired/currentDocument/legacyDraft — the exact shape MemberWaiverSection expects (Phase 43B-3B PDF pivot)", () => {
@@ -171,6 +174,12 @@ describe("Admin Settings page.tsx — Member Waiver data read and placement", ()
     const waiverSectionStart = s.indexOf("Phase 43A-2");
     const rest = s.slice(waiverSectionStart);
     expect(rest).not.toMatch(/\.rpc\(|\.update\(|\.insert\(|\.delete\(/);
+  });
+
+  it("the former Settings page no longer renders MemberWaiverSection at all — no duplicate live management surface", () => {
+    const settingsSource = readSource(SETTINGS_PAGE_PATH);
+    expect(settingsSource).not.toMatch(/<MemberWaiverSection/);
+    expect(settingsSource).not.toMatch(/\.from\("waivers"\)/);
   });
 });
 

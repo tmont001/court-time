@@ -4,6 +4,7 @@ import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { isOperator } from "@/lib/auth/roles";
 import Header from "@/components/Header";
 import MembersClient from "./MembersClient";
+import MembersAreaTabs from "./MembersAreaTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,7 @@ export default async function AdminMembersPage() {
         className="overflow-y-auto"
         style={{ height: "var(--page-fill-height)" }}
       >
+        <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
         <div className="md:max-w-3xl md:mx-auto">
           <MembersClient
             members={membersWithWaiver}

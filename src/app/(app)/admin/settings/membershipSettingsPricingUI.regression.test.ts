@@ -21,7 +21,8 @@ function readSource(relativePath: string): string {
 
 const SETTINGS_PAGE_PATH             = "src/app/(app)/admin/settings/page.tsx";
 const SETTINGS_ACTIONS_PATH          = "src/app/(app)/admin/settings/actions.ts";
-const MEMBERSHIPS_SECTION_PATH       = "src/app/(app)/admin/settings/MembershipsSection.tsx";
+const MEMBERSHIPS_SECTION_PATH       = "src/app/(app)/admin/members/MembershipsSection.tsx";
+const MEMBERS_TYPES_PAGE_PATH        = "src/app/(app)/admin/members/types/page.tsx";
 const PRICING_FORM_PATH              = "src/app/(app)/admin/settings/PricingSettingsForm.tsx";
 const COURTS_PAGE_PATH               = "src/app/(app)/admin/courts/page.tsx";
 const COURTS_ACTIONS_PATH            = "src/app/(app)/admin/courts/actions.ts";
@@ -34,7 +35,7 @@ describe("1. Memberships toggle is wired to update_club_memberships_enabled", ()
   it("MembershipsSection calls the updateClubMembershipsEnabled Server Action on toggle", () => {
     const s = readSource(MEMBERSHIPS_SECTION_PATH);
     expect(s.trimStart().startsWith('"use client"')).toBe(true);
-    expect(s).toContain('import { updateClubMembershipsEnabled } from "./actions";');
+    expect(s).toContain('import { updateClubMembershipsEnabled } from "@/app/(app)/admin/settings/actions";');
     expect(s).toContain("const result = await updateClubMembershipsEnabled(next);");
   });
 
@@ -78,16 +79,18 @@ describe("2. /admin/settings reads and passes memberships_enabled", () => {
     expect(s).toContain("memberships_enabled");
   });
 
-  it("MembershipsSection is rendered with the resolved enabled value", () => {
-    // Phase 42C-3B moved this component into its own top-level Settings
-    // group and introduced a named `membershipsEnabled` local (reused by
-    // both MembershipsSection and the new Membership Types visibility
-    // gate) — the resolved value is still `settings?.memberships_enabled
-    // ?? true`, just no longer inlined at this exact call site.
-    const s = readSource(SETTINGS_PAGE_PATH);
-    expect(s).toContain('import MembershipsSection from "./MembershipsSection";');
-    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
+  it("MembershipsSection is rendered with the resolved enabled value on its new home, /admin/members/types (Phase 43B-3E relocated it out of /admin/settings)", () => {
+    const s = readSource(MEMBERS_TYPES_PAGE_PATH);
+    expect(s).toContain('import MembershipsSection from "../MembershipsSection";');
+    expect(s).toContain("const membershipsEnabled = settingsResult.data?.memberships_enabled ?? true;");
     expect(s).toContain("<MembershipsSection enabled={membershipsEnabled} />");
+  });
+
+  it("/admin/settings no longer imports or renders MembershipsSection — its own memberships_enabled read remains only because PricingSettingsForm still needs it", () => {
+    const s = readSource(SETTINGS_PAGE_PATH);
+    expect(s).not.toMatch(/import MembershipsSection/);
+    expect(s).not.toMatch(/<MembershipsSection/);
+    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
   });
 
   it("does not add a duplicate club_settings/courts fetch — reuses the existing Promise.all query", () => {

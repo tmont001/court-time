@@ -1,5 +1,13 @@
 "use client";
 
+// Phase 43B-3E — relocated from src/app/(app)/admin/settings/ into the
+// new Admin Members hub's Waivers tab (/admin/members/waivers). Pure
+// route relocation: no business logic changed. setMemberWaiverRequiredAction
+// still lives in admin/settings/actions.ts, waiverPdfActions.ts still
+// lives in admin/settings/waiverPdfActions.ts (both imported by absolute
+// path below rather than moved — see this checkpoint's own report for
+// why Server Actions were deliberately left in place).
+//
 // Phase 43B-3B — Admin authoring UI for the club's one Member waiver,
 // rewritten for the PDF-only product pivot. Court Time is NOT a waiver-
 // authoring product: new revisions are PDF uploads only, normal UI never
@@ -22,8 +30,8 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { setMemberWaiverRequiredAction } from "./actions";
-import { discardWaiverDraftAction, getAdminWaiverPdfViewUrlAction } from "./waiverPdfActions";
+import { setMemberWaiverRequiredAction } from "@/app/(app)/admin/settings/actions";
+import { discardWaiverDraftAction, getAdminWaiverPdfViewUrlAction } from "@/app/(app)/admin/settings/waiverPdfActions";
 import { useWaiverPdfUpload } from "./useWaiverPdfUpload";
 import {
   ACTION_BUTTON_PRIMARY,

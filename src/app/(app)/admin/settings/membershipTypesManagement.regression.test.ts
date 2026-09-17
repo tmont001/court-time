@@ -19,24 +19,38 @@ function readSource(relativePath: string): string {
 
 const PAGE_PATH = "src/app/(app)/admin/settings/page.tsx";
 const ACTIONS_PATH = "src/app/(app)/admin/settings/actions.ts";
-const TYPES_SECTION_PATH = "src/app/(app)/admin/settings/MembershipTypesSection.tsx";
+const TYPES_SECTION_PATH = "src/app/(app)/admin/members/MembershipTypesSection.tsx";
+const TYPES_PAGE_PATH = "src/app/(app)/admin/members/types/page.tsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 1. Memberships is its own Settings group
+// 1. Memberships has its own dedicated Admin Members hub page (Phase
+//    43B-3E relocated it OUT of /admin/settings entirely — it is no
+//    longer merely "its own group" on that page, it is a separate route)
 // ═══════════════════════════════════════════════════════════════════════════
-describe("1. Memberships is its own top-level Settings group", () => {
-  it("a dedicated <h2>Memberships</h2> group exists, no longer nested inside Pricing & Payments", () => {
-    const s = readSource(PAGE_PATH);
-    expect(s).toContain('<h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships</h2>');
-    const membershipsIdx = s.indexOf("Memberships</h2>");
-    const pricingIdx = s.indexOf("Pricing & Payments</h2>");
-    expect(membershipsIdx).toBeGreaterThan(-1);
-    expect(pricingIdx).toBeGreaterThan(membershipsIdx);
+describe("1. Membership Types has its own dedicated page at /admin/members/types", () => {
+  it("the page renders MembershipsSection then, when enabled, MembershipTypesSection", () => {
+    const s = readSource(TYPES_PAGE_PATH);
+    const componentIdx = s.indexOf("<MembershipsSection");
+    const typesIdx = s.indexOf("<MembershipTypesSection");
+    expect(componentIdx).toBeGreaterThan(-1);
+    expect(typesIdx).toBeGreaterThan(componentIdx);
   });
 
-  it("the move is frontend-only — no new RPC call was introduced on page.tsx itself", () => {
-    const s = readSource(PAGE_PATH);
+  it("the move is frontend-only — no new RPC call was introduced on this page itself (plain RLS-scoped table reads only)", () => {
+    const s = readSource(TYPES_PAGE_PATH);
     expect(s).not.toMatch(/\.rpc\(/);
+  });
+
+  it("the page renders the shared Members-area tab navigation and is Admin-only", () => {
+    const s = readSource(TYPES_PAGE_PATH);
+    expect(s).toContain("<MembersAreaTabs");
+    expect(s).toContain('if (profile?.role !== "admin") redirect("/calendar");');
+  });
+
+  it("/admin/settings no longer renders a 'Memberships' group heading, MembershipsSection, or MembershipTypesSection — no duplicate live management surface", () => {
+    const s = readSource(PAGE_PATH);
+    expect(s).not.toMatch(/<h2[^>]*>Memberships<\/h2>/);
+    expect(s).not.toMatch(/<MembershipsSection|<MembershipTypesSection/);
   });
 });
 
@@ -44,15 +58,12 @@ describe("1. Memberships is its own top-level Settings group", () => {
 // 2. toggle remains visible when OFF
 // ═══════════════════════════════════════════════════════════════════════════
 describe("2. the Memberships On/Off toggle remains visible when off", () => {
-  it("MembershipsSection is rendered unconditionally inside the Memberships group", () => {
-    const s = readSource(PAGE_PATH);
-    const groupStart = s.indexOf("Memberships</h2>");
-    const groupEnd = s.indexOf("Pricing & Payments</h2>");
-    const group = s.slice(groupStart, groupEnd);
-    const componentIdx = group.indexOf("<MembershipsSection");
+  it("MembershipsSection is rendered unconditionally on the Membership Types page", () => {
+    const s = readSource(TYPES_PAGE_PATH);
+    const componentIdx = s.indexOf("<MembershipsSection");
     expect(componentIdx).toBeGreaterThan(-1);
     // Not wrapped in a `{membershipsEnabled && (` gate.
-    const preceding = group.slice(0, componentIdx);
+    const preceding = s.slice(0, componentIdx);
     expect(preceding.trimEnd().endsWith("{membershipsEnabled && (")).toBe(false);
   });
 });
@@ -62,18 +73,15 @@ describe("2. the Memberships On/Off toggle remains visible when off", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 describe("3. Membership Types management hides entirely when Memberships are off", () => {
   it("MembershipTypesSection is gated behind membershipsEnabled", () => {
-    const s = readSource(PAGE_PATH);
-    const groupStart = s.indexOf("Memberships</h2>");
-    const groupEnd = s.indexOf("Pricing & Payments</h2>");
-    const group = s.slice(groupStart, groupEnd);
-    const gateIdx = group.indexOf("{membershipsEnabled && (");
-    const sectionIdx = group.indexOf("<MembershipTypesSection");
+    const s = readSource(TYPES_PAGE_PATH);
+    const gateIdx = s.indexOf("{membershipsEnabled && (");
+    const sectionIdx = s.indexOf("<MembershipTypesSection");
     expect(gateIdx).toBeGreaterThan(-1);
     expect(sectionIdx).toBeGreaterThan(gateIdx);
   });
 
   it("hiding never deletes/clears data — page.tsx issues no UPDATE/DELETE against membership_types, only a SELECT", () => {
-    const s = readSource(PAGE_PATH);
+    const s = readSource(TYPES_PAGE_PATH);
     expect(s).toContain('.from("membership_types")');
     expect(s).toContain('.select("id, name, is_active")');
     expect(s).not.toMatch(/\.from\("membership_types"\)[\s\S]{0,80}\.(update|delete|insert)\(/);

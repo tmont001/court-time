@@ -601,7 +601,7 @@ describe("UX polish: copy explicitly says \"inactive type\", never bare \"(inact
   });
 
   it("no file in this feature retains the old ambiguous \"(inactive)\" wording anywhere", () => {
-    for (const path of [DETAIL_CLIENT_PATH, MEMBERS_CLIENT_PATH, "src/app/(app)/admin/settings/MembershipTypesSection.tsx"]) {
+    for (const path of [DETAIL_CLIENT_PATH, MEMBERS_CLIENT_PATH, "src/app/(app)/admin/members/MembershipTypesSection.tsx"]) {
       const s = readSource(path);
       expect(s).not.toMatch(/["'`] \(inactive\)["'`]/);
     }

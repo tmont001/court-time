@@ -15,7 +15,7 @@ import {
   createMembershipTypeAction,
   updateMembershipTypeAction,
   setMembershipTypeActiveAction,
-} from "./actions";
+} from "@/app/(app)/admin/settings/actions";
 import {
   ACTION_BUTTON_SECONDARY_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
