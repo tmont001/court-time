@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { hasAdminAuthority } from "@/lib/auth/roles";
 import Header from "@/components/Header";
+import PageTabs from "@/components/PageTabs";
 import AnnouncementsSection from "./AnnouncementsSection";
 import CommunicationsActivitySection, { type AnnouncementBatch } from "./CommunicationsActivitySection";
 import DeliveryDiagnosticsSection from "./DeliveryDiagnosticsSection";
@@ -100,27 +100,13 @@ export default async function AdminCommunicationsPage({
       <Header screenTitle="Communications" />
       <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
 
-        {/* ── Tab strip ── same Link + searchParams pattern as /admin/courts
-            and /admin/lessons: one ct-card, divide-x, flex-1 links, active
-            tab filled with the accent color. Each link centers its own
-            (possibly wrapped) label both ways so all three cells stay
-            equal height at any width, matching the approved tab-strip
-            treatment used across this codebase. */}
-        <div className="ct-card flex divide-x divide-gray-100 dark:divide-gray-800 overflow-hidden">
-          {tabLinks.map(t => (
-            <Link
-              key={t.key}
-              href={t.href}
-              className={`flex-1 flex items-center justify-center text-center leading-tight px-2 py-2 text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-                tab === t.key
-                  ? "bg-accent text-white"
-                  : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-              }`}
-            >
-              {t.label}
-            </Link>
-          ))}
-        </div>
+        {/* ── Tab strip ── the shared PageTabs component (src/components/
+            PageTabs.tsx), Court Time's one canonical page-level tab-strip
+            treatment — same Link + searchParams pattern as /admin/courts
+            and /admin/lessons. */}
+        <PageTabs
+          items={tabLinks.map(t => ({ key: t.key, label: t.label, href: t.href, active: tab === t.key }))}
+        />
 
         {tab === "compose" && (
           <section className="space-y-3">

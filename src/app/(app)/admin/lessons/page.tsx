@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import Header from "@/components/Header";
+import PageTabs from "@/components/PageTabs";
 import AdminLessonsWrapper from "./AdminLessonsWrapper";
 import LessonTypesSection from "./LessonTypesSection";
 import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
@@ -127,24 +127,12 @@ export default async function AdminLessonsPage({
               mechanism on this page to extend. */}
           {userRole === "admin" && (
             <div className="px-4 pt-3">
-              <div className="ct-card flex divide-x divide-gray-100 dark:divide-gray-800 overflow-hidden">
-                {([
-                  { key: "requests" as const, label: "Lesson Requests", href: "/admin/lessons" },
-                  { key: "types" as const, label: "Lesson Types", href: "/admin/lessons?tab=types" },
-                ]).map(t => (
-                  <Link
-                    key={t.key}
-                    href={t.href}
-                    className={`flex-1 flex items-center justify-center text-center leading-tight px-2 py-2 text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-                      tab === t.key
-                        ? "bg-accent text-white"
-                        : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-                    }`}
-                  >
-                    {t.label}
-                  </Link>
-                ))}
-              </div>
+              <PageTabs
+                items={[
+                  { key: "requests", label: "Lesson Requests", href: "/admin/lessons", active: tab === "requests" },
+                  { key: "types", label: "Lesson Types", href: "/admin/lessons?tab=types", active: tab === "types" },
+                ]}
+              />
             </div>
           )}
 

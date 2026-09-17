@@ -27,6 +27,7 @@ const MEMBERS_PAGE_PATH = "src/app/(app)/admin/members/page.tsx";
 const TYPES_PAGE_PATH = "src/app/(app)/admin/members/types/page.tsx";
 const WAIVERS_PAGE_PATH = "src/app/(app)/admin/members/waivers/page.tsx";
 const TABS_PATH = "src/app/(app)/admin/members/MembersAreaTabs.tsx";
+const PAGE_TABS_PATH = "src/components/PageTabs.tsx";
 const MEMBERS_CLIENT_PATH = "src/app/(app)/admin/members/MembersClient.tsx";
 const SETTINGS_ACTIONS_PATH = "src/app/(app)/admin/settings/actions.ts";
 const WAIVER_PDF_ACTIONS_PATH = "src/app/(app)/admin/settings/waiverPdfActions.ts";
@@ -59,12 +60,12 @@ describe("Tab visibility correction — Staff sees no redirect-only tabs (runtim
 
   it("1. Admin (canManageMemberships=true) renders the full tab strip — the early-return guard only fires on false", () => {
     expect(tabsSource).toContain("if (!canManageMemberships) return null;");
-    // The guard is the ONLY conditional return before the tablist JSX —
+    // The guard is the ONLY conditional return before the PageTabs JSX —
     // canManageMemberships=true always falls through to it.
     const guardIdx = tabsSource.indexOf("if (!canManageMemberships) return null;");
-    const tablistIdx = tabsSource.indexOf('role="tablist"');
+    const pageTabsIdx = tabsSource.indexOf("<PageTabs");
     expect(guardIdx).toBeGreaterThan(-1);
-    expect(tablistIdx).toBeGreaterThan(guardIdx);
+    expect(pageTabsIdx).toBeGreaterThan(guardIdx);
   });
 
   it("2/3. Staff (canManageMemberships=false) never renders any tab, including Membership Types and Waivers — the whole component returns null, not a filtered one-tab strip", () => {
@@ -96,9 +97,9 @@ describe("Tab visibility correction — Staff sees no redirect-only tabs (runtim
     expect(tabsSource).not.toMatch(/getAuthProfile|supabase\.rpc|createClient/);
   });
 
-  it("7. mobile behavior for the Admin-visible tab strip is unchanged (overflow-x-auto / whitespace-nowrap still present)", () => {
-    expect(tabsSource).toContain("overflow-x-auto");
-    expect(tabsSource).toContain("whitespace-nowrap");
+  it("7. mobile behavior for the Admin-visible tab strip is unchanged — still delegates to the shared PageTabs component (Phase 43B-3E2), whose own mobile-safety (equal-width flex-1 cells, wrapping long labels via leading-tight rather than scrolling) is covered separately", () => {
+    expect(tabsSource).toContain("<PageTabs");
+    expect(readSource(PAGE_TABS_PATH)).toContain("leading-tight");
   });
 
   it("8. no additional component was created for the Staff (no-tabs) case — MembersAreaTabs.tsx remains the only file, now simply returning null for that one prop value", () => {
@@ -135,8 +136,8 @@ describe("2/3. shared tabs — route-backed, active-state derives from pathname,
     expect(s).toContain('import { usePathname } from "next/navigation";');
   });
 
-  it("route-backed: real <Link> elements to the three real routes, not a client-only useState tab switch", () => {
-    expect(s).toContain('import Link from "next/link";');
+  it("route-backed: href items passed to the shared PageTabs component, not a client-only useState tab switch", () => {
+    expect(s).toContain("<PageTabs");
     expect(s).toContain('href: "/admin/members"');
     expect(s).toContain('href: "/admin/members/types"');
     expect(s).toContain('href: "/admin/members/waivers"');
@@ -144,24 +145,23 @@ describe("2/3. shared tabs — route-backed, active-state derives from pathname,
   });
 
   it("3. active tab derives from the current pathname (exact match), not any local component state", () => {
-    expect(s).toContain("const isActive = pathname === tab.href;");
+    expect(s).toContain("active: pathname === tab.href,");
   });
 
-  it("keyboard accessible — real <Link> (natively focusable/activatable), explicit tab/tablist roles, visible focus ring", () => {
-    expect(s).toContain('role="tablist"');
-    expect(s).toContain('role="tab"');
-    expect(s).toContain("aria-selected={isActive}");
-    expect(s).toContain("focus-visible:ring");
+  it("keyboard accessible via the shared PageTabs component — real <Link>/<button> elements (natively focusable/activatable) with a visible focus ring", () => {
+    const pageTabsSource = readSource(PAGE_TABS_PATH);
+    expect(pageTabsSource).toContain("focus-visible:ring");
   });
 
-  it("20. mobile-safe: horizontal scroll container, no-wrap labels — never forces page-level horizontal overflow", () => {
-    expect(s).toContain("overflow-x-auto");
-    expect(s).toContain("whitespace-nowrap");
+  it("20. mobile-safe: equal-width flex-1 cells with a long label (\"Membership Types\") wrapping compactly via leading-tight, matching the canonical Courts/Communications/Lessons treatment — the strip itself never causes page-level horizontal overflow", () => {
+    const pageTabsSource = readSource(PAGE_TABS_PATH);
+    expect(pageTabsSource).toContain("leading-tight");
+    expect(pageTabsSource).toContain("flex-1");
   });
 
-  it("reuses the existing segmented-control visual language rather than inventing a new framework", () => {
-    expect(s).toContain("bg-gray-100 dark:bg-gray-800 rounded-xl");
-    expect(s).toContain("bg-white dark:bg-gray-700");
+  it("Phase 43B-3E2 — reuses Court Time's one canonical page-tab visual language (the shared PageTabs component) rather than the earlier bespoke segmented-pill pattern this file used to define inline", () => {
+    expect(s).toContain('import PageTabs from "@/components/PageTabs";');
+    expect(s).not.toMatch(/bg-gray-100 dark:bg-gray-800 rounded-xl/);
   });
 
   it("never renders on the Member Detail drill-down page — [id]/page.tsx does not import it", () => {

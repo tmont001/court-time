@@ -13,14 +13,12 @@ import EventsUpcomingClient, { type UpcomingEventData } from "./EventsUpcomingCl
 import EventsAdminShell from "./EventsAdminShell";
 import AdminEventsClient from "@/app/(app)/admin/events/AdminEventsClient";
 import EventTypesSection from "@/app/(app)/admin/events/EventTypesSection";
-import LessonsTab from "./LessonsTab";
 import ManageSubview from "./ManageSubview";
 import ProgramsManageClient from "./ProgramsManageClient";
 import { getPrograms, type ProgramListRow } from "./programsActions";
 import { getMemberPrograms, type MemberProgramCard } from "./programEnrollmentActions";
 import type { AdminEventRow } from "@/app/(app)/admin/events/actions";
 import { ADMIN_EVENT_SELECT, mapAdminEventRow, type RawAdminEventRow } from "@/app/(app)/admin/events/adminEventRow";
-import type { ProLessonRequestRow } from "@/app/(app)/lessons/actions";
 import { canAccessOperationsWorkspace } from "@/lib/auth/roles";
 
 // ─── Server actions ───────────────────────────────────────────────────────────
@@ -81,7 +79,7 @@ export default async function EventsPage({
   // for a non-admin caller (that tab literally isn't rendered for them; see
   // EventsAdminShell), so this can't be decided from sp.tab alone the way
   // the other three values already are.
-  const initialTabFromUrl = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";
+  const initialTabFromUrl = sp.tab === "manage" ? "manage" : "upcoming";
 
   // Phase 34F-C, generalized in Phase 36C: optional ?program=<uuid> — no
   // longer requires checkout=success, mirroring /calendar's reservation/
@@ -128,8 +126,8 @@ export default async function EventsPage({
   const initialTab = sp.tab === "eventTypes" && isAdmin ? "eventTypes" : initialTabFromUrl;
   const now            = new Date().toISOString();
 
-  // Parallel fetches: timezone + upcoming events + member programs + admin-only data (courts, all events, lesson requests, programs)
-  const [clubResult, settingsResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, proLessonsResult, programsResult, eventTypesResult] = await Promise.all([
+  // Parallel fetches: timezone + upcoming events + member programs + admin-only data (courts, all events, programs)
+  const [clubResult, settingsResult, eventsResult, memberProgramsResult, adminEventsResult, adminCourtsResult, programsResult, eventTypesResult] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
       : Promise.resolve({ data: null }),
@@ -180,10 +178,6 @@ export default async function EventsPage({
           .eq("is_active", true)
           .order("display_order")
       : Promise.resolve({ data: null }),
-    // Pro/admin: lesson requests assigned to this pro (or all, if admin)
-    isAdminOrPro
-      ? supabase.rpc("get_pro_lesson_requests")
-      : Promise.resolve({ data: null }),
     // Pro/admin: Programs list for the Manage → Programs sub-tab
     isAdminOrPro
       ? getPrograms(clubId)
@@ -222,7 +216,6 @@ export default async function EventsPage({
   const adminEventsRaw = (adminEventsResult.data ?? []) as unknown as RawAdminEventRow[];
   const adminEvents: AdminEventRow[] = adminEventsRaw.map(mapAdminEventRow);
   const adminCourts   = adminCourtsResult.data ?? [];
-  const proLessons    = (proLessonsResult.data ?? []) as ProLessonRequestRow[];
   const programs      = "programs" in programsResult ? programsResult.programs : [];
   const programsError = "error" in programsResult ? programsResult.error : undefined;
   const memberPrograms      = "programs" in memberProgramsResult ? memberProgramsResult.programs : [];
@@ -312,17 +305,6 @@ export default async function EventsPage({
                   }
                 />
               }
-              lessons={
-                <LessonsTab
-                  initialRequests={proLessons}
-                  courts={(adminCourts ?? []) as { id: string; name: string }[]}
-                  userId={user.id}
-                  userRole={profile!.role!}
-                  clubId={clubId}
-                  clubTimezone={clubTimezone}
-                  currency={currency}
-                />
-              }
               eventTypes={
                 isAdmin ? (
                   <div className="px-4 py-3 space-y-3">
@@ -339,7 +321,7 @@ export default async function EventsPage({
               clubTimezone={clubTimezone}
               currency={currency}
               isAdmin={profile!.role === "admin"}
-              initialTab={initialTab as "upcoming" | "manage" | "lessons" | "eventTypes"}
+              initialTab={initialTab as "upcoming" | "manage" | "eventTypes"}
             />
           ) : (
             /* Members: upcoming events list with search and type filter */

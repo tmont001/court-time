@@ -12,6 +12,7 @@ import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
 import { getStripeConnectStatusForAdmin } from "./stripeConnectShared";
 import { deriveConnectUIState } from "@/lib/stripe/connectConfig";
+import { ACTION_BUTTON_SECONDARY } from "@/components/styles/actionButtonStyles";
 
 export default async function AdminSettingsPage() {
   const user = await getAuthUser();
@@ -72,8 +73,9 @@ export default async function AdminSettingsPage() {
             (Courts -> /admin/courts, Event Types -> /events, Lesson Types
             -> /admin/lessons, Announcements/Delivery Diagnostics ->
             /admin/communications), so what remains is true club-wide
-            configuration: Club Profile, Pricing & Payments, Plan & Access.
-            No tabs, no accordions, no subroutes — one page, vertically
+            configuration: Club Profile, Memberships & Waivers (a link-only
+            group as of Phase 43B-3E — see below), Pricing & Payments,
+            Plan & Access. No tabs, no accordions, no subroutes — one page, vertically
             grouped, with a bold group heading above each group's own
             small-caps subsection labels (the existing "text-xs font-
             semibold uppercase tracking-wider" treatment, reused here as
@@ -84,13 +86,20 @@ export default async function AdminSettingsPage() {
             heading), so this is a pure JSX/copy reorganization.
 
             Phase 43B-3E — Members Information Architecture: the former
-            "Memberships" group (toggle, Membership Types, Member Waiver,
-            Guest Waiver) has moved OUT of this page entirely into a new
-            Admin Members hub (/admin/members/types, /admin/members/
-            waivers) — membership management belongs with Members, not
-            general club Settings. Only a small discoverability link
-            remains here; no control from that group is duplicated on
-            this page. ══ */}
+            "Memberships" group's CONTROLS (toggle, Membership Types,
+            Member Waiver, Guest Waiver) moved OUT of this page entirely
+            into a new Admin Members hub (/admin/members/types,
+            /admin/members/waivers) — membership management belongs with
+            Members, not general club Settings. No control from that
+            group is duplicated on this page.
+
+            Phase 43B-3E2 — the resulting discoverability link is styled
+            as its OWN normal group ("Memberships & Waivers", below,
+            between Club Profile and Pricing & Payments) rather than a
+            special bordered card, so the page's visual rhythm stays
+            consistent — same h2 heading, same copy treatment, same
+            secondary-button vocabulary as every other group here. It
+            carries zero live controls of its own, only a link. ══ */}
 
         {/* ── Group 1: Club Profile ── */}
         <section className="space-y-4">
@@ -131,28 +140,33 @@ export default async function AdminSettingsPage() {
 
         <hr className="border-gray-200 dark:border-gray-700" />
 
-        {/* ── Memberships & Waivers — Phase 43B-3E relocated the entire
-            former "Memberships" group (toggle, Membership Types, Member
-            Waiver, Guest Waiver) into its own Admin Members hub
-            (/admin/members/types, /admin/members/waivers) — this is
-            deliberately just a lightweight discoverability link, not a
-            re-creation of any of those controls; no duplicate live
-            management surface exists here or anywhere else. */}
-        <section className="space-y-2">
-          <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3.5 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                Memberships & Waivers
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                Manage members, membership types, and waivers.
-              </p>
-            </div>
-            <Link
-              href="/admin/members"
-              className="shrink-0 text-sm text-accent hover:underline whitespace-nowrap"
-            >
-              Manage Members →
+        {/* ── Group: Memberships & Waivers — Phase 43B-3E relocated the
+            entire former "Memberships" group (toggle, Membership Types,
+            Member Waiver, Guest Waiver) into its own Admin Members hub
+            (/admin/members/types, /admin/members/waivers). Phase
+            43B-3E2 restyled this from a standalone bordered card into a
+            normal Settings group — same h2/copy/space-y-4 rhythm as
+            every other group on this page — because a special card read
+            as visually inconsistent with the surrounding IA. Still just a
+            discoverability link, not a re-creation of any Memberships/
+            Waiver control; no duplicate live management surface exists
+            here or anywhere else. */}
+        <section className="space-y-4">
+          <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Memberships & Waivers</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Manage members, membership types, and waivers.
+          </p>
+          {/* Browser-QA delta (Phase 43B-3E2) — a bare `mt-*` utility on the
+              Link itself would be silently overridden by the parent
+              section's own `space-y-4` margin-top rule (same property,
+              higher-specificity sibling selector), so the extra gap goes
+              on this wrapper's own padding-top instead — additive with
+              the inherited space-y margin, not fighting it. Matches the
+              pt-2 breathing-room idiom this same page already uses
+              elsewhere (see the Online Payments subsection below). */}
+          <div className="pt-2">
+            <Link href="/admin/members" className={ACTION_BUTTON_SECONDARY}>
+              Manage Members
             </Link>
           </div>
         </section>

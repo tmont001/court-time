@@ -25,40 +25,57 @@ function readSource(relativePath: string): string {
 const EVENTS_SHELL_PATH = "src/app/(app)/events/EventsAdminShell.tsx";
 const EVENT_TYPES_SECTION_PATH = "src/app/(app)/admin/events/EventTypesSection.tsx";
 
-describe("1. Events tabs remain exactly the four Admin tabs, gating unchanged", () => {
-  it("Tab type and eventTypes/lessons gating are untouched by the layout fix", () => {
+// Phase 43B-3E2 browser-QA delta — EventsAdminShell's tab strip was
+// restyled onto the shared PageTabs component (src/components/
+// PageTabs.tsx), and the Lessons tab/panel was removed (IA cleanup:
+// /admin/lessons is already the canonical Lesson Requests/Types
+// destination). Tab count is now 2 (Upcoming/Manage) or 3 (+Event Types
+// for Admin) — never 4. The mobile-grid/tabClass machinery this describe
+// block originally tested no longer exists; PageTabs' own flex/flex-1
+// cells already provide the equal-width, wrapping-label behavior this
+// checkpoint was protecting, proven identically on /admin/courts.
+describe("1. Events tabs are Upcoming/Manage(/Event Types) — Lessons removed, gating unchanged", () => {
+  it("Tab type no longer includes lessons; eventTypes gating is untouched", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain('type Tab = "upcoming" | "manage" | "lessons" | "eventTypes";');
+    expect(s).toContain('type Tab = "upcoming" | "manage" | "eventTypes";');
     expect(s).toContain("const [tab, setTab] = useState<Tab>(initialTab);");
-    expect(s).toContain("{lessons != null && (");
+    // Code only — the header comment legitimately mentions /admin/lessons
+    // (the route) and "Lessons" (the removed tab, in prose) by name.
+    const codeOnly = s.split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+    expect(codeOnly).not.toMatch(/lessons/i);
     expect(s).toContain("{eventTypes != null && (");
   });
 
-  it("all four tab buttons still call setTab with their original tab names", () => {
+  it("all tab items still call setTab with their original tab names, via the shared PageTabs component", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain('onClick={() => setTab("upcoming")}');
-    expect(s).toContain('onClick={() => setTab("manage")}');
-    expect(s).toContain('onClick={() => setTab("lessons")}');
-    expect(s).toContain('onClick={() => setTab("eventTypes")}');
+    expect(s).toContain('import PageTabs from "@/components/PageTabs";');
+    expect(s).toContain('onClick: () => setTab("upcoming")');
+    expect(s).toContain('onClick: () => setTab("manage")');
+    expect(s).toContain('onClick: () => setTab("eventTypes")');
   });
 });
 
-describe("2. mobile tab layout centers labels and allows wrapping, sized to the actual tab count", () => {
-  it("tabClass centers text both ways and uses leading-tight (permits a two-line 'Event Types' label)", () => {
+describe("2. mobile tab layout centers labels and allows wrapping — now delegated entirely to the shared PageTabs component", () => {
+  it("PageTabs itself (not this file) owns the leading-tight/flex-1 centering behavior that permits a two-line 'Event Types' label", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain("function tabClass(active: boolean): string {");
-    expect(s).toMatch(/flex items-center justify-center text-center leading-tight/);
+    expect(s).not.toContain("function tabClass(");
+    expect(s).not.toMatch(/flex items-center justify-center text-center leading-tight/);
+    const pageTabsSource = readSource("src/components/PageTabs.tsx");
+    expect(pageTabsSource).toMatch(/flex items-center justify-center text-center leading-tight/);
   });
 
-  it("the tab container is a grid sized to the actual visible tab count (3 or 4), not a fixed 4", () => {
+  it("no bespoke mobile-only grid-cols sizing remains — PageTabs' flex/flex-1 cells divide width equally regardless of the 2-or-3 tab count, with no blank-cell risk a grid could have", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain("const tabCount = 2 + (lessons != null ? 1 : 0) + (eventTypes != null ? 1 : 0);");
-    expect(s).toContain('`grid ${tabCount === 4 ? "grid-cols-4" : "grid-cols-3"} gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl sm:flex sm:flex-1`');
+    expect(s).not.toMatch(/grid-cols-3|grid-cols-4|const tabCount/);
   });
 
-  it("every tab button shares the same tabClass helper, so all four cells render at equal width/height", () => {
+  it("the Upcoming/Manage/(Event Types) items are passed to PageTabs as a single items array, sized to the actual visible tab count", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect((s.match(/\$\{tabClass\(tab === "(upcoming|manage|lessons|eventTypes)"\)\}/g) ?? []).length).toBe(4);
+    const itemsMatch = s.match(/items=\{\[[\s\S]*?\]\}/);
+    expect(itemsMatch).not.toBeNull();
+    expect(itemsMatch![0]).toContain('key: "upcoming"');
+    expect(itemsMatch![0]).toContain('key: "manage"');
+    expect(itemsMatch![0]).toContain('key: "eventTypes"');
   });
 });
 
@@ -110,10 +127,9 @@ describe("4. Event Type identity and actions use separate mobile layout regions"
 });
 
 describe("5. desktop layout is preserved at sm+ (unchanged arrangement, not removed)", () => {
-  it("EventsAdminShell tabs revert to a single flex row with flex-1 cells at sm+", () => {
+  it("EventsAdminShell's tab strip is a flex-1 sibling of the Create Event button at sm+, exactly like EventsAdminTabs.tsx's own established headerAction pattern — PageTabs itself already renders flex-1 cells with no per-breakpoint variant needed", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain("sm:flex sm:flex-1");
-    expect((s.match(/\$\{tabClass\([^)]*\)\} sm:flex-1/g) ?? []).length).toBe(4);
+    expect(s).toContain('<PageTabs\n          className="flex-1"');
   });
 
   it("EventTypesSection's primary/actions rows both revert to a single flex-row arrangement at sm+", () => {

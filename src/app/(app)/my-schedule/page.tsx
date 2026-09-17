@@ -4,6 +4,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import Header from "@/components/Header";
+import PageTabs from "@/components/PageTabs";
 import {
   leaveEvent as dispatchLeaveEvent,
   joinEvent as dispatchJoinEvent,
@@ -651,17 +652,6 @@ export default async function MySchedulePage({
   }
   const sortedDateKeys = [...grouped.keys()].sort();
 
-  // Phase 34C consolidation: full-width segmented control — equal flex-1
-  // segments (2 for Admin/Pro's Upcoming/Past, 4 for Member's
-  // Upcoming/Lessons/Payments/Past) so it never reads as left-aligned and
-  // cramped on mobile, with a centered label and an adequate ~44px tap
-  // target per segment.
-  const tabCls = (t: string) =>
-    `flex-1 text-center py-2.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap motion-safe:transition-colors motion-safe:duration-100 ${
-      tab === t
-        ? "bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 shadow-sm"
-        : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-    }`;
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
@@ -676,27 +666,24 @@ export default async function MySchedulePage({
 
           {/* Tab bar — Lessons/Payments are Member-only; Admin/Pro use
               /admin/lessons and the canonical Admin/Staff Payments
-              workspace instead. Full-width segmented control, equal
-              segments regardless of tab count. */}
+              workspace instead. Phase 43B-3E2 — restyled onto the shared
+              PageTabs component (src/components/PageTabs.tsx), Court
+              Time's one canonical page-level tab-strip treatment. Still
+              Link-backed (href, not onClick) — same /my-schedule?tab=
+              searchParams navigation as before. */}
           <div className="px-4 pt-4 pb-3">
-            <div className="flex w-full gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-              <Link href="/my-schedule" aria-current={tab === "upcoming" ? "page" : undefined} className={tabCls("upcoming")}>
-                Upcoming
-              </Link>
-              {userRole === "member" && (
-                <Link href="/my-schedule?tab=lessons" aria-current={tab === "lessons" ? "page" : undefined} className={tabCls("lessons")}>
-                  Lessons
-                </Link>
-              )}
-              {userRole === "member" && (
-                <Link href="/my-schedule?tab=payments" aria-current={tab === "payments" ? "page" : undefined} className={tabCls("payments")}>
-                  Payments
-                </Link>
-              )}
-              <Link href="/my-schedule?tab=past" aria-current={tab === "past" ? "page" : undefined} className={tabCls("past")}>
-                Past
-              </Link>
-            </div>
+            <PageTabs
+              items={[
+                { key: "upcoming", label: "Upcoming", href: "/my-schedule", active: tab === "upcoming" },
+                ...(userRole === "member"
+                  ? [{ key: "lessons", label: "Lessons", href: "/my-schedule?tab=lessons", active: tab === "lessons" }]
+                  : []),
+                ...(userRole === "member"
+                  ? [{ key: "payments", label: "Payments", href: "/my-schedule?tab=payments", active: tab === "payments" }]
+                  : []),
+                { key: "past", label: "Past", href: "/my-schedule?tab=past", active: tab === "past" },
+              ]}
+            />
           </div>
 
           {/* ── Upcoming tab ─────────────────────────────────────────────── */}

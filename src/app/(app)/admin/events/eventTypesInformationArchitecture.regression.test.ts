@@ -35,10 +35,10 @@ describe("1. Event Types no longer lives in admin/settings/actions.ts", () => {
 });
 
 describe("3. Admin can reach Event Types from Events", () => {
-  it("EventsAdminShell declares a fourth eventTypes tab/panel, gated on eventTypes != null exactly like the existing lessons tab", () => {
+  it("EventsAdminShell declares an eventTypes tab/panel, gated on eventTypes != null (Phase 43B-3E2 removed the sibling Lessons tab as an IA cleanup — /admin/lessons is the canonical destination — and restyled this strip onto the shared PageTabs component; the eventTypes gating itself is unchanged)", () => {
     const s = readSource(EVENTS_SHELL_PATH);
-    expect(s).toContain('type Tab = "upcoming" | "manage" | "lessons" | "eventTypes";');
-    expect(s).toContain('onClick={() => setTab("eventTypes")}');
+    expect(s).toContain('type Tab = "upcoming" | "manage" | "eventTypes";');
+    expect(s).toContain('onClick: () => setTab("eventTypes")');
     expect(s).toContain("Event Types");
     expect(s).toContain("{eventTypes != null && (");
     expect(s).toMatch(/tab === "eventTypes" \? undefined : "hidden"/);
@@ -94,12 +94,12 @@ describe("6. existing Event Type RPC/actions are unchanged", () => {
 });
 
 describe("8. operational Events role behavior is unchanged", () => {
-  it("the existing Upcoming/Manage/Lessons tabs and their isAdminOrPro gating are untouched", () => {
+  it("the existing Upcoming/Manage tabs and their isAdminOrPro gating are untouched (Phase 43B-3E2 removed the Lessons tab from this page as an IA cleanup — /admin/lessons is the canonical Lesson Requests/Types destination — but touched no other operational-role behavior)", () => {
     const s = readSource(EVENTS_PAGE_PATH);
     expect(s).toContain('const isAdminOrPro   = canAccessOperationsWorkspace(profile?.role);');
     expect(s).toContain("<AdminEventsClient");
     expect(s).toContain("<ProgramsManageClient");
-    expect(s).toContain("<LessonsTab");
+    expect(s).not.toContain("<LessonsTab");
   });
 
   it("a plain Member still renders only upcomingContent, with no admin shell at all", () => {
@@ -111,10 +111,10 @@ describe("8. operational Events role behavior is unchanged", () => {
 });
 
 describe("10. direct URL/fallback behavior for the new Events tab", () => {
-  it("?tab=eventTypes only resolves for an Admin caller — any other role (or an unrecognized tab) falls back to upcoming", () => {
+  it("?tab=eventTypes only resolves for an Admin caller — any other role (or an unrecognized tab, including a stale ?tab=lessons bookmark) falls back to upcoming", () => {
     const s = readSource(EVENTS_PAGE_PATH);
     expect(s).toContain('const initialTab = sp.tab === "eventTypes" && isAdmin ? "eventTypes" : initialTabFromUrl;');
-    expect(s).toContain('const initialTabFromUrl = sp.tab === "manage" ? "manage" : sp.tab === "lessons" ? "lessons" : "upcoming";');
+    expect(s).toContain('const initialTabFromUrl = sp.tab === "manage" ? "manage" : "upcoming";');
   });
 });
 

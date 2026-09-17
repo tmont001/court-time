@@ -23,6 +23,7 @@ function readSource(relativePath: string): string {
 const COURT_LIST_PATH = "src/app/(app)/admin/courts/CourtManagementList.tsx";
 const HOURS_EDITOR_PATH = "src/app/(app)/admin/courts/OperatingHoursEditor.tsx";
 const COURTS_PAGE_PATH = "src/app/(app)/admin/courts/page.tsx";
+const PAGE_TABS_PATH = "src/components/PageTabs.tsx";
 const COURTS_ACTIONS_PATH = "src/app/(app)/admin/courts/actions.ts";
 
 function normalRowSection(): string {
@@ -125,14 +126,20 @@ describe("4. desktop horizontal hours layout remains available at larger breakpo
   });
 });
 
-describe("5+6. all three tabs use equal-width centered alignment; wrapped label uses compact line-height", () => {
-  it("5. each tab Link centers its content both horizontally and vertically, and stays equal width (flex-1)", () => {
+describe("5+6. all three tabs use equal-width centered alignment; wrapped label uses compact line-height (Phase 43B-3E2 — this markup now lives in the shared PageTabs component, src/components/PageTabs.tsx, rendered by courts/page.tsx via <PageTabs items={...} />)", () => {
+  it("courts/page.tsx renders its tab strip via the shared PageTabs component", () => {
     const s = readSource(COURTS_PAGE_PATH);
+    expect(s).toContain('import PageTabs from "@/components/PageTabs";');
+    expect(s).toMatch(/<PageTabs\s/);
+  });
+
+  it("5. each tab cell centers its content both horizontally and vertically, and stays equal width (flex-1)", () => {
+    const s = readSource(PAGE_TABS_PATH);
     expect(s).toMatch(/flex-1 flex items-center justify-center text-center leading-tight/);
   });
 
   it("6. leading-tight is present so a wrapped two-line label (\"Hours & Closures\") stays compact rather than double-line-height", () => {
-    const s = readSource(COURTS_PAGE_PATH);
+    const s = readSource(PAGE_TABS_PATH);
     const tabLinkClassStart = s.indexOf("flex-1 flex items-center justify-center");
     expect(tabLinkClassStart).toBeGreaterThan(-1);
     const classSnippet = s.slice(tabLinkClassStart, tabLinkClassStart + 80);
@@ -140,10 +147,10 @@ describe("5+6. all three tabs use equal-width centered alignment; wrapped label 
   });
 
   it("no hard-coded pixel height/position was introduced — equal height comes from flex stretch, not a fixed min-height/top/left value", () => {
-    const s = readSource(COURTS_PAGE_PATH);
-    const tabStripStart = s.indexOf('<div className="ct-card flex divide-x');
-    const tabStripEnd = s.indexOf("{tab === \"courts\"");
-    const tabStrip = s.slice(tabStripStart, tabStripEnd);
+    const s = readSource(PAGE_TABS_PATH);
+    const tabStripStart = s.indexOf('className={`ct-card flex divide-x');
+    expect(tabStripStart).toBeGreaterThan(-1);
+    const tabStrip = s.slice(tabStripStart, tabStripStart + 400);
     expect(tabStrip).not.toMatch(/min-h-\[|height:\s*['"`]?\d|top-\[|left-\[/);
   });
 

@@ -46,23 +46,33 @@ export default async function AdminMembershipTypesPage() {
   return (
     <>
       <Header screenTitle="Members" />
-      <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
-      <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
-        <MembershipsSection enabled={membershipsEnabled} />
+      {/* Phase 43B-3E2 browser-QA polish — width/centering (md:max-w-2xl
+          md:mx-auto) now lives on this OUTER div, wrapping MembersAreaTabs
+          alongside the padded content div below, so the tab strip aligns
+          with the content it controls instead of stretching full-width on
+          desktop. The inner div keeps its own px-4 (content padding) —
+          MembersAreaTabs' own mx-4 margin lands on the same outer edge, so
+          both stay visually aligned at every width. Purely a layout
+          regrouping: no class changed, no width value added. */}
+      <div className="md:max-w-2xl md:mx-auto">
+        <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
+        <div className="px-4 py-6 space-y-4 dark:text-gray-100">
+          <MembershipsSection enabled={membershipsEnabled} />
 
-        {membershipsEnabled && (
-          <div className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-              Membership Types
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Club-configurable membership categories (e.g. Adult, Junior, Senior). Deactivating a
-              type keeps it attached to anyone who already has it — it just can&apos;t be newly
-              assigned.
-            </p>
-            <MembershipTypesSection initialTypes={membershipTypes} />
-          </div>
-        )}
+          {membershipsEnabled && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Membership Types
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Club-configurable membership categories (e.g. Adult, Junior, Senior). Deactivating a
+                type keeps it attached to anyone who already has it — it just can&apos;t be newly
+                assigned.
+              </p>
+              <MembershipTypesSection initialTypes={membershipTypes} />
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

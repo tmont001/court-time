@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { hasAdminAuthority } from "@/lib/auth/roles";
 import Header from "@/components/Header";
+import PageTabs from "@/components/PageTabs";
 import CourtManagementList from "./CourtManagementList";
 import OperatingHoursEditor from "./OperatingHoursEditor";
 import DateOverridesEditor from "./DateOverridesEditor";
@@ -80,34 +80,15 @@ export default async function AdminCourtsPage({
       <Header screenTitle="Courts" />
       <div className="px-4 py-6 space-y-4 md:max-w-2xl md:mx-auto dark:text-gray-100">
 
-        {/* ── Tab strip ── same Link + searchParams pattern as /admin/reports'
-            range selector: one ct-card, divide-x, flex-1 links, active tab
-            filled with the accent color. Each link is itself a flex
-            container (items-center justify-center) so its own text is
-            centered both ways within whatever height the row stretches to
-            — the three links are flex siblings of one row with the default
-            align-items: stretch, so "Hours & Closures" wrapping to two
-            lines on mobile makes all three equally tall automatically;
-            without items-center on each link, the single-line labels would
-            sit at the top of that shared height instead of centered in it.
-            leading-tight keeps the wrapped two-line label compact. No fixed
-            height is set — the natural stretch-to-tallest-sibling behavior
-            already guarantees equal height without one. */}
-        <div className="ct-card flex divide-x divide-gray-100 dark:divide-gray-800 overflow-hidden">
-          {tabLinks.map(t => (
-            <Link
-              key={t.key}
-              href={t.href}
-              className={`flex-1 flex items-center justify-center text-center leading-tight px-2 py-2 text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-                tab === t.key
-                  ? "bg-accent text-white"
-                  : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"
-              }`}
-            >
-              {t.label}
-            </Link>
-          ))}
-        </div>
+        {/* ── Tab strip ── the shared PageTabs component (src/components/
+            PageTabs.tsx), Court Time's one canonical page-level tab-strip
+            treatment. Link-backed (href, not onClick) — same Link +
+            searchParams pattern as before: direct URL/refresh/Back-Forward
+            all keep working exactly as they did with the inline markup
+            this replaced. */}
+        <PageTabs
+          items={tabLinks.map(t => ({ key: t.key, label: t.label, href: t.href, active: tab === t.key }))}
+        />
 
         {tab === "courts" && (
           <div className="space-y-4">

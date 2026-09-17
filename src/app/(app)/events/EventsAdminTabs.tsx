@@ -1,13 +1,23 @@
 "use client";
 
-// EventsAdminTabs — renders a segmented Upcoming / Manage control for admin and pro users.
-// Both panels are rendered into the DOM; only one is visible at a time.
-// This preserves client state in AdminEventsClient (e.g. pagination) when
-// switching between tabs.
+// EventsAdminTabs — renders an Upcoming / Manage control for admin and pro
+// users. Both panels are rendered into the DOM; only one is visible at a
+// time. This preserves client state in AdminEventsClient (e.g. pagination)
+// when switching between tabs — deliberately NOT converted to Link/
+// searchParams navigation (that would remount AdminEventsClient on every
+// switch, losing that state), only its visual chrome changed.
 // An optional `headerAction` (e.g. "+ Create Event" button) appears to the right
 // of the tab selector, visible on both tabs.
+//
+// Phase 43B-3E2 — restyled onto the shared PageTabs component (src/
+// components/PageTabs.tsx), Court Time's one canonical page-level
+// tab-strip treatment (previously only matched on /admin/courts,
+// /admin/communications, /admin/lessons). Still onClick-based (PageTabs
+// supports either href or onClick per item) — the underlying client
+// tab-switch mechanism, and everything it preserves above, is unchanged.
 
 import { useState } from "react";
+import PageTabs from "@/components/PageTabs";
 
 type Tab = "upcoming" | "manage";
 
@@ -24,28 +34,13 @@ export default function EventsAdminTabs({ upcoming, manage, headerAction }: Prop
     <>
       {/* Tab selector row + optional header action */}
       <div className="mx-4 mt-3 mb-1 flex items-center gap-2">
-        <div className="flex-1 flex p-1 gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl">
-          <button
-            onClick={() => setTab("upcoming")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-              tab === "upcoming"
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
-          >
-            Upcoming
-          </button>
-          <button
-            onClick={() => setTab("manage")}
-            className={`flex-1 py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-              tab === "manage"
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
-          >
-            Manage
-          </button>
-        </div>
+        <PageTabs
+          className="flex-1"
+          items={[
+            { key: "upcoming", label: "Upcoming", active: tab === "upcoming", onClick: () => setTab("upcoming") },
+            { key: "manage", label: "Manage", active: tab === "manage", onClick: () => setTab("manage") },
+          ]}
+        />
         {/* e.g. "+ Create Event" — visible on both tabs */}
         {headerAction}
       </div>

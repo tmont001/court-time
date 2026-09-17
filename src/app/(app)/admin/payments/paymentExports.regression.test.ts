@@ -483,9 +483,9 @@ const EXPORT_MENU_PATH = "src/app/(app)/admin/payments/PaymentExportMenu.tsx";
 // rendered only for the Outstanding/Payment Activity tabs (never Overview,
 // which has no list to search or export).
 describe("Export control lives in the SAME row as Search, immediately below the (now separate) tab strip", () => {
-  it("AdminPaymentsClient.tsx renders <PaymentExportMenu> inside the toolbar div that also contains the search <input>, after the tab strip's own separate row", () => {
+  it("AdminPaymentsClient.tsx renders <PaymentExportMenu> inside the toolbar div that also contains the search <input>, after the tab strip's own separate row (Phase 43B-3E2 restyled the tab strip itself onto the shared PageTabs component; its position relative to the toolbar below is unchanged)", () => {
     const s = codeOnly(readSource(CLIENT_PATH));
-    const tabStripIdx = s.indexOf("gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl mb-4");
+    const tabStripIdx = s.indexOf("<PageTabs");
     expect(tabStripIdx).toBeGreaterThan(-1);
     const toolbarIdx = s.indexOf('<div className="flex flex-col sm:flex-row gap-2 mb-4">', tabStripIdx);
     expect(toolbarIdx).toBeGreaterThan(tabStripIdx);

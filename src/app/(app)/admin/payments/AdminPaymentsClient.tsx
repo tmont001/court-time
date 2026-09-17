@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import PageTabs from "@/components/PageTabs";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
 import RefundPaymentSheet from "@/components/RefundPaymentSheet";
@@ -276,34 +277,24 @@ export default function AdminPaymentsClient({
         </p>
       )}
 
-      {/* Admin IA — tab strip gets its own full-width row (equal-width
-          grid cells), matching the approved tab-strip treatment used
-          elsewhere in this app (Courts/Lessons/Communications). Overview
-          is only ever rendered for isAdmin — never merely hidden by CSS,
+      {/* Admin IA — tab strip on the shared PageTabs component (src/
+          components/PageTabs.tsx), Court Time's one canonical page-level
+          tab-strip treatment (Courts/Lessons/Communications). Overview is
+          only ever rendered for isAdmin — never merely hidden by CSS,
           simply absent from the DOM for Staff, matching the real
           server-side authorization boundary (get_financial_range_summary
-          itself is Admin-only). */}
-      <div className={`grid ${isAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1 p-1 bg-gray-100 dark:bg-gray-800 rounded-xl mb-4`}>
-        {isAdmin && (
-          <button
-            onClick={() => setTab("overview")}
-            className={tabClass(tab === "overview")}
-          >
-            Overview
-          </button>
-        )}
-        <button
-          onClick={() => setTab("outstanding")}
-          className={tabClass(tab === "outstanding")}
-        >
-          Outstanding
-        </button>
-        <button
-          onClick={() => setTab("activity")}
-          className={tabClass(tab === "activity")}
-        >
-          Payment Activity
-        </button>
+          itself is Admin-only). Still onClick-based (client tab state,
+          unchanged) — only the visual chrome moved onto PageTabs. */}
+      <div className="mb-4">
+        <PageTabs
+          items={[
+            ...(isAdmin
+              ? [{ key: "overview", label: "Overview", active: tab === "overview", onClick: () => setTab("overview") }]
+              : []),
+            { key: "outstanding", label: "Outstanding", active: tab === "outstanding", onClick: () => setTab("outstanding") },
+            { key: "activity", label: "Payment Activity", active: tab === "activity", onClick: () => setTab("activity") },
+          ]}
+        />
       </div>
 
       {tab === "overview" ? (
@@ -534,19 +525,6 @@ export default function AdminPaymentsClient({
       )}
     </div>
   );
-}
-
-// Admin Cleanup Checkpoint 6 — shared per-cell style for the 2/3-cell tab
-// strip above, mirroring the approved Courts/Communications tab treatment
-// (flex items-center justify-center text-center leading-tight) so a
-// wrapped "Payment Activity" label at narrow widths stays centered and no
-// taller than its row requires.
-function tabClass(active: boolean): string {
-  return `flex items-center justify-center text-center leading-tight py-1.5 rounded-lg text-xs font-medium motion-safe:transition-colors motion-safe:duration-100 ${
-    active
-      ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-      : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-  }`;
 }
 
 // Admin Cleanup Checkpoint 6 — Financial Overview. Selected-range Collected/

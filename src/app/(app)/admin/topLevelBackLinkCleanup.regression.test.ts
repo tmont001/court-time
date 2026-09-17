@@ -44,10 +44,10 @@ describe("2. /admin/members has no artificial Back to Account", () => {
 });
 
 describe("3. /admin/courts has no artificial Back to Account", () => {
-  it("no 'Back to Account' text remains (Link import stays — still used by the tab strip)", () => {
+  it("no 'Back to Account' text remains (the tab strip now renders via the shared PageTabs component, Phase 43B-3E2 — no direct Link import needed on this page anymore)", () => {
     const s = readSource(COURTS_PAGE_PATH);
     expect(s).not.toContain("Back to Account");
-    expect(s).toContain('import Link from "next/link";');
+    expect(s).toContain('import PageTabs from "@/components/PageTabs";');
     expect(s).toContain('{ key: "courts", label: "Courts", href: "/admin/courts" }');
   });
 });

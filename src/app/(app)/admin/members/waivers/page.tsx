@@ -137,48 +137,58 @@ export default async function AdminMembersWaiversPage() {
   return (
     <>
       <Header screenTitle="Members" />
-      <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
-      <div className="px-4 py-6 space-y-8 md:max-w-2xl md:mx-auto dark:text-gray-100">
-        {/* Phase 43A-2 — Member Waiver. Deliberately independent of the
-            Memberships enabled/disabled toggle (now on the Membership
-            Types tab): waiver acceptance is a legal-agreement concept
-            independent of the club-business "Membership" program. */}
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Member Waiver
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Upload your club&apos;s Member waiver as a PDF for Members to review and agree to.
-            Replacing it requires Members to agree again.
-          </p>
-          <MemberWaiverSection
-            waiverId={waiverRow?.id ?? null}
-            isRequired={waiverRow?.is_required ?? true}
-            currentDocument={currentMemberDocument}
-            legacyDraft={legacyMemberDraft}
-          />
-        </div>
+      {/* Phase 43B-3E2 browser-QA polish — width/centering (md:max-w-2xl
+          md:mx-auto) now lives on this OUTER div, wrapping MembersAreaTabs
+          alongside the padded content div below, so the tab strip aligns
+          with the content it controls instead of stretching full-width on
+          desktop. The inner div keeps its own px-4 (content padding) —
+          MembersAreaTabs' own mx-4 margin lands on the same outer edge, so
+          both stay visually aligned at every width. Purely a layout
+          regrouping: no class changed, no width value added. */}
+      <div className="md:max-w-2xl md:mx-auto">
+        <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
+        <div className="px-4 py-6 space-y-8 dark:text-gray-100">
+          {/* Phase 43A-2 — Member Waiver. Deliberately independent of the
+              Memberships enabled/disabled toggle (now on the Membership
+              Types tab): waiver acceptance is a legal-agreement concept
+              independent of the club-business "Membership" program. */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Member Waiver
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Upload your club&apos;s Member waiver as a PDF for Members to review and agree to.
+              Replacing it requires Members to agree again.
+            </p>
+            <MemberWaiverSection
+              waiverId={waiverRow?.id ?? null}
+              isRequired={waiverRow?.is_required ?? true}
+              currentDocument={currentMemberDocument}
+              legacyDraft={legacyMemberDraft}
+            />
+          </div>
 
-        <hr className="border-gray-100 dark:border-gray-800" />
+          <hr className="border-gray-100 dark:border-gray-800" />
 
-        {/* Phase 43B-2B — Guest Waiver. An independently versioned
-            document from the Member waiver above — separate waivers row
-            (audience='guest'), separate Required toggle. No Guest
-            acceptance flow exists yet — this section only manages the
-            document. */}
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-            Guest Waiver
-          </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Upload a separate PDF waiver for Guests, independent from the Member waiver above.
-          </p>
-          <GuestWaiverSection
-            waiverId={guestWaiverRow?.id ?? null}
-            isRequired={guestWaiverRow?.is_required ?? true}
-            currentDocument={currentGuestDocument}
-            legacyDraft={legacyGuestDraft}
-          />
+          {/* Phase 43B-2B — Guest Waiver. An independently versioned
+              document from the Member waiver above — separate waivers row
+              (audience='guest'), separate Required toggle. No Guest
+              acceptance flow exists yet — this section only manages the
+              document. */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Guest Waiver
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Upload a separate PDF waiver for Guests, independent from the Member waiver above.
+            </p>
+            <GuestWaiverSection
+              waiverId={guestWaiverRow?.id ?? null}
+              isRequired={guestWaiverRow?.is_required ?? true}
+              currentDocument={currentGuestDocument}
+              legacyDraft={legacyGuestDraft}
+            />
+          </div>
         </div>
       </div>
     </>

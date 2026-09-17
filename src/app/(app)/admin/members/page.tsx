@@ -107,8 +107,15 @@ export default async function AdminMembersPage() {
         className="overflow-y-auto"
         style={{ height: "var(--page-fill-height)" }}
       >
-        <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
+        {/* Phase 43B-3E2 browser-QA polish — MembersAreaTabs moved INSIDE
+            this same max-w-3xl/mx-auto container (was previously a
+            sibling above it) so the tab strip aligns with the Members
+            content it controls instead of stretching the full page width
+            on desktop. This div has no px-4 of its own, so MembersAreaTabs'
+            own mx-4 margin still provides the identical mobile inset as
+            before — layout-only, no width change to either. */}
         <div className="md:max-w-3xl md:mx-auto">
+          <MembersAreaTabs canManageMemberships={profile?.role === "admin"} />
           <MembersClient
             members={membersWithWaiver}
             rosterMembers={rosterMembersWithWaiver}

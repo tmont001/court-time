@@ -4,13 +4,18 @@
 // real routes: /admin/members, /admin/members/types, /admin/members/
 // waivers — never a client-only tab-switch state), so a direct refresh on
 // any of the three and browser Back/Forward both work exactly like any
-// other navigation in the app. Visual language reused verbatim from the
-// existing segmented-control pattern (EventsAdminTabs.tsx) — a new
-// framework was deliberately NOT introduced, only <Link>/usePathname()
-// swapped in for state-based tab switching, since these three tabs are
-// genuinely separate pages (different data loads, different auth
-// posture: Members is Admin+Staff, the other two are Admin-only) rather
-// than panels over one shared data set.
+// other navigation in the app.
+//
+// Phase 43B-3E2 — restyled onto the shared PageTabs component (src/
+// components/PageTabs.tsx), Court Time's one canonical page-level
+// tab-strip treatment (previously only matched on /admin/courts,
+// /admin/communications, /admin/lessons; this file originally used the
+// OTHER, segmented-pill visual pattern instead). Only the visual chrome
+// changed — still Link-backed (never onClick), still driven by
+// usePathname() for active-state, since these three tabs are genuinely
+// separate pages (different data loads, different auth posture: Members
+// is Admin+Staff, the other two are Admin-only) rather than panels over
+// one shared data set.
 //
 // Rendered only on these three exact routes — never on /admin/members/
 // [id] (the Member Detail drill-down page), which intentionally has no
@@ -30,8 +35,8 @@
 // The underlying route gates are unchanged either way — this is a
 // visibility-only correction, not an authorization change.
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
+import PageTabs from "@/components/PageTabs";
 
 const TABS = [
   { href: "/admin/members", label: "Members" },
@@ -49,29 +54,16 @@ export default function MembersAreaTabs({ canManageMemberships }: Props) {
   if (!canManageMemberships) return null;
 
   return (
-    <div
-      role="tablist"
-      aria-label="Members area"
-      className="mx-4 mt-3 mb-1 flex p-1 gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl overflow-x-auto"
-    >
-      {TABS.map((tab) => {
-        const isActive = pathname === tab.href;
-        return (
-          <Link
-            key={tab.href}
-            href={tab.href}
-            role="tab"
-            aria-selected={isActive}
-            className={`flex-1 text-center py-1.5 px-2 rounded-lg text-xs font-medium whitespace-nowrap motion-safe:transition-colors motion-safe:duration-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              isActive
-                ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm"
-                : "text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        );
-      })}
+    <div className="mx-4 mt-3 mb-1">
+      <PageTabs
+        ariaLabel="Members area"
+        items={TABS.map((tab) => ({
+          key: tab.href,
+          label: tab.label,
+          href: tab.href,
+          active: pathname === tab.href,
+        }))}
+      />
     </div>
   );
 }

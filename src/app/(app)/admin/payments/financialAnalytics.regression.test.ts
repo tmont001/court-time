@@ -238,12 +238,13 @@ describe("11/12. Payments tabs are Overview / Outstanding / Payment Activity —
     expect(s).toContain('type Tab = "overview" | "outstanding" | "activity";');
   });
 
-  it("exactly three tab buttons are rendered, labeled Overview, Outstanding, Payment Activity — no \"Financial Activity\" tab anywhere", () => {
+  it("exactly three tabs are passed to the shared PageTabs component, labeled Overview, Outstanding, Payment Activity — no \"Financial Activity\" tab anywhere (Phase 43B-3E2 restyled this tab strip onto PageTabs; the tab set/labels/keys are unchanged)", () => {
     const s = readSource(PAYMENTS_CLIENT_PATH);
-    expect(s).toContain(">\n            Overview\n          </button>");
-    expect(s).toContain(">\n          Outstanding\n        </button>");
-    expect(s).toContain(">\n          Payment Activity\n        </button>");
+    expect(s).toContain('label: "Overview"');
+    expect(s).toContain('label: "Outstanding"');
+    expect(s).toContain('label: "Payment Activity"');
     expect(s).not.toMatch(/Financial Activity/);
+    expect(s).toContain("<PageTabs");
   });
 
   it("unknown/missing tab state defaults to Overview for an Admin", () => {
@@ -397,12 +398,13 @@ describe("22. existing Staff operational Payments authority is preserved exactly
     expect(s).toContain("if (!profile || !isOperator(profile.role)) redirect(\"/calendar\");");
   });
 
-  it("the Overview tab button and its data are conditioned on isAdmin — Staff never even receives the tab in the DOM, but Outstanding/Payment Activity render unconditionally for both roles", () => {
+  it("the Overview tab item and its data are conditioned on isAdmin — Staff never even receives that item in the PageTabs items array, but Outstanding/Payment Activity are always present for both roles (Phase 43B-3E2 restyled this from {isAdmin && (<button>)} onto a conditional array-spread item — same authorization boundary, different markup)", () => {
     const s = readSource(PAYMENTS_CLIENT_PATH);
-    expect(s).toContain("{isAdmin && (\n          <button\n            onClick={() => setTab(\"overview\")}");
-    // Outstanding/Payment Activity buttons are NOT wrapped in an isAdmin check.
-    const outstandingBtnIdx = s.indexOf('onClick={() => setTab("outstanding")}');
-    const precedingLine = s.slice(Math.max(0, outstandingBtnIdx - 60), outstandingBtnIdx);
+    expect(s).toContain('...(isAdmin\n              ? [{ key: "overview", label: "Overview"');
+    // Outstanding/Payment Activity items are unconditional array entries,
+    // not wrapped in an isAdmin spread.
+    const outstandingItemIdx = s.indexOf('{ key: "outstanding", label: "Outstanding"');
+    const precedingLine = s.slice(Math.max(0, outstandingItemIdx - 20), outstandingItemIdx);
     expect(precedingLine).not.toMatch(/isAdmin/);
   });
 
