@@ -11,6 +11,13 @@ import Link from "next/link";
 // N" (internal version_number stays evidence/history only). versionNumber
 // is no longer accepted as a prop — this card's own copy never needed it
 // for anything beyond that removed parenthetical.
+//
+// Phase 43B-3C — never_accepted/outdated get a restrained AMBER attention
+// treatment (border + light background tint + amber dot/status text) so a
+// real pending action doesn't read as visually neutral. Deliberately
+// amber, not red: this is a normal, expected required action, not an
+// error state — red stays reserved for actual errors elsewhere in the
+// app. current/accepted keeps its existing green treatment unchanged.
 
 export interface MyWaiverStatus {
   status:        "not_required" | "current" | "outdated" | "never_accepted";
@@ -29,7 +36,13 @@ export default function WaiverStatusCard({ status, title, acceptedAt }: MyWaiver
       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
         Waiver
       </p>
-      <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div
+        className={`rounded-xl border overflow-hidden ${
+          status === "current"
+            ? "border-gray-200 dark:border-gray-700"
+            : "border-amber-300 dark:border-amber-800/60"
+        }`}
+      >
         {status === "current" && (
           <div className="px-4 py-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -47,23 +60,35 @@ export default function WaiverStatusCard({ status, title, acceptedAt }: MyWaiver
         )}
 
         {(status === "never_accepted" || status === "outdated") && (
-          <div className="px-4 py-3 space-y-2">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              {title ?? "Member Waiver"}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {status === "never_accepted" ? "Needs acceptance" : "Updated waiver needs acceptance"}
-            </p>
+          <div className="px-4 py-3 space-y-2 bg-amber-50 dark:bg-amber-900/20">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                {title ?? "Member Waiver"}
+              </p>
+              <span className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 dark:bg-amber-400" aria-hidden="true" />
+                {status === "never_accepted" ? "Needs acceptance" : "Updated waiver needs acceptance"}
+              </span>
+            </div>
           </div>
         )}
 
-        <Link href="/waivers/member" className="ct-row-interactive">
+        <Link
+          href="/waivers/member"
+          className={
+            status === "current"
+              ? "ct-row-interactive"
+              : "ct-row-interactive !bg-amber-50 dark:!bg-amber-900/20 hover:!bg-amber-100 dark:hover:!bg-amber-900/40 text-amber-900 dark:text-amber-300 font-medium"
+          }
+        >
           {status === "current"
             ? "View Waiver"
             : status === "outdated"
             ? "Review Updated Waiver"
             : "Review & Accept"}
-          <span className="text-gray-400 dark:text-gray-500">›</span>
+          <span className={status === "current" ? "text-gray-400 dark:text-gray-500" : "text-amber-500 dark:text-amber-400"}>
+            ›
+          </span>
         </Link>
       </div>
     </div>
