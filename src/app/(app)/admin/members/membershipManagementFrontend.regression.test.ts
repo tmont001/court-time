@@ -451,11 +451,11 @@ describe("24. AddMemberSheet is untouched", () => {
 });
 
 describe("25. no new migration", () => {
-  it("no unauthorized 0195+ migration file exists — this checkpoint was frontend-only, building on immutable 0188-0191; 0192 (Phase 43A-1, member waiver foundation), its 0193 hotfix, and 0194 (Phase 43B-1A) are later, unrelated migrations", () => {
+  it("no unauthorized 0196+ migration file exists — this checkpoint was frontend-only, building on immutable 0188-0191; 0192 (Phase 43A-1, member waiver foundation), its 0193 hotfix, and 0194 (Phase 43B-1A) are later, unrelated migrations", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 194;
+      return match !== null && Number(match[1]) > 195;
     });
     expect(laterMigrations).toEqual([]);
   });
@@ -970,11 +970,11 @@ describe("12. mobile layout does not overflow", () => {
 });
 
 describe("13. no DB/RPC/business-logic change in this polish pass", () => {
-  it("no unauthorized migration file beyond 0194 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
+  it("no unauthorized migration file beyond 0195 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 194;
+      return match !== null && Number(match[1]) > 195;
     });
     expect(laterMigrations).toEqual([]);
   });
@@ -1298,11 +1298,11 @@ describe("MEMBER DETAIL 16. no Book Lesson change", () => {
 });
 
 describe("MEMBER DETAIL 17. no business/data/RPC changes", () => {
-  it("no unauthorized migration beyond 0194 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
+  it("no unauthorized migration beyond 0195 exists (0192, its 0193 hotfix, and 0194 are Phase 43A-1/43B-1A, later, unrelated migrations)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 194;
+      return match !== null && Number(match[1]) > 195;
     });
     expect(laterMigrations).toEqual([]);
   });

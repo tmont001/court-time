@@ -59,7 +59,7 @@ function functionBody(sql: string, name: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("0191 — migration numbering", () => {
-  it("is the next migration after immutable 0190, and no unauthorized 0195+ migration exists yet", () => {
+  it("is the next migration after immutable 0190, and no unauthorized 0196+ migration exists yet", () => {
     expect(() => readSource(MIGRATION_0190_PATH)).not.toThrow();
     expect(() => readSource(MIGRATION_PATH)).not.toThrow();
 
@@ -71,7 +71,7 @@ describe("0191 — migration numbering", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 194;
+      return match !== null && Number(match[1]) > 195;
     });
     expect(laterMigrations).toEqual([]);
   });

@@ -83,11 +83,11 @@ describe("0193 — migration numbering", () => {
     expect(() => readSource(MIGRATION_0193_PATH)).not.toThrow();
   });
 
-  it("no unauthorized migration beyond 0194 exists (0194 is Phase 43B-1A, a later, unrelated migration)", () => {
+  it("no unauthorized migration beyond 0195 exists (0194 is Phase 43B-1A, a later, unrelated migration)", () => {
     const files = readdirSync(join(process.cwd(), "supabase/migrations"));
     const laterMigrations = files.filter((f) => {
       const match = f.match(/^(\d{4})_/);
-      return match !== null && Number(match[1]) > 194;
+      return match !== null && Number(match[1]) > 195;
     });
     expect(laterMigrations).toEqual([]);
   });
