@@ -8,6 +8,7 @@ import {
   removeReservationParticipant,
   addReservationGuest,
   removeReservationGuest,
+  mintReservationGuestWaiverInvitationAction,
   type ReservationRosterRow,
   type ReservationEligibleRosterMember,
 } from "./actions";
@@ -71,6 +72,15 @@ function mapRosterError(code: string): string {
     // never a raw database error reaching the user.
     case "capability_not_available":
       return "Self-service booking management is not available for this club.";
+    // Phase 43B-4B — mint_reservation_guest_waiver_invitation's own two
+    // fail-closed errors (0198): no current published Guest waiver, or
+    // the club currently has Guest waiver Required turned off.
+    case "no_current_guest_waiver":
+      return "No Guest waiver is currently published for this club.";
+    case "guest_waiver_not_required":
+      return "A Guest waiver isn't currently required at this club.";
+    case "reservation_guest_not_found":
+      return "That guest could not be found.";
     default:
       return "Something went wrong. Please try again.";
   }
@@ -95,6 +105,7 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
 
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
+  const [copiedKey, setCopiedKey]     = useState<string | null>(null);
 
   // ── Add club member ──────────────────────────────────────────────────
   const [addMemberOpen, setAddMemberOpen]         = useState(false);
@@ -225,6 +236,33 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
     loadRoster();
   }
 
+  // Phase 43B-4B — "Copy Waiver Link". Every successful call ROTATES the
+  // Guest slot's prior active invitation (0198's own locked semantics) —
+  // this is unconditional, not something this handler can opt out of.
+  // The URL is shown exactly once (never re-fetchable, since only the
+  // token's hash is stored) and is never logged.
+  async function handleCopyWaiverLink(row: ReservationRosterRow) {
+    const key = row.relationship_id;
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
+    setCopiedKey(null);
+
+    const result = await mintReservationGuestWaiverInvitationAction(reservationId, clubId, row.relationship_id);
+
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
+    if (result.error || !result.url) {
+      setRowErrors(prev => new Map(prev).set(key, mapRosterError(result.error ?? "")));
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(result.url);
+      setCopiedKey(key);
+    } catch {
+      setRowErrors(prev => new Map(prev).set(key, "Link created but couldn't copy automatically. Try again."));
+    }
+  }
+
   // ── Add guest ─────────────────────────────────────────────────────────
 
   async function handleAddGuest() {
@@ -333,6 +371,18 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
                     <span className="flex-1 min-w-0 text-sm text-gray-900 dark:text-gray-100 truncate">
                       {row.display_name}
                     </span>
+                    {!isCancelled && (
+                      <button
+                        type="button"
+                        aria-label={`Copy waiver link for guest ${row.display_name}`}
+                        title="Creating a new link replaces the previous Guest waiver link."
+                        disabled={isUpdating}
+                        onClick={() => handleCopyWaiverLink(row)}
+                        className={`shrink-0 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
+                      >
+                        {isUpdating ? "…" : copiedKey === row.relationship_id ? "Copied!" : "Copy Waiver Link"}
+                      </button>
+                    )}
                     {!isCancelled && (
                       <button
                         type="button"

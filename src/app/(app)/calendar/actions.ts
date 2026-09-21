@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser, getAuthProfile } from "@/lib/supabase/user";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
+import { generateGuestWaiverToken, hashGuestWaiverToken } from "@/lib/waivers/guestWaiverTokenServer";
+import { SITE_URL } from "@/lib/siteUrl";
 import { canOpenReservationDetail } from "@/lib/calendar/reservationAccess";
 import type { Database } from "@/lib/db/types";
 import { sendSms } from "@/lib/sms";
@@ -1573,6 +1575,44 @@ export async function removeReservationGuest(
 
   revalidatePath("/calendar");
   return { data: { guestId: data as unknown as string } };
+}
+
+// ---------------------------------------------------------------------------
+// mintReservationGuestWaiverInvitationAction
+// Phase 43B-4B — "Copy Waiver Link" for a reservation Guest. Authorization
+// is entirely delegated to mint_reservation_guest_waiver_invitation
+// (0198), which itself reuses _authorize_reservation_roster_access (0179)
+// verbatim — the exact same boundary add/removeReservationGuest above
+// already enforce. No widening here: this action adds no authorization
+// logic of its own.
+//
+// The raw token is generated and hashed here, server-side, and returned
+// to the browser exactly once — never sent to Postgres, never logged,
+// never persisted beyond this one response. Every call rotates (revokes)
+// the Guest slot's prior active invitation, per 0198's own locked
+// semantics — this action does not (and cannot) opt out of that.
+// ---------------------------------------------------------------------------
+export async function mintReservationGuestWaiverInvitationAction(
+  reservationId: string,
+  expectedClubId: string,
+  guestId: string,
+): Promise<{ url?: string; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const rawToken = generateGuestWaiverToken();
+  const tokenHash = hashGuestWaiverToken(rawToken);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("mint_reservation_guest_waiver_invitation", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_guest_id: guestId,
+    p_token_hash: tokenHash,
+  });
+  if (error) return { error: error.message };
+
+  return { url: `${SITE_URL}/waivers/guest/${rawToken}` };
 }
 
 // ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import {
   adminExpireOffer,
   adminRemoveGuest,
   adminAddGuest,
+  mintEventGuestWaiverInvitationAction,
   adminAddRosterParticipant,
   adminRemoveRosterParticipant,
   adminForceConfirmRosterParticipant,
@@ -23,6 +24,7 @@ import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import {
   ACTION_BUTTON_SECONDARY,
+  ACTION_BUTTON_SECONDARY_COMPACT,
   ACTION_BUTTON_DESTRUCTIVE_COMPACT,
   ACTION_BUTTON_POSITIVE_COMPACT,
   ACTION_BUTTON_INFO_COMPACT,
@@ -124,6 +126,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   const [error, setError]             = useState<string | null>(null);
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
+  const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
 
   // ── Payment state — Phase 34C ─────────────────────────────────────────────
   // get_event_roster does not expose the underlying event_participants.id
@@ -311,6 +314,34 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
       return;
     }
     loadRoster();
+  }
+
+  // Phase 43B-4B — "Copy Waiver Link" for an anonymous (non-roster) event
+  // Guest. Every successful call ROTATES the Guest slot's prior active
+  // invitation (0198's own locked semantics) — unconditional, not
+  // something this handler can opt out of. The URL is shown exactly once
+  // (never re-fetchable, since only the token's hash is stored) and is
+  // never logged.
+  async function handleCopyWaiverLink(row: RosterRow) {
+    const key = rowKey(row);
+    setRowUpdating(prev => new Set(prev).add(key));
+    setRowErrors(prev => { const next = new Map(prev); next.delete(key); return next; });
+    setCopiedLinkKey(null);
+
+    const result = await mintEventGuestWaiverInvitationAction(eventId, row.profile_id!, clubId);
+
+    setRowUpdating(prev => { const next = new Set(prev); next.delete(key); return next; });
+    if (result.error || !result.url) {
+      setRowErrors(prev => new Map(prev).set(key, result.error ?? "Could not create the waiver link. Please try again."));
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(result.url);
+      setCopiedLinkKey(key);
+    } catch {
+      setRowErrors(prev => new Map(prev).set(key, "Link created but couldn't copy automatically. Try again."));
+    }
   }
 
   // ── Add Member ────────────────────────────────────────────────────────────
@@ -888,10 +919,20 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
+                                  title="Creating a new link replaces the previous Guest waiver link."
+                                  onClick={() => handleCopyWaiverLink(row)}
+                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
+                                >
+                                  {isUpdating ? "…" : copiedLinkKey === key ? "Copied!" : "Copy Waiver Link"}
+                                </button>
+                              )}
+                              {isAdmin && !readOnly && (
+                                <button
+                                  disabled={isUpdating}
                                   onClick={() => handleAdminAction(key, () =>
                                     adminRemoveGuest(eventId, row.profile_id!, clubId)
                                   )}
-                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
+                                  className={`ml-2 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
                                   {isUpdating ? "…" : "Remove"}
                                 </button>
@@ -1004,10 +1045,20 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                               {isAdmin && !readOnly && (
                                 <button
                                   disabled={isUpdating}
+                                  title="Creating a new link replaces the previous Guest waiver link."
+                                  onClick={() => handleCopyWaiverLink(row)}
+                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
+                                >
+                                  {isUpdating ? "…" : copiedLinkKey === key ? "Copied!" : "Copy Waiver Link"}
+                                </button>
+                              )}
+                              {isAdmin && !readOnly && (
+                                <button
+                                  disabled={isUpdating}
                                   onClick={() => handleAdminAction(key, () =>
                                     adminRemoveGuest(eventId, row.profile_id!, clubId)
                                   )}
-                                  className={`ml-3 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
+                                  className={`ml-2 shrink-0 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
                                 >
                                   {isUpdating ? "…" : "Remove"}
                                 </button>

@@ -3493,6 +3493,48 @@ export type Database = {
         Args: { p_version_id: string };
         Returns: undefined;
       };
+      // Phase 43B-4A (0198) — Guest waiver invitation/acceptance. Hand-
+      // added: src/lib/db/types.ts was not regenerated against the live
+      // schema after 0198 was applied (no `supabase gen types` access in
+      // this environment) — these four entries mirror 0198's actual
+      // function signatures exactly. Reservation mint reuses the existing
+      // reservation-roster authorization boundary; event mint reuses the
+      // existing admin/pro/staff event-Guest boundary. resolve/accept are
+      // service_role ONLY.
+      mint_reservation_guest_waiver_invitation: {
+        Args: {
+          p_reservation_id: string;
+          p_expected_club_id: string;
+          p_guest_id: string;
+          p_token_hash: string;
+        };
+        Returns: string;
+      };
+      mint_event_guest_waiver_invitation: {
+        Args: { p_event_id: string; p_guest_id: string; p_token_hash: string };
+        Returns: string;
+      };
+      resolve_guest_waiver_invitation: {
+        Args: { p_token_hash: string };
+        Returns: {
+          invitation_id: string;
+          club_id: string;
+          club_name: string | null;
+          reservation_guest_id: string | null;
+          event_guest_id: string | null;
+          guest_display_name: string | null;
+          waiver_id: string | null;
+          current_version_id: string | null;
+          version_title: string | null;
+          is_required: boolean;
+          is_current_accepted: boolean;
+          accepted_at: string | null;
+        }[];
+      };
+      accept_guest_waiver: {
+        Args: { p_token_hash: string; p_waiver_version_id: string };
+        Returns: string;
+      };
       // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —
       // resolves only the caller's own claimed roster identity server-side.
       // No proxy-acceptance variant exists.

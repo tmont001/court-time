@@ -14,6 +14,8 @@ import {
   resolveBlockingCheckoutBeforeMutation,
 } from "@/lib/stripe/checkoutInvalidation";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
+import { generateGuestWaiverToken, hashGuestWaiverToken } from "@/lib/waivers/guestWaiverTokenServer";
+import { SITE_URL } from "@/lib/siteUrl";
 
 // Phase 34F-B — bounded batch resolution for Event-level fan-out guards
 // (update_event's material-edit path — mirrors calendar/actions.ts's own
@@ -153,6 +155,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   // event_participants — previously unmapped here, so it fell through to
   // the generic "An unexpected error occurred" fallback below.
   member_schedule_conflict:       "That member already has another confirmed commitment at that time.",
+  // Phase 43B-4B — mint_event_guest_waiver_invitation's own two fail-
+  // closed errors (0198): no current published Guest waiver, or the club
+  // currently has Guest waiver Required turned off.
+  no_current_guest_waiver:        "No Guest waiver is currently published for this club.",
+  guest_waiver_not_required:      "A Guest waiver isn't currently required at this club.",
 };
 
 function rpcError(error: { message?: string } | null): string {
@@ -633,6 +640,43 @@ export async function adminRemoveGuest(
 
   if (error) return { error: rpcError(error) };
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// mintEventGuestWaiverInvitationAction
+// Phase 43B-4B — "Copy Waiver Link" for an event Guest. Authorization is
+// entirely delegated to mint_event_guest_waiver_invitation (0198), which
+// itself reuses admin_add_guest/admin_remove_guest's CURRENT (0136) role
+// allowlist verbatim (admin/pro/staff via profiles.role/profiles.club_id)
+// — the exact same boundary adminAddGuest/adminRemoveGuest above already
+// enforce. No widening here, no Member access.
+//
+// The raw token is generated and hashed here, server-side, and returned
+// to the browser exactly once — never sent to Postgres, never logged,
+// never persisted beyond this one response. Every call rotates (revokes)
+// the Guest slot's prior active invitation, per 0198's own locked
+// semantics — this action does not (and cannot) opt out of that.
+// ---------------------------------------------------------------------------
+export async function mintEventGuestWaiverInvitationAction(
+  eventId: string,
+  guestId: string,
+  expectedClubId: string,
+): Promise<{ url?: string; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: ERROR_MESSAGES[guard.error] };
+
+  const rawToken = generateGuestWaiverToken();
+  const tokenHash = hashGuestWaiverToken(rawToken);
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("mint_event_guest_waiver_invitation", {
+    p_event_id: eventId,
+    p_guest_id: guestId,
+    p_token_hash: tokenHash,
+  });
+  if (error) return { error: rpcError(error) };
+
+  return { url: `${SITE_URL}/waivers/guest/${rawToken}` };
 }
 
 // ---------------------------------------------------------------------------
