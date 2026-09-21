@@ -12,6 +12,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   // Phase 34B
   currency_required:           "Currency is required.",
   invalid_currency:            "Currency must be a 3-letter code (e.g. USD).",
+  currency_locked_by_pricing:  "Currency can’t be changed after paid pricing has been configured or recorded.",
   invalid_rate:                "Rate must be zero or a positive amount.",
   // 0184
   rules_and_policies_too_long: "Club Rules & Policies must be 10,000 characters or fewer.",
@@ -35,6 +36,17 @@ const ERROR_MESSAGES: Record<string, string> = {
   version_not_draft:             "That version is already published.",
   waiver_not_found:              "No Member waiver has been created yet.",
   required_flag_required:        "Please choose whether the waiver is required.",
+  // Peak/Off-Peak Pricing — Checkpoint B: court rate period lifecycle
+  // (0200 RPCs upsert_court_rate_period / set_court_rate_period_active).
+  // name_required/invalid_rate above are reused verbatim (identical
+  // meaning to the Membership Types / court-rate cases already mapped).
+  days_required:                "Please select at least one day.",
+  invalid_day_of_week:          "Invalid day selection.",
+  invalid_time_range:           "End time must be after start time.",
+  rate_required:                "Enter a Member rate, a Non-Member rate, or both.",
+  rate_period_not_found:        "This rate period could not be found. Please refresh and try again.",
+  rate_period_overlap:          "This time overlaps another active rate period on one or more selected days.",
+  active_required:              "Please try again.",
 };
 
 // Phase 43B-2B — Guest Waiver authoring error copy. A SEPARATE map, not a
@@ -93,44 +105,43 @@ export async function updateClubName(
   return {};
 }
 
-// Phase 34B: club-wide currency + optional default court hourly rate.
-// Court pricing is opt-in — p_default_court_hourly_rate_cents may be null.
-// Phase 42C-2: widened to 0189's current 3-argument update_club_pricing.
-// The third argument is REQUIRED (no TypeScript default) — the caller must
-// always make an explicit decision about it, never let an omission
-// silently become NULL.
+// Peak/Off-Peak Pricing IA refinement: club currency and default court
+// rates used to be edited together on ONE form (PricingSettingsForm,
+// /admin/settings). Currency is club-wide configuration and stays in
+// Settings; default court rates moved to Admin -> Courts -> Court Rates,
+// alongside the per-court overrides and Peak/Off-Peak rate periods they
+// already lived next to conceptually. Both concerns still persist through
+// the SAME update_club_pricing RPC (0189) — persistClubPricing is the
+// ONE place that RPC is called from, so this relocation duplicates no
+// pricing-persistence logic. Each of the two exported entry points below
+// re-reads, fresh from club_settings, the ONE field it does not itself
+// own — exactly extending this function's own pre-existing fail-closed
+// preservation pattern for the Non-Member rate (below) to now also cover
+// currency, since a caller that cannot edit a field must never be able to
+// silently overwrite it with a stale value from its own page render.
 //
-// Correction pass: client-side hidden/stale state is not sufficient to
-// preserve the Non-Member rate while Memberships are off. Edge case: an
-// Admin edits the visible Non-Member field, does NOT save, then toggles
-// Memberships off (hiding it) before finally saving Pricing — the client
-// would still be holding the unsaved value in memory. Server-side defense
-// in depth: when memberships_enabled is currently false, this action
-// ignores whatever the client sent for the Non-Member rate and re-reads
-// the CURRENT stored value from club_settings itself, passing THAT to the
-// RPC instead. When memberships_enabled is true, the explicit client
-// value is used as-is, including NULL (an Admin may intentionally clear
-// the Non-Member rate while its field is visible). This is a read-only
-// preflight, not a new authorization check — the RPC's own admin/same-
-// club enforcement is unchanged and unduplicated here.
+// Correction pass (pre-existing, preserved): client-side hidden/stale
+// state is not sufficient to preserve the Non-Member rate while
+// Memberships are off. Edge case: an Admin edits the visible Non-Member
+// field, does NOT save, then toggles Memberships off (hiding it) before
+// finally saving — the client would still be holding the unsaved value in
+// memory. Server-side defense in depth: when memberships_enabled is
+// currently false, this ignores whatever the client sent for the
+// Non-Member rate and re-reads the CURRENT stored value from
+// club_settings itself, passing THAT to the RPC instead. When
+// memberships_enabled is true, the explicit client value is used as-is,
+// including NULL (an Admin may intentionally clear the Non-Member rate
+// while its field is visible). This is a read-only preflight, not a new
+// authorization check — the RPC's own admin/same-club enforcement is
+// unchanged and unduplicated here.
 //
-// Second correction pass: the club/settings resolution above must FAIL
-// CLOSED, not fail open. There is no longer a third state where an
-// unresolved club or a failed/empty settings read causes the client's
-// Non-Member value to be trusted — if the active club can't be resolved,
-// or the settings read errors or returns no row, this now returns an
-// error and never calls update_club_pricing at all. The RPC is only ever
-// reached once memberships_enabled has been read with certainty.
-//
-// UX polish pass: returns nonMemberRatePreserved (true when the OFF
-// branch above fired) and effectiveNonMemberRateCents (whatever was
-// actually sent to the RPC, and is therefore now the true stored value) —
-// so a stale caller (a Settings tab open in another window/tab, unaware
-// Memberships were just turned off) can tell its own typed Non-Member
-// value was NOT what got saved, resync its own local state to the
-// authoritative value, and show accurate feedback instead of a
-// misleading plain "Saved".
-export async function updateClubPricing(
+// Second correction pass (pre-existing, preserved): the club/settings
+// resolution must FAIL CLOSED, not fail open. There is no state where an
+// unresolved club or a failed/empty settings read causes a client's
+// stale value to be trusted — if the active club can't be resolved, or a
+// settings read errors or returns no row, this returns an error and
+// never calls update_club_pricing at all.
+async function persistClubPricing(
   currency: string,
   defaultCourtHourlyRateCents: number | null,
   defaultCourtHourlyRateNonMemberCents: number | null,
@@ -164,12 +175,145 @@ export async function updateClubPricing(
     p_default_court_hourly_rate_non_member_cents: nonMemberRateCents,
   });
   if (error) {
-    const key = error.message.match(/currency_required|invalid_currency|invalid_rate|not_authenticated|insufficient_role/)?.[0] ?? "";
+    const key = error.message.match(/currency_required|invalid_currency|currency_locked_by_pricing|invalid_rate|not_authenticated|insufficient_role/)?.[0] ?? "";
     return { error: ERROR_MESSAGES[key] ?? "Failed to save pricing settings." };
   }
 
   revalidatePath("/", "layout");
   return { nonMemberRatePreserved, effectiveNonMemberRateCents: nonMemberRateCents };
+}
+
+// /admin/settings' ClubCurrencyForm — the ONLY editable-currency surface
+// in the app. Never touches default court rates: always re-reads them
+// fresh from club_settings server-side (fail-closed, same posture as the
+// Non-Member preservation above) rather than trusting a caller that has
+// no rate fields to begin with.
+export async function updateClubCurrency(
+  currency: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const profile = await getAuthProfile();
+  const clubId = profile?.club_id;
+  if (!clubId) return { error: ERROR_MESSAGES.insufficient_role };
+
+  const { data: currentSettings, error: settingsError } = await supabase
+    .from("club_settings")
+    .select("default_court_hourly_rate_cents, default_court_hourly_rate_non_member_cents")
+    .eq("club_id", clubId)
+    .single();
+
+  if (settingsError || !currentSettings) {
+    return { error: ERROR_MESSAGES.settings_unavailable };
+  }
+
+  const result = await persistClubPricing(
+    currency,
+    currentSettings.default_court_hourly_rate_cents,
+    currentSettings.default_court_hourly_rate_non_member_cents,
+  );
+  return { error: result.error };
+}
+
+// Admin -> Courts -> Court Rates' DefaultCourtRatesForm — currency is NOT
+// editable here (no parameter for it at all). Always re-reads the CURRENT
+// authoritative currency fresh from club_settings server-side (fail
+// closed) rather than trusting whatever this page happened to render
+// with, so a stale Court Rates tab can never silently change the club's
+// currency merely by saving a rate.
+export async function updateDefaultCourtRates(
+  defaultCourtHourlyRateCents: number | null,
+  defaultCourtHourlyRateNonMemberCents: number | null,
+): Promise<{ error?: string; nonMemberRatePreserved?: boolean; effectiveNonMemberRateCents?: number | null }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const profile = await getAuthProfile();
+  const clubId = profile?.club_id;
+  if (!clubId) return { error: ERROR_MESSAGES.insufficient_role };
+
+  const { data: currentSettings, error: settingsError } = await supabase
+    .from("club_settings")
+    .select("currency")
+    .eq("club_id", clubId)
+    .single();
+
+  if (settingsError || !currentSettings) {
+    return { error: ERROR_MESSAGES.settings_unavailable };
+  }
+
+  return persistClubPricing(
+    currentSettings.currency,
+    defaultCourtHourlyRateCents,
+    defaultCourtHourlyRateNonMemberCents,
+  );
+}
+
+// Peak/Off-Peak Pricing — Checkpoint B: Admin-only Court Rate Period
+// lifecycle (Add/Edit). Wraps 0200's upsert_court_rate_period verbatim —
+// that RPC resolves club/role/overlap validation entirely server-side; no
+// authorization or pricing-precedence logic is duplicated here. p_id null
+// means Add, a real id means Edit — the same "null id = create" idiom
+// this file has no prior instance of, but matches upsert_court_rate_
+// period's own single-RPC Add/Edit design directly.
+export async function upsertCourtRatePeriod(
+  id: string | null,
+  name: string,
+  daysOfWeek: number[],
+  startsAtLocal: string,
+  endsAtLocal: string,
+  hourlyRateCents: number | null,
+  hourlyRateNonMemberCents: number | null,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("upsert_court_rate_period", {
+    p_id: id,
+    p_name: name,
+    p_days_of_week: daysOfWeek,
+    p_starts_at_local: startsAtLocal,
+    p_ends_at_local: endsAtLocal,
+    p_hourly_rate_cents: hourlyRateCents,
+    p_hourly_rate_non_member_cents: hourlyRateNonMemberCents,
+  });
+  if (error) {
+    const key = error.message.match(/not_authenticated|insufficient_role|name_required|days_required|invalid_day_of_week|invalid_time_range|invalid_rate|rate_required|rate_period_not_found|rate_period_overlap/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to save rate period." };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
+}
+
+// Peak/Off-Peak Pricing — Checkpoint B: Admin-only Court Rate Period
+// lifecycle (Deactivate/Reactivate). Wraps 0200's
+// set_court_rate_period_active verbatim — reactivation's overlap
+// re-validation happens entirely inside that RPC. No hard-delete action
+// exists in this file by design (locked v1 scope).
+export async function setCourtRatePeriodActive(
+  id: string,
+  active: boolean,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: ERROR_MESSAGES.not_authenticated };
+
+  const { error } = await supabase.rpc("set_court_rate_period_active", {
+    p_id: id,
+    p_active: active,
+  });
+  if (error) {
+    const key = error.message.match(/not_authenticated|insufficient_role|active_required|rate_period_not_found|rate_period_overlap/)?.[0] ?? "";
+    return { error: ERROR_MESSAGES[key] ?? "Failed to update rate period status." };
+  }
+
+  revalidatePath("/", "layout");
+  return {};
 }
 
 // Phase 42C-2: Admin-only Memberships on/off toggle. Deliberately its own

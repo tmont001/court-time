@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { updateClubPricing } from "./actions";
+import { updateDefaultCourtRates } from "@/app/(app)/admin/settings/actions";
 
 interface Props {
   currency:                             string;
@@ -11,34 +11,28 @@ interface Props {
   defaultCourtHourlyRateNonMemberCents: number | null;
 }
 
-// Phase 34B: club-wide currency + OPTIONAL default court hourly rate.
-// Court pricing is opt-in — leaving the rate blank means court booking
-// stays completely unpriced, with zero behavioral change for the club.
+// Peak/Off-Peak Pricing IA refinement: relocated from
+// /admin/settings/PricingSettingsForm.tsx, which used to combine these
+// rate fields with club currency editing on one form. Currency is
+// club-wide configuration and stays in Settings (ClubCurrencyForm); these
+// default court rate fields now live here, next to the per-court
+// overrides (CourtManagementList) and Peak/Off-Peak rate periods
+// (CourtRatePeriodsSection) they already conceptually belong with.
+// Persists through the SAME update_club_pricing RPC as before, via the
+// dedicated updateDefaultCourtRates Server Action (settings/actions.ts,
+// which owns all update_club_pricing persistence) — mirrors the existing
+// cross-directory Server Action import precedent already established by
+// MembershipsSection importing updateClubMembershipsEnabled from this
+// same settings/actions module. That action re-reads the CURRENT
+// authoritative currency fresh from the server on every save (currency is
+// not editable here, and never sent from this form at all), so a stale
+// render of this tab can never silently change the club's currency.
 //
-// Phase 42C-2: extended with an OPTIONAL Non-Member court hourly rate,
-// shown only while Memberships are on. The Non-Member field's value is
-// kept in its own component state (not re-derived from FormData on
-// submit) so hiding it when Memberships are off never clears what the
-// club already had stored — the same value that seeded this state on
-// mount is exactly what gets sent back on every submit, whether or not
-// the field itself was rendered this time.
-//
-// Correction pass: this client-side preservation is a UX convenience, NOT
-// the source of truth — updateClubPricing itself re-reads current
-// club_settings server-side and overrides whatever is sent here whenever
-// memberships_enabled is currently false (see its own comment), so a
-// stale/unsaved value sitting in this component's state can never
-// actually reach the database while Memberships are off.
-//
-// UX polish pass: on success, updateClubPricing's returned
-// nonMemberRatePreserved/effectiveNonMemberRateCents tell this stale-tab
-// case apart from a normal save. When preserved, the visible "Saved"
-// message would otherwise misleadingly suggest this tab's own typed
-// Non-Member value took effect — instead this resyncs the local state to
-// the authoritative stored value and shows an explicit message. Either
-// way, router.refresh() re-fetches this route's Server Component props
-// (membershipsEnabled included) so a stale tab stops looking stale.
-export default function PricingSettingsForm({
+// Phase 34B/42C-2 behavior preserved verbatim: court pricing remains
+// opt-in (blank = unpriced), the Non-Member field is gated behind
+// membershipsEnabled, its value is preserved server-side (not cleared)
+// while Memberships are off, and NULL vs 0 semantics are unchanged.
+export default function DefaultCourtRatesForm({
   currency,
   defaultCourtHourlyRateCents,
   membershipsEnabled,
@@ -57,7 +51,6 @@ export default function PricingSettingsForm({
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const currencyValue = (formData.get("currency") as string).trim().toUpperCase();
     const rateValue = (formData.get("default_court_hourly_rate_cents") as string).trim();
     const rateCents = rateValue === "" ? null : Math.round(parseFloat(rateValue) * 100);
 
@@ -69,7 +62,7 @@ export default function PricingSettingsForm({
 
     setStatus(null);
     startTransition(async () => {
-      const result = await updateClubPricing(currencyValue, rateCents, nonMemberRateCents);
+      const result = await updateDefaultCourtRates(rateCents, nonMemberRateCents);
       if (result.error) {
         setStatus({ type: "error", message: result.error });
       } else {
@@ -95,23 +88,9 @@ export default function PricingSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
-          Currency
-        </label>
-        <input
-          type="text"
-          name="currency"
-          defaultValue={currency}
-          maxLength={3}
-          required
-          className="ct-input uppercase"
-          style={{ width: "6rem" }}
-        />
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-          3-letter currency code (e.g. USD). Applies to every price in the club.
-        </p>
-      </div>
+      <p className="text-xs text-gray-400 dark:text-gray-500">
+        Rates shown in {currency}. Club currency is managed in Settings.
+      </p>
 
       <div>
         <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
@@ -131,8 +110,8 @@ export default function PricingSettingsForm({
         />
         <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
           {membershipsEnabled
-            ? "Default hourly rate charged to Members for a court reservation. Individual courts may still set their own rate on the Courts page."
-            : "Default hourly rate charged for a court reservation. Leave the default rate blank if your club does not charge for court reservations — individual courts may still set their own rate on the Courts page regardless."}
+            ? "Fallback hourly rate for Members when no court-specific or matching time-based Member rate applies. Individual courts may still set their own rate on the Courts tab."
+            : "Fallback hourly rate for court reservations when no court-specific or matching time-based rate applies. Leave blank if your club does not charge for court reservations — individual courts may still set their own rate on the Courts tab regardless."}
         </p>
       </div>
 
@@ -152,7 +131,8 @@ export default function PricingSettingsForm({
             className="ct-input"
           />
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-            Default hourly rate charged to Non-Members. Leave blank to use the standard/Member rate for everyone.
+            Fallback hourly rate for Non-Members when no court-specific or matching time-based Non-Member rate
+            applies. Leave blank to use your other configured pricing fallbacks.
           </p>
         </div>
       )}
