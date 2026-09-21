@@ -107,8 +107,7 @@ interface Props {
   // are separate product concepts, so a future cancellation-window/status
   // change to onMemberCancel must never silently remove this access.
   canManageOwnReservationRoster: boolean;
-  currency:                    string;
-  defaultCourtHourlyRateCents: number | null;
+  currency:       string;
   onClose:        () => void;
   onCancelled:    () => void;
   // Phase 30B1: fired after a successful admin edit.
@@ -186,7 +185,7 @@ function memberReservationCancelCopy(
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ReservationDetailSheet({
-  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, canManageOwnReservationRoster, currency, defaultCourtHourlyRateCents, onClose, onCancelled, onUpdated, onMemberCancel,
+  reservation, courts, clubTimezone, clubId, isAdmin, canSeeRosterIdentity, canManageMemberReservation, canManageOwnReservationRoster, currency, onClose, onCancelled, onUpdated, onMemberCancel,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -766,7 +765,6 @@ export default function ReservationDetailSheet({
           clubId={clubId}
           clubTimezone={clubTimezone}
           currency={currency}
-          defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setEditOpen(false)}
           onSaved={() => { setEditOpen(false); onUpdated(); }}
         />

@@ -2695,6 +2695,22 @@ export type Database = {
         Args: { p_id: string; p_active: boolean };
         Returns: undefined;
       };
+      preview_court_reservation_price: {
+        // 0201/0202 — Peak/Off-Peak Pricing, Checkpoint B/C. Read-only,
+        // canonical booking-price preview. p_roster_member_id omitted =
+        // self-service (caller's own roster identity); provided =
+        // Admin/Staff explicit-target, which then also requires
+        // p_expected_club_id. Actual row shape is cast explicitly at the
+        // one call site (calendar/actions.ts) rather than modeled here.
+        Args: {
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_roster_member_id?: string | null;
+          p_expected_club_id?: string | null;
+        };
+        Returns: undefined;
+      };
       set_event_member_joinable: {
         Args: { p_event_id: string; p_member_joinable: boolean };
         Returns: undefined;

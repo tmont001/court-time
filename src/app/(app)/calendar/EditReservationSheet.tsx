@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
-import PriceSummary from "@/components/PriceSummary";
-import { formatMoney } from "@/lib/money";
-import { updateMemberReservationAdmin } from "./actions";
+import ReservationPricePreview, { type ReservationPricePreviewStatus } from "./ReservationPricePreview";
+import { reservationPriceSourceLabel } from "@/lib/calendar/reservationPriceSourceLabel";
+import { updateMemberReservationAdmin, previewReservationPrice, type ReservationPriceQuote } from "./actions";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 
@@ -74,8 +74,7 @@ interface Props {
   courts:       Court[];
   clubId:       string;
   clubTimezone: string;
-  currency:                    string;
-  defaultCourtHourlyRateCents: number | null;
+  currency:     string;
   onClose:      () => void;
   onSaved:      () => void;
 }
@@ -121,6 +120,13 @@ function mapEditError(code: string | undefined, message: string): string {
   if (message === "roster_identity_required")     return "Select the Member this reservation is for.";
   if (message === "roster_member_not_found")      return "That Member could not be found in your club.";
   if (message === "member_schedule_conflict")     return "The member already has another confirmed commitment at that time.";
+  // Phase 34C (0143): _check_member_reassignment_allowed's own locked
+  // invariant — a booking's payment obligation must never be silently
+  // transferred, abandoned, or reassigned to a different Member. This
+  // maps the raw code to operator-facing copy only; it does not weaken,
+  // bypass, or auto-resolve the guard in any way.
+  if (message === "payment_resolution_required_before_member_reassignment")
+    return "Resolve this booking's payment before assigning it to a different Member.";
   if (code === "23P01")                           return "That court is already booked for the selected time.";
   // Phase 34E-A: this edit was about to change the priced amount or
   // reassign the Member while a Stripe Checkout Session was already open
@@ -140,7 +146,7 @@ function mapEditError(code: string | undefined, message: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function EditReservationSheet({
-  reservation, courts, clubId, clubTimezone, currency, defaultCourtHourlyRateCents, onClose, onSaved,
+  reservation, courts, clubId, clubTimezone, currency, onClose, onSaved,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -230,30 +236,91 @@ export default function EditReservationSheet({
     timeZone: clubTimezone, hour: "numeric", minute: "2-digit", hour12: true,
   });
 
-  // Phase 34B: client-side mirror of update_member_reservation's own A/B/C
-  // pricing invariants, purely for preview — the RPC is the actual
-  // authority and recomputes this itself server-side regardless of what
-  // this preview shows. Court changed -> resolve the DESTINATION court's
-  // CURRENT rate (a new pricing dimension). Duration-only changed ->
-  // preserve the EXISTING rate snapshot, recompute only the total. Neither
-  // changed -> preserve both exactly, never implying today's rate.
-  const pricePreview = useMemo(() => {
-    const courtChanged    = courtId !== reservation.court_id;
-    const durationChanged = duration !== durationOf(reservation);
+  // Peak/Off-Peak Pricing — Checkpoint C: this preview must truthfully
+  // reflect what update_member_reservation will ACTUALLY do — never a
+  // client-side reproduction of rate precedence. The locked backend
+  // invariants (unchanged, 0190/0200):
+  //   A. court OR starts_at OR roster Member changed -> a fresh rate is
+  //      resolved server-side (a start-time shift alone can cross a
+  //      rate-period boundary even with court/member/duration untouched —
+  //      this is why starts_at is its own trigger, not folded into
+  //      "duration changed").
+  //   B. ONLY ends_at/duration changed -> the EXISTING snapshotted
+  //      hourly_rate_cents is preserved and simply re-multiplied by the
+  //      new duration — no fresh resolution, so no RPC call is made for
+  //      this case; a canonical preview here would misrepresent what the
+  //      backend will actually keep.
+  //   C. metadata-only (nothing scheduling/Member-relevant changed) ->
+  //      both existing snapshots are shown completely unchanged.
+  // A/C never call the resolver themselves; only A calls the canonical
+  // preview_court_reservation_price RPC (via previewReservationPrice),
+  // and only when a target Member is actually selected — this sheet is
+  // always the Admin/Staff operator workflow (never self-service), so it
+  // always previews on behalf of an explicit, same-club roster Member.
+  const courtChanged    = courtId !== reservation.court_id;
+  const startsAtChanged = startsAt.getTime() !== new Date(reservation.starts_at).getTime();
+  const memberChanged   = selectedRosterMemberId !== (reservation.roster_member_id ?? "");
+  const durationChanged = duration !== durationOf(reservation);
+  const needsFreshPreview = courtChanged || startsAtChanged || memberChanged;
 
-    if (courtChanged) {
-      const destCourt = courts.find(c => c.id === courtId);
-      const rate = (destCourt?.hourly_rate_cents ?? defaultCourtHourlyRateCents) ?? null;
-      const total = rate !== null ? Math.round((rate * duration) / 60) : null;
-      return { rateCents: rate, totalCents: total };
+  const [previewStatus, setPreviewStatus] = useState<ReservationPricePreviewStatus>("idle");
+  const [previewQuote, setPreviewQuote]   = useState<ReservationPriceQuote | null>(null);
+
+  // Refreshes ONLY when a price-affecting input changes (court/start/
+  // Member) — never for duration alone (case B, above) and never for
+  // unrelated metadata (format/player count/guest names/notes). The
+  // `cancelled` closure-flag guard matches this codebase's existing
+  // convention for async effects tied to state changes, so a slower,
+  // now-superseded response can never overwrite a newer selection.
+  useEffect(() => {
+    if (!needsFreshPreview || !selectedRosterMemberId) {
+      setPreviewStatus("idle");
+      setPreviewQuote(null);
+      return;
     }
-    if (durationChanged) {
-      const rate = reservation.hourly_rate_cents;
-      const total = rate !== null ? Math.round((rate * duration) / 60) : null;
-      return { rateCents: rate, totalCents: total };
-    }
-    return { rateCents: reservation.hourly_rate_cents, totalCents: reservation.price_amount_cents };
-  }, [courtId, duration, courts, defaultCourtHourlyRateCents, reservation]);
+
+    let cancelled = false;
+    setPreviewStatus("loading");
+
+    (async () => {
+      const result = await previewReservationPrice({
+        p_court_id:         courtId,
+        p_starts_at:        startsAt.toISOString(),
+        p_ends_at:          endsAt.toISOString(),
+        p_roster_member_id: selectedRosterMemberId,
+        expectedClubId:     clubId,
+      });
+      if (cancelled) return;
+      if (result.error || !result.data) {
+        setPreviewStatus("error");
+        setPreviewQuote(null);
+        return;
+      }
+      setPreviewQuote(result.data);
+      setPreviewStatus("ready");
+    })();
+
+    return () => { cancelled = true; };
+  }, [needsFreshPreview, courtId, startsAt, endsAt, selectedRosterMemberId, clubId]);
+
+  // Case B: preserve the EXISTING snapshot, re-multiply only. Case C:
+  // preserve both snapshots exactly, unchanged. Neither ever calls the
+  // resolver — both are synchronous, always "ready".
+  const preservedTotalCents = durationChanged
+    ? (reservation.hourly_rate_cents !== null ? Math.round((reservation.hourly_rate_cents * duration) / 60) : null)
+    : reservation.price_amount_cents;
+
+  const displayStatus:     ReservationPricePreviewStatus = needsFreshPreview ? previewStatus : "ready";
+  const displayTotalCents  = needsFreshPreview ? (previewQuote?.priceAmountCents ?? null) : preservedTotalCents;
+  const displayRateCents   = needsFreshPreview ? (previewQuote?.hourlyRateCents ?? null) : reservation.hourly_rate_cents;
+  // No source label for the preserved-snapshot cases (B/C) — the
+  // reservation row does not store WHICH source originally supplied its
+  // rate, so this deliberately shows no annotation rather than guessing
+  // or re-deriving one client-side.
+  const displaySourceLabel = needsFreshPreview
+    ? reservationPriceSourceLabel(previewQuote?.appliedRateSource ?? null, previewQuote?.appliedRatePeriodName ?? null)
+    : null;
+  const displayCurrency = needsFreshPreview ? (previewQuote?.currency ?? currency) : currency;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -552,12 +619,13 @@ export default function EditReservationSheet({
           />
         </div>
 
-        <PriceSummary
-          label="Price"
-          amountCents={pricePreview.totalCents}
-          currency={currency}
+        <ReservationPricePreview
+          status={displayStatus}
+          totalCents={displayTotalCents}
+          hourlyRateCents={displayRateCents}
+          sourceLabel={displaySourceLabel}
+          currency={displayCurrency}
           viewer="operator"
-          breakdown={pricePreview.rateCents !== null ? `${formatMoney(pricePreview.rateCents, currency)}/hour × ${duration} min` : null}
         />
 
         {error && <p className="text-xs text-red-500">{error}</p>}
