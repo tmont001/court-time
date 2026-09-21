@@ -44,13 +44,20 @@ function membershipLine(
   return `Membership: ${statusLabel}${membershipTypeName ? ` · ${membershipTypeName}` : ""}`;
 }
 
-// Phase 43B-1B — Member waiver compliance pill (0194's bulk read). Reuses
-// the exact same pill vocabulary as the "Club status" badge above (inline-
-// block, rounded, px-2 py-0.5, text-xs font-medium) — no new design
-// system. Amber for both "needs acceptance" states (never red — this is
-// not an error/blocking condition per the locked product decision). Court
-// Time records acceptance here, never a legal signature — the labels
-// below must never use that other word for it.
+// Phase 43B-1B (0194's bulk read), consolidated by Phase 43B-5A's locked
+// product decision — reuses the exact same pill vocabulary as the "Club
+// status" badge above (inline-block, rounded, px-2 py-0.5, text-xs font-
+// medium) — no new design system. Amber for "needs acceptance" (never
+// red — this is not an error/blocking condition). Court Time records
+// acceptance here, never a legal signature — the labels below must never
+// use that other word for it.
+//
+// Exactly three DISPLAYED states: Accepted / Needs acceptance / Not
+// required. never_accepted and outdated are two distinct BACKEND facts
+// (0194's own vocabulary) but share ONE label/style here — "Needs
+// acceptance" covers both "never accepted any version" and "accepted an
+// older version," per the locked spec. Never expose waiver_version_id or
+// "Version N" anywhere in this pill.
 const WAIVER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   current: {
     label: "Accepted",
@@ -61,7 +68,7 @@ const WAIVER_STATUS_CONFIG: Record<string, { label: string; className: string }>
     className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
   },
   outdated: {
-    label: "Updated waiver",
+    label: "Needs acceptance",
     className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
   },
   not_required: {
@@ -1470,17 +1477,15 @@ function ProfileCard({
             {membershipLine(m.membership_status, m.membership_type_name)}
           </p>
         )}
-        {/* Phase 43B-1B — omitted entirely when the club has no Member
-            waiver document at all (hasMemberWaiverConfigured), when this
-            identity has no compliance row (waiverStatus null), AND
-            (locked polish decision) when status is not_required — a
-            configured-but-not-required waiver is deliberately silent
-            noise on this list view. Member Detail is unaffected — it
-            still shows Not required explicitly (richer, single-Member
-            view, not a roster scan). This is a display suppression only;
-            waiver_configured vs. status=not_required remain two distinct
-            backend facts, untouched. */}
-        {hasMemberWaiverConfigured && m.waiverStatus && m.waiverStatus.status !== "not_required" && (
+        {/* Phase 43B-1B, revised by 43B-5A's locked spec — omitted only
+            when the club has no Member waiver document at all
+            (hasMemberWaiverConfigured) or this identity has no compliance
+            row (waiverStatus null). Not required is now shown explicitly
+            here too (previously suppressed on this list view) — the
+            locked spec now treats Accepted/Needs acceptance/Not required
+            as three equally-relevant states on the roster, not two. This
+            is display only; the underlying compliance data is unchanged. */}
+        {hasMemberWaiverConfigured && m.waiverStatus && (
           <div className="mt-0.5 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
             <WaiverPill status={m.waiverStatus.status} />
@@ -1724,12 +1729,12 @@ function RosterCard({
             {membershipLine(rm.membership_status, rm.membership_type_name)}
           </p>
         )}
-        {/* Phase 43B-1B — same visibility rule as ProfileCard's pill:
-            omitted entirely when no Member waiver document exists, when
-            this identity has no compliance row, or when status is
-            not_required (locked polish decision — Member Detail still
-            shows Not required explicitly; this list view stays quiet). */}
-        {hasMemberWaiverConfigured && rm.waiverStatus && rm.waiverStatus.status !== "not_required" && (
+        {/* Phase 43B-1B, revised by 43B-5A — same visibility rule as
+            ProfileCard's pill above: omitted only when no Member waiver
+            document exists at all, or this identity has no compliance
+            row. Not required is now shown explicitly (see that card's
+            own comment for the full reasoning). */}
+        {hasMemberWaiverConfigured && rm.waiverStatus && (
           <div className="mt-0.5 flex items-center gap-1">
             <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
             <WaiverPill status={rm.waiverStatus.status} />

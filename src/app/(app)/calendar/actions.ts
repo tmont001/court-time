@@ -1450,6 +1450,15 @@ export interface ReservationRosterRow {
   reservation_status: string;
 }
 
+// Phase 43B-5B — one row per active reservation Guest, from
+// get_reservation_guest_waiver_compliance (0199). Shared shape with the
+// Event equivalent below.
+export interface GuestWaiverComplianceRow {
+  relationship_id:   string;
+  waiver_configured: boolean;
+  status:            string;
+}
+
 export interface ReservationEligibleRosterMember {
   roster_member_id:     string;
   display_name:         string;
@@ -1473,6 +1482,30 @@ export async function getReservationRoster(
   if (error) return { error: error.message };
 
   return { data: (data ?? []) as ReservationRosterRow[] };
+}
+
+// Phase 43B-5B — set-based Guest waiver compliance for this reservation's
+// active Guests, via get_reservation_guest_waiver_compliance (0199).
+// Called ONCE per roster load, never per-Guest (no N+1). Same
+// assertActiveClub preflight as getReservationRoster — the RPC's own
+// _authorize_reservation_roster_access call is the real authorization,
+// unchanged from that RPC.
+export async function getReservationGuestWaiverComplianceAction(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: GuestWaiverComplianceRow[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_reservation_guest_waiver_compliance", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  return { data: (data ?? []) as GuestWaiverComplianceRow[] };
 }
 
 export async function getReservationEligibleRosterMembers(

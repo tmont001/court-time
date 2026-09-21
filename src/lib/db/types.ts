@@ -3535,6 +3535,25 @@ export type Database = {
         Args: { p_token_hash: string; p_waiver_version_id: string };
         Returns: string;
       };
+      // Phase 43B-5B (0199) — hand-added, same reason as the 0198 entries
+      // above: no `supabase gen types` access in this environment. One
+      // row per active Guest slot in the given Reservation/Event.
+      get_reservation_guest_waiver_compliance: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: {
+          relationship_id: string;
+          waiver_configured: boolean;
+          status: string;
+        }[];
+      };
+      get_event_guest_waiver_compliance: {
+        Args: { p_event_id: string };
+        Returns: {
+          relationship_id: string;
+          waiver_configured: boolean;
+          status: string;
+        }[];
+      };
       // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —
       // resolves only the caller's own claimed roster identity server-side.
       // No proxy-acceptance variant exists.

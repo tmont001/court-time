@@ -101,21 +101,23 @@ describe("MembersClient.tsx — waiver indicator hidden when not configured, sho
     expect(occurrences.length).toBeGreaterThanOrEqual(2); // claimed card + unclaimed roster card
   });
 
-  // Phase 43B-1B polish — locked product decision: on /admin/members
-  // specifically (never Member Detail), a not_required roster row renders
-  // NO Waiver line/pill at all. waiver_configured=false (no document) and
-  // waiver_configured=true+status=not_required (document exists, not
-  // required) are still two distinct backend facts — this is a pure UI
-  // suppression on top of that unchanged data model, not a collapse of it.
-  it("the claimed-Member card's waiver pill also excludes status === 'not_required'", () => {
+  // Phase 43B-5A — supersedes 43B-1B's original "not_required roster row
+  // renders no pill" polish decision. Locked spec now treats Accepted /
+  // Needs acceptance / Not required as three equally-relevant states on
+  // the roster list — Not required is shown explicitly, matching Member
+  // Detail's own existing posture. waiver_configured=false (no document
+  // at all) is still the ONLY case that omits the pill entirely.
+  it("the claimed-Member card's waiver pill is gated ONLY on hasMemberWaiverConfigured + waiverStatus existing — no status-value exclusion", () => {
     const idx = s.indexOf("Waiver</span>");
     expect(idx).toBeGreaterThan(-1);
     const gateLine = s.slice(s.lastIndexOf("{hasMemberWaiverConfigured", idx), idx);
-    expect(gateLine).toMatch(/waiverStatus\.status !== "not_required"/);
+    expect(gateLine).not.toMatch(/!== "not_required"/);
+    expect(gateLine).toMatch(/hasMemberWaiverConfigured\s*&&\s*\w+\.waiverStatus\s*&&/);
   });
 
-  it("BOTH cards (claimed Member and unclaimed roster) carry the not_required exclusion — not just one of them, and it's additive on top of the unchanged hasMemberWaiverConfigured/waiverStatus-existence checks", () => {
-    const gateLines = s.match(/hasMemberWaiverConfigured\s*&&\s*\w+\.waiverStatus\s*&&\s*\w+\.waiverStatus\.status\s*!==\s*"not_required"/g) ?? [];
+  it("BOTH cards (claimed Member and unclaimed roster) render the pill for every status value, including not_required — no per-status exclusion on either card", () => {
+    expect(s).not.toMatch(/waiverStatus\.status\s*!==\s*"not_required"/);
+    const gateLines = s.match(/hasMemberWaiverConfigured\s*&&\s*\w+\.waiverStatus\s*&&\s*\(/g) ?? [];
     expect(gateLines.length).toBe(2);
   });
 });
@@ -137,10 +139,14 @@ describe("MembersClient.tsx — status presentation mapping", () => {
     expect(block).toMatch(/amber/);
   });
 
-  it("outdated -> 'Updated waiver', amber classes", () => {
+  // Phase 43B-5A locked spec: "Needs acceptance ... includes both never
+  // accepted and accepted an older version" — never_accepted and outdated
+  // are distinct 0194 backend facts but share ONE label/style here.
+  it("outdated -> 'Needs acceptance' (same label as never_accepted), amber classes", () => {
     const idx = s.indexOf("outdated:");
     const block = s.slice(idx, idx + 200);
-    expect(block).toContain("Updated waiver");
+    expect(block).toContain("Needs acceptance");
+    expect(block).not.toContain("Updated waiver");
     expect(block).toMatch(/amber/);
   });
 

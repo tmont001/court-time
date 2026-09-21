@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   getReservationRoster,
   getReservationEligibleRosterMembers,
+  getReservationGuestWaiverComplianceAction,
   addReservationParticipant,
   removeReservationParticipant,
   addReservationGuest,
@@ -11,6 +12,7 @@ import {
   mintReservationGuestWaiverInvitationAction,
   type ReservationRosterRow,
   type ReservationEligibleRosterMember,
+  type GuestWaiverComplianceRow,
 } from "./actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import {
@@ -96,12 +98,51 @@ function eligibleOptionLabel(m: ReservationEligibleRosterMember): string {
   return `${m.display_name}${roleSuffix}${holderSuffix}`;
 }
 
+// Phase 43B-5B — same three-state vocabulary/visual treatment established
+// on /admin/members (43B-5A) for Member compliance: never_accepted and
+// outdated share one "Needs acceptance" label; no red (informational, not
+// an error/blocking condition); never exposes waiver_version_id/
+// "Version N". Kept local to this file rather than importing from
+// MembersClient.tsx — same small-duplication precedent this waiver UI
+// already established (MemberWaiverSection/GuestWaiverSection).
+const GUEST_WAIVER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  current: {
+    label: "Accepted",
+    className: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400",
+  },
+  never_accepted: {
+    label: "Needs acceptance",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  outdated: {
+    label: "Needs acceptance",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  not_required: {
+    label: "Not required",
+    className: "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400",
+  },
+};
+
+function GuestWaiverPill({ status }: { status: string }) {
+  const config = GUEST_WAIVER_STATUS_CONFIG[status];
+  if (!config) return null;
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>
+      {config.label}
+    </span>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────
 
 export default function ReservationRosterSection({ reservationId, clubId, isCancelled }: Props) {
   const [rows, setRows]       = useState<ReservationRosterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
+  // Phase 43B-5B — keyed by relationship_id (reservation_guests.id) only;
+  // never merged onto participant rows.
+  const [guestCompliance, setGuestCompliance] = useState<Map<string, GuestWaiverComplianceRow>>(new Map());
 
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
@@ -131,6 +172,14 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
         setRows(data ?? []);
       }
       setLoading(false);
+    });
+    // Phase 43B-5B — loaded alongside the roster, set-based (one call for
+    // every Guest in this reservation, never per-Guest). Informational
+    // only: a failure here silently leaves the Waiver indicator hidden
+    // (compliance map stays empty) rather than surfacing a second error
+    // banner over the roster itself, which is not blocked by this at all.
+    getReservationGuestWaiverComplianceAction(reservationId, clubId).then(({ data }) => {
+      setGuestCompliance(new Map((data ?? []).map((row) => [row.relationship_id, row])));
     });
   }
 
@@ -366,8 +415,10 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
               {guests.map(row => {
                 const isUpdating = rowUpdating.has(row.relationship_id);
                 const rowError   = rowErrors.get(row.relationship_id);
+                const compliance = guestCompliance.get(row.relationship_id);
                 return (
-                  <div key={row.relationship_id} className="py-1.5 flex items-center gap-2">
+                  <div key={row.relationship_id} className="py-1.5">
+                  <div className="flex items-center gap-2">
                     <span className="flex-1 min-w-0 text-sm text-gray-900 dark:text-gray-100 truncate">
                       {row.display_name}
                     </span>
@@ -394,7 +445,20 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
                         {isUpdating ? "…" : "Remove"}
                       </button>
                     )}
-                    {rowError && <p className="text-xs text-red-500 mt-1">{rowError}</p>}
+                  </div>
+                  {/* Phase 43B-5B — hidden entirely when the club has no
+                      current Guest waiver (waiver_configured=false),
+                      matching the 43B-5A Member-compliance pattern.
+                      Shown for every other status, including
+                      not_required. Informational only — no action, no
+                      enforcement. */}
+                  {compliance && compliance.waiver_configured && (
+                    <div className="mt-0.5 flex items-center gap-1">
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
+                      <GuestWaiverPill status={compliance.status} />
+                    </div>
+                  )}
+                  {rowError && <p className="text-xs text-red-500 mt-1">{rowError}</p>}
                   </div>
                 );
               })}

@@ -11,6 +11,7 @@ import {
   adminRemoveGuest,
   adminAddGuest,
   mintEventGuestWaiverInvitationAction,
+  getEventGuestWaiverComplianceAction,
   adminAddRosterParticipant,
   adminRemoveRosterParticipant,
   adminForceConfirmRosterParticipant,
@@ -19,6 +20,7 @@ import {
   markAttendance,
   markAttendanceRosterParticipant,
   markAttendanceGuest,
+  type GuestWaiverComplianceRow,
 } from "@/app/(app)/admin/events/actions";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
@@ -66,6 +68,40 @@ interface MemberOption {
 // event_participants). Every row has at least one of the two.
 function rowKey(row: RosterRow): string {
   return row.profile_id ?? row.roster_member_id ?? "";
+}
+
+// Phase 43B-5B — same three-state vocabulary/visual treatment established
+// on /admin/members (43B-5A) and the Reservation Guest roster. Kept as a
+// local duplicate rather than a shared import — this waiver UI's own
+// established small-duplication precedent (MemberWaiverSection/
+// GuestWaiverSection).
+const GUEST_WAIVER_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  current: {
+    label: "Accepted",
+    className: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400",
+  },
+  never_accepted: {
+    label: "Needs acceptance",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  outdated: {
+    label: "Needs acceptance",
+    className: "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400",
+  },
+  not_required: {
+    label: "Not required",
+    className: "bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400",
+  },
+};
+
+function GuestWaiverPill({ status }: { status: string }) {
+  const config = GUEST_WAIVER_STATUS_CONFIG[status];
+  if (!config) return null;
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${config.className}`}>
+      {config.label}
+    </span>
+  );
 }
 
 // Minimal participant shape needed by parent components to update occupancy
@@ -127,6 +163,9 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
   const [rowUpdating, setRowUpdating] = useState<Set<string>>(new Set());
   const [rowErrors, setRowErrors]     = useState<Map<string, string>>(new Map());
   const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
+  // Phase 43B-5B — keyed by relationship_id (event_guests.id) only; never
+  // merged onto roster-linked participant rows.
+  const [guestCompliance, setGuestCompliance] = useState<Map<string, GuestWaiverComplianceRow>>(new Map());
 
   // ── Payment state — Phase 34C ─────────────────────────────────────────────
   // get_event_roster does not expose the underlying event_participants.id
@@ -229,6 +268,19 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
         }
         setLoading(false);
       });
+    // Phase 43B-5B — loaded alongside the roster, set-based (one call for
+    // every Guest in this event, never per-Guest). Informational only: a
+    // failure here silently leaves the Waiver indicator hidden (map stays
+    // empty) rather than surfacing a second error banner over the roster
+    // itself, which is not blocked by this at all. get_event_guest_
+    // waiver_compliance is admin/pro ONLY (mirrors get_event_roster's own
+    // CURRENT read boundary — narrower than the admin/pro/staff mutation
+    // boundary Remove/Copy Link use); a Staff caller's own get_event_
+    // roster call already fails first in that case, so this call simply
+    // never resolves any compliance data for them either.
+    getEventGuestWaiverComplianceAction(eventId, clubId).then(({ data }) => {
+      setGuestCompliance(new Map((data ?? []).map((row) => [row.relationship_id, row])));
+    });
   }
 
   useEffect(() => {
@@ -1031,6 +1083,7 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                         const key        = rowKey(row);
                         const isUpdating = rowUpdating.has(key);
                         const rowError   = rowErrors.get(key);
+                        const compliance = guestCompliance.get(key);
                         return (
                           <div
                             key={key}
@@ -1064,6 +1117,22 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
                                 </button>
                               )}
                             </div>
+
+                            {/* Phase 43B-5B — true participation-scoped
+                                Guest rows only (never roster-linked "No
+                                Account Yet" rows). Hidden entirely when
+                                the club has no current Guest waiver
+                                (waiver_configured=false), matching the
+                                43B-5A Member-compliance pattern. Shown for
+                                every other status, including not_required.
+                                Informational only — no action, no
+                                enforcement. */}
+                            {compliance && compliance.waiver_configured && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <span className="text-[10px] text-gray-400 dark:text-gray-500">Waiver</span>
+                                <GuestWaiverPill status={compliance.status} />
+                              </div>
+                            )}
 
                             {/* Phase 33E2: Guest attendance — same UX pattern as Member rows. */}
                             {readOnly ? (

@@ -17,6 +17,18 @@ import { createPrivilegedClient } from "@/lib/supabase/privileged";
 import { generateGuestWaiverToken, hashGuestWaiverToken } from "@/lib/waivers/guestWaiverTokenServer";
 import { SITE_URL } from "@/lib/siteUrl";
 
+// Phase 43B-5B — same shape as calendar/actions.ts's own
+// GuestWaiverComplianceRow, kept as a local duplicate rather than a
+// cross-file import — this file's own existing convention (see
+// resolveAllBlockingEventCheckouts's header comment below: "mirrors
+// calendar/actions.ts's own identical helper... not re-exported from
+// there to avoid a cross-file 'use server' re-export").
+export interface GuestWaiverComplianceRow {
+  relationship_id:   string;
+  waiver_configured: boolean;
+  status:            string;
+}
+
 // Phase 34F-B — bounded batch resolution for Event-level fan-out guards
 // (update_event's material-edit path — mirrors calendar/actions.ts's own
 // identical helper for cancel_event exactly; not re-exported from there to
@@ -640,6 +652,35 @@ export async function adminRemoveGuest(
 
   if (error) return { error: rpcError(error) };
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// getEventGuestWaiverComplianceAction
+// Phase 43B-5B — set-based Guest waiver compliance for this event's active
+// Guests, via get_event_guest_waiver_compliance (0199). Called ONCE per
+// roster load, never per-Guest (no N+1). That RPC's own role check
+// (admin/pro ONLY — mirrors get_event_roster's CURRENT boundary exactly,
+// per this checkpoint's own authorization audit; deliberately narrower
+// than admin_add_guest/admin_remove_guest's admin/pro/staff mutation
+// boundary) is the real authorization — this action adds none of its own
+// beyond the same assertActiveClub preflight every action here already
+// uses.
+// ---------------------------------------------------------------------------
+export async function getEventGuestWaiverComplianceAction(
+  eventId: string,
+  expectedClubId: string,
+): Promise<{ data?: GuestWaiverComplianceRow[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_event_guest_waiver_compliance", {
+    p_event_id: eventId,
+  });
+  if (error) return { error: rpcError(error) };
+
+  return { data: (data ?? []) as GuestWaiverComplianceRow[] };
 }
 
 // ---------------------------------------------------------------------------
