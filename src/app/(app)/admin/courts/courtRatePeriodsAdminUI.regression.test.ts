@@ -351,3 +351,37 @@ describe("I. Relocation from /admin/settings to /admin/courts introduced no new 
     }
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// J. Final pre-merge polish — start-time pricing rule explained in-context
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("J. Start-time pricing rule is explained in-context, with no new control/modal/tooltip", () => {
+  const section = readSource(SECTION_PATH);
+
+  it("states the exact required explanation of the locked start-time-only pricing rule", () => {
+    expect(section).toContain(
+      "Rates are determined by the reservation start time. The selected rate applies to the entire\n        reservation.",
+    );
+  });
+
+  it("is placed alongside the section's own existing precedence/fallback copy, not gated behind any new UI control", () => {
+    const precedenceIdx = section.indexOf("Court Time\n        otherwise follows your existing pricing fallbacks.");
+    const startTimeIdx = section.indexOf("Rates are determined by the reservation start time.");
+    expect(precedenceIdx).toBeGreaterThan(-1);
+    expect(startTimeIdx).toBeGreaterThan(precedenceIdx);
+    // Both live in the same plain <p> pattern as the rest of this
+    // component's helper copy — no modal, dialog, or tooltip wrapper.
+    expect(section).not.toMatch(/<Modal|<Dialog|Tooltip|title=".*start time/i);
+  });
+
+  it("does not change or split pricing by duration — no blended/proportional pricing language or logic is introduced", () => {
+    expect(section).not.toMatch(/blend|proportional|split.{0,20}rate|partial.{0,20}rate/i);
+  });
+
+  it("adds no new settings control, checkbox, or toggle for this explanation", () => {
+    const startTimeIdx = section.indexOf("Rates are determined by the reservation start time.");
+    const surrounding = section.slice(Math.max(0, startTimeIdx - 200), startTimeIdx + 200);
+    expect(surrounding).not.toMatch(/<input|<select|<button/);
+  });
+});

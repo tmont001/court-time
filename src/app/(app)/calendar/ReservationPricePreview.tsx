@@ -29,6 +29,12 @@ interface Props {
   totalCents:      number | null;
   hourlyRateCents: number | null;
   sourceLabel:     string | null;
+  // Final pre-merge polish: which pricing class ACTUALLY supplied the
+  // rate ("Member rate" / "Non-Member rate"), derived by the caller via
+  // reservationPriceClassLabel(appliedRateSource) — never re-derived here
+  // from membership_pricing_class. Optional/null in the edit sheet's
+  // preserved-snapshot cases (B/C), where no source is known at all.
+  rateClassLabel?: string | null;
   currency:        string;
   // Locked NULL-price contract (corrected after Checkpoint C review): a
   // NULL total always renders a truthful, neutral message — never an
@@ -45,7 +51,7 @@ interface Props {
 }
 
 export default function ReservationPricePreview({
-  status, totalCents, hourlyRateCents, sourceLabel, currency, viewer, className,
+  status, totalCents, hourlyRateCents, sourceLabel, rateClassLabel, currency, viewer, className,
 }: Props) {
   if (status === "idle") return null;
 
@@ -87,7 +93,9 @@ export default function ReservationPricePreview({
 
   const breakdown =
     sourceLabel && hourlyRateCents !== null
-      ? `${sourceLabel} · ${formatMoney(hourlyRateCents, currency)}/hr`
+      ? [sourceLabel, rateClassLabel, `${formatMoney(hourlyRateCents, currency)}/hr`]
+          .filter(Boolean)
+          .join(" · ")
       : null;
 
   return (

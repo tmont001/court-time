@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import ReservationPricePreview, { type ReservationPricePreviewStatus } from "./ReservationPricePreview";
-import { reservationPriceSourceLabel } from "@/lib/calendar/reservationPriceSourceLabel";
+import { reservationPriceSourceLabel, reservationPriceClassLabel } from "@/lib/calendar/reservationPriceSourceLabel";
 import { updateMemberReservationAdmin, previewReservationPrice, type ReservationPriceQuote } from "./actions";
 import { localDateTimeToUTC } from "@/lib/timezone";
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
@@ -320,6 +320,12 @@ export default function EditReservationSheet({
   const displaySourceLabel = needsFreshPreview
     ? reservationPriceSourceLabel(previewQuote?.appliedRateSource ?? null, previewQuote?.appliedRatePeriodName ?? null)
     : null;
+  // Same preserved-snapshot exception as displaySourceLabel above: cases
+  // B/C never fetch a fresh applied_rate_source, so there is nothing to
+  // derive a class label from.
+  const displayRateClassLabel = needsFreshPreview
+    ? reservationPriceClassLabel(previewQuote?.appliedRateSource ?? null)
+    : null;
   const displayCurrency = needsFreshPreview ? (previewQuote?.currency ?? currency) : currency;
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -624,6 +630,7 @@ export default function EditReservationSheet({
           totalCents={displayTotalCents}
           hourlyRateCents={displayRateCents}
           sourceLabel={displaySourceLabel}
+          rateClassLabel={displayRateClassLabel}
           currency={displayCurrency}
           viewer="operator"
         />

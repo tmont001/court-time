@@ -18,7 +18,7 @@ import CalendarFab from "./CalendarFab";
 import { createReservation, adminCreateMemberReservation, cancelMemberReservationConfirmed, getReservationDeepLinkDetail, previewReservationPrice, type ReservationPriceQuote } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import ReservationPricePreview, { type ReservationPricePreviewStatus } from "./ReservationPricePreview";
-import { reservationPriceSourceLabel } from "@/lib/calendar/reservationPriceSourceLabel";
+import { reservationPriceSourceLabel, reservationPriceClassLabel } from "@/lib/calendar/reservationPriceSourceLabel";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import {
   minutesSinceGridStart,
@@ -2519,6 +2519,7 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                 bookingPreviewQuote?.appliedRateSource ?? null,
                 bookingPreviewQuote?.appliedRatePeriodName ?? null,
               )}
+              rateClassLabel={reservationPriceClassLabel(bookingPreviewQuote?.appliedRateSource ?? null)}
               currency={bookingPreviewQuote?.currency ?? currency}
               viewer={canBookForMember ? "operator" : "member"}
               className="mt-3"

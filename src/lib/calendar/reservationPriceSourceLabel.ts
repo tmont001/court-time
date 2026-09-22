@@ -31,3 +31,21 @@ export function reservationPriceSourceLabel(
   // that case instead of a source line.
   return null;
 }
+
+// Final pre-merge polish: which pricing CLASS actually supplied the rate —
+// derived from the applied_rate_source SUFFIX (the resolver's own "_member"
+// / "_non_member" variant marker on every priced source), never from
+// membership_pricing_class. A Non-Member can legitimately fall through the
+// Non-Member chain into a Member/standard fallback (0200's own precedence,
+// unchanged) — in that case applied_rate_source ends in "_member" and this
+// must say "Member rate", describing the rate that ACTUALLY won, not the
+// caller's own classification. "unpriced" ends in neither suffix and
+// correctly yields no class label.
+export function reservationPriceClassLabel(
+  appliedRateSource: string | null | undefined,
+): string | null {
+  if (!appliedRateSource) return null;
+  if (appliedRateSource.endsWith("_non_member")) return "Non-Member rate";
+  if (appliedRateSource.endsWith("_member")) return "Member rate";
+  return null;
+}

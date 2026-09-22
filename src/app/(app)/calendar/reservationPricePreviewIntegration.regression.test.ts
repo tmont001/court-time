@@ -167,11 +167,21 @@ describe("B. CalendarShell create-flow uses the canonical preview, never client-
   });
 
   it("the human source label is derived via the shared reservationPriceSourceLabel helper — never inline string logic reproducing it", () => {
-    expect(src).toContain('import { reservationPriceSourceLabel } from "@/lib/calendar/reservationPriceSourceLabel";');
+    expect(src).toContain('import { reservationPriceSourceLabel, reservationPriceClassLabel } from "@/lib/calendar/reservationPriceSourceLabel";');
     const callStart = src.indexOf("<ReservationPricePreview\n");
     const callEnd = src.indexOf("/>", callStart);
     const call = src.slice(callStart, callEnd);
     expect(call).toContain("sourceLabel={reservationPriceSourceLabel(");
+  });
+
+  it("final pre-merge polish: the applied pricing CLASS is derived via the shared reservationPriceClassLabel helper and passed to the preview, never re-derived inline", () => {
+    expect(src).toContain(
+      'import { reservationPriceSourceLabel, reservationPriceClassLabel } from "@/lib/calendar/reservationPriceSourceLabel";',
+    );
+    const callStart = src.indexOf("<ReservationPricePreview\n");
+    const callEnd = src.indexOf("/>", callStart);
+    const call = src.slice(callStart, callEnd);
+    expect(call).toContain("rateClassLabel={reservationPriceClassLabel(bookingPreviewQuote?.appliedRateSource ?? null)}");
   });
 });
 
@@ -232,6 +242,19 @@ describe("C. EditReservationSheet's preview matches update_member_reservation's 
     expect(src).toMatch(
       /const displaySourceLabel = needsFreshPreview\s*\n\s*\? reservationPriceSourceLabel\(previewQuote\?\.appliedRateSource \?\? null, previewQuote\?\.appliedRatePeriodName \?\? null\)\s*\n\s*: null;/,
     );
+  });
+
+  it("final pre-merge polish: B/C likewise never show a rate-class label, for the same reason — no applied_rate_source is known outside the fresh-preview branch", () => {
+    expect(src).toMatch(
+      /const displayRateClassLabel = needsFreshPreview\s*\n\s*\? reservationPriceClassLabel\(previewQuote\?\.appliedRateSource \?\? null\)\s*\n\s*: null;/,
+    );
+  });
+
+  it("final pre-merge polish: the edit sheet's preview passes rateClassLabel through to ReservationPricePreview", () => {
+    const callStart = src.indexOf("<ReservationPricePreview\n");
+    const callEnd = src.indexOf("/>", callStart);
+    const call = src.slice(callStart, callEnd);
+    expect(call).toContain("rateClassLabel={displayRateClassLabel}");
   });
 
   it("the async preview fetch uses the same `cancelled` closure-flag staleness guard as the create flow", () => {
@@ -335,6 +358,19 @@ describe("D. ReservationPricePreview display contract", () => {
   it("performs no pricing computation of its own — never references hourly_rate_cents arithmetic beyond formatting an already-resolved value in the breakdown line", () => {
     expect(src).not.toMatch(/hourlyRateCents\s*\*|totalCents\s*\*/);
   });
+
+  it("final pre-merge polish: the breakdown line joins sourceLabel, the applied rate-class label, and the hourly rate — e.g. 'QA Peak · Member rate · $60.00/hr'", () => {
+    expect(src).toMatch(
+      /const breakdown =\s*\n\s*sourceLabel && hourlyRateCents !== null\s*\n\s*\? \[sourceLabel, rateClassLabel, `\$\{formatMoney\(hourlyRateCents, currency\)\}\/hr`\]\s*\n\s*\.filter\(Boolean\)\s*\n\s*\.join\(" · "\)\s*\n\s*: null;/,
+    );
+  });
+
+  it("final pre-merge polish: rateClassLabel is an optional pass-through prop, never computed inside this presentation-only component's function body", () => {
+    expect(src).toMatch(/rateClassLabel\?:\s*string \| null;/);
+    const functionStart = src.indexOf("export default function ReservationPricePreview(");
+    expect(functionStart).toBeGreaterThan(-1);
+    expect(src.slice(functionStart)).not.toMatch(/reservationPriceClassLabel\(/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -358,6 +394,19 @@ describe("E. reservationPriceSourceLabel never exposes raw applied_rate_source v
 
   it("never returns a raw source string like 'rate_period_non_member' or 'court_override_member' verbatim", () => {
     expect(src).not.toMatch(/return appliedRateSource;/);
+  });
+
+  it("final pre-merge polish: reservationPriceClassLabel derives Member/Non-Member from the applied_rate_source SUFFIX, never from membership_pricing_class", () => {
+    expect(src).toContain("export function reservationPriceClassLabel(");
+    expect(src).not.toMatch(/reservationPriceClassLabel[\s\S]{0,300}membership_pricing_class/);
+    expect(src).toMatch(/appliedRateSource\.endsWith\("_non_member"\)/);
+    expect(src).toMatch(/appliedRateSource\.endsWith\("_member"\)/);
+  });
+
+  it("final pre-merge polish: reservationPriceClassLabel never returns a raw source string verbatim", () => {
+    const classLabelStart = src.indexOf("export function reservationPriceClassLabel(");
+    const classLabelBody = src.slice(classLabelStart);
+    expect(classLabelBody).not.toMatch(/return appliedRateSource;/);
   });
 });
 

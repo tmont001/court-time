@@ -328,6 +328,10 @@ export default function CourtRatePeriodsSection({ initialPeriods, currency, memb
         tab) for the same pricing type takes priority over a matching time-based rate. Court Time
         otherwise follows your existing pricing fallbacks.
       </p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Rates are determined by the reservation start time. The selected rate applies to the entire
+        reservation.
+      </p>
 
       {status && (
         <div
