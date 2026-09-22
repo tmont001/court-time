@@ -86,7 +86,7 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     expect(s).toContain('.from("club-logos")');
   });
 
-  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the seventeen now-current RPCs (the thirteen pre-43B-2B ones plus 43B-2B's own four Guest Waiver authoring RPCs), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
+  it("18. no UNEXPECTED RPC surface was introduced — actions.ts calls exactly the nineteen now-current RPCs (the seventeen pre-Checkpoint-B ones plus Peak/Off-Peak Pricing Checkpoint B's own two rate-period lifecycle RPCs), nothing beyond that (indirect, non-migration-ceiling evidence this checkpoint's IA change carries no OTHER RPC surface change)", () => {
     // Deliberately not a "highest migration === N" check — see this file's
     // own header comment on why that pattern is invalid across checkpoints.
     // This count is intentionally NOT frozen forever: it tracks the actual,
@@ -97,12 +97,17 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     // for Phase 43A-2 (createMemberWaiverDraftAction/
     // updateMemberWaiverDraftAction/publishMemberWaiverVersionAction/
     // setMemberWaiverRequiredAction — no Admin-proxy acceptance action
-    // exists in this file or anywhere else), and again here (Phase 43B-2B
-    // added createGuestWaiverDraftAction/updateGuestWaiverDraftAction/
+    // exists in this file or anywhere else), again for Phase 43B-2B
+    // (createGuestWaiverDraftAction/updateGuestWaiverDraftAction/
     // publishGuestWaiverVersionAction/setGuestWaiverRequiredAction —
-    // likewise no Guest acceptance action anywhere in this file).
+    // likewise no Guest acceptance action anywhere in this file), and
+    // again here (Peak/Off-Peak Pricing Checkpoint B added
+    // upsertCourtRatePeriod/setCourtRatePeriodActive, wrapping 0200's own
+    // upsert_court_rate_period/set_court_rate_period_active RPCs — no
+    // hard-delete RPC exists in this file or anywhere else, per that
+    // checkpoint's locked v1 lifecycle scope).
     const s = readSource("src/app/(app)/admin/settings/actions.ts");
-    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(17);
+    expect((s.match(/\.rpc\(/g) ?? []).length).toBe(19);
     expect(s).toContain('supabase.rpc("update_club_rules_and_policies", {');
     expect(s).toContain('supabase.rpc("update_club_memberships_enabled", {');
     expect(s).toContain('supabase.rpc("create_membership_type", {');
@@ -116,7 +121,10 @@ describe("17-19. existing Settings actions/RPC behavior is unchanged; no migrati
     expect(s).toContain('supabase.rpc("update_guest_waiver_draft", {');
     expect(s).toContain('supabase.rpc("publish_guest_waiver_version", {');
     expect(s).toContain('supabase.rpc("set_guest_waiver_required", {');
+    expect(s).toContain('supabase.rpc("upsert_court_rate_period", {');
+    expect(s).toContain('supabase.rpc("set_court_rate_period_active", {');
     expect(s).not.toMatch(/accept_member_waiver|accept_guest_waiver/);
+    expect(s).not.toMatch(/delete_court_rate_period/);
   });
 
   it("19. no payment-domain mutation was introduced — page.tsx itself performs no .rpc( or mutation, only reads plus prop-passing to unchanged child components", () => {
@@ -148,11 +156,16 @@ describe("3-4. exactly four top-level visual groups exist, in the locked order: 
     expect(planAccessIdx).toBeGreaterThan(pricingPaymentsIdx);
   });
 
-  it("no tabs, accordions (<details>), or subroutes were introduced — one flat page", () => {
+  it("no tabs, accordions (<details>), or subroutes were introduced on THIS page — one flat page (a later IA refinement added one outbound link to /admin/courts' own \"rates\" tab, which is that page's tab, not this one's)", () => {
     const s = readSource(PAGE_PATH);
     expect(s).not.toMatch(/searchParams/);
     expect(s).not.toMatch(/<details/);
-    expect(s).not.toMatch(/\?tab=/);
+    // This page declares no tab-resolution mechanism of its own — no
+    // `?tab=` reference outside of the one legitimate outbound Link to
+    // another page's Court Rates tab.
+    const tabMatches = [...s.matchAll(/\?tab=/g)];
+    expect(tabMatches.length).toBe(1);
+    expect(s).toContain('href="/admin/courts?tab=rates"');
   });
 });
 
@@ -192,11 +205,11 @@ describe("4a. Memberships & Waivers (Phase 43B-3E, restyled 43B-3E2) — relocat
     expect(typesPageSource).not.toMatch(/\.rpc\(\s*"[a-z_]*membership_type/i);
   });
 
-  it("/admin/settings still reads club_settings exactly once — memberships_enabled is still needed there for PricingSettingsForm's own non-member-pricing display", () => {
+  it("/admin/settings still reads club_settings exactly once — memberships_enabled is no longer needed there since default-rate/Non-Member display moved to /admin/courts (Peak/Off-Peak Pricing IA refinement)", () => {
     const s = readSource(PAGE_PATH);
     const clubSettingsMatches = s.match(/\.from\("club_settings"\)/g) ?? [];
     expect(clubSettingsMatches.length).toBe(1);
-    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
+    expect(s).not.toContain("const membershipsEnabled =");
   });
 });
 
@@ -229,10 +242,36 @@ describe("7-10. Pricing, Payment Tracking, Stripe Account, and Court Time Paymen
     return s.slice(groupStart, groupEnd);
   }
 
-  it("the Pricing subsection (PricingSettingsForm) is inside the Pricing & Payments group", () => {
+  it("the Pricing subsection (ClubCurrencyForm) is inside the Pricing & Payments group, with a discoverability link to Admin -> Courts -> Court Rates (Peak/Off-Peak Pricing IA refinement)", () => {
     const group = pricingPaymentsGroup();
     expect(group).toContain(subsectionMarker("Pricing"));
-    expect(group).toContain("<PricingSettingsForm");
+    expect(group).toContain("<ClubCurrencyForm");
+    expect(group).not.toContain("<PricingSettingsForm");
+    expect(group).not.toContain("<CourtRatePeriodsSection");
+    expect(group).not.toContain("<DefaultCourtRatesForm");
+    expect(group).toContain('href="/admin/courts?tab=rates"');
+  });
+
+  it("the Court Rates link is an inline text link inside the explanatory copy — NOT a standalone ACTION_BUTTON_SECONDARY button (removed for feeling like a disconnected second form action)", () => {
+    const group = pricingPaymentsGroup();
+    const linkIdx = group.indexOf('href="/admin/courts?tab=rates"');
+    expect(linkIdx).toBeGreaterThan(-1);
+    const linkTagStart = group.lastIndexOf("<Link", linkIdx);
+    const linkTagEnd = group.indexOf(">", linkIdx);
+    const linkTag = group.slice(linkTagStart, linkTagEnd);
+    expect(linkTag).toContain('className="text-accent hover:underline"');
+    expect(linkTag).not.toContain("ACTION_BUTTON_SECONDARY");
+    expect(group).toContain("Court Rates →");
+    // Never the old standalone-button shape (a dedicated <div className="pt-2">
+    // wrapper around an ACTION_BUTTON_SECONDARY-styled Link to this href).
+    expect(group).not.toMatch(
+      /<Link href="\/admin\/courts\?tab=rates" className=\{ACTION_BUTTON_SECONDARY\}>/,
+    );
+    // The link sits inside the explanatory <p>, not its own block-level element.
+    const pStart = group.lastIndexOf("<p ", linkIdx);
+    const pEnd = group.indexOf("</p>", linkIdx);
+    expect(pStart).toBeGreaterThan(-1);
+    expect(pEnd).toBeGreaterThan(linkIdx);
   });
 
   it("the Payments subsection (Payment Tracking, Stripe Account, Court Time Payments) is inside the Pricing & Payments group, with Pricing preceding it", () => {
@@ -333,10 +372,14 @@ describe("stale-link cleanup: Overview's Email/SMS delivery setup rows point at 
   });
 });
 
-describe("stale-copy cleanup: Pricing no longer references a 'below' court-rate override that moved to /admin/courts", () => {
-  it("PricingSettingsForm's helper copy names the Courts page instead of a stale 'below' reference", () => {
-    const s = readSource("src/app/(app)/admin/settings/PricingSettingsForm.tsx");
-    expect(s).toContain("their own rate on the Courts page regardless.");
+describe("stale-copy cleanup: default court rate copy no longer references a 'below' override, and the form itself relocated to /admin/courts (Peak/Off-Peak Pricing IA refinement)", () => {
+  it("PricingSettingsForm.tsx no longer exists — this was a MOVE, not a copy left behind", () => {
+    expect(() => readSource("src/app/(app)/admin/settings/PricingSettingsForm.tsx")).toThrow();
+  });
+
+  it("DefaultCourtRatesForm's helper copy names the Courts TAB (it now lives on that same page) instead of a stale 'below' reference", () => {
+    const s = readSource("src/app/(app)/admin/courts/DefaultCourtRatesForm.tsx");
+    expect(s).toContain("their own rate on the Courts tab regardless.");
     expect(s).not.toMatch(/their own rate below regardless/);
   });
 });

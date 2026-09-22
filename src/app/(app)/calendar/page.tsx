@@ -69,7 +69,7 @@ export default async function CalendarPage({
     // as the signed-in Member's own booking.
     supabase.rpc("current_user_roster_member_id"),
     clubId
-      ? supabase.from("club_settings").select("currency, default_court_hourly_rate_cents").eq("club_id", clubId).single()
+      ? supabase.from("club_settings").select("currency").eq("club_id", clubId).single()
       : Promise.resolve({ data: null }),
   ]);
 
@@ -133,7 +133,6 @@ export default async function CalendarPage({
           operatingHours={operatingHours ?? []}
           operatingHoursOverrides={operatingHoursOverrides ?? []}
           currency={settings?.currency ?? "USD"}
-          defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
         />
       </div>
     </>

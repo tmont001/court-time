@@ -180,9 +180,9 @@ describe("7. no RPC/action/auth changes", () => {
     expect(s).toContain('if (!hasAdminAuthority(profile?.role)) redirect("/calendar");');
   });
 
-  it("tab query-param keys/URLs are unchanged from the prior checkpoint", () => {
+  it("tab query-param mechanism is unchanged from the prior checkpoint (Peak/Off-Peak Pricing IA refinement added a fourth \"rates\" tab, keys/mechanism otherwise unchanged)", () => {
     const s = readSource(COURTS_PAGE_PATH);
-    expect(s).toContain('type CourtsTab = "courts" | "hours" | "rules";');
+    expect(s).toContain('type CourtsTab = "courts" | "hours" | "rules" | "rates";');
     expect(s).toContain("searchParams: Promise<{ tab?: string }>");
   });
 

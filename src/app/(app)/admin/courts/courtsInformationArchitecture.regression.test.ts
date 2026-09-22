@@ -29,13 +29,14 @@ function courtsPageSource(): string {
   return readSource(COURTS_PAGE_PATH);
 }
 
-describe("1. /admin/courts exposes exactly the three intended tabs", () => {
-  it("declares exactly the Courts / Hours & Closures / Booking Rules tab set, with the documented query-param values", () => {
+describe("1. /admin/courts exposes exactly the four intended tabs (Peak/Off-Peak Pricing IA refinement added Court Rates)", () => {
+  it("declares exactly the Courts / Hours & Closures / Booking Rules / Court Rates tab set, with the documented query-param values", () => {
     const s = courtsPageSource();
-    expect(s).toContain('type CourtsTab = "courts" | "hours" | "rules";');
+    expect(s).toContain('type CourtsTab = "courts" | "hours" | "rules" | "rates";');
     expect(s).toContain('{ key: "courts", label: "Courts", href: "/admin/courts" }');
     expect(s).toContain('{ key: "hours", label: "Hours & Closures", href: "/admin/courts?tab=hours" }');
     expect(s).toContain('{ key: "rules", label: "Booking Rules", href: "/admin/courts?tab=rules" }');
+    expect(s).toContain('{ key: "rates", label: "Court Rates", href: "/admin/courts?tab=rates" }');
   });
 
   it("an unrecognized or missing tab value fails safely to \"courts\" — direct URL / refresh / back-forward all resolve through this same pure function", () => {
@@ -43,6 +44,7 @@ describe("1. /admin/courts exposes exactly the three intended tabs", () => {
     expect(s).toContain(`function resolveCourtsTab(raw: string | undefined): CourtsTab {
   if (raw === "hours") return "hours";
   if (raw === "rules") return "rules";
+  if (raw === "rates") return "rates";
   return "courts";
 }`);
   });
@@ -52,6 +54,65 @@ describe("1. /admin/courts exposes exactly the three intended tabs", () => {
     expect(s).toContain("searchParams: Promise<{ tab?: string }>");
     expect(s).toContain("const tab = resolveCourtsTab(sp.tab);");
     expect(s.trimStart().startsWith('"use client"')).toBe(false);
+  });
+});
+
+describe("1b. Court Rates tab: Default Court Rates then Peak & Off-Peak Rates, currency not editable", () => {
+  it("renders DefaultCourtRatesForm then CourtRatePeriodsSection, in that order, only inside the tab === \"rates\" branch", () => {
+    const s = courtsPageSource();
+    const start = s.indexOf('tab === "rates"');
+    expect(start).toBeGreaterThan(-1);
+    const ratesBranch = s.slice(start);
+    const defaultRatesIdx = ratesBranch.indexOf("<DefaultCourtRatesForm");
+    const periodsIdx = ratesBranch.indexOf("<CourtRatePeriodsSection");
+    expect(defaultRatesIdx).toBeGreaterThan(-1);
+    expect(periodsIdx).toBeGreaterThan(defaultRatesIdx);
+    expect(ratesBranch).toContain("Default Court Rates");
+    expect(ratesBranch).toContain("Peak &amp; Off-Peak Rates");
+  });
+
+  it("neither DefaultCourtRatesForm nor CourtRatePeriodsSection is rendered in any other tab branch", () => {
+    const s = courtsPageSource();
+    const courtsStart = s.indexOf('tab === "courts"');
+    const hoursStart = s.indexOf('tab === "hours"');
+    const rulesStart = s.indexOf('tab === "rules"');
+    const ratesStart = s.indexOf('tab === "rates"');
+    const courtsBranch = s.slice(courtsStart, hoursStart);
+    const hoursAndRulesBranch = s.slice(hoursStart, ratesStart);
+    for (const branch of [courtsBranch, hoursAndRulesBranch]) {
+      expect(branch).not.toContain("<DefaultCourtRatesForm");
+      expect(branch).not.toContain("<CourtRatePeriodsSection");
+    }
+    expect(rulesStart).toBeLessThan(ratesStart);
+  });
+
+  it("DefaultCourtRatesForm receives currency for DISPLAY only — no onChange/editable currency prop is passed, and Courts' own club_settings query is the only source", () => {
+    const s = courtsPageSource();
+    const callStart = s.indexOf("<DefaultCourtRatesForm");
+    const callEnd = s.indexOf("/>", callStart);
+    const call = s.slice(callStart, callEnd);
+    expect(call).toContain("currency={settings?.currency ?? \"USD\"}");
+    expect(call).not.toMatch(/onCurrencyChange|editableCurrency/);
+  });
+
+  it("CourtRatePeriodsSection is passed the same currency and membershipsEnabled values as DefaultCourtRatesForm — one source of truth for this tab", () => {
+    const s = courtsPageSource();
+    const defaultRatesCallStart = s.indexOf("<DefaultCourtRatesForm");
+    const defaultRatesCallEnd = s.indexOf("/>", defaultRatesCallStart);
+    const defaultRatesCall = s.slice(defaultRatesCallStart, defaultRatesCallEnd);
+    const periodsCallStart = s.indexOf("<CourtRatePeriodsSection");
+    const periodsCallEnd = s.indexOf("/>", periodsCallStart);
+    const periodsCall = s.slice(periodsCallStart, periodsCallEnd);
+    expect(defaultRatesCall).toContain('currency={settings?.currency ?? "USD"}');
+    expect(periodsCall).toContain('currency={settings?.currency ?? "USD"}');
+    expect(defaultRatesCall).toContain('membershipsEnabled={settings?.memberships_enabled ?? true}');
+    expect(periodsCall).toContain('membershipsEnabled={settings?.memberships_enabled ?? true}');
+  });
+
+  it("fetches court_rate_periods scoped to this club, ordered by start time", () => {
+    const s = courtsPageSource();
+    expect(s).toMatch(/\.from\("court_rate_periods"\)/);
+    expect(s).toContain('.order("starts_at_local", { ascending: true })');
   });
 });
 

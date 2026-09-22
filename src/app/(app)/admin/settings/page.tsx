@@ -6,7 +6,7 @@ import Header from "@/components/Header";
 import ClubBrandingSection from "./ClubBrandingSection";
 import ClubTimezoneSection from "./ClubTimezoneSection";
 import ClubRulesSection from "./ClubRulesSection";
-import PricingSettingsForm from "./PricingSettingsForm";
+import ClubCurrencyForm from "./ClubCurrencyForm";
 import PaymentTrackingSection from "./PaymentTrackingSection";
 import StripeConnectSection from "./StripeConnectSection";
 import CourtTimePaymentsSection from "./CourtTimePaymentsSection";
@@ -28,12 +28,16 @@ export default async function AdminSettingsPage() {
   // — see the Operating Model section below.
   const memberSelfService = profile?.memberSelfService ?? false;
 
+  // Peak/Off-Peak Pricing IA refinement: default court rates and Court
+  // Rate Periods moved to Admin -> Courts -> Court Rates (see that page)
+  // — this query no longer needs default_court_hourly_rate_cents/
+  // default_court_hourly_rate_non_member_cents/memberships_enabled at
+  // all, since nothing remaining on this page reads them. Currency stays
+  // club-wide configuration here.
   const [settingsResult, clubResult, stripeConnectResult] = await Promise.all([
     supabase
       .from("club_settings")
-      .select(
-        "currency, default_court_hourly_rate_cents, default_court_hourly_rate_non_member_cents, memberships_enabled, payment_mode, rules_and_policies"
-      )
+      .select("currency, payment_mode, rules_and_policies")
       .eq("club_id", clubId)
       .single(),
     supabase
@@ -52,7 +56,6 @@ export default async function AdminSettingsPage() {
   const club     = clubResult.data;
 
   const currency = settings?.currency ?? "USD";
-  const membershipsEnabled = settings?.memberships_enabled ?? true;
   const stripeStatus = stripeConnectResult.status;
   // Phase 34D-C: the SAME derivation StripeConnectSection's own state
   // already uses, computed once here so PaymentTrackingSection's
@@ -175,10 +178,12 @@ export default async function AdminSettingsPage() {
 
         {/* ── Group 3: Pricing & Payments ──
             Locked product distinction: Pricing = what the club charges;
-            Payments = how the club tracks/collects money. Global/default
-            pricing stays here — domain-specific pricing (court overrides,
-            Event Type pricing, Lesson Type pricing) stays in its own
-            domain page and is never duplicated here. */}
+            Payments = how the club tracks/collects money. Only club-wide
+            currency lives here — default court rates, per-court
+            overrides, and Peak/Off-Peak rate periods all moved to Admin
+            -> Courts -> Court Rates (a later IA refinement), consolidating
+            the operator's court-pricing mental model into one page. This
+            page never duplicates that surface, only links to it. */}
         <section className="space-y-4">
           <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">Pricing & Payments</h2>
 
@@ -187,14 +192,13 @@ export default async function AdminSettingsPage() {
               Pricing
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Club-wide currency and the default court reservation rate. Changes apply to new bookings only.
+              Club-wide currency used for all pricing. Court rates, including Peak &amp; Off-Peak, are
+              managed under{" "}
+              <Link href="/admin/courts?tab=rates" className="text-accent hover:underline">
+                Court Rates →
+              </Link>
             </p>
-            <PricingSettingsForm
-              currency={currency}
-              defaultCourtHourlyRateCents={settings?.default_court_hourly_rate_cents ?? null}
-              membershipsEnabled={membershipsEnabled}
-              defaultCourtHourlyRateNonMemberCents={settings?.default_court_hourly_rate_non_member_cents ?? null}
-            />
+            <ClubCurrencyForm currency={currency} />
           </div>
 
           <hr className="border-gray-100 dark:border-gray-800" />

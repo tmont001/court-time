@@ -356,6 +356,56 @@ export type Database = {
           }
         ];
       };
+      court_rate_periods: {
+        Row: {
+          id: string;
+          club_id: string;
+          name: string;
+          days_of_week: number[];
+          starts_at_local: string;
+          ends_at_local: string;
+          hourly_rate_cents: number | null;
+          hourly_rate_non_member_cents: number | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          club_id: string;
+          name: string;
+          days_of_week: number[];
+          starts_at_local: string;
+          ends_at_local: string;
+          hourly_rate_cents?: number | null;
+          hourly_rate_non_member_cents?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          club_id?: string;
+          name?: string;
+          days_of_week?: number[];
+          starts_at_local?: string;
+          ends_at_local?: string;
+          hourly_rate_cents?: number | null;
+          hourly_rate_non_member_cents?: number | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "court_rate_periods_club_id_fkey";
+            columns: ["club_id"];
+            isOneToOne: false;
+            referencedRelation: "clubs";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       operating_hours: {
         Row: {
           id: string;
@@ -2622,6 +2672,42 @@ export type Database = {
           p_court_id: string;
           p_hourly_rate_cents: number | null;
           p_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
+        };
+        Returns: undefined;
+      };
+      upsert_court_rate_period: {
+        // 0200 — Peak/Off-Peak Pricing, Checkpoint A. p_id null = Add,
+        // a real id = Edit.
+        Args: {
+          p_id: string | null;
+          p_name: string;
+          p_days_of_week: number[];
+          p_starts_at_local: string;
+          p_ends_at_local: string;
+          p_hourly_rate_cents?: number | null;
+          p_hourly_rate_non_member_cents?: number | null;
+        };
+        Returns: undefined;
+      };
+      set_court_rate_period_active: {
+        // 0200 — Peak/Off-Peak Pricing, Checkpoint A. p_active true =
+        // Reactivate (re-validates overlap), false = Deactivate.
+        Args: { p_id: string; p_active: boolean };
+        Returns: undefined;
+      };
+      preview_court_reservation_price: {
+        // 0201/0202 — Peak/Off-Peak Pricing, Checkpoint B/C. Read-only,
+        // canonical booking-price preview. p_roster_member_id omitted =
+        // self-service (caller's own roster identity); provided =
+        // Admin/Staff explicit-target, which then also requires
+        // p_expected_club_id. Actual row shape is cast explicitly at the
+        // one call site (calendar/actions.ts) rather than modeled here.
+        Args: {
+          p_court_id: string;
+          p_starts_at: string;
+          p_ends_at: string;
+          p_roster_member_id?: string | null;
+          p_expected_club_id?: string | null;
         };
         Returns: undefined;
       };

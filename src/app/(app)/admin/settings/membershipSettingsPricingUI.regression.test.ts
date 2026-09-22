@@ -23,7 +23,14 @@ const SETTINGS_PAGE_PATH             = "src/app/(app)/admin/settings/page.tsx";
 const SETTINGS_ACTIONS_PATH          = "src/app/(app)/admin/settings/actions.ts";
 const MEMBERSHIPS_SECTION_PATH       = "src/app/(app)/admin/members/MembershipsSection.tsx";
 const MEMBERS_TYPES_PAGE_PATH        = "src/app/(app)/admin/members/types/page.tsx";
-const PRICING_FORM_PATH              = "src/app/(app)/admin/settings/PricingSettingsForm.tsx";
+// Peak/Off-Peak Pricing IA refinement: PricingSettingsForm.tsx was split
+// and relocated — currency stays in Settings (ClubCurrencyForm), default
+// court rates moved to Admin -> Courts -> Court Rates
+// (DefaultCourtRatesForm). See section 2/5/5b/12 below and
+// admin/courts/courtRatePeriodsAdminUI.regression.test.ts for the
+// relocated Court Rate Periods coverage.
+const CLUB_CURRENCY_FORM_PATH        = "src/app/(app)/admin/settings/ClubCurrencyForm.tsx";
+const DEFAULT_COURT_RATES_FORM_PATH  = "src/app/(app)/admin/courts/DefaultCourtRatesForm.tsx";
 const COURTS_PAGE_PATH               = "src/app/(app)/admin/courts/page.tsx";
 const COURTS_ACTIONS_PATH            = "src/app/(app)/admin/courts/actions.ts";
 const COURT_MANAGEMENT_LIST_PATH     = "src/app/(app)/admin/courts/CourtManagementList.tsx";
@@ -72,25 +79,33 @@ describe("1. Memberships toggle is wired to update_club_memberships_enabled", ()
 // ═══════════════════════════════════════════════════════════════════════════
 // 2. Settings page reads/passes memberships_enabled
 // ═══════════════════════════════════════════════════════════════════════════
-describe("2. /admin/settings reads and passes memberships_enabled", () => {
-  it("the club_settings query selects memberships_enabled and the non-member default rate", () => {
+describe("2. /admin/settings no longer needs memberships_enabled or default court rates (Peak/Off-Peak Pricing IA refinement)", () => {
+  it("the club_settings query no longer selects memberships_enabled or either default court rate column — nothing remaining on this page reads them", () => {
+    // Checks the actual .select(...) call, not the whole file text — this
+    // file's own explanatory comment above legitimately NAMES these
+    // columns in prose (documenting that they moved), which a blanket
+    // "not.toContain" over the full source would misflag.
     const s = readSource(SETTINGS_PAGE_PATH);
-    expect(s).toContain("default_court_hourly_rate_non_member_cents");
-    expect(s).toContain("memberships_enabled");
+    const selectMatch = s.match(/\.from\("club_settings"\)\s*\n\s*\.select\("([^"]+)"\)/);
+    expect(selectMatch).not.toBeNull();
+    const selectedColumns = selectMatch![1];
+    expect(selectedColumns).not.toContain("default_court_hourly_rate_non_member_cents");
+    expect(selectedColumns).not.toContain("default_court_hourly_rate_cents");
+    expect(selectedColumns).not.toContain("memberships_enabled");
+    expect(selectedColumns).toBe("currency, payment_mode, rules_and_policies");
   });
 
-  it("MembershipsSection is rendered with the resolved enabled value on its new home, /admin/members/types (Phase 43B-3E relocated it out of /admin/settings)", () => {
+  it("MembershipsSection is rendered with the resolved enabled value on its home, /admin/members/types (Phase 43B-3E relocated it out of /admin/settings)", () => {
     const s = readSource(MEMBERS_TYPES_PAGE_PATH);
     expect(s).toContain('import MembershipsSection from "../MembershipsSection";');
     expect(s).toContain("const membershipsEnabled = settingsResult.data?.memberships_enabled ?? true;");
     expect(s).toContain("<MembershipsSection enabled={membershipsEnabled} />");
   });
 
-  it("/admin/settings no longer imports or renders MembershipsSection — its own memberships_enabled read remains only because PricingSettingsForm still needs it", () => {
+  it("/admin/settings no longer imports or renders MembershipsSection", () => {
     const s = readSource(SETTINGS_PAGE_PATH);
     expect(s).not.toMatch(/import MembershipsSection/);
     expect(s).not.toMatch(/<MembershipsSection/);
-    expect(s).toContain("const membershipsEnabled = settings?.memberships_enabled ?? true;");
   });
 
   it("does not add a duplicate club_settings/courts fetch — reuses the existing Promise.all query", () => {
@@ -104,8 +119,8 @@ describe("2. /admin/settings reads and passes memberships_enabled", () => {
 // 3-4. Non-Member club rate: visibility + preservation
 // ═══════════════════════════════════════════════════════════════════════════
 describe("3. Non-Member club rate field appears only when Memberships are ON", () => {
-  it("PricingSettingsForm gates the Non-Member input behind membershipsEnabled", () => {
-    const s = readSource(PRICING_FORM_PATH);
+  it("DefaultCourtRatesForm gates the Non-Member input behind membershipsEnabled", () => {
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     const idx = s.indexOf("{membershipsEnabled && (");
     expect(idx).toBeGreaterThan(-1);
     const block = s.slice(idx, idx + 700);
@@ -114,7 +129,7 @@ describe("3. Non-Member club rate field appears only when Memberships are ON", (
   });
 
   it("the Standard/Member rate field label distinguishes itself from the base label when Memberships are ON", () => {
-    const s = readSource(PRICING_FORM_PATH);
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain('"Standard / Member court hourly rate (optional)"');
     expect(s).toContain('"Court reservation pricing (optional)"');
   });
@@ -122,7 +137,7 @@ describe("3. Non-Member club rate field appears only when Memberships are ON", (
 
 describe("4. hiding the Non-Member club rate does not clear its stored value", () => {
   it("the Non-Member rate is read from component state on submit, never from FormData", () => {
-    const s = readSource(PRICING_FORM_PATH);
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain("const [nonMemberRateDollars, setNonMemberRateDollars] = useState(");
     expect(s).toContain("defaultCourtHourlyRateNonMemberCents !== null ? (defaultCourtHourlyRateNonMemberCents / 100).toFixed(2) : \"\"");
     // The submit handler must derive nonMemberRateCents from the state
@@ -135,55 +150,65 @@ describe("4. hiding the Non-Member club rate does not clear its stored value", (
   });
 
   it("state is seeded once from the server prop, so a stored value the club already has survives even while the field is hidden on mount", () => {
-    const s = readSource(PRICING_FORM_PATH);
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain("defaultCourtHourlyRateNonMemberCents: number | null;");
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 5. pricing action sends all three RPC args correctly, with a required
-//    (non-defaulted) third argument, and every call site passes it
+// 5. Peak/Off-Peak Pricing IA refinement: the former single updateClubPricing
+//    action is now the private persistClubPricing helper, called by exactly
+//    two thin exported wrappers (updateClubCurrency, updateDefaultCourtRates)
+//    that each re-read, fresh from the server, the ONE field they don't
+//    themselves own. This preserves every pre-existing correction pass
+//    below byte-for-byte — only the export surface changed.
 // ═══════════════════════════════════════════════════════════════════════════
-describe("5. updateClubPricing sends all three update_club_pricing RPC args", () => {
-  function updateClubPricingBody(): string {
+describe("5. persistClubPricing (shared helper) sends all three update_club_pricing RPC args", () => {
+  function persistClubPricingBody(): string {
     const s = readSource(SETTINGS_ACTIONS_PATH);
-    const start = s.indexOf("export async function updateClubPricing(");
+    const start = s.indexOf("async function persistClubPricing(");
     expect(start).toBeGreaterThan(-1);
-    const nextExportIdx = s.indexOf("\nexport async function", start + 1);
-    return s.slice(start, nextExportIdx > -1 ? nextExportIdx : undefined);
+    const nextFnIdx = s.indexOf("\nexport async function", start + 1);
+    return s.slice(start, nextFnIdx > -1 ? nextFnIdx : undefined);
   }
 
   it("the RPC call includes currency, member rate, and the resolved non-member rate", () => {
-    const body = updateClubPricingBody();
+    const body = persistClubPricingBody();
     expect(body).toContain('supabase.rpc("update_club_pricing", {');
     expect(body).toContain("p_currency: currency,");
     expect(body).toContain("p_default_court_hourly_rate_cents: defaultCourtHourlyRateCents,");
     expect(body).toContain("p_default_court_hourly_rate_non_member_cents: nonMemberRateCents,");
   });
 
-  it("Correction (Section 2): the third TypeScript argument is REQUIRED — no default value", () => {
+  it("Correction (Section 2, preserved): persistClubPricing's third parameter is REQUIRED — no default value", () => {
     const s = readSource(SETTINGS_ACTIONS_PATH);
     expect(s).toContain("defaultCourtHourlyRateNonMemberCents: number | null,\n): Promise<{ error?: string; nonMemberRatePreserved?: boolean; effectiveNonMemberRateCents?: number | null }> {");
     expect(s).not.toContain("defaultCourtHourlyRateNonMemberCents: number | null = null");
   });
 
-  it("Correction (Section 4.4): every updateClubPricing call site in the app passes all 3 arguments explicitly", () => {
-    // PricingSettingsForm is (and must remain) the only production call
-    // site in the app — verified against a repo-wide grep during this
-    // checkpoint. Any future new call site must be added here too.
-    const s = readSource(PRICING_FORM_PATH);
-    expect(s).toContain("await updateClubPricing(currencyValue, rateCents, nonMemberRateCents);");
+  it("updateClubCurrency and updateDefaultCourtRates are persistClubPricing's ONLY two callers, and both pass all 3 arguments explicitly", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    // One definition site (`async function persistClubPricing(` itself
+    // also matches this substring) plus exactly two call sites.
+    const matches = [...s.matchAll(/persistClubPricing\(/g)];
+    expect(matches.length).toBe(3);
+    expect(s).toContain(
+      "const result = await persistClubPricing(\n    currency,\n    currentSettings.default_court_hourly_rate_cents,\n    currentSettings.default_court_hourly_rate_non_member_cents,\n  );",
+    );
+    expect(s).toContain(
+      "return persistClubPricing(\n    currentSettings.currency,\n    defaultCourtHourlyRateCents,\n    defaultCourtHourlyRateNonMemberCents,\n  );",
+    );
   });
 
-  it("Correction (Section 1A / 4.1): while memberships_enabled is currently false, the client-supplied non-member rate is IGNORED and the CURRENT stored value is used instead", () => {
-    const body = updateClubPricingBody();
+  it("Correction (Section 1A / 4.1, preserved): while memberships_enabled is currently false, the client-supplied non-member rate is IGNORED and the CURRENT stored value is used instead", () => {
+    const body = persistClubPricingBody();
     expect(body).toContain('.select("memberships_enabled, default_court_hourly_rate_non_member_cents")');
     expect(body).toContain("const nonMemberRatePreserved = currentSettings.memberships_enabled === false;");
     expect(body).toMatch(/const nonMemberRateCents = nonMemberRatePreserved\s*\?\s*currentSettings\.default_court_hourly_rate_non_member_cents\s*:\s*defaultCourtHourlyRateNonMemberCents;/);
   });
 
-  it("Correction (Section 1A / 4.2): while memberships_enabled is currently true, the explicit client value (including null) is used as-is", () => {
-    const body = updateClubPricingBody();
+  it("Correction (Section 1A / 4.2, preserved): while memberships_enabled is currently true, the explicit client value (including null) is used as-is", () => {
+    const body = persistClubPricingBody();
     // nonMemberRateCents is derived exactly once, by a single ternary keyed
     // on memberships_enabled === false — no other assignment exists that
     // could touch it, so the true/unresolved branch always receives
@@ -192,8 +217,8 @@ describe("5. updateClubPricing sends all three update_club_pricing RPC args", ()
     expect(assignments.length).toBe(1);
   });
 
-  it("Second correction pass (fail-closed): the settings read is REQUIRED to succeed — a query error or a missing row returns an error and never reaches the RPC", () => {
-    const body = updateClubPricingBody();
+  it("Second correction pass (fail-closed, preserved): the settings read is REQUIRED to succeed — a query error or a missing row returns an error and never reaches the RPC", () => {
+    const body = persistClubPricingBody();
     expect(body).toContain("const { data: currentSettings, error: settingsError } = await supabase");
     expect(body).toMatch(/if \(settingsError \|\| !currentSettings\) \{\s*return \{ error: ERROR_MESSAGES\.settings_unavailable \};\s*\}/);
     // The settings_unavailable return must appear strictly BEFORE the RPC
@@ -205,8 +230,8 @@ describe("5. updateClubPricing sends all three update_club_pricing RPC args", ()
     expect(rpcIdx).toBeGreaterThan(guardIdx);
   });
 
-  it("Second correction pass (fail-closed): an unresolved active club (no clubId) also returns an error before any settings read or RPC call", () => {
-    const body = updateClubPricingBody();
+  it("Second correction pass (fail-closed, preserved): an unresolved active club (no clubId) also returns an error before any settings read or RPC call", () => {
+    const body = persistClubPricingBody();
     expect(body).toMatch(/if \(!clubId\) return \{ error: ERROR_MESSAGES\.insufficient_role \};/);
     const clubGuardIdx = body.indexOf("if (!clubId)");
     const settingsReadIdx = body.indexOf('.from("club_settings")');
@@ -219,10 +244,138 @@ describe("5. updateClubPricing sends all three update_club_pricing RPC args", ()
     expect(s).toMatch(/settings_unavailable:\s*"[^"]+",/);
   });
 
-  it("Correction: resolving the club for this preflight read reuses the existing canonical getAuthProfile() helper — no new/duplicated authorization check", () => {
-    const body = updateClubPricingBody();
+  it("resolving the club for this preflight read reuses the existing canonical getAuthProfile() helper — no new/duplicated authorization check", () => {
+    const body = persistClubPricingBody();
     expect(body).toContain("const profile = await getAuthProfile();");
     expect(body).not.toMatch(/if \(profile\?\.\s*role/); // no new role gate added here — the RPC's own admin check is unduplicated
+  });
+});
+
+describe("5b. updateClubCurrency never touches rates; updateDefaultCourtRates never touches currency", () => {
+  function actionBody(name: string): string {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    const start = s.indexOf(`export async function ${name}(`);
+    expect(start, `${name} not found`).toBeGreaterThan(-1);
+    const nextExportIdx = s.indexOf("\nexport async function", start + 1);
+    return s.slice(start, nextExportIdx > -1 ? nextExportIdx : undefined);
+  }
+
+  it("updateClubCurrency takes only a currency parameter — no rate parameter exists for it to accept", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    expect(s).toMatch(/export async function updateClubCurrency\(\s*currency: string,\s*\): Promise<\{ error\?: string \}> \{/);
+  });
+
+  it("updateClubCurrency re-reads the CURRENT default rates fresh from club_settings before calling persistClubPricing, fail-closed on a failed read", () => {
+    const body = actionBody("updateClubCurrency");
+    expect(body).toContain('.select("default_court_hourly_rate_cents, default_court_hourly_rate_non_member_cents")');
+    expect(body).toMatch(/if \(settingsError \|\| !currentSettings\) \{\s*return \{ error: ERROR_MESSAGES\.settings_unavailable \};\s*\}/);
+    const guardIdx = body.indexOf("ERROR_MESSAGES.settings_unavailable");
+    const callIdx = body.indexOf("persistClubPricing(");
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(guardIdx);
+  });
+
+  it("updateDefaultCourtRates takes only rate parameters — no currency parameter exists for it to accept", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    expect(s).toMatch(
+      /export async function updateDefaultCourtRates\(\s*defaultCourtHourlyRateCents: number \| null,\s*defaultCourtHourlyRateNonMemberCents: number \| null,\s*\)/,
+    );
+  });
+
+  it("updateDefaultCourtRates re-reads the CURRENT authoritative currency fresh from club_settings before calling persistClubPricing, fail-closed on a failed read", () => {
+    const body = actionBody("updateDefaultCourtRates");
+    expect(body).toContain('.select("currency")');
+    expect(body).toMatch(/if \(settingsError \|\| !currentSettings\) \{\s*return \{ error: ERROR_MESSAGES\.settings_unavailable \};\s*\}/);
+    const guardIdx = body.indexOf("ERROR_MESSAGES.settings_unavailable");
+    const callIdx = body.indexOf("persistClubPricing(");
+    expect(guardIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(guardIdx);
+  });
+
+  it("neither action lets the caller pass a value for the field it doesn't own", () => {
+    const currencyBody = actionBody("updateClubCurrency");
+    const ratesBody = actionBody("updateDefaultCourtRates");
+    expect(currencyBody).not.toMatch(/defaultCourtHourlyRateCents:\s*number/);
+    expect(ratesBody).not.toMatch(/currency:\s*string/);
+  });
+
+  it("ClubCurrencyForm calls updateClubCurrency with only the currency value; DefaultCourtRatesForm calls updateDefaultCourtRates with only the two rate values", () => {
+    const currencyForm = readSource(CLUB_CURRENCY_FORM_PATH);
+    expect(currencyForm).toContain("await updateClubCurrency(trimmed);");
+    const ratesForm = readSource(DEFAULT_COURT_RATES_FORM_PATH);
+    expect(ratesForm).toContain("await updateDefaultCourtRates(rateCents, nonMemberRateCents);");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 5c. currency_locked_by_pricing maps to clear operator copy; generic
+//     fallback is preserved for unmapped errors; ClubCurrencyForm explains
+//     and reacts to the lock without reproducing the DB's own scan
+// ═══════════════════════════════════════════════════════════════════════════
+describe("5c. currency_locked_by_pricing error mapping and ClubCurrencyForm UX", () => {
+  it("ERROR_MESSAGES maps currency_locked_by_pricing to specific, non-generic operator-facing copy", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    expect(s).toContain(
+      'currency_locked_by_pricing:  "Currency can’t be changed after paid pricing has been configured or recorded.",',
+    );
+  });
+
+  it("persistClubPricing's error regex includes currency_locked_by_pricing alongside every pre-existing mapped code", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    expect(s).toMatch(
+      /error\.message\.match\(\/currency_required\|invalid_currency\|currency_locked_by_pricing\|invalid_rate\|not_authenticated\|insufficient_role\//,
+    );
+  });
+
+  it("an unmapped/unknown error code still falls back to the pre-existing generic message, unchanged", () => {
+    const body = (() => {
+      const s = readSource(SETTINGS_ACTIONS_PATH);
+      const start = s.indexOf("async function persistClubPricing(");
+      const nextFnIdx = s.indexOf("\nexport async function", start + 1);
+      return s.slice(start, nextFnIdx > -1 ? nextFnIdx : undefined);
+    })();
+    expect(body).toContain('ERROR_MESSAGES[key] ?? "Failed to save pricing settings."');
+  });
+
+  it("ClubCurrencyForm explains the currency lock in helper copy beneath the input", () => {
+    const s = readSource(CLUB_CURRENCY_FORM_PATH);
+    expect(s).toContain(
+      "Currency is locked once paid pricing has been configured or recorded, so existing amounts",
+    );
+  });
+
+  it("ClubCurrencyForm does NOT disable the field or reproduce the DB's positive-pricing scan — no client-side eligibility check gates the input or submit button", () => {
+    const s = readSource(CLUB_CURRENCY_FORM_PATH);
+    expect(s).not.toMatch(/disabled=\{.*locked/i);
+    expect(s).not.toMatch(/positive_pricing|hourly_rate_cents\s*>\s*0|price_amount_cents\s*>\s*0/);
+    // The only `disabled` on the input/button is the existing isPending
+    // submit-in-flight guard, not a new eligibility computation.
+    const submitButtonIdx = s.indexOf('<button type="submit"');
+    expect(s.slice(submitButtonIdx, submitButtonIdx + 60)).toContain("disabled={isPending}");
+  });
+
+  it("on the currency_locked_by_pricing failure specifically, the visible field resets to the persisted currency prop — never a widened Server Action return contract", () => {
+    const s = readSource(CLUB_CURRENCY_FORM_PATH);
+    expect(s).toMatch(
+      /if \(result\.error === CURRENCY_LOCKED_MESSAGE\) \{\s*setCurrencyValue\(currency\);\s*\}/,
+    );
+    // updateClubCurrency's return type is untouched — still just an
+    // optional error string, no new error-code field.
+    const actionsSource = readSource(SETTINGS_ACTIONS_PATH);
+    expect(actionsSource).toMatch(
+      /export async function updateClubCurrency\(\s*currency: string,\s*\): Promise<\{ error\?: string \}> \{/,
+    );
+  });
+
+  it("other (non-lock) errors leave the typed value in place, so the Admin can see and correct their own mistake", () => {
+    const s = readSource(CLUB_CURRENCY_FORM_PATH);
+    const handlerStart = s.indexOf("function handleSubmit(");
+    const handlerEnd = s.indexOf("\n  }\n", handlerStart);
+    const handlerBody = s.slice(handlerStart, handlerEnd);
+    // setCurrencyValue is called only inside the lock-specific branch, not
+    // unconditionally on every error.
+    const setCalls = [...handlerBody.matchAll(/setCurrencyValue\(/g)];
+    expect(setCalls.length).toBe(1);
   });
 });
 
@@ -525,17 +678,17 @@ describe("11. CourtManagementList reflects the complete effective Non-Member fal
 // 12. UX polish — preservation result metadata, stale-state feedback,
 //     authoritative Non-Member resync, and route refresh (final correction)
 // ═══════════════════════════════════════════════════════════════════════════
-describe("12. UX polish: updateClubPricing/PricingSettingsForm stale-tab feedback", () => {
-  function updateClubPricingBody(): string {
+describe("12. UX polish: persistClubPricing/DefaultCourtRatesForm stale-tab feedback", () => {
+  function persistClubPricingBody(): string {
     const s = readSource(SETTINGS_ACTIONS_PATH);
-    const start = s.indexOf("export async function updateClubPricing(");
+    const start = s.indexOf("async function persistClubPricing(");
     expect(start).toBeGreaterThan(-1);
-    const nextExportIdx = s.indexOf("\nexport async function", start + 1);
-    return s.slice(start, nextExportIdx > -1 ? nextExportIdx : undefined);
+    const nextFnIdx = s.indexOf("\nexport async function", start + 1);
+    return s.slice(start, nextFnIdx > -1 ? nextFnIdx : undefined);
   }
 
-  it("updateClubPricing returns nonMemberRatePreserved and effectiveNonMemberRateCents on every successful path, matching what was actually sent to the RPC", () => {
-    const body = updateClubPricingBody();
+  it("persistClubPricing returns nonMemberRatePreserved and effectiveNonMemberRateCents on every successful path, matching what was actually sent to the RPC", () => {
+    const body = persistClubPricingBody();
     expect(body).toContain("return { nonMemberRatePreserved, effectiveNonMemberRateCents: nonMemberRateCents };");
     // The returned effectiveNonMemberRateCents is the SAME variable that
     // was sent as p_default_court_hourly_rate_non_member_cents — not a
@@ -545,7 +698,7 @@ describe("12. UX polish: updateClubPricing/PricingSettingsForm stale-tab feedbac
   });
 
   it("the error path never returns preservation metadata (no result to trust when the mutation didn't happen)", () => {
-    const body = updateClubPricingBody();
+    const body = persistClubPricingBody();
     const errorReturns = [...body.matchAll(/return \{ error: [^}]+\};/g)];
     expect(errorReturns.length).toBeGreaterThan(0);
     for (const m of errorReturns) {
@@ -553,8 +706,15 @@ describe("12. UX polish: updateClubPricing/PricingSettingsForm stale-tab feedbac
     }
   });
 
-  it("PricingSettingsForm shows the stale-tab message and resyncs local state ONLY when nonMemberRatePreserved is true", () => {
-    const s = readSource(PRICING_FORM_PATH);
+  it("updateDefaultCourtRates itself is a thin pass-through — it returns persistClubPricing's result directly, so the preservation metadata reaches DefaultCourtRatesForm unchanged", () => {
+    const s = readSource(SETTINGS_ACTIONS_PATH);
+    expect(s).toContain(
+      "return persistClubPricing(\n    currentSettings.currency,\n    defaultCourtHourlyRateCents,\n    defaultCourtHourlyRateNonMemberCents,\n  );",
+    );
+  });
+
+  it("DefaultCourtRatesForm shows the stale-tab message and resyncs local state ONLY when nonMemberRatePreserved is true", () => {
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain("if (result.nonMemberRatePreserved) {");
     const preservedBranchIdx = s.indexOf("if (result.nonMemberRatePreserved) {");
     const elseIdx = s.indexOf("} else {", preservedBranchIdx);
@@ -565,12 +725,12 @@ describe("12. UX polish: updateClubPricing/PricingSettingsForm stale-tab feedbac
   });
 
   it("a normal ON-state save still shows the plain existing \"Saved\" message, unchanged", () => {
-    const s = readSource(PRICING_FORM_PATH);
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain('setStatus({ type: "success", message: "Saved" });');
   });
 
   it("the route is refreshed after every successful save, not only the stale-tab case — so a stale tab's membershipsEnabled prop stops being stale", () => {
-    const s = readSource(PRICING_FORM_PATH);
+    const s = readSource(DEFAULT_COURT_RATES_FORM_PATH);
     expect(s).toContain('import { useRouter } from "next/navigation";');
     expect(s).toContain("const router = useRouter();");
     const submitStart = s.indexOf("function handleSubmit(");
@@ -735,8 +895,8 @@ describe("10. no membership-management or Member Detail scope creep", () => {
     return [...source.matchAll(/\.rpc\(\s*"([a-z_]+)"/g)].map((m) => m[1]);
   }
 
-  it("MembershipsSection and PricingSettingsForm never call a membership-type/roster-membership RPC", () => {
-    for (const path of [MEMBERSHIPS_SECTION_PATH, PRICING_FORM_PATH]) {
+  it("MembershipsSection and DefaultCourtRatesForm never call a membership-type/roster-membership RPC", () => {
+    for (const path of [MEMBERSHIPS_SECTION_PATH, DEFAULT_COURT_RATES_FORM_PATH]) {
       const calledNames = rpcNamesCalled(readSource(path));
       for (const forbidden of FORBIDDEN_RPC_NAMES) {
         expect(calledNames).not.toContain(forbidden);
@@ -785,7 +945,7 @@ describe("10. no membership-management or Member Detail scope creep", () => {
     // This checkpoint's own concern is narrower and still holds: none of
     // ITS files touch 0188/0189/0190's owned RPCs, and it introduced no
     // migration of its own.
-    for (const path of [SETTINGS_ACTIONS_PATH, COURTS_ACTIONS_PATH, PRICING_FORM_PATH, COURT_MANAGEMENT_LIST_PATH, MEMBERSHIPS_SECTION_PATH]) {
+    for (const path of [SETTINGS_ACTIONS_PATH, COURTS_ACTIONS_PATH, DEFAULT_COURT_RATES_FORM_PATH, COURT_MANAGEMENT_LIST_PATH, MEMBERSHIPS_SECTION_PATH]) {
       const s = readSource(path);
       expect(s).not.toMatch(/create or replace function|drop function|alter table/i);
     }

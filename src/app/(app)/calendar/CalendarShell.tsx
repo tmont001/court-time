@@ -15,8 +15,10 @@ import LessonRequestDetail from "@/app/(app)/lessons/LessonRequestDetail";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
-import { createReservation, adminCreateMemberReservation, cancelMemberReservationConfirmed, getReservationDeepLinkDetail } from "./actions";
+import { createReservation, adminCreateMemberReservation, cancelMemberReservationConfirmed, getReservationDeepLinkDetail, previewReservationPrice, type ReservationPriceQuote } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
+import ReservationPricePreview, { type ReservationPricePreviewStatus } from "./ReservationPricePreview";
+import { reservationPriceSourceLabel, reservationPriceClassLabel } from "@/lib/calendar/reservationPriceSourceLabel";
 import { getZonedDayBoundsUTC } from "@/lib/timezone";
 import {
   minutesSinceGridStart,
@@ -29,8 +31,6 @@ import {
 import { STALE_CLUB_CONTEXT_ERROR, STALE_CLUB_MESSAGE } from "@/lib/staleClub";
 import { canAccessOperationsWorkspace, isOperator } from "@/lib/auth/roles";
 import { canOpenReservationDetail, isOwnReservation } from "@/lib/calendar/reservationAccess";
-import { formatMoney } from "@/lib/money";
-import PriceSummary from "@/components/PriceSummary";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -228,8 +228,7 @@ interface Props {
   initialEventId?: string | null;
   operatingHours:          OperatingHoursRow[];
   operatingHoursOverrides: OperatingHoursOverrideRow[]; // Phase 17C
-  currency:                     string; // Phase 34B
-  defaultCourtHourlyRateCents:  number | null; // Phase 34B: club default, court.hourly_rate_cents overrides it
+  currency:                string; // Phase 34B
 }
 
 // ─── Time slot list ───────────────────────────────────────────────────────────
@@ -309,7 +308,7 @@ function mergeRowsById<T extends { id: string }>(
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialEventId, operatingHours, operatingHoursOverrides, currency, defaultCourtHourlyRateCents }: Props) {
+export default function CalendarShell({ courts, hasError, userId, userRosterMemberId, clubId, clubTimezone, userRole, todayISO, initialDateISO, initialReservationId, initialEventId, operatingHours, operatingHoursOverrides, currency }: Props) {
   const supabase = useMemo(() => createClient(), []);
   const router   = useRouter();
   // Phase 36E fix: reactive to a same-route notification click. Next.js's
@@ -437,6 +436,14 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   const [bookingPlayerCount, setBookingPlayerCount]     = useState("");
   const [bookingGuestNames, setBookingGuestNames]       = useState("");
   const [bookingNotes, setBookingNotes]                 = useState("");
+  // Peak/Off-Peak Pricing — Checkpoint C: truthful booking-price preview,
+  // resolved exclusively via previewReservationPrice (the canonical
+  // preview_court_reservation_price RPC, 0201/0202) — never computed from
+  // court.hourly_rate_cents/a club default rate client-side (the
+  // now-obsolete defaultCourtHourlyRateCents prop this replaced was
+  // removed end-to-end, calendar/page.tsx through EditReservationSheet).
+  const [bookingPreviewStatus, setBookingPreviewStatus] = useState<ReservationPricePreviewStatus>("idle");
+  const [bookingPreviewQuote, setBookingPreviewQuote]   = useState<ReservationPriceQuote | null>(null);
   // nowMs is 0 during SSR so all slots render as available (no past-slot check).
   // After hydration, useEffect sets the real timestamp, past slots disable without mismatch.
   const [nowMs, setNowMs]                 = useState(0);
@@ -1040,6 +1047,56 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingSlot, canBookForMember]);
+
+  // Peak/Off-Peak Pricing — Checkpoint C: booking-price preview, refreshed
+  // whenever a price-affecting input changes (court, start, duration, or —
+  // for an operator — the target Member). Never fired for unrelated
+  // metadata (format/player count/guest names/notes). The `cancelled`
+  // closure-flag guard mirrors this codebase's existing convention for
+  // async effects tied to state changes (e.g. EventDetailSheet's own
+  // payment-state fetch) — its cleanup runs before every subsequent
+  // effect invocation, so a slower, now-superseded response can never
+  // overwrite what a newer selection already produced.
+  useEffect(() => {
+    if (!bookingSlot) {
+      setBookingPreviewStatus("idle");
+      setBookingPreviewQuote(null);
+      return;
+    }
+    // Operator path requires a Member selection before there is a
+    // meaningful identity to preview pricing for — matches
+    // handleConfirmBooking's own identical requirement at Save time.
+    if (canBookForMember && !selectedRosterMemberId) {
+      setBookingPreviewStatus("idle");
+      setBookingPreviewQuote(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBookingPreviewStatus("loading");
+
+    const endsAt = new Date(bookingSlot.slotStart.getTime() + bookingDuration * 60_000);
+
+    (async () => {
+      const result = await previewReservationPrice({
+        p_court_id:         bookingSlot.court.id,
+        p_starts_at:        bookingSlot.slotStart.toISOString(),
+        p_ends_at:          endsAt.toISOString(),
+        p_roster_member_id: canBookForMember ? selectedRosterMemberId : null,
+        expectedClubId:     clubId,
+      });
+      if (cancelled) return;
+      if (result.error || !result.data) {
+        setBookingPreviewStatus("error");
+        setBookingPreviewQuote(null);
+        return;
+      }
+      setBookingPreviewQuote(result.data);
+      setBookingPreviewStatus("ready");
+    })();
+
+    return () => { cancelled = true; };
+  }, [bookingSlot, bookingDuration, canBookForMember, selectedRosterMemberId, clubId]);
 
   const filteredRosterMembers = useMemo(() => {
     const q = rosterSearch.trim().toLowerCase();
@@ -1952,6 +2009,16 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
                             : isBlocked
                             ? "text-gray-400"
                             : "bg-gray-500 text-white"
+                        } ${
+                          // Mobile QA correction: an ordinary member_booking
+                          // block's label was left-aligned while event blocks
+                          // read as visually centered — mobile-first classes
+                          // (no prefix) center it to match, reverting to the
+                          // pre-existing left alignment at sm: and up
+                          // (desktop unchanged). Maintenance/admin blocks
+                          // (isBlocked) are deliberately excluded — their
+                          // rendering must stay exactly as it was.
+                          !isBlocked ? "justify-center text-center sm:justify-start sm:text-left" : ""
                         } ${justChangedIds.has(res.id) ? "ct-calendar-item-settle" : ""}`;
                         const blockStyle = {
                           ...blockPos,
@@ -2229,7 +2296,6 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             )
           }
           currency={currency}
-          defaultCourtHourlyRateCents={defaultCourtHourlyRateCents}
           onClose={() => setSelectedReservation(null)}
           onCancelled={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
           onUpdated={() => { setRefreshTick(t => t + 1); setSelectedReservation(null); }}
@@ -2442,31 +2508,22 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
               </div>
             )}
 
-            {(() => {
-              const resolvedRateCents = bookingSlot.court.hourly_rate_cents ?? defaultCourtHourlyRateCents;
-              if (resolvedRateCents === null) {
-                return canBookForMember ? (
-                  <PriceSummary
-                    label="Price"
-                    amountCents={null}
-                    currency={currency}
-                    viewer="operator"
-                    className="mt-3"
-                  />
-                ) : null;
-              }
-              const priceCents = Math.round(resolvedRateCents * bookingDuration / 60);
-              return (
-                <PriceSummary
-                  label="Price"
-                  amountCents={priceCents}
-                  currency={currency}
-                  viewer={canBookForMember ? "operator" : "member"}
-                  breakdown={`${formatMoney(resolvedRateCents, currency)}/hour × ${bookingDuration} min`}
-                  className="mt-3"
-                />
-              );
-            })()}
+            {/* Peak/Off-Peak Pricing — Checkpoint C: truthful preview via
+                previewReservationPrice, never a client-side court.hourly_
+                rate_cents/club-default-rate computation. */}
+            <ReservationPricePreview
+              status={bookingPreviewStatus}
+              totalCents={bookingPreviewQuote?.priceAmountCents ?? null}
+              hourlyRateCents={bookingPreviewQuote?.hourlyRateCents ?? null}
+              sourceLabel={reservationPriceSourceLabel(
+                bookingPreviewQuote?.appliedRateSource ?? null,
+                bookingPreviewQuote?.appliedRatePeriodName ?? null,
+              )}
+              rateClassLabel={reservationPriceClassLabel(bookingPreviewQuote?.appliedRateSource ?? null)}
+              currency={bookingPreviewQuote?.currency ?? currency}
+              viewer={canBookForMember ? "operator" : "member"}
+              className="mt-3"
+            />
 
             {bookingConflict && (
               <p className="mt-3 text-xs text-amber-600">

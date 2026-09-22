@@ -216,6 +216,89 @@ export async function adminCreateMemberReservation(params: {
 }
 
 // ---------------------------------------------------------------------------
+// previewReservationPrice
+// Peak/Off-Peak Pricing — Checkpoint C. Thin, read-only wrapper around the
+// canonical public.preview_court_reservation_price RPC (0201/0202,
+// applied/immutable) — the ONLY place court/period/default precedence,
+// Member/Non-Member classification, and start-time-only rate selection are
+// decided. This action performs no precedence logic of its own: it forwards
+// the caller's inputs verbatim and reshapes the RPC's single output row
+// into camelCase, nothing more. No write, no payment obligation, no
+// checkout, no reservation — a preview is purely informational; the actual
+// create_reservation / admin_create_member_reservation / update_member_
+// reservation call remains the sole authority at Save time.
+//
+// p_roster_member_id is OPTIONAL and mirrors the two authorization
+// branches the RPC itself already enforces — never re-implemented here:
+//   - omitted (undefined/null): self-service preview. The RPC resolves
+//     ONLY the caller's own roster identity server-side
+//     (current_user_roster_member_id()) — there is no parameter here
+//     through which a Member could name anyone else.
+//   - provided: Admin/Staff previewing on behalf of an explicit, same-club
+//     roster Member — the RPC requires admin/staff and validates the
+//     target same-club, exactly as admin_create_member_reservation does
+//     for the real booking. This action never adds or widens that check;
+//     it is enforced entirely by the RPC.
+// p_expected_club_id is always sent (mirroring assertActiveClub's own
+// preflight below) so the universal stale-club guard applies to both
+// branches, not only the operator one.
+// ---------------------------------------------------------------------------
+export interface ReservationPriceQuote {
+  membershipPricingClass: "member" | "non_member";
+  hourlyRateCents:        number | null;
+  priceAmountCents:       number | null;
+  currency:               string;
+  appliedRateSource:      string;
+  appliedRatePeriodId:    string | null;
+  appliedRatePeriodName:  string | null;
+}
+
+export async function previewReservationPrice(params: {
+  p_court_id:         string;
+  p_starts_at:        string;
+  p_ends_at:          string;
+  p_roster_member_id?: string | null;
+  expectedClubId:     string;
+}): Promise<{ data?: ReservationPriceQuote; error?: string }> {
+  const guard = await assertActiveClub(params.expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("preview_court_reservation_price", {
+    p_court_id:         params.p_court_id,
+    p_starts_at:        params.p_starts_at,
+    p_ends_at:          params.p_ends_at,
+    p_roster_member_id: params.p_roster_member_id ?? null,
+    p_expected_club_id: params.expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  const row = (data as unknown as {
+    membership_pricing_class: string;
+    hourly_rate_cents:        number | null;
+    price_amount_cents:       number | null;
+    currency:                 string;
+    applied_rate_source:      string;
+    applied_rate_period_id:   string | null;
+    applied_rate_period_name: string | null;
+  }[] | null)?.[0];
+  if (!row) return { error: "preview_unavailable" };
+
+  return {
+    data: {
+      membershipPricingClass: row.membership_pricing_class as "member" | "non_member",
+      hourlyRateCents:        row.hourly_rate_cents,
+      priceAmountCents:       row.price_amount_cents,
+      currency:               row.currency,
+      appliedRateSource:      row.applied_rate_source,
+      appliedRatePeriodId:    row.applied_rate_period_id,
+      appliedRatePeriodName:  row.applied_rate_period_name,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // createEvent
 // Phase 26F1: wraps the create_event RPC in a Server Action (moved off the
 // client-side supabase.rpc call in CreateEventSheet.tsx) so the stale-club
