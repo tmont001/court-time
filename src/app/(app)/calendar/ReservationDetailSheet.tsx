@@ -7,6 +7,7 @@ import ResponsiveSheet from "@/components/ResponsiveSheet";
 import EditReservationSheet from "./EditReservationSheet";
 import EditMaintenanceSheet from "./EditMaintenanceSheet";
 import ReservationRosterSection from "./ReservationRosterSection";
+import ReservationPlayerSearchSection from "./ReservationPlayerSearchSection";
 import PriceSummary from "@/components/PriceSummary";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import RecordPaymentSheet from "@/components/RecordPaymentSheet";
@@ -212,6 +213,16 @@ export default function ReservationDetailSheet({
   } | null>(null);
   const [policyPreviewLoading, setPolicyPreviewLoading] = useState(false);
   const [policyChangedNotice, setPolicyChangedNotice]   = useState(false);
+
+  // Phase 39C-1 correction — a successful ReservationRosterSection
+  // mutation (add/remove participant, add/remove guest) can change the
+  // backend's canonical occupied_seats/remaining_spots for Looking for
+  // Players. This is UI coordination only: no participant/guest data is
+  // shared between the two sibling sections, and no occupancy is ever
+  // computed here — bumping this revision only tells
+  // ReservationPlayerSearchSection to re-run its own canonical
+  // get_reservation_player_search read.
+  const [rosterRefreshRevision, setRosterRefreshRevision] = useState(0);
 
   // Phase 34C — payment state, fetched via the sanitized batched read
   // boundary. Only meaningful for member_booking reservations (the only
@@ -591,6 +602,29 @@ export default function ReservationDetailSheet({
         {reservation.reason === "member_booking" && (canManageMemberReservation || canManageOwnReservationRoster) && (
           <ReservationRosterSection
             reservationId={reservation.id}
+            clubId={clubId}
+            isCancelled={isCancelled}
+            onRosterChanged={() => setRosterRefreshRevision(r => r + 1)}
+          />
+        )}
+
+        {/* Looking for Players — Phase 39C-1. Same render gate as
+            ReservationRosterSection above (owner or operator, member_
+            booking only) — a distinct sibling section, never merged into
+            the roster section itself, and never reading/writing
+            reservation_participants/reservation_guests. Renders nothing
+            at all when isCancelled (the component's own early return) —
+            no LFP mutation controls on a cancelled reservation.
+            refreshRevision: bumped by ReservationRosterSection's own
+            onRosterChanged above after a successful participant/guest
+            mutation, so this section re-fetches its canonical
+            get_reservation_player_search state whenever the sibling
+            roster changes occupancy — UI coordination only, no
+            participant/guest data crosses between the two components. */}
+        {reservation.reason === "member_booking" && (canManageMemberReservation || canManageOwnReservationRoster) && (
+          <ReservationPlayerSearchSection
+            reservationId={reservation.id}
+            refreshRevision={rosterRefreshRevision}
             clubId={clubId}
             isCancelled={isCancelled}
           />

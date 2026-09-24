@@ -516,3 +516,84 @@ describe("compatibility — no non-UI scope creep in Phase 37D", () => {
     expect(d).toContain("const canEdit =");
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 39C-1 correction — onRosterChanged coordination with the sibling
+// Looking-for-Players section
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("onRosterChanged — optional roster-change callback for LFP coordination", () => {
+  it("2. Props declares an optional onRosterChanged callback", () => {
+    const s = section();
+    expect(s).toContain("onRosterChanged?: () => void;");
+    expect(s).toMatch(/export default function ReservationRosterSection\(\{[^}]*onRosterChanged[^}]*\}: Props\)/);
+  });
+
+  it("3a. a successful add-participant mutation invokes onRosterChanged", () => {
+    const s = section();
+    const start = s.indexOf("async function handleAddMember()");
+    const end = s.indexOf("\n  }\n", start);
+    const body = s.slice(start, end);
+    expect(body).toContain("loadRoster();\n    onRosterChanged?.();");
+  });
+
+  it("3b. a successful remove-participant mutation invokes onRosterChanged", () => {
+    const s = section();
+    const start = s.indexOf("async function handleRemoveParticipant(");
+    const end = s.indexOf("\n  }\n", start);
+    const body = s.slice(start, end);
+    expect(body).toContain("loadRoster();\n    onRosterChanged?.();");
+  });
+
+  it("4a. a successful add-guest mutation invokes onRosterChanged", () => {
+    const s = section();
+    const start = s.indexOf("async function handleAddGuest()");
+    const end = s.indexOf("\n  }\n", start);
+    const body = s.slice(start, end);
+    expect(body).toContain("loadRoster();\n    onRosterChanged?.();");
+  });
+
+  it("4b. a successful remove-guest mutation invokes onRosterChanged", () => {
+    const s = section();
+    const start = s.indexOf("async function handleRemoveGuest(");
+    const end = s.indexOf("\n  }\n", start);
+    const body = s.slice(start, end);
+    expect(body).toContain("loadRoster();\n    onRosterChanged?.();");
+  });
+
+  it("5. every onRosterChanged call site is textually AFTER the mutation's own error-return guard, in all four handlers — never reached on failure", () => {
+    const s = section();
+    for (const fn of ["handleAddMember", "handleRemoveParticipant", "handleRemoveGuest", "handleAddGuest"]) {
+      const start = s.indexOf(`async function ${fn}(`);
+      const end = s.indexOf("\n  }\n", start);
+      const body = s.slice(start, end);
+      const errorReturnIdx = body.indexOf("if (result.error) {");
+      const callbackIdx = body.indexOf("onRosterChanged?.();");
+      expect(errorReturnIdx, `${fn} missing error guard`).toBeGreaterThan(0);
+      expect(callbackIdx, `${fn} missing onRosterChanged call`).toBeGreaterThan(errorReturnIdx);
+    }
+  });
+
+  it("handleCopyWaiverLink (does not change occupancy) never invokes onRosterChanged", () => {
+    const s = section();
+    const start = s.indexOf("async function handleCopyWaiverLink(");
+    const end = s.indexOf("\n  }\n", start);
+    const body = s.slice(start, end);
+    expect(body).not.toMatch(/onRosterChanged/);
+  });
+
+  it("6. ReservationDetailSheet owns a refresh revision and wires it through both sibling sections", () => {
+    const d = detail();
+    expect(d).toContain("const [rosterRefreshRevision, setRosterRefreshRevision] = useState(0);");
+    expect(d).toContain("onRosterChanged={() => setRosterRefreshRevision(r => r + 1)}");
+    expect(d).toContain("refreshRevision={rosterRefreshRevision}");
+  });
+
+  it("no participant/guest array or occupancy value is passed from ReservationRosterSection to ReservationDetailSheet — the callback is a plain no-argument signal", () => {
+    const d = detail();
+    const idx = d.indexOf("onRosterChanged={() => setRosterRefreshRevision(r => r + 1)}");
+    expect(idx).toBeGreaterThan(0);
+    // The arrow function passed as the callback takes no parameters.
+    expect(d.slice(idx, idx + 60)).toMatch(/onRosterChanged=\{\(\) =>/);
+  });
+});

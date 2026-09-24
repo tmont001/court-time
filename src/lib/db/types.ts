@@ -2477,6 +2477,27 @@ export type Database = {
         Args: { p_reservation_id: string; p_expected_club_id: string; p_guest_id: string };
         Returns: string;  // reservation_guests.id
       };
+      // Phase 39B-2 (0204, read-ambiguity fix 0205) — Looking-for-Players.
+      get_reservation_player_search: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: {
+          reservation_id:              string;
+          player_capacity:             number;
+          is_open:                     boolean;
+          effective_is_open:           boolean;
+          effective_open_block_reason: string | null;  // 'stale_host' | 'host_inactive' | 'legacy_guest_names' | null
+          occupied_seats:              number;
+          remaining_spots:             number;
+        }[];  // zero rows when no search exists for this reservation yet
+      };
+      set_reservation_player_search: {
+        Args: { p_reservation_id: string; p_expected_club_id: string; p_player_capacity: number };
+        Returns: string;  // reservation_player_searches.id
+      };
+      clear_reservation_player_search: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: string;  // reservation_player_searches.id
+      };
       get_members: {
         Args: Record<string, never>;
         Returns: {

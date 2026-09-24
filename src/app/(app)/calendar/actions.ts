@@ -1694,6 +1694,101 @@ export async function removeReservationGuest(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 39C-1 — Looking for Players owner/operator controls.
+//
+// Thin server-action wrappers over the three Phase 39B-2 (0204, read-
+// ambiguity fix 0205) SECURITY DEFINER RPCs — reservation_player_searches
+// has zero client-facing RLS policies and zero direct table grants,
+// exactly like reservation_participants/reservation_guests above. Same
+// conventions as those actions: assertActiveClub preflight, raw RPC error
+// codes passed straight through unmapped (the client component maps them
+// to user-safe copy), revalidatePath after a successful mutation.
+// ---------------------------------------------------------------------------
+
+export interface ReservationPlayerSearchState {
+  player_capacity:             number;
+  is_open:                     boolean;
+  effective_is_open:           boolean;
+  effective_open_block_reason: string | null;
+  occupied_seats:              number;
+  remaining_spots:             number;
+}
+
+// get_reservation_player_search legitimately returns ZERO rows when this
+// reservation has never had a Looking-for-Players search — a valid, common
+// state, never an error. Represented here as data: null (never as an
+// error, never as an empty array the caller has to interpret), so callers
+// never have to guess whether "no rows" means "no search yet" or "the read
+// failed."
+export async function getReservationPlayerSearch(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: ReservationPlayerSearchState | null; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_reservation_player_search", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  const rows = (data ?? []) as ReservationPlayerSearchState[];
+  return { data: rows[0] ?? null };
+}
+
+// Opens, updates capacity on, or reopens (including for the stale-host
+// case) a Looking-for-Players search — the RPC itself derives
+// host_roster_member_id server-side and re-validates every eligibility
+// condition; this action adds no logic of its own.
+export async function setReservationPlayerSearch(
+  reservationId: string,
+  expectedClubId: string,
+  playerCapacity: number,
+): Promise<{ data?: { playerSearchId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("set_reservation_player_search", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+    p_player_capacity: playerCapacity,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { playerSearchId: data as unknown as string } };
+}
+
+// Sets is_open = false only — never deletes the row, never touches
+// reservation_participants/reservation_guests. Available to Admin/Staff
+// even when member_self_service is disabled or the search is inert
+// (stale/host-inactive) — the RPC itself never requires capability to
+// clear, matching its own documented cleanup-must-never-be-trapped intent.
+export async function clearReservationPlayerSearch(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: { playerSearchId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("clear_reservation_player_search", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  return { data: { playerSearchId: data as unknown as string } };
+}
+
+// ---------------------------------------------------------------------------
 // mintReservationGuestWaiverInvitationAction
 // Phase 43B-4B — "Copy Waiver Link" for a reservation Guest. Authorization
 // is entirely delegated to mint_reservation_guest_waiver_invitation

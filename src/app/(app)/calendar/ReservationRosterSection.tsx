@@ -43,6 +43,15 @@ interface Props {
   // roster never has to guess whether it's empty-because-cancelled or
   // empty-because-no-one-was-added-yet (Phase 37D locked requirement).
   isCancelled:   boolean;
+  // Phase 39C-1 correction — optional, fired only after a roster mutation
+  // that actually SUCCEEDED and can change occupied-seat count (add/remove
+  // participant, add/remove guest). This is UI coordination only: the
+  // parent (ReservationDetailSheet) uses it to bump a refresh revision so
+  // the sibling ReservationPlayerSearchSection re-fetches its own
+  // canonical get_reservation_player_search state — this component never
+  // computes or shares occupancy data itself, and never calls this on a
+  // failed mutation or on a read-only load.
+  onRosterChanged?: () => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -136,7 +145,7 @@ function GuestWaiverPill({ status }: { status: string }) {
 
 // ─── Component ───────────────────────────────────────────────────────────
 
-export default function ReservationRosterSection({ reservationId, clubId, isCancelled }: Props) {
+export default function ReservationRosterSection({ reservationId, clubId, isCancelled, onRosterChanged }: Props) {
   const [rows, setRows]       = useState<ReservationRosterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
@@ -245,6 +254,7 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
     setSelectedMemberId("");
     setMemberList([]);
     loadRoster();
+    onRosterChanged?.();
   }
 
   async function handleRemoveParticipant(row: ReservationRosterRow) {
@@ -260,6 +270,7 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
       return;
     }
     loadRoster();
+    onRosterChanged?.();
     // The just-removed roster identity becomes eligible again — refresh
     // the picker if it's currently open so it reflects that immediately,
     // rather than showing a stale list until the sheet is reopened.
@@ -283,6 +294,7 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
     // Guest removal has no effect on roster-member eligibility — no
     // picker refresh needed here.
     loadRoster();
+    onRosterChanged?.();
   }
 
   // Phase 43B-4B — "Copy Waiver Link". Every successful call ROTATES the
@@ -334,6 +346,7 @@ export default function ReservationRosterSection({ reservationId, clubId, isCanc
     setAddGuestOpen(false);
     setGuestName("");
     loadRoster();
+    onRosterChanged?.();
   }
 
   // ── Derived ───────────────────────────────────────────────────────────
