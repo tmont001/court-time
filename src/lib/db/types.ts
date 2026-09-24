@@ -2498,6 +2498,44 @@ export type Database = {
         Args: { p_reservation_id: string; p_expected_club_id: string };
         Returns: string;  // reservation_player_searches.id
       };
+      get_open_reservation_player_searches: {
+        Args: { p_expected_club_id: string };
+        Returns: {
+          reservation_id:    string;
+          court_id:          string;
+          court_name:        string;
+          starts_at:         string;
+          ends_at:           string;
+          format:            string | null;
+          host_display_name: string;
+          player_capacity:   number;
+          occupied_seats:    number;
+          remaining_spots:   number;
+        }[];
+      };
+      join_reservation_player_search: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: string;  // reservation_participants.id
+      };
+      leave_reservation_participation: {
+        Args: { p_reservation_id: string; p_expected_club_id: string };
+        Returns: string;  // reservation_participants.id
+      };
+      // Phase 39C-2A (0206) — My Schedule read for existing joined
+      // participations. Search-state independent (never reservation_
+      // player_searches); claim-continuity only, no eligibility gate.
+      get_my_reservation_player_participations: {
+        Args: { p_expected_club_id: string };
+        Returns: {
+          reservation_id:    string;
+          court_id:          string;
+          court_name:        string;
+          starts_at:         string;
+          ends_at:           string;
+          format:            string | null;
+          host_display_name: string;
+        }[];
+      };
       get_members: {
         Args: Record<string, never>;
         Returns: {
