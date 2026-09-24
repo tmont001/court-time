@@ -32,12 +32,13 @@ const ALL_KINDS: NotificationKind[] = [
   "refund_request_completed",
   "refund_request_submitted",
   "member_waiver_requires_acceptance",
+  "reservation_player_activity",
 ];
 
 describe("NOTIFICATION_TARGET_MAP", () => {
-  it("has an explicit entry for exactly the 21 authoritative kinds", () => {
+  it("has an explicit entry for exactly the 22 authoritative kinds", () => {
     expect(Object.keys(NOTIFICATION_TARGET_MAP).sort()).toEqual([...ALL_KINDS].sort());
-    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(21);
+    expect(Object.keys(NOTIFICATION_TARGET_MAP)).toHaveLength(22);
   });
 });
 
@@ -47,6 +48,10 @@ describe("resolveNotificationTarget — reservation kinds", () => {
     "reservation_cancelled_by_admin",
     "reservation_cancelled_by_member",
     "reservation_rescheduled",
+    // Phase 39C-2B — owner Join/Leave notifications for Looking-for-
+    // Players (0204) share the identical reservation_id-keyed target
+    // shape as every other reservation-domain kind above.
+    "reservation_player_activity",
   ];
 
   it.each(RESERVATION_KINDS)("%s resolves to the canonical reservation path for every role", (kind) => {

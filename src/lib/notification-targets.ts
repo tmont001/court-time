@@ -67,7 +67,8 @@ export type NotificationKind =
   | "refund_request_rejected"
   | "refund_request_completed"
   | "refund_request_submitted"
-  | "member_waiver_requires_acceptance";
+  | "member_waiver_requires_acceptance"
+  | "reservation_player_activity";
 
 export type TargetDomain = "reservation" | "event" | "lesson_request" | "program" | "payment_refund_request";
 
@@ -132,6 +133,16 @@ export const NOTIFICATION_TARGET_MAP = {
   // same precedent as announcement/refund_request_rejected/
   // refund_request_completed above.
   member_waiver_requires_acceptance: null,
+  // Phase 39C-2B — owner Join/Leave notifications for Looking-for-Players
+  // (Phase 39B-2, 0204). Same shape as reservation_confirmed above: both
+  // join_reservation_player_search and leave_reservation_participation
+  // already write metadata.reservation_id (0204), and the recipient is
+  // always the reservation's own current host (roster_members.claimed_by
+  // for reservations.roster_member_id) — never a joining participant — so
+  // the existing /calendar?reservation=<id> deep link is already exactly
+  // the owner's own reservation they're already authorized to open. No
+  // new routing framework, no separate joined-participant destination.
+  reservation_player_activity: { domain: "reservation", idKey: "reservation_id" },
 } satisfies Record<NotificationKind, TargetDefinition | readonly TargetDefinition[] | null>;
 
 // Same shape as the local UUID_RE already duplicated per-file across the

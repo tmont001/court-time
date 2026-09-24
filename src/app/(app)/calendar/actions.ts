@@ -1789,6 +1789,73 @@ export async function clearReservationPlayerSearch(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 39C-2B — Open Games discovery + instant join.
+//
+// Thin server-action wrappers over the two remaining Phase 39B-2 (0204)
+// SECURITY DEFINER RPCs client work had not yet reached: discovery and
+// join. Same conventions as every other action in this file:
+// assertActiveClub preflight, raw RPC error codes passed straight through
+// unmapped (the client component maps them to user-safe copy), no
+// occupancy/eligibility logic reproduced here — the RPC is the sole
+// authority for who may see what and whether a join succeeds.
+// ---------------------------------------------------------------------------
+
+export interface ReservationPlayerSearchOpportunity {
+  reservation_id:     string;
+  court_id:            string;
+  court_name:          string;
+  starts_at:           string;
+  ends_at:             string;
+  format:              string | null;
+  host_display_name:   string;
+  player_capacity:     number;
+  occupied_seats:      number;
+  remaining_spots:     number;
+}
+
+export async function getOpenReservationPlayerSearches(
+  expectedClubId: string,
+): Promise<{ data?: ReservationPlayerSearchOpportunity[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_open_reservation_player_searches", {
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  return { data: (data ?? []) as ReservationPlayerSearchOpportunity[] };
+}
+
+// Self-only — the caller never supplies a target roster_member_id; the RPC
+// always resolves the joiner from current_user_roster_member_id() server-
+// side. On success, revalidates /my-schedule (Phase 39C-2C's future read
+// surface) alongside the existing /calendar revalidation — this action
+// never mutates payment/pricing/checkout/refund/cancellation state in any
+// way.
+export async function joinReservationPlayerSearch(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: { participantId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("join_reservation_player_search", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+  return { data: { participantId: data as unknown as string } };
+}
+
+// ---------------------------------------------------------------------------
 // mintReservationGuestWaiverInvitationAction
 // Phase 43B-4B — "Copy Waiver Link" for a reservation Guest. Authorization
 // is entirely delegated to mint_reservation_guest_waiver_invitation

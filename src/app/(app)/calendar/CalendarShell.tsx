@@ -15,6 +15,8 @@ import LessonRequestDetail from "@/app/(app)/lessons/LessonRequestDetail";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 import CreateMaintenanceSheet from "./CreateMaintenanceSheet";
 import CalendarFab from "./CalendarFab";
+import PageTabs from "@/components/PageTabs";
+import OpenGamesView from "./OpenGamesView";
 import { createReservation, adminCreateMemberReservation, cancelMemberReservationConfirmed, getReservationDeepLinkDetail, previewReservationPrice, type ReservationPriceQuote } from "./actions";
 import ResponsiveSheet from "@/components/ResponsiveSheet";
 import ReservationPricePreview, { type ReservationPricePreviewStatus } from "./ReservationPricePreview";
@@ -330,6 +332,39 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // each effect's own comment) — otherwise the effect's own cleanup could
   // re-trigger itself via this same searchParams dependency.
   const searchParams = useSearchParams();
+
+  // ── Phase 39C-2B — Calendar / Open Games secondary view ─────────────────
+  // A sibling content view within THIS SAME /calendar route, not a new
+  // route and not a new bottom-nav destination — matches the existing
+  // reservation/event deep-link convention exactly: window.history.
+  // replaceState (never router.push/replace, which would force a Next.js
+  // Server Component re-fetch/remount) keeps the URL shareable
+  // (?view=open-games), and local state drives the render so the switch
+  // is instant and never depends solely on Next's own history-API
+  // interception timing. The effect below keeps that local state in sync
+  // with the LIVE url for back/forward navigation and any other external
+  // change to searchParams (the same dual seed-from-prop-then-sync-via-
+  // effect pattern every other URL-reflected piece of state in this file
+  // already uses).
+  const [isOpenGamesView, setIsOpenGamesView] = useState(
+    () => searchParams.get("view") === "open-games",
+  );
+
+  useEffect(() => {
+    setIsOpenGamesView(searchParams.get("view") === "open-games");
+  }, [searchParams]);
+
+  function setCalendarView(view: "calendar" | "open-games") {
+    const params = new URLSearchParams(window.location.search);
+    if (view === "open-games") {
+      params.set("view", "open-games");
+    } else {
+      params.delete("view");
+    }
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `/calendar?${query}` : "/calendar");
+    setIsOpenGamesView(view === "open-games");
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   // Initialize from the server-supplied date string (UTC noon = same calendar date in any timezone).
@@ -1512,6 +1547,27 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
         style={{ height: "var(--page-fill-height)" }}
       >
 
+        {/* ── Calendar / Open Games — Phase 39C-2B secondary view switch ──
+            Canonical PageTabs, same visual chrome as every other route-
+            level tab strip in this app. Always rendered, in both views —
+            this is what lets the user switch back. Never affects the
+            bottom nav (unrelated navigation layer) and never changes
+            ordinary calendar-grid privacy — Open Games is a sibling
+            content branch below, not a modification to the grid. */}
+        <div className="px-3 pt-2 shrink-0">
+          <PageTabs
+            ariaLabel="Calendar view"
+            items={[
+              { key: "calendar", label: "Calendar", active: !isOpenGamesView, onClick: () => setCalendarView("calendar") },
+              { key: "open-games", label: "Open Games", active: isOpenGamesView, onClick: () => setCalendarView("open-games") },
+            ]}
+          />
+        </div>
+
+        {isOpenGamesView ? (
+          <OpenGamesView clubId={clubId} clubTimezone={clubTimezone} />
+        ) : (
+        <>
         {/* ── Date navigation bar ───────────────────────────────────────── */}
         {/* prev | date label button (programmatically opens date picker) | next | Today */}
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-100 dark:border-gray-800 shrink-0">
@@ -2140,6 +2196,8 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
             onCreateBlock={() => setCreatingBlock(true)}
             onBookLesson={() => router.push("/admin/lessons?book=1")}
           />
+        )}
+        </>
         )}
       </div>
 

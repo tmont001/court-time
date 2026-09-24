@@ -410,7 +410,10 @@ describe("acceptance cleanup — accept_member_waiver marks matching unread noti
 describe("notification-targets.ts wires the new kind to the legacy target_path fallback", () => {
   it("adds member_waiver_requires_acceptance to the NotificationKind union", () => {
     const s = readSource(NOTIFICATION_TARGETS_PATH);
-    expect(s).toContain('| "member_waiver_requires_acceptance";');
+    // Membership in the union only — not anchored to the terminal
+    // (semicolon-suffixed) position, which a later, legitimate kind
+    // addition (Phase 39C-2B's reservation_player_activity) already moved.
+    expect(s).toContain('"member_waiver_requires_acceptance"');
   });
 
   it("maps the new kind to null in NOTIFICATION_TARGET_MAP, matching announcement/refund_request_rejected/refund_request_completed's precedent", () => {

@@ -106,16 +106,19 @@ describe("2. actions.ts exposes exactly the three Phase 39B-2 RPC wrappers", () 
     }
   });
 
-  it("no other reservation_player_search RPC name (join/leave/discovery) is called anywhere in the new component or its actions — 39C-2 scope only", () => {
+  it("the owner-control section (ReservationPlayerSearchSection) never calls join/leave/discovery — those are the player-facing 39C-2B surface (OpenGamesView), a separate component entirely", () => {
+    // actions.ts is a shared file and, as of Phase 39C-2B, legitimately
+    // contains getOpenReservationPlayerSearches/joinReservationPlayerSearch
+    // alongside the owner-control actions this file's own describe block
+    // covers — so this check is scoped to the SECTION component only, not
+    // to the shared actions module.
     const s = section();
-    const a = actions();
     for (const forbidden of [
       "join_reservation_player_search",
       "leave_reservation_participation",
       "get_open_reservation_player_searches",
     ]) {
       expect(s).not.toMatch(new RegExp(forbidden));
-      expect(a).not.toMatch(new RegExp(forbidden));
     }
   });
 });
