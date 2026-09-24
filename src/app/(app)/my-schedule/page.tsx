@@ -12,9 +12,12 @@ import {
   declineWaitlistOffer as dispatchDeclineWaitlistOffer,
   adminCancelReservation as dispatchAdminCancelReservation,
   cancelMemberReservation as dispatchCancelMemberReservation,
+  getMyReservationPlayerParticipations,
+  type MyReservationPlayerParticipation,
 } from "@/app/(app)/calendar/actions";
 import { assertActiveClub } from "@/lib/supabase/staleClub";
 import PastEventsSection from "./PastEventsSection";
+import JoinedGameCard from "./JoinedGameCard";
 import LessonsClient from "@/app/(app)/lessons/LessonsClient";
 import type { LessonRequestRow } from "@/app/(app)/lessons/actions";
 // Phase 33G4: normalizes Accept/Pass/Leave/Leave Waitlist/Rejoin to the
@@ -60,7 +63,14 @@ interface RawSignupRow {
 
 type ScheduleItem =
   | { kind: "reservation"; res: ReservationRow; isCancellable: boolean }
-  | { kind: "event"; ev: EventItem; participantId: string; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null };
+  | { kind: "event"; ev: EventItem; participantId: string; myRole: string; myStatus: string; myAttendance: string | null; offerExpiresAt: string | null }
+  // Phase 39C-2C — a reservation the caller joined via Looking for
+  // Players (an active reservation_participants row, never their own
+  // booking). Sourced exclusively from get_my_reservation_player_
+  // participations (0206) — no separate reservation/member query, no
+  // isCancellable (the participant is not the payer and cannot cancel
+  // the booking, only leave the player list).
+  | { kind: "player_participation"; participation: MyReservationPlayerParticipation };
 
 // ─── Server actions ───────────────────────────────────────────────────────────
 
@@ -169,7 +179,9 @@ function fmtShortDate(iso: string, tz: string): string {
 }
 
 function itemStartsAt(item: ScheduleItem): string {
-  return item.kind === "reservation" ? item.res.starts_at : item.ev.starts_at;
+  if (item.kind === "reservation") return item.res.starts_at;
+  if (item.kind === "player_participation") return item.participation.starts_at;
+  return item.ev.starts_at;
 }
 
 interface PaymentListItem {
@@ -338,6 +350,11 @@ export default async function MySchedulePage({
     prosResult,
     lessonCourtsResult,
     lessonTypesResult,
+    // Phase 39C-2C — reservations the caller joined via Looking for
+    // Players. get_my_reservation_player_participations (0206) already
+    // returns the complete privacy-safe shape (including court_name) —
+    // no separate courts lookup needed for these rows.
+    playerParticipationsResult,
   ] = await Promise.all([
     clubId
       ? supabase.from("clubs").select("timezone").eq("id", clubId).single()
@@ -353,6 +370,9 @@ export default async function MySchedulePage({
       ? supabase.from("courts").select("id, name").eq("club_id", clubId).eq("is_active", true).order("display_order")
       : Promise.resolve({ data: [] }),
     supabase.rpc("get_lesson_types"),
+    clubId
+      ? getMyReservationPlayerParticipations(clubId)
+      : Promise.resolve({ data: [] as MyReservationPlayerParticipation[] }),
   ]);
 
   if (clubResult.data?.timezone) clubTimezone = clubResult.data.timezone;
@@ -388,6 +408,15 @@ export default async function MySchedulePage({
   // explicit guarantee rather than an assumption.
   const rawReservations = (reservationsResult.data ?? []) as ReservationRow[];
   const reservations = Array.from(new Map(rawReservations.map(r => [r.id, r])).values());
+
+  // Phase 39C-2C — joined-game participations. A read failure here is
+  // logged (matching the existing get_my_lesson_requests precedent below)
+  // and degrades to an empty list rather than breaking the rest of the
+  // page — this is purely additive to the Upcoming schedule.
+  if ("error" in playerParticipationsResult && playerParticipationsResult.error) {
+    console.error("[MySchedule] get_my_reservation_player_participations failed:", playerParticipationsResult.error);
+  }
+  const playerParticipations = (playerParticipationsResult.data ?? []) as MyReservationPlayerParticipation[];
 
   // Phase 34C — the Member's own read-only payment state, via the
   // sanitized batched read boundary (get_payment_states_for_domains
@@ -462,6 +491,14 @@ export default async function MySchedulePage({
       myStatus:       s.status,
       myAttendance:   s.attendance_status,
       offerExpiresAt: s.offer_expires_at,
+    })),
+    // Phase 39C-2C — joined-game participations. get_my_reservation_
+    // player_participations (0206) already excludes the caller's own
+    // hosted reservations (current-host exclusion), so a reservation this
+    // user owns can never also appear here as a duplicate "joined" card.
+    ...playerParticipations.map(participation => ({
+      kind: "player_participation" as const,
+      participation,
     })),
   ];
   allItems.sort((a, b) => itemStartsAt(a).localeCompare(itemStartsAt(b)));
@@ -706,6 +743,17 @@ export default async function MySchedulePage({
                         </p>
 
                         {dayItems.map(item => {
+                          if (item.kind === "player_participation") {
+                            return (
+                              <JoinedGameCard
+                                key={item.participation.reservation_id}
+                                participation={item.participation}
+                                clubId={clubId}
+                                clubTimezone={clubTimezone}
+                              />
+                            );
+                          }
+
                           if (item.kind === "reservation") {
                             const { res } = item;
                             const name        = courtName.get(res.court_id) ?? "Court";

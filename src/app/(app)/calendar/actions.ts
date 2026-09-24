@@ -1856,6 +1856,76 @@ export async function joinReservationPlayerSearch(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 39C-2C — My Schedule joined-game participations + durable Leave.
+//
+// Thin server-action wrappers over the two remaining Phase 39B-2/39C-2A
+// RPCs client work had not yet reached: the existing-participation read
+// (get_my_reservation_player_participations, 0206) and self-leave
+// (leave_reservation_participation, 0204). Same conventions as every other
+// action in this file: assertActiveClub preflight, raw RPC error codes
+// passed straight through unmapped (the client component maps them to
+// user-safe copy). Deliberately NO member_self_service capability check
+// and NO roster-status/eligibility check here — 0206 and 0204 are both
+// intentionally claim-continuity-only (see their own migration headers):
+// an existing participation, and the ability to leave it, must survive a
+// later capability downgrade or roster-status change. Reproducing either
+// check here would silently contradict that locked backend invariant.
+// ---------------------------------------------------------------------------
+
+export interface MyReservationPlayerParticipation {
+  reservation_id:    string;
+  court_id:           string;
+  court_name:         string;
+  starts_at:          string;
+  ends_at:            string;
+  format:             string | null;
+  host_display_name:  string;
+}
+
+export async function getMyReservationPlayerParticipations(
+  expectedClubId: string,
+): Promise<{ data?: MyReservationPlayerParticipation[]; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("get_my_reservation_player_participations", {
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  return { data: (data ?? []) as MyReservationPlayerParticipation[] };
+}
+
+// Self-only — the caller never supplies a target roster_member_id or
+// participant id; the RPC always resolves the leaver's own identity and
+// row server-side. Revalidates BOTH /my-schedule (the joined-game card
+// must disappear) and /calendar (a freed seat can make an open
+// Looking-for-Players search discoverable again). Never cancels the
+// reservation, never touches payment/pricing/checkout/refund state — this
+// action calls exactly one RPC and nothing else.
+export async function leaveReservationPlayerParticipation(
+  reservationId: string,
+  expectedClubId: string,
+): Promise<{ data?: { participantId: string }; error?: string }> {
+  const guard = await assertActiveClub(expectedClubId);
+  if (!guard.ok) return { error: guard.error };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("leave_reservation_participation", {
+    p_reservation_id: reservationId,
+    p_expected_club_id: expectedClubId,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/calendar");
+  revalidatePath("/my-schedule");
+  return { data: { participantId: data as unknown as string } };
+}
+
+// ---------------------------------------------------------------------------
 // mintReservationGuestWaiverInvitationAction
 // Phase 43B-4B — "Copy Waiver Link" for a reservation Guest. Authorization
 // is entirely delegated to mint_reservation_guest_waiver_invitation
