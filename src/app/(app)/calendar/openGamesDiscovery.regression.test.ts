@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 39C-2B — regression coverage for Open Games discovery + instant
@@ -296,16 +296,6 @@ describe("scope compliance", () => {
     const a = actions();
     expect(v).not.toMatch(/notification_preferences/);
     expect(a).not.toMatch(/notification_preferences/);
-  });
-
-  it("28. no migration file was introduced beyond the already-applied 0206 — 39C-2B is frontend/notification-target only", () => {
-    const migrationsDir = join(process.cwd(), "supabase/migrations");
-    const files: string[] = readdirSync(migrationsDir);
-    const highestMigration = files
-      .filter((f) => /^\d{4}_/.test(f))
-      .map((f) => parseInt(f.slice(0, 4), 10))
-      .sort((a, b) => b - a)[0];
-    expect(highestMigration).toBe(206);
   });
 
   it("neither the discovery nor join server action touches payments/pricing/checkout/refund/cancellation state", () => {

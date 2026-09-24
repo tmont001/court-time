@@ -2855,18 +2855,18 @@ export type Database = {
         Args: { p_reservation_id: string };
         Returns: undefined;
       };
-      // UNTOUCHED by migration 0102 — left byte-for-byte as-is for
-      // app-deploy-window safety (sendAnnouncementAction still reads the
-      // bare integer recipient count directly). Superseded by
-      // send_announcement_v2 below as of Phase 31C.
-      send_announcement: {
-        Args: { p_title: string; p_body: string };
-        Returns: number;
-      };
+      // Phase 44A: the original send_announcement(text, text) — the
+      // UNTOUCHED-by-0102 predecessor this comment used to describe — was
+      // dropped by migration 0207 (zero application call sites; it never
+      // received 0177's active-membership eligibility fix, so it kept
+      // authorizing its sender and selecting recipients via the stale
+      // profiles legacy projection). send_announcement_v2 below is now the
+      // only supported announcement-send RPC.
+      //
       // Phase 31C: exact-identity companion added in migration 0102. Same
-      // preference-filtered bulk-insert body as send_announcement; adds a
-      // durable per-send batch id and the exact {notification_id, user_id}
-      // set actually inserted.
+      // preference-filtered bulk-insert body as send_announcement (now
+      // removed); adds a durable per-send batch id and the exact
+      // {notification_id, user_id} set actually inserted.
       send_announcement_v2: {
         Args: { p_title: string; p_body: string };
         Returns: Json;
@@ -3958,42 +3958,6 @@ export type Database = {
           member_id:             string | null;
           pro_id:                string;
           roster_member_id:      string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      admin_create_lesson_request: {
-        Args: {
-          p_member_id:          string;
-          p_pro_id:             string;
-          p_duration_minutes:   number;
-          p_lesson_type_id?:    string | null;
-          p_preferred_court_id?: string | null;
-          p_member_note?:       string | null;
-          p_preferred_windows?: Json | null;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string;
-          pro_id:                string;
           preferred_court_id:    string | null;
           duration_minutes:      number;
           member_note:           string | null;

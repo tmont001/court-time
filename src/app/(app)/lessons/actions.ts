@@ -883,67 +883,14 @@ export async function getConfirmedReassignmentProsAction(): Promise<{ pros?: Clu
   return { pros: (data ?? []) as ClubPro[] };
 }
 
-// ─── adminCreateLessonRequestAction ───────────────────────────────────────────
-
-export interface AdminCreateLessonParams {
-  memberId:         string;
-  proId:            string;
-  durationMinutes:  number;
-  lessonTypeId?:    string | null;
-  preferredCourtId?: string | null;
-  memberNote?:      string | null;
-  preferredWindows?: Record<string, unknown> | null;
-  expectedClubId:   string;
-}
-
-export async function adminCreateLessonRequestAction(
-  params: AdminCreateLessonParams,
-): Promise<{ requestId?: string; error?: string }> {
-  const guard = await assertActiveClub(params.expectedClubId);
-  if (!guard.ok) return { error: mapLessonError(guard.error) };
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase.rpc("admin_create_lesson_request", {
-    p_member_id:          params.memberId,
-    p_pro_id:             params.proId,
-    p_duration_minutes:   params.durationMinutes,
-    p_lesson_type_id:     params.lessonTypeId    ?? null,
-    p_preferred_court_id: params.preferredCourtId ?? null,
-    p_member_note:        params.memberNote       ?? null,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    p_preferred_windows:  (params.preferredWindows ?? null) as any,
-  });
-
-  if (error) return { error: mapLessonError(error.message) };
-
-  const requestId = (data as { id?: string } | null)?.id;
-
-  if (requestId) {
-    // Notify pro
-    try {
-      await dispatchLessonEmail(params.proId, "lesson_request_received", requestId);
-    } catch { /* non-blocking */ }
-    // Notify member
-    try {
-      await dispatchLessonEmail(params.memberId, "lesson_admin_requested", requestId);
-    } catch { /* non-blocking */ }
-  }
-
-  revalidatePath("/events");
-  revalidatePath("/admin/lessons");
-  revalidatePath(`/admin/members/${params.memberId}`);
-  return { requestId };
-}
-
 // ─── adminCreateMemberLessonAction ────────────────────────────────────────────
 // Phase 33D1: staff books a CONFIRMED lesson directly for a roster Member —
 // claimed or no-account — via admin_create_member_lesson. No pending/
 // proposed negotiation stage, mirroring adminCreateMemberReservation's
-// directness for court bookings. Distinct from adminCreateLessonRequestAction
-// above, which remains unchanged and still only starts a negotiation for an
-// already-claimed Member (profiles-based, unable to target a no-account
-// roster Member at all — left as-is, not the primary admin flow anymore).
+// directness for court bookings. This is the only Admin lesson-create path —
+// its profiles-keyed, pending-request predecessor, which never gained a
+// live UI caller after this flow shipped, was retired in Phase 44A (see
+// migration 0208's own header for the full orphan determination).
 
 export interface AdminCreateMemberLessonParams {
   rosterMemberId: string;

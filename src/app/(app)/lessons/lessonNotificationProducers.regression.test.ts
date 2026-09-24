@@ -21,7 +21,6 @@ function functionBody(src: string, signature: string, maxLen = 20000): string {
   return src.slice(start, end);
 }
 
-const M0078 = "supabase/migrations/0078_admin_lesson_ops.sql";
 const M0101 = "supabase/migrations/0101_lesson_reschedule_foundation.sql";
 const M0111 = "supabase/migrations/0111_staff_managed_lessons_identity.sql";
 const M0132 = "supabase/migrations/0132_staff_operational_authorization.sql";
@@ -33,12 +32,6 @@ describe("lesson_request_received — every producer carries request_id", () => 
     const body = functionBody(readSource(M0146), "create or replace function public.submit_lesson_request(");
     expect(body).toContain("'lesson_request_received'");
     expect(body).toContain("jsonb_build_object('request_id', v_result.id, 'target_path', '/events?tab=lessons')");
-  });
-
-  it("admin_create_lesson_request, only effective body 0078 (never redefined since)", () => {
-    const body = functionBody(readSource(M0078), "create or replace function public.admin_create_lesson_request(");
-    expect(body).toContain("'lesson_request_received'");
-    expect(body).toMatch(/'request_id',\s*v_result\.id/);
   });
 
   it("reassign_lesson_provider's new-pro copy, final effective body 0132", () => {
@@ -124,11 +117,10 @@ describe("lesson_provider_reassigned — reassign_lesson_provider, final effecti
   });
 });
 
-describe("lesson_admin_requested — admin_create_lesson_request's member copy, only effective body 0078", () => {
-  it("carries request_id", () => {
-    const body = functionBody(readSource(M0078), "create or replace function public.admin_create_lesson_request(");
-    const idx = body.indexOf("'lesson_admin_requested'");
-    expect(idx).toBeGreaterThan(-1);
-    expect(body.slice(idx, idx + 400)).toMatch(/'request_id',\s*v_result\.id/);
-  });
-});
+// lesson_admin_requested's only producer, admin_create_lesson_request, was
+// retired in Phase 44A (migration 0208, zero live callers) — see
+// phase44aAuthorizationHardening.regression.test.ts for the retirement
+// assertions. The notification kind itself, its email template
+// (lessonAdminRequestedTemplate), and its deep-link target mapping are
+// deliberately NOT removed: historical notification rows created before
+// 0208 may still need to render. No current producer test remains for it.

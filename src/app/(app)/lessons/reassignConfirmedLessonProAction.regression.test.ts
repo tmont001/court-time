@@ -27,7 +27,11 @@ function getFn(): string {
 function getPickerFn(): string {
   const s = readSource(ACTIONS_PATH);
   const start = s.indexOf("export async function getConfirmedReassignmentProsAction(");
-  const end = s.indexOf("export async function adminCreateLessonRequestAction(");
+  // Phase 44A (0208): adminCreateLessonRequestAction, the prior end-of-slice
+  // delimiter, was retired (dead export, zero callers). Replaced with the
+  // next stable live function boundary — this changes only which source
+  // text this slice ends at, not the behavior under test.
+  const end = s.indexOf("export async function adminCreateMemberLessonAction(");
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return s.slice(start, end);
