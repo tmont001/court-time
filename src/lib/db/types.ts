@@ -2867,14 +2867,69 @@ export type Database = {
       // preference-filtered bulk-insert body as send_announcement (now
       // removed); adds a durable per-send batch id and the exact
       // {notification_id, user_id} set actually inserted.
+      //
+      // Phase 44B (migration 0209): PostgreSQL function identity includes
+      // the argument list, so send_announcement_v2 now exists as TWO
+      // co-existing overloads in the database — the four-argument form
+      // below (the sole canonical implementation) and a TEMPORARY
+      // two-argument compatibility wrapper (same old signature, delegates
+      // entirely to the four-argument form with audience_mode: "all",
+      // p_recipient_user_ids: null) kept alive only until the application
+      // calling the four-argument form directly has been deployed and
+      // proven (retired in Phase 44D). This hand-maintained Functions map
+      // is keyed by function NAME ONLY and cannot express two distinct
+      // overloads under one key without one silently shadowing the
+      // other — there is no safe way to also type the two-argument
+      // wrapper here. Documented rather than faked: every TypeScript call
+      // site in this app now calls the four-argument shape below
+      // (communicationsActions.ts's sendAnnouncementAction, updated in
+      // 0209's own checkpoint), so this entry describes every real call
+      // site correctly; the two-argument wrapper exists at the database
+      // level only, for the not-yet-redeployed pilot app, and is
+      // deliberately untyped here.
       send_announcement_v2: {
-        Args: { p_title: string; p_body: string };
+        Args: {
+          p_title:               string;
+          p_body:                string;
+          p_audience_mode:       string;          // "all" | "specific"
+          p_recipient_user_ids:  string[] | null;  // null/empty for "all"; non-empty for "specific"
+        };
         Returns: Json;
         // Runtime shape: {
         //   batch_id: string,
         //   recipient_count: number,
         //   notifications: Array<{ notification_id: string; user_id: string }>
         // }
+      };
+      // Phase 44B (migration 0209): read-only, Admin-only. Shares the
+      // canonical eligibility helper send_announcement_v2 uses, so preview
+      // and send can never disagree about who is eligible. eligible_user_ids
+      // is always empty for audience_mode "all" (a preview endpoint must
+      // never enumerate a whole club roster) and is the deduped eligible
+      // subset of the caller's own submission for "specific".
+      preview_announcement_recipients: {
+        Args: {
+          p_audience_mode:      string;          // "all" | "specific"
+          p_recipient_user_ids: string[] | null;
+        };
+        Returns: { eligible_count: number; eligible_user_ids: string[] | null }[];
+      };
+      // Phase 44B (migration 0209): read-only, Admin-only. Narrow
+      // selector-listing RPC for a future "Specific People" picker — never
+      // widens or reuses get_members(). Returns only currently-eligible
+      // (active, non-removed, same-club, not-self) candidates, including
+      // announcement_enabled: false rows (an opted-out person remains
+      // visible/selectable-with-a-caveat rather than silently hidden).
+      // role is club_memberships-derived, never profiles.role.
+      get_announcement_recipient_candidates: {
+        Args: Record<string, never>;
+        Returns: {
+          id:                    string;
+          first_name:            string | null;
+          last_name:             string | null;
+          role:                  string;
+          announcement_enabled:  boolean;
+        }[];
       };
       update_notification_preference: {
         Args: { p_kind: string; p_enabled: boolean };

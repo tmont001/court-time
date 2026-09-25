@@ -157,11 +157,13 @@ describe("C. Activity exposes Recipients / Email sent / Email failed only", () =
 });
 
 describe("12. send_announcement_v2 is unchanged", () => {
-  it("communicationsActions.ts calls send_announcement_v2 with the same {p_title, p_body} argument shape", () => {
+  it("communicationsActions.ts calls send_announcement_v2 with the same title/body values — Phase 44B (migration 0209) additionally passes audience_mode: \"all\", recipient_user_ids: null on this same existing send path, calling the new canonical four-argument RPC explicitly rather than the temporary two-argument compatibility wrapper", () => {
     const s = readSource(ACTIONS_PATH);
     expect(s).toContain('supabase.rpc("send_announcement_v2", {');
-    expect(s).toContain("p_title: title,");
-    expect(s).toContain("p_body:  body,");
+    expect(s).toContain("p_title:              title,");
+    expect(s).toContain("p_body:                body,");
+    expect(s).toContain('p_audience_mode:       "all"');
+    expect(s).toContain("p_recipient_user_ids:  null");
   });
 
   it("the migration does not modify send_announcement_v2, notifications, or notification_deliveries", () => {

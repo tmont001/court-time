@@ -30,6 +30,18 @@ const ERROR_MESSAGES: Record<string, string> = {
 // disclosure risk had it ever executed against real cross-user rows).
 // send_announcement's original bare-integer return is still used nowhere
 // else, so cutting the Server Action over to the v2 in-place is safe.
+//
+// Phase 44B: migration 0209 makes send_announcement_v2(text, text, text,
+// uuid[]) — audience_mode + recipient ids — the sole canonical
+// implementation, keeping the original two-argument form alive ONLY as a
+// temporary compatibility wrapper for the deployment window (retired in
+// Phase 44D). This action now calls the four-argument form explicitly
+// with audience_mode: "all", recipient_user_ids: null, so that once this
+// application is deployed, ordinary announcements already go through the
+// canonical RPC rather than the temporary wrapper — with byte-identical
+// behavior to before (the wrapper itself just makes this same call). No
+// UI control for audience mode exists yet — that is Phase 44C's own
+// checkpoint; this action still only ever sends to "all".
 export async function sendAnnouncementAction(
   formData: FormData
 ): Promise<{ success?: boolean; message?: string; recipientCount?: number; error?: string }> {
@@ -41,8 +53,10 @@ export async function sendAnnouncementAction(
   const body  = (formData.get("body")  as string | null)?.trim() ?? "";
 
   const { data, error } = await supabase.rpc("send_announcement_v2", {
-    p_title: title,
-    p_body:  body,
+    p_title:              title,
+    p_body:                body,
+    p_audience_mode:       "all",
+    p_recipient_user_ids:  null,
   });
 
   if (error) {
@@ -207,4 +221,96 @@ export async function getAnnouncementBatchDetailAction(
   }));
 
   return { recipients };
+}
+
+// ─── Phase 44B — audience backend (no UI consumer yet; wired in 44C) ──────────
+//
+// Neither action below is called by any current component. They exist so
+// migration 0209's preview_announcement_recipients / get_announcement_
+// recipient_candidates RPCs have a Server Action boundary ready for the
+// 44C composer, matching this file's own established pattern of relying
+// entirely on RPC-level authorization (both RPCs are Admin-only and
+// club-scoped via current_user_club_id()/current_user_role() — no
+// additional role check is added here, identical reasoning to
+// getAnnouncementBatchDetailAction above).
+
+const AUDIENCE_ERROR_MESSAGES: Record<string, string> = {
+  ...ERROR_MESSAGES,
+  no_club:                "No active club membership found.",
+  invalid_audience:       "Invalid audience selection.",
+  no_eligible_recipients: "None of the selected people are currently eligible to receive this announcement.",
+};
+
+function mapAudienceError(message: string): string {
+  const key = message.match(
+    /not_authenticated|insufficient_role|invalid_announcement|no_club|invalid_audience|no_eligible_recipients/
+  )?.[0] ?? "";
+  return AUDIENCE_ERROR_MESSAGES[key] ?? "Something went wrong. Please try again.";
+}
+
+export interface AnnouncementRecipientCandidate {
+  id:                   string;
+  firstName:            string | null;
+  lastName:             string | null;
+  role:                 string;
+  announcementEnabled:  boolean;
+}
+
+// Backs a future "Specific People" selector. Returns every currently-
+// eligible (active, non-removed, same-club, not-self) candidate,
+// INCLUDING those with announcementEnabled: false — the selector is meant
+// to show an opted-out person transparently (e.g. "Announcements off")
+// rather than silently omitting them.
+export async function getAnnouncementRecipientCandidatesAction(): Promise<{
+  candidates?: AnnouncementRecipientCandidate[];
+  error?:      string;
+}> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_announcement_recipient_candidates");
+  if (error) return { error: mapAudienceError(error.message) };
+
+  const rows = (data ?? []) as Array<{
+    id: string; first_name: string | null; last_name: string | null;
+    role: string; announcement_enabled: boolean;
+  }>;
+
+  return {
+    candidates: rows.map(r => ({
+      id:                  r.id,
+      firstName:           r.first_name,
+      lastName:            r.last_name,
+      role:                r.role,
+      announcementEnabled: r.announcement_enabled,
+    })),
+  };
+}
+
+export interface AnnouncementPreviewResult {
+  eligibleCount:    number;
+  eligibleUserIds:  string[];
+}
+
+// Backs a future "This will send to N people" preview. Informational
+// only — send_announcement_v2 independently re-evaluates eligibility at
+// send time and never trusts this result (see 0209's own header comment).
+export async function previewAnnouncementRecipientsAction(
+  audienceMode:      "all" | "specific",
+  recipientUserIds:  string[] | null,
+): Promise<{ result?: AnnouncementPreviewResult; error?: string }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("preview_announcement_recipients", {
+    p_audience_mode:      audienceMode,
+    p_recipient_user_ids: recipientUserIds,
+  });
+  if (error) return { error: mapAudienceError(error.message) };
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    { eligible_count: number; eligible_user_ids: string[] | null } | undefined;
+
+  return {
+    result: {
+      eligibleCount:   row?.eligible_count ?? 0,
+      eligibleUserIds: row?.eligible_user_ids ?? [],
+    },
+  };
 }

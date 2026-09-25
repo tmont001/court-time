@@ -319,9 +319,11 @@ describe("no unrelated behavior changed", () => {
     expect(s).not.toMatch(/create table|alter table.*add column/i);
   });
 
-  it("25. no Communications UI change — the Server Action still calls send_announcement_v2 unmodified", () => {
+  it("25. no Communications UI change within 0207 itself — the Server Action's send_announcement_v2 call still passes the same title/body values (Phase 44B/0209 later added explicit audience_mode/recipient_user_ids arguments on this same call path — a separate, subsequent, approved checkpoint, not a 0207 change)", () => {
     const s = readSource(ACTIONS_PATH);
-    expect(s).toContain('supabase.rpc("send_announcement_v2", {\n    p_title: title,\n    p_body:  body,');
+    expect(s).toContain('supabase.rpc("send_announcement_v2", {');
+    expect(s).toContain("p_title:              title,");
+    expect(s).toContain("p_body:                body,");
   });
 
   it("26. no payment, reservation, waiver, or Phase 39 (reservation player search) RPC is redefined — cancel_event's own preserved Stripe Checkout fan-out (an unmodified read of the existing payments table) is the only payment-domain reference in this file", () => {
