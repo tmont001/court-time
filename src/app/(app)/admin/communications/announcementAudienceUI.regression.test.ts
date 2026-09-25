@@ -18,7 +18,6 @@ function readSource(relativePath: string): string {
 
 const ANNOUNCEMENTS_PATH = "src/app/(app)/admin/communications/AnnouncementsSection.tsx";
 const ACTIONS_PATH       = "src/app/(app)/admin/communications/communicationsActions.ts";
-const ACTIVITY_PATH      = "src/app/(app)/admin/communications/CommunicationsActivitySection.tsx";
 
 let cachedUiSrc: string | null = null;
 function uiSrc(): string {
@@ -342,10 +341,13 @@ describe("BOUNDARIES — no out-of-scope work introduced", () => {
   // as happened with the equivalent Phase 39C-2B test removed during
   // Phase 44A. Not reintroduced.
 
-  it("Activity UI has no audience-mode/history work — untouched by this checkpoint", () => {
-    const s = readSource(ACTIVITY_PATH);
-    expect(s).not.toMatch(/audienceMode|audience_mode/);
-  });
+  // Activity UI audience-mode/history work was intentionally NOT part of
+  // this (44C) checkpoint's own scope — a permanent "Activity never gains
+  // this" assertion would have gone stale the moment the later, approved
+  // Phase 44D checkpoint added it (see
+  // phase44dHistorySecurityCloseout.regression.test.ts for that coverage),
+  // exactly the same class of brittle checkpoint-scoped test already
+  // removed once during Phase 44A. Not reintroduced here.
 
   it("no SMS reference was introduced in the Compose UI", () => {
     expect(uiSrc()).not.toMatch(/sms/i);

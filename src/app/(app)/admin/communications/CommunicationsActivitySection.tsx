@@ -21,6 +21,15 @@ export interface AnnouncementBatch {
   recipientCount:   number;
   emailSentCount:   number;
   emailFailedCount: number;
+  // Phase 44D (migration 0210): defaulted to "all"/null entirely inside
+  // get_communications_activity — never invented client-side. See that
+  // RPC's own SQL comment for the exact historical-fallback rules.
+  audienceMode:     "all" | "specific";
+  body:             string | null;
+}
+
+function audienceLabel(mode: AnnouncementBatch["audienceMode"]): string {
+  return mode === "specific" ? "Specific people" : "All active club users";
 }
 
 interface Props {
@@ -51,6 +60,16 @@ export default function CommunicationsActivitySection({ batches }: Props) {
   const [detailByBatch, setDetailByBatch]     = useState<Record<string, AnnouncementRecipientDetail[]>>({});
   const [loadingBatchId, setLoadingBatchId]   = useState<string | null>(null);
   const [errorByBatch, setErrorByBatch]       = useState<Record<string, string>>({});
+
+  // Phase 44D — message disclosure. Entirely independent of the recipient-
+  // detail state above: keyed the same way (batchId, or a legacy-row key)
+  // but its own state, no shared toggle, no network call — body is already
+  // present in the `batches` prop, so this is a pure client-side reveal.
+  const [expandedMessageKey, setExpandedMessageKey] = useState<string | null>(null);
+
+  function toggleMessage(key: string) {
+    setExpandedMessageKey(prev => (prev === key ? null : key));
+  }
 
   function toggleExpand(batchId: string) {
     if (expandedBatchId === batchId) {
@@ -86,14 +105,18 @@ export default function CommunicationsActivitySection({ batches }: Props) {
         const key = b.batchId ?? `legacy-${b.sentAt}`;
         const isExpanded = b.batchId != null && expandedBatchId === b.batchId;
 
+        // Phase 44D polish: two independent, explicit disclosures — no
+        // implicit whole-card/whole-summary click target anymore. Each
+        // toggle is its own real <button>, with its own aria-expanded and
+        // aria-controls pointing at its own panel id (scoped to this row
+        // via `key`, which is already unique per batch/legacy row).
+        const messagePanelId  = `announcement-message-${key}`;
+        const deliveryPanelId = `announcement-delivery-${key}`;
+        const isMessageOpen   = expandedMessageKey === key;
+
         return (
           <div key={key} className="ct-card overflow-hidden">
-            <button
-              type="button"
-              onClick={() => b.batchId && toggleExpand(b.batchId)}
-              disabled={!b.batchId}
-              className="w-full text-left px-4 py-3 space-y-2 disabled:cursor-default"
-            >
+            <div className="px-4 py-3 space-y-2">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 min-w-0 break-words">
                   {b.title}
@@ -104,6 +127,7 @@ export default function CommunicationsActivitySection({ batches }: Props) {
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                <span>Audience: {audienceLabel(b.audienceMode)}</span>
                 <span>Recipients: {b.recipientCount}</span>
                 {b.batchId ? (
                   <>
@@ -118,10 +142,50 @@ export default function CommunicationsActivitySection({ batches }: Props) {
                   </span>
                 )}
               </div>
-            </button>
+            </div>
+
+            {/* Phase 44D polish — explicit, independent disclosure
+                buttons. Neither is nested inside the other, and neither
+                is the card/summary itself — opening one can never
+                open/close the other. */}
+            <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
+              {b.body ? (
+                <button
+                  type="button"
+                  aria-expanded={isMessageOpen}
+                  aria-controls={messagePanelId}
+                  onClick={() => toggleMessage(key)}
+                  className="ct-button-secondary px-3 py-1.5 text-xs"
+                >
+                  {isMessageOpen ? "Hide message" : "View message"}
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400 dark:text-gray-500 italic">Message unavailable</p>
+              )}
+
+              {b.batchId && (
+                <button
+                  type="button"
+                  aria-expanded={isExpanded}
+                  aria-controls={deliveryPanelId}
+                  onClick={() => toggleExpand(b.batchId!)}
+                  className="ct-button-secondary px-3 py-1.5 text-xs"
+                >
+                  {isExpanded ? "Hide details" : "Delivery details"}
+                </button>
+              )}
+            </div>
+
+            {isMessageOpen && b.body && (
+              <div id={messagePanelId} className="border-t border-gray-100 dark:border-gray-800 px-4 py-3">
+                <p className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
+                  {b.body}
+                </p>
+              </div>
+            )}
 
             {isExpanded && b.batchId && (
-              <div className="border-t border-gray-100 dark:border-gray-800 px-4 py-3">
+              <div id={deliveryPanelId} className="border-t border-gray-100 dark:border-gray-800 px-4 py-3">
                 {loadingBatchId === b.batchId ? (
                   <p className="text-xs text-gray-400 dark:text-gray-500">Loading recipients…</p>
                 ) : errorByBatch[b.batchId] ? (

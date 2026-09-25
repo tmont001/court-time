@@ -73,12 +73,18 @@ export default async function AdminCommunicationsPage({
   ]);
 
   const batches: AnnouncementBatch[] = (activityResult.data ?? []).map(row => ({
-    batchId:         row.batch_id,
-    title:           row.title,
-    sentAt:          row.sent_at,
-    recipientCount:  row.recipient_count,
-    emailSentCount:  row.email_sent_count,
+    batchId:          row.batch_id,
+    title:            row.title,
+    sentAt:           row.sent_at,
+    recipientCount:   row.recipient_count,
+    emailSentCount:   row.email_sent_count,
     emailFailedCount: row.email_failed_count,
+    // Phase 44D (migration 0210): audience_mode defaults to "all" and body
+    // falls back through notifications/NULL entirely inside the RPC — see
+    // get_communications_activity's own SQL comment. No client-side
+    // invention of either value.
+    audienceMode:     row.audience_mode,
+    body:             row.body,
   }));
 
   const failuresUnavailable = !!(failureCountResult.error || failureDetailsResult.error);

@@ -470,9 +470,9 @@ describe("db/types.ts", () => {
     expect(block).toContain("p_recipient_user_ids:  string[] | null;");
   });
 
-  it("documents the two-argument overload limitation rather than fabricating a misleading union type", () => {
+  it("documented the two-argument overload limitation at the time (Phase 44D later retired that wrapper entirely — see phase44dHistorySecurityCloseout.regression.test.ts — so the comment now describes that retirement instead; either way, no misleading union type was ever fabricated)", () => {
     const s = readSource(TYPES_PATH);
-    expect(s).toMatch(/cannot express two distinct\s*\n\s*\/\/ overloads under one key/);
+    expect(s).toMatch(/is keyed by function NAME ONLY and cannot express\s*\n\s*\/\/ two distinct overloads under one key/);
   });
 
   it("preview_announcement_recipients and get_announcement_recipient_candidates entries exist", () => {

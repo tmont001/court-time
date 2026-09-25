@@ -2868,25 +2868,27 @@ export type Database = {
       // removed); adds a durable per-send batch id and the exact
       // {notification_id, user_id} set actually inserted.
       //
-      // Phase 44B (migration 0209): PostgreSQL function identity includes
-      // the argument list, so send_announcement_v2 now exists as TWO
-      // co-existing overloads in the database — the four-argument form
-      // below (the sole canonical implementation) and a TEMPORARY
-      // two-argument compatibility wrapper (same old signature, delegates
-      // entirely to the four-argument form with audience_mode: "all",
-      // p_recipient_user_ids: null) kept alive only until the application
-      // calling the four-argument form directly has been deployed and
-      // proven (retired in Phase 44D). This hand-maintained Functions map
-      // is keyed by function NAME ONLY and cannot express two distinct
-      // overloads under one key without one silently shadowing the
-      // other — there is no safe way to also type the two-argument
-      // wrapper here. Documented rather than faked: every TypeScript call
-      // site in this app now calls the four-argument shape below
-      // (communicationsActions.ts's sendAnnouncementAction, updated in
-      // 0209's own checkpoint), so this entry describes every real call
-      // site correctly; the two-argument wrapper exists at the database
-      // level only, for the not-yet-redeployed pilot app, and is
-      // deliberately untyped here.
+      // Phase 44B (migration 0209): introduced this four-argument form as
+      // the sole canonical implementation, temporarily alongside a
+      // two-argument compatibility wrapper (same old signature, delegated
+      // entirely to this one with audience_mode: "all",
+      // p_recipient_user_ids: null) kept only until the application
+      // calling this four-argument form directly had been deployed and
+      // proven. That wrapper was never typed here — this hand-maintained
+      // Functions map is keyed by function NAME ONLY and cannot express
+      // two distinct overloads under one key — every real TypeScript call
+      // site already called this shape (communicationsActions.ts's
+      // sendAnnouncementAction, updated in 0209's own checkpoint), so this
+      // entry described every real caller correctly throughout.
+      //
+      // Phase 44D (migration 0210): the two-argument wrapper is now
+      // DROPPED — this four-argument signature is the only
+      // send_announcement_v2 that exists, in the database or in this
+      // type. Its own body additionally now persists the announcement
+      // body into audit_log.metadata for every send (recipient_count
+      // included, even zero) — a durable, recipient-count-independent
+      // history source for Communications Activity. Args/Returns below
+      // are unchanged by 0210.
       send_announcement_v2: {
         Args: {
           p_title:               string;
@@ -3028,6 +3030,19 @@ export type Database = {
           recipient_count:    number;
           email_sent_count:   number;
           email_failed_count: number;
+          // Phase 44D (migration 0210): defaults to "all" for any batch
+          // predating migration 0209 — send_announcement_v2 had no
+          // capability to target anything else before then, a structural
+          // fact, not a guess.
+          audience_mode:      "all" | "specific";
+          // Phase 44D (migration 0210): audit_log.metadata.body for any
+          // batch sent by 0210's redefined send_announcement_v2 (present
+          // even for a zero-recipient ALL send); falls back to one
+          // notification.body for an older batch that still has
+          // recipients; null when genuinely unreconstructable (a
+          // historical zero-recipient batch, or a legacy pre-0102
+          // batch-id-null row) — never fabricated.
+          body:                string | null;
         }[];
       };
       upsert_operating_hours_override: {
