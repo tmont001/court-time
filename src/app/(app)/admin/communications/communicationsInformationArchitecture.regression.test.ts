@@ -78,9 +78,13 @@ describe("6-7. three URL-backed tabs; unknown tab falls back to Compose", () => 
 });
 
 describe("8. Compose relocation", () => {
-  it("AnnouncementsSection lives at the new location and imports its action from the new colocated file", () => {
+  it("AnnouncementsSection lives at the new location and imports its actions from the new colocated file", () => {
     const s = readSource(ANNOUNCEMENTS_PATH);
-    expect(s).toContain('import { sendAnnouncementAction } from "./communicationsActions";');
+    // Phase 44C: the single-symbol import grew into a destructured
+    // multi-symbol one (sendAnnouncementAction plus the two Phase 44B
+    // audience actions now wired into this component) — still the same
+    // colocated "./communicationsActions" module.
+    expect(s).toMatch(/import \{[\s\S]{0,200}sendAnnouncementAction[\s\S]{0,200}\} from "\.\/communicationsActions";/);
   });
 
   it("page.tsx renders AnnouncementsSection under the compose tab", () => {
@@ -91,10 +95,13 @@ describe("8. Compose relocation", () => {
 });
 
 describe("9/A. correct Audience wording — matches preference-filtered recipient semantics, not 'all active profiles'", () => {
-  it("Compose states the true audience: active club users with announcements enabled, not merely 'all active'", () => {
+  it("Phase 44C: Audience is now a real two-option control (All active club users / Specific people), not a fixed InfoRow value — the confirm-step copy still states the true, preference-filtered semantics for All mode", () => {
     const s = readSource(ANNOUNCEMENTS_PATH);
-    expect(s).toContain('value="Active club users with announcements enabled"');
-    expect(s).not.toMatch(/value="All active club users"/);
+    // The old fixed InfoRow describing Audience is gone — replaced by an
+    // interactive control with these exact two option labels.
+    expect(s).not.toMatch(/<InfoRow label="Audience"/);
+    expect(s).toContain("All active club users");
+    expect(s).toContain("Specific people");
     expect(s).not.toMatch(/Send to all active club users\?/);
     expect(s).not.toMatch(/Send to all active members\?/);
   });
@@ -157,13 +164,17 @@ describe("C. Activity exposes Recipients / Email sent / Email failed only", () =
 });
 
 describe("12. send_announcement_v2 is unchanged", () => {
-  it("communicationsActions.ts calls send_announcement_v2 with the same title/body values — Phase 44B (migration 0209) additionally passes audience_mode: \"all\", recipient_user_ids: null on this same existing send path, calling the new canonical four-argument RPC explicitly rather than the temporary two-argument compatibility wrapper", () => {
+  it("communicationsActions.ts calls send_announcement_v2 with title/body plus audience_mode/recipient_user_ids — Phase 44C (this checkpoint) sources the latter two from the Compose UI's own audience state (defaulting to \"all\"/null) rather than the hardcoded literals Phase 44B used, still on this same existing send path, still calling the canonical four-argument RPC explicitly rather than the temporary two-argument compatibility wrapper", () => {
     const s = readSource(ACTIONS_PATH);
     expect(s).toContain('supabase.rpc("send_announcement_v2", {');
     expect(s).toContain("p_title:              title,");
     expect(s).toContain("p_body:                body,");
-    expect(s).toContain('p_audience_mode:       "all"');
-    expect(s).toContain("p_recipient_user_ids:  null");
+    expect(s).toContain("p_audience_mode:       audienceMode,");
+    expect(s).toContain("p_recipient_user_ids:  recipientUserIds,");
+    // An absent audienceMode still defaults to "all" with a null recipient
+    // array — byte-identical behavior to Phase 44B's hardcoded call for
+    // any caller that never sets it.
+    expect(s).toContain('const audienceMode    = rawAudienceMode === null ? "all" : rawAudienceMode;');
   });
 
   it("the migration does not modify send_announcement_v2, notifications, or notification_deliveries", () => {

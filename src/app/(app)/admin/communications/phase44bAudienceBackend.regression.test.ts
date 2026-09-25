@@ -390,13 +390,13 @@ describe("SEND — two-argument compatibility wrapper (temporary, retired in Pha
 });
 
 describe("SERVER ACTION — sendAnnouncementAction explicitly calls the four-argument RPC", () => {
-  it("passes audience_mode: 'all', recipient_user_ids: null on the existing send path", () => {
+  it("passes audience_mode/recipient_user_ids on the existing send path — Phase 44C (this checkpoint's successor) now sources these from the Compose UI's own audience state (defaulting to \"all\"/null when absent) rather than the hardcoded literals this test originally locked in", () => {
     const s = readSource(ACTIONS_PATH);
     const idx = s.indexOf('supabase.rpc("send_announcement_v2", {');
     expect(idx).toBeGreaterThan(-1);
     const block = s.slice(idx, idx + 250);
-    expect(block).toContain('p_audience_mode:       "all"');
-    expect(block).toContain("p_recipient_user_ids:  null");
+    expect(block).toContain("p_audience_mode:       audienceMode,");
+    expect(block).toContain("p_recipient_user_ids:  recipientUserIds,");
   });
 
   it("new preview/candidate Server Actions exist and rely on RPC-level authorization only, matching this file's established pattern", () => {
@@ -407,9 +407,10 @@ describe("SERVER ACTION — sendAnnouncementAction explicitly calls the four-arg
     expect(s).toContain('supabase.rpc("preview_announcement_recipients"');
   });
 
-  it("no 44C UI introduced — the Compose section does not import either new action", () => {
+  it("both actions are now imported and used by the Compose section — Phase 44C (this checkpoint's successor) wires them into the Specific People picker/preview; see announcementAudienceUI.regression.test.ts for the full 44C coverage", () => {
     const s = readSource(ANNOUNCEMENTS_SECTION_PATH);
-    expect(s).not.toMatch(/getAnnouncementRecipientCandidatesAction|previewAnnouncementRecipientsAction/);
+    expect(s).toMatch(/getAnnouncementRecipientCandidatesAction/);
+    expect(s).toMatch(/previewAnnouncementRecipientsAction/);
   });
 });
 

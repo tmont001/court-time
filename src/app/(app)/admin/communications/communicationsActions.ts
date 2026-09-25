@@ -13,6 +13,26 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_announcement: "Title and message are required (title ≤ 100 chars, message ≤ 500 chars).",
 };
 
+// Phase 44C: sendAnnouncementAction now also needs invalid_audience/
+// no_eligible_recipients (its own audience-mode validation and the RPC's
+// send-time revalidation failure) — the same mapping the Phase 44B prep
+// actions further below already needed. Defined once, here, so
+// sendAnnouncementAction and those two actions share one mapping rather
+// than each maintaining their own copy.
+const AUDIENCE_ERROR_MESSAGES: Record<string, string> = {
+  ...ERROR_MESSAGES,
+  no_club:                "No active club membership found.",
+  invalid_audience:       "Invalid audience selection.",
+  no_eligible_recipients: "None of the selected people can currently receive this announcement.",
+};
+
+function mapAudienceError(message: string): string {
+  const key = message.match(
+    /not_authenticated|insufficient_role|invalid_announcement|no_club|invalid_audience|no_eligible_recipients/
+  )?.[0] ?? "";
+  return AUDIENCE_ERROR_MESSAGES[key] ?? "Something went wrong. Please try again.";
+}
+
 // Admin IA Checkpoint 4 — Communications. Moved verbatim from
 // admin/settings/actions.ts (Phase 31C comment preserved below) except:
 // revalidatePath now targets /admin/communications instead of
@@ -35,13 +55,21 @@ const ERROR_MESSAGES: Record<string, string> = {
 // uuid[]) — audience_mode + recipient ids — the sole canonical
 // implementation, keeping the original two-argument form alive ONLY as a
 // temporary compatibility wrapper for the deployment window (retired in
-// Phase 44D). This action now calls the four-argument form explicitly
-// with audience_mode: "all", recipient_user_ids: null, so that once this
-// application is deployed, ordinary announcements already go through the
-// canonical RPC rather than the temporary wrapper — with byte-identical
-// behavior to before (the wrapper itself just makes this same call). No
-// UI control for audience mode exists yet — that is Phase 44C's own
-// checkpoint; this action still only ever sends to "all".
+// Phase 44D). This action calls the four-argument form explicitly, so
+// ordinary announcements already go through the canonical RPC rather than
+// the temporary wrapper.
+//
+// Phase 44C: audienceMode/recipientUserIds are now read from the SAME
+// FormData contract rather than hardcoded — AnnouncementsSection.tsx sets
+// "audienceMode" and, for Specific mode, appends one "recipientUserIds"
+// entry per selected id. audienceMode is OPTIONAL for backward
+// compatibility: an absent value defaults to "all" (byte-identical to
+// pre-44C behavior for any caller that never sets it). An EXPLICITLY
+// supplied value must be exactly "all" or "specific" — never silently
+// coerced to "all" — so a caller bug can never accidentally broadcast to
+// everyone. Preview is never trusted as authorization here: this action
+// always calls the RPC, which independently re-evaluates eligibility at
+// send time regardless of what any prior preview said.
 export async function sendAnnouncementAction(
   formData: FormData
 ): Promise<{ success?: boolean; message?: string; recipientCount?: number; error?: string }> {
@@ -52,17 +80,23 @@ export async function sendAnnouncementAction(
   const title = (formData.get("title") as string | null)?.trim() ?? "";
   const body  = (formData.get("body")  as string | null)?.trim() ?? "";
 
+  const rawAudienceMode = formData.get("audienceMode") as string | null;
+  const audienceMode    = rawAudienceMode === null ? "all" : rawAudienceMode;
+  if (audienceMode !== "all" && audienceMode !== "specific") {
+    return { error: AUDIENCE_ERROR_MESSAGES.invalid_audience };
+  }
+
+  const recipientUserIds = audienceMode === "specific" ? formData.getAll("recipientUserIds").map(String) : null;
+  const selectedCount    = recipientUserIds?.length ?? 0;
+
   const { data, error } = await supabase.rpc("send_announcement_v2", {
     p_title:              title,
     p_body:                body,
-    p_audience_mode:       "all",
-    p_recipient_user_ids:  null,
+    p_audience_mode:       audienceMode,
+    p_recipient_user_ids:  recipientUserIds,
   });
 
-  if (error) {
-    const key = error.message.match(/not_authenticated|insufficient_role|invalid_announcement/)?.[0] ?? "";
-    return { error: ERROR_MESSAGES[key] ?? "Failed to send announcement. Please try again." };
-  }
+  if (error) return { error: mapAudienceError(error.message) };
 
   const result = data as unknown as {
     batch_id:        string;
@@ -92,11 +126,18 @@ export async function sendAnnouncementAction(
   }
 
   revalidatePath("/admin/communications");
-  return {
-    success:        true,
-    message:        `Announcement sent to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`,
-    recipientCount,
-  };
+
+  // Phase 44C: a Specific-mode selection can partly outlive its own
+  // eligibility between preview and send (removed/deactivated/opted-out
+  // since preview last ran) — the RPC already silently excludes those and
+  // sends to whoever survives. recipientCount is always the truth; never
+  // claim the full originally-selected count was reached when it wasn't.
+  const message =
+    audienceMode === "specific" && selectedCount > 0 && recipientCount < selectedCount
+      ? `Announcement sent to ${recipientCount} of ${selectedCount} selected people.`
+      : `Announcement sent to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`;
+
+  return { success: true, message, recipientCount };
 }
 
 // Admin IA Checkpoint 4 — authorization hardening. The Communications audit
@@ -223,30 +264,15 @@ export async function getAnnouncementBatchDetailAction(
   return { recipients };
 }
 
-// ─── Phase 44B — audience backend (no UI consumer yet; wired in 44C) ──────────
+// ─── Phase 44B/44C — audience backend ──────────────────────────────────────
 //
-// Neither action below is called by any current component. They exist so
-// migration 0209's preview_announcement_recipients / get_announcement_
-// recipient_candidates RPCs have a Server Action boundary ready for the
-// 44C composer, matching this file's own established pattern of relying
-// entirely on RPC-level authorization (both RPCs are Admin-only and
+// Both actions below are now wired into AnnouncementsSection.tsx's
+// Specific-people picker (Phase 44C). Both RPCs are Admin-only and
 // club-scoped via current_user_club_id()/current_user_role() — no
 // additional role check is added here, identical reasoning to
-// getAnnouncementBatchDetailAction above).
-
-const AUDIENCE_ERROR_MESSAGES: Record<string, string> = {
-  ...ERROR_MESSAGES,
-  no_club:                "No active club membership found.",
-  invalid_audience:       "Invalid audience selection.",
-  no_eligible_recipients: "None of the selected people are currently eligible to receive this announcement.",
-};
-
-function mapAudienceError(message: string): string {
-  const key = message.match(
-    /not_authenticated|insufficient_role|invalid_announcement|no_club|invalid_audience|no_eligible_recipients/
-  )?.[0] ?? "";
-  return AUDIENCE_ERROR_MESSAGES[key] ?? "Something went wrong. Please try again.";
-}
+// getAnnouncementBatchDetailAction above. AUDIENCE_ERROR_MESSAGES/
+// mapAudienceError, shared with sendAnnouncementAction, are defined near
+// the top of this file.
 
 export interface AnnouncementRecipientCandidate {
   id:                   string;
@@ -256,11 +282,11 @@ export interface AnnouncementRecipientCandidate {
   announcementEnabled:  boolean;
 }
 
-// Backs a future "Specific People" selector. Returns every currently-
-// eligible (active, non-removed, same-club, not-self) candidate,
-// INCLUDING those with announcementEnabled: false — the selector is meant
-// to show an opted-out person transparently (e.g. "Announcements off")
-// rather than silently omitting them.
+// Backs the Specific People selector. Returns every currently-eligible
+// (active, non-removed, same-club, not-self) candidate, INCLUDING those
+// with announcementEnabled: false — the selector shows an opted-out
+// person transparently ("Announcements off") rather than silently
+// omitting them.
 export async function getAnnouncementRecipientCandidatesAction(): Promise<{
   candidates?: AnnouncementRecipientCandidate[];
   error?:      string;
@@ -290,7 +316,7 @@ export interface AnnouncementPreviewResult {
   eligibleUserIds:  string[];
 }
 
-// Backs a future "This will send to N people" preview. Informational
+// Backs the "This will send to N people" preview line. Informational
 // only — send_announcement_v2 independently re-evaluates eligibility at
 // send time and never trusts this result (see 0209's own header comment).
 export async function previewAnnouncementRecipientsAction(

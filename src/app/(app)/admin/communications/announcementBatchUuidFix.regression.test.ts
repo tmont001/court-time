@@ -179,8 +179,8 @@ describe("temporary diagnostic has been removed — runtime QA confirmed the 017
     expect(s).not.toMatch(/console\.error\(.*send_announcement_v2/);
   });
 
-  it("the error branch is back to its pre-diagnostic shape — maps the RPC error directly with no intervening logging statement", () => {
+  it("the error branch maps the RPC error directly with no intervening logging statement (Phase 44C: now via the shared mapAudienceError helper, not its own inline regex — same no-logging shape, no diagnostic reintroduced)", () => {
     const s = readSource(ACTIONS_PATH);
-    expect(s).toMatch(/if \(error\) \{\s*const key = error\.message\.match/);
+    expect(s).toMatch(/if \(error\) return \{ error: mapAudienceError\(error\.message\) \};/);
   });
 });
