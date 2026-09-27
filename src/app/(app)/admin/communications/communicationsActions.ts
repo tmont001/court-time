@@ -6,6 +6,7 @@ import { getAuthProfile } from "@/lib/supabase/user";
 import { sendSms } from "@/lib/sms";
 import { sendEmailNotification } from "@/lib/email";
 import { announcementTemplate } from "@/lib/email-templates";
+import { runWithBoundedConcurrency, DEFAULT_DISPATCH_CONCURRENCY } from "@/lib/concurrency";
 
 const ERROR_MESSAGES: Record<string, string> = {
   not_authenticated:    "You must be signed in.",
@@ -110,20 +111,38 @@ export async function sendAnnouncementAction(
   // that was just inserted verbatim as each notification's body by
   // send_announcement_v2 — so no re-fetch of notification content is
   // needed for the template.
-  for (const { notification_id, user_id } of notifications) {
-    try {
-      await sendEmailNotification(
-        supabase,
-        notification_id,
-        user_id,
-        "announcement",
-        (clubName) => announcementTemplate(clubName, title, body),
-      );
-    } catch {
-      // Email dispatch must never block announcement success or surface to
-      // the user, and one recipient's failure must never stop the rest.
-    }
-  }
+  //
+  // Phase 45B (performance) — dispatched with BOUNDED concurrency, not
+  // sequentially awaited one at a time and not an unbounded whole-roster
+  // Promise.all. A club-wide announcement can reach hundreds/thousands of
+  // recipients; awaited one at a time, this Server Action's total latency
+  // scales linearly with recipient count (the same regression already
+  // diagnosed and fixed for updateEventAdmin in Phase 34F-D), but firing
+  // every recipient's email at once would put an unbounded number of
+  // outbound SMS/email/DB calls in flight simultaneously. Each dispatch is
+  // fully independent (its own DB reads + its own email attempt, no shared
+  // state, no ordering dependency between recipients) and already isolates
+  // its own failure below — bounding/parallelizing changes nothing about
+  // which notifications are sent or error handling, only how many are in
+  // flight at once and how long the Admin waits for Send to resolve.
+  await runWithBoundedConcurrency(
+    notifications,
+    DEFAULT_DISPATCH_CONCURRENCY,
+    async ({ notification_id, user_id }) => {
+      try {
+        await sendEmailNotification(
+          supabase,
+          notification_id,
+          user_id,
+          "announcement",
+          (clubName) => announcementTemplate(clubName, title, body),
+        );
+      } catch {
+        // Email dispatch must never block announcement success or surface to
+        // the user, and one recipient's failure must never stop the rest.
+      }
+    },
+  );
 
   revalidatePath("/admin/communications");
 

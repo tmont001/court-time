@@ -182,13 +182,16 @@ describe("19. email consumes exactly the same returned recipient list as in-app 
     expect(insertOccurrences).toBe(1);
   });
 
-  it("communicationsActions.ts loops exactly the RPC's own returned {notification_id, user_id}[] list for email, with no independent club-member/profiles query in between", () => {
+  it("communicationsActions.ts dispatches exactly the RPC's own returned {notification_id, user_id}[] list for email, with no independent club-member/profiles query in between", () => {
     const s = readSource(ACTIONS_PATH);
     const rpcIdx = s.indexOf('supabase.rpc("send_announcement_v2"');
     expect(rpcIdx).toBeGreaterThan(-1);
-    const loopIdx = s.indexOf("for (const { notification_id, user_id } of notifications)", rpcIdx);
-    expect(loopIdx).toBeGreaterThan(rpcIdx);
-    const between = s.slice(rpcIdx, loopIdx);
+    // Phase 45B: sequential for-of loop replaced by bounded-concurrency
+    // dispatch (runWithBoundedConcurrency) — still driven by the exact same
+    // `notifications` array the RPC returned, no second query in between.
+    const dispatchIdx = s.indexOf("runWithBoundedConcurrency(\n    notifications,", rpcIdx);
+    expect(dispatchIdx).toBeGreaterThan(rpcIdx);
+    const between = s.slice(rpcIdx, dispatchIdx);
     expect(between).not.toMatch(/\.from\("(profiles|club_memberships)"\)/);
   });
 });

@@ -28,6 +28,7 @@ import {
   resolveBlockingCheckoutBeforeMutation,
 } from "@/lib/stripe/checkoutInvalidation";
 import { createPrivilegedClient } from "@/lib/supabase/privileged";
+import { runWithBoundedConcurrency, DEFAULT_DISPATCH_CONCURRENCY } from "@/lib/concurrency";
 
 // Phase 34F-B — bounded batch resolution for Event-level fan-out guards
 // (cancel_event, updateEventAdmin's material-edit path). Lists every
@@ -1308,17 +1309,33 @@ export async function cancelEvent(
   const result = data as unknown as CancelEventResult | null;
   const notifications = result?.notifications ?? [];
 
-  for (const { notification_id, user_id } of notifications) {
-    // Do not email/SMS the actor even though they may appear in the
-    // returned array (e.g. a host who was also a confirmed participant).
-    if (user_id === actorUserId) continue;
+  // Do not email/SMS the actor even though they may appear in the returned
+  // array (e.g. a host who was also a confirmed participant).
+  const recipientsToNotify = notifications.filter(({ user_id }) => user_id !== actorUserId);
 
-    try {
-      await dispatchEventNotification(supabase, notification_id);
-    } catch {
-      // Email/SMS dispatch must never surface as a user-facing error.
-    }
-  }
+  // Phase 45B (performance) — dispatched with BOUNDED concurrency, not
+  // sequentially awaited one at a time and not an unbounded whole-roster
+  // Promise.all. A cancelled Event/Program session can notify every
+  // currently enrolled participant in one call (the same fan-out shape
+  // Phase 34F-D diagnosed for updateEventAdmin); awaited one at a time, this
+  // Server Action's latency scales linearly with roster size, but an
+  // unbounded Promise.all would put every recipient's SMS/email dispatch in
+  // flight at once. Each dispatch is fully independent (its own DB reads +
+  // its own SMS/email attempt, no shared state, no ordering dependency
+  // between recipients) and already isolates its own failure below —
+  // bounding/parallelizing changes nothing about which notifications are
+  // sent or error handling, only how many are in flight at once.
+  await runWithBoundedConcurrency(
+    recipientsToNotify,
+    DEFAULT_DISPATCH_CONCURRENCY,
+    async ({ notification_id }) => {
+      try {
+        await dispatchEventNotification(supabase, notification_id);
+      } catch {
+        // Email/SMS dispatch must never surface as a user-facing error.
+      }
+    },
+  );
 
   return {};
 }
