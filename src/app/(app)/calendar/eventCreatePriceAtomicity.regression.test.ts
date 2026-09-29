@@ -165,10 +165,14 @@ describe("3/4. price semantics — Event Type default, custom $0 (Free), and cus
     expect(fn).toContain("p_price_amount_cents  integer,");
     expect(fn).toContain("if p_price_amount_cents is not null and p_price_amount_cents < 0 then");
 
+    // Phase 45C1: types.ts is now a thin domain layer over the GENERATED
+    // database.types.ts — this entry is `create_event_with_price_override:
+    // OverrideArgs<...>`, not a literal `: {` object.
     const typesSrc = readSource("src/lib/db/types.ts");
-    const idx = typesSrc.indexOf("create_event_with_price_override: {");
-    const block = typesSrc.slice(idx, idx + 1200);
-    expect(block).toContain("p_price_amount_cents: number | null;");
+    const idx = typesSrc.indexOf("create_event_with_price_override: OverrideArgs<");
+    const block = typesSrc.slice(idx, idx + 300);
+    expect(idx).toBeGreaterThan(-1);
+    expect(block).toContain("p_price_amount_cents: number | null");
   });
 
   it("CreateEventSheet computes the override value identically to EditEventSheet's own established blank-means-null convention — trimmed empty string becomes null, never 0", () => {

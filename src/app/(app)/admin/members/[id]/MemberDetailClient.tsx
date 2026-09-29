@@ -6,6 +6,7 @@ import {
   addMemberNoteAction,
   updateMemberNoteAction,
   archiveMemberNoteAction,
+  restoreMemberNoteAction,
   loadMoreMemberHistoryAction,
   markAttendanceFromDetailAction,
   recordLessonOutcomeFromDetailAction,
@@ -27,7 +28,14 @@ import type { ClubPro } from "@/app/(app)/lessons/actions";
 import PaymentStateBadge from "@/components/PaymentStateBadge";
 import type { PaymentStateRow } from "@/lib/payments";
 import { isOperator } from "@/lib/auth/roles";
-import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/components/styles/actionButtonStyles";
+import { ACTION_BUTTON_PRIMARY_COMPACT, ACTION_BUTTON_SECONDARY_COMPACT, ACTION_BUTTON_DESTRUCTIVE_COMPACT } from "@/components/styles/actionButtonStyles";
+// Phase 45C1B — UpcomingItem is now defined in activityNormalization.ts
+// (the single source of truth shared by page.tsx's initial load and
+// loadMoreMemberHistoryAction's pagination); re-exported here so page.tsx's
+// existing `import { type UpcomingItem } from "./MemberDetailClient"` needs
+// no path change.
+import type { UpcomingItem } from "./activityNormalization";
+export type { UpcomingItem } from "./activityNormalization";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,32 +65,17 @@ export interface MemberDetail {
 
 export type MembershipTypeOption = { id: string; name: string };
 
-export interface UpcomingItem {
-  activity_id:         string;
-  activity_type:       "event" | "lesson" | "reservation";
-  sort_ts:             string;
-  status:              string;
-  title:               string | null;
-  starts_at:           string | null;
-  ends_at:             string | null;
-  court_name:          string | null;
-  pro_first_name:      string | null;
-  pro_last_name:       string | null;
-  duration_minutes:    number | null;
-  proposed_starts_at:  string | null;
-  proposed_ends_at:    string | null;
-  proposed_court_name: string | null;
-}
-
 export interface ClientNote {
   id:                   string;
   member_id:            string;
   author_id:            string | null;
   author_name_snapshot: string;
-  content:              string;
+  body:                 string;
+  is_archived:          boolean;
   created_at:           string;
   updated_at:           string;
   archived_at:          string | null;
+  archived_by:          string | null;
 }
 
 interface LessonType {
@@ -308,6 +301,15 @@ export default function MemberDetailClient({
   const [editContent, setEditContent]     = useState("");
   const [noteOpLoading, setNoteOpLoading] = useState<string | null>(null);
   const [noteOpError, setNoteOpError]     = useState<Record<string, string>>({});
+  // Phase 45C1A2 — archive lifecycle UX. Archive is a reversible move, not a
+  // deletion, so it no longer needs a confirmation-free instant action —
+  // archiveConfirmNoteId reuses the same lightweight "confirmDialog" pattern
+  // MembersClient.tsx already established for its own status-change
+  // confirmations (a single pending-id/name, not a shared component).
+  // Restore mirrors MembersClient's own "Restore ... not destructive, no
+  // confirmation dialog" precedent — no equivalent state needed for it.
+  const [archiveConfirmNoteId, setArchiveConfirmNoteId] = useState<string | null>(null);
+  const [showArchivedNotes, setShowArchivedNotes]       = useState(false);
 
   // Lesson Pro designation state (admin-role targets only)
   const [lessonProviderStatus, setLessonProviderStatus] =
@@ -434,7 +436,7 @@ export default function MemberDetailClient({
 
   function handleEditNote(note: ClientNote) {
     setEditingNoteId(note.id);
-    setEditContent(note.content);
+    setEditContent(note.body);
     setNoteOpError(prev => { const n = {...prev}; delete n[note.id]; return n; });
   }
 
@@ -450,13 +452,14 @@ export default function MemberDetailClient({
         return;
       }
       setNotes(prev => prev.map(n =>
-        n.id === noteId ? { ...n, content: trimmed, updated_at: new Date().toISOString() } : n
+        n.id === noteId ? { ...n, body: trimmed, updated_at: new Date().toISOString() } : n
       ));
       setEditingNoteId(null);
     });
   }
 
   function handleArchiveNote(noteId: string) {
+    setArchiveConfirmNoteId(null);
     setNoteOpLoading(noteId);
     startTransition(async () => {
       const res = await archiveMemberNoteAction(noteId);
@@ -465,7 +468,32 @@ export default function MemberDetailClient({
         setNoteOpError(prev => ({ ...prev, [noteId]: res.error! }));
         return;
       }
-      setNotes(prev => prev.filter(n => n.id !== noteId));
+      // Phase 45C1A2 — archive is a reversible move into the archived
+      // collection, not a deletion: update the note in place (is_archived/
+      // archived_at) so it naturally re-renders under Archived via derived
+      // filtering, rather than filtering it out of local state entirely.
+      // archiveMemberNoteAction returns no row data (the RPC is RETURNS
+      // void), so archived_by is left exactly as it already was rather than
+      // fabricating a value never actually returned by the server.
+      const archivedAt = new Date().toISOString();
+      setNotes(prev => prev.map(n =>
+        n.id === noteId ? { ...n, is_archived: true, archived_at: archivedAt } : n
+      ));
+    });
+  }
+
+  function handleRestoreNote(noteId: string) {
+    setNoteOpLoading(noteId);
+    startTransition(async () => {
+      const res = await restoreMemberNoteAction(noteId);
+      setNoteOpLoading(null);
+      if (res.error) {
+        setNoteOpError(prev => ({ ...prev, [noteId]: res.error! }));
+        return;
+      }
+      setNotes(prev => prev.map(n =>
+        n.id === noteId ? { ...n, is_archived: false, archived_at: null, archived_by: null } : n
+      ));
     });
   }
 
@@ -518,6 +546,13 @@ export default function MemberDetailClient({
       setMembershipTypeName(typeId ? typeName : null);
     });
   }
+
+  // Phase 45C1A2 — active/archived derive from is_archived on every render
+  // rather than being tracked as separate state, so a single notes array
+  // stays the one source of truth (no risk of the two collections drifting
+  // out of sync with each other).
+  const activeNotes   = notes.filter(n => !n.is_archived);
+  const archivedNotes = notes.filter(n => n.is_archived);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -820,7 +855,7 @@ export default function MemberDetailClient({
             }`}
           >
             {t.charAt(0).toUpperCase() + t.slice(1)}
-            {t === "notes" && notes.length > 0 && ` (${notes.length})`}
+            {t === "notes" && activeNotes.length > 0 && ` (${activeNotes.length})`}
           </button>
         ))}
       </div>
@@ -857,17 +892,20 @@ export default function MemberDetailClient({
                   {item.activity_type === "lesson" && (
                     <>
                       <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                        {[item.pro_first_name, item.pro_last_name].filter(Boolean).join(" ") || "Pro"}
+                        {item.pro_name ?? "Pro"}
                         {item.duration_minutes ? ` · ${item.duration_minutes} min` : ""}
                       </p>
-                      {item.proposed_starts_at ? (
+                      {/* Phase 45C1B — get_member_upcoming_activity only
+                          ever returns a lesson once status='confirmed', so
+                          starts_at is always populated by the time a row
+                          reaches this branch; the guard below is purely
+                          defensive degradation, not a real pending-lesson
+                          display state (the raw RPC row has no separate
+                          not-yet-scheduled concept at all, so none is
+                          fabricated here). */}
+                      {item.starts_at && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                          {fmtDateTime(item.proposed_starts_at, clubTimezone)}
-                          {item.proposed_court_name ? ` · ${item.proposed_court_name}` : ""}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                          Awaiting proposal
+                          {fmtDateTime(item.starts_at, clubTimezone)}
                         </p>
                       )}
                     </>
@@ -989,7 +1027,7 @@ export default function MemberDetailClient({
                     {item.activity_type === "lesson" && (
                       <>
                         <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {[item.pro_first_name, item.pro_last_name].filter(Boolean).join(" ") || "Pro"}
+                          {item.pro_name ?? "Pro"}
                           {item.duration_minutes ? ` · ${item.duration_minutes} min` : ""}
                         </p>
                         {item.starts_at && (
@@ -998,23 +1036,24 @@ export default function MemberDetailClient({
                           </p>
                         )}
 
-                        {/* Outcome controls — only for confirmed past lessons */}
+                        {/* Outcome controls — only for confirmed past
+                            lessons. isOutMode is checked FIRST, before
+                            currentOutcome, so the SAME picker renders both
+                            when starting from scratch and when editing an
+                            already-recorded value — the prior ordering
+                            checked the recorded-value branch first, which
+                            made the picker branch unreachable once a value
+                            already existed: the entry button below it still
+                            correctly set outcomeModeId, but that state
+                            change had no reachable branch to render. The
+                            RPC action this feeds into is unchanged — its
+                            own UPDATE unconditionally overwrites the stored
+                            value regardless of what it held before, so the
+                            backend already fully supported this; only the
+                            UI could never reach it. */}
                         {item.status === "confirmed" && (
                           <div className="mt-2">
-                            {currentOutcome ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                                  {OUTCOME_LABELS[currentOutcome] ?? currentOutcome}
-                                </span>
-                                <button
-                                  disabled={isOutLoading}
-                                  onClick={() => setOutcomeModeId(item.activity_id)}
-                                  className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-40"
-                                >
-                                  Change
-                                </button>
-                              </div>
-                            ) : isOutMode ? (
+                            {isOutMode ? (
                               <div className="space-y-1">
                                 <div className="flex flex-wrap gap-1.5">
                                   {OUTCOME_OPTIONS.map(opt => (
@@ -1035,11 +1074,24 @@ export default function MemberDetailClient({
                                   Cancel
                                 </button>
                               </div>
+                            ) : currentOutcome ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                  {OUTCOME_LABELS[currentOutcome] ?? currentOutcome}
+                                </span>
+                                <button
+                                  disabled={isOutLoading}
+                                  onClick={() => setOutcomeModeId(item.activity_id)}
+                                  className={ACTION_BUTTON_SECONDARY_COMPACT}
+                                >
+                                  Change
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 disabled={isOutLoading}
                                 onClick={() => setOutcomeModeId(item.activity_id)}
-                                className="text-xs font-medium text-accent hover:underline disabled:opacity-40"
+                                className={ACTION_BUTTON_SECONDARY_COMPACT}
                               >
                                 Record outcome
                               </button>
@@ -1120,7 +1172,7 @@ export default function MemberDetailClient({
             <button
               onClick={handleAddNote}
               disabled={noteAdding || !noteContent.trim()}
-              className="mt-2 px-4 py-2 rounded-xl bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-sm font-medium disabled:opacity-50"
+              className={`mt-2 ${ACTION_BUTTON_PRIMARY_COMPACT}`}
             >
               {noteAdding ? "Adding…" : "Add Note"}
             </button>
@@ -1131,71 +1183,178 @@ export default function MemberDetailClient({
               No notes yet.
             </p>
           ) : (
-            <div className="space-y-2">
-              {notes.map(note => (
-                <div key={note.id} className="ct-card px-4 py-3">
-                  {editingNoteId === note.id ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={editContent}
-                        onChange={e => setEditContent(e.target.value)}
-                        rows={3}
-                        maxLength={1000}
-                        autoFocus
-                        className="w-full ct-input text-base md:text-sm resize-none"
-                      />
-                      {noteOpError[note.id] && (
-                        <p className="text-xs text-red-600 dark:text-red-400">{noteOpError[note.id]}</p>
+            <>
+              {activeNotes.length === 0 ? (
+                <p className="text-sm text-gray-400 dark:text-gray-500 py-4 text-center">
+                  No active notes.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {activeNotes.map(note => (
+                    <div key={note.id} className="ct-card px-4 py-3">
+                      {editingNoteId === note.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editContent}
+                            onChange={e => setEditContent(e.target.value)}
+                            rows={3}
+                            maxLength={1000}
+                            autoFocus
+                            className="w-full ct-input text-base md:text-sm resize-none"
+                          />
+                          {noteOpError[note.id] && (
+                            <p className="text-xs text-red-600 dark:text-red-400">{noteOpError[note.id]}</p>
+                          )}
+                          <div className="flex gap-3">
+                            <button
+                              disabled={noteOpLoading === note.id}
+                              onClick={() => handleSaveEdit(note.id)}
+                              className={ACTION_BUTTON_PRIMARY_COMPACT}
+                            >
+                              {noteOpLoading === note.id ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              onClick={() => { setEditingNoteId(null); setEditContent(""); }}
+                              className={ACTION_BUTTON_SECONDARY_COMPACT}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                            {note.body}
+                          </p>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">
+                            {note.author_name_snapshot || "Admin"} · {fmtDate(note.created_at, clubTimezone)}
+                          </p>
+                          {noteOpError[note.id] && (
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{noteOpError[note.id]}</p>
+                          )}
+                          <div className="flex gap-3 mt-2">
+                            <button
+                              onClick={() => handleEditNote(note)}
+                              className={ACTION_BUTTON_SECONDARY_COMPACT}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              disabled={noteOpLoading === note.id}
+                              onClick={() => setArchiveConfirmNoteId(note.id)}
+                              className={ACTION_BUTTON_DESTRUCTIVE_COMPACT}
+                            >
+                              Archive
+                            </button>
+                          </div>
+                        </>
                       )}
-                      <div className="flex gap-3">
-                        <button
-                          disabled={noteOpLoading === note.id}
-                          onClick={() => handleSaveEdit(note.id)}
-                          className="text-xs font-medium text-accent disabled:opacity-40"
-                        >
-                          {noteOpLoading === note.id ? "Saving…" : "Save"}
-                        </button>
-                        <button
-                          onClick={() => { setEditingNoteId(null); setEditContent(""); }}
-                          className="text-xs text-gray-400"
-                        >
-                          Cancel
-                        </button>
-                      </div>
                     </div>
-                  ) : (
-                    <>
-                      <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                        {note.content}
-                      </p>
-                      <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">
-                        {note.author_name_snapshot || "Admin"} · {fmtDate(note.created_at, clubTimezone)}
-                      </p>
-                      {noteOpError[note.id] && (
-                        <p className="text-xs text-red-600 dark:text-red-400 mt-1">{noteOpError[note.id]}</p>
-                      )}
-                      <div className="flex gap-3 mt-2">
-                        <button
-                          onClick={() => handleEditNote(note)}
-                          className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          disabled={noteOpLoading === note.id}
-                          onClick={() => handleArchiveNote(note.id)}
-                          className="text-xs text-red-400 hover:text-red-600 dark:hover:text-red-300 disabled:opacity-40"
-                        >
-                          {noteOpLoading === note.id ? "Removing…" : "Remove"}
-                        </button>
-                      </div>
-                    </>
+                  ))}
+                </div>
+              )}
+
+              {/* Archived notes — collapsed by default, kept accessible via
+                  Show/Hide rather than a page refresh (which previously
+                  surfaced them re-rendered as if still active — the exact
+                  UX defect this checkpoint fixes). */}
+              {archivedNotes.length > 0 && (
+                <div className="mt-4">
+                  <button
+                    onClick={() => setShowArchivedNotes(prev => !prev)}
+                    className={ACTION_BUTTON_SECONDARY_COMPACT}
+                  >
+                    {showArchivedNotes ? "Hide archived" : `Show archived (${archivedNotes.length})`}
+                  </button>
+
+                  {showArchivedNotes && (
+                    <div className="mt-2 space-y-2">
+                      {archivedNotes.map(note => (
+                        <div key={note.id} className="ct-card px-4 py-3 opacity-60">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                              Archived
+                            </span>
+                            {note.archived_at && (
+                              <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                                {fmtDate(note.archived_at, clubTimezone)}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 whitespace-pre-wrap">
+                            {note.body}
+                          </p>
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1.5">
+                            {note.author_name_snapshot || "Admin"} · {fmtDate(note.created_at, clubTimezone)}
+                          </p>
+                          {noteOpError[note.id] && (
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-1">{noteOpError[note.id]}</p>
+                          )}
+                          {/* No Edit, no Archive — an archived note cannot be
+                              edited, and re-archiving is not a valid action
+                              (the backend would correctly reject it with
+                              note_already_archived; the UI simply never
+                              offers a path to that error). Restore only. */}
+                          <div className="flex gap-3 mt-2">
+                            <button
+                              disabled={noteOpLoading === note.id}
+                              onClick={() => handleRestoreNote(note.id)}
+                              className={ACTION_BUTTON_SECONDARY_COMPACT}
+                            >
+                              {noteOpLoading === note.id ? "Restoring…" : "Restore"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </div>
+      )}
+
+      {/* Archive-note confirmation — reuses MembersClient's own lightweight
+          fixed-inset-0 overlay + centered-card confirmDialog convention
+          (not a shared component; the same pattern replicated locally,
+          matching this file's existing single-open-item state style).
+          Restore has no equivalent dialog: it is reversible by Archiving
+          again, matching MembersClient's own "Restore ... not destructive,
+          no confirmation dialog" precedent for roster members. */}
+      {archiveConfirmNoteId && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => { if (noteOpLoading !== archiveConfirmNoteId) setArchiveConfirmNoteId(null); }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm px-6 py-6">
+              <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                Archive this note?
+              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed">
+                It will be removed from active notes but kept in history and can be restored.
+              </p>
+              <div className="mt-5 flex gap-3">
+                <button
+                  disabled={noteOpLoading === archiveConfirmNoteId}
+                  onClick={() => setArchiveConfirmNoteId(null)}
+                  className={`flex-1 ${ACTION_BUTTON_SECONDARY_COMPACT}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={noteOpLoading === archiveConfirmNoteId}
+                  onClick={() => handleArchiveNote(archiveConfirmNoteId)}
+                  className={`flex-1 ${ACTION_BUTTON_DESTRUCTIVE_COMPACT}`}
+                >
+                  {noteOpLoading === archiveConfirmNoteId ? "Archiving…" : "Archive"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

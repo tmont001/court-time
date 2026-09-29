@@ -475,7 +475,12 @@ describe("26-29. scope compliance", () => {
   });
 
   it("28. db/types.ts already carries the exact 0206/0204 signatures this checkpoint relies on — nothing here required changing them", () => {
-    const types = readSource("src/lib/db/types.ts");
+    // Phase 45C1: src/lib/db/types.ts is now a thin domain layer over the
+    // GENERATED src/lib/db/database.types.ts. Neither function needed a
+    // FunctionsOverride entry (no CHECK-constrained union, no nullability
+    // gap), so neither is hand-declared in types.ts anymore — only in the
+    // generated file, which is what this now checks.
+    const types = readSource("src/lib/db/database.types.ts");
     expect(types).toContain("get_my_reservation_player_participations: {");
     expect(types).toContain("leave_reservation_participation: {");
     // Exactly one definition of each — confirms this checkpoint did not

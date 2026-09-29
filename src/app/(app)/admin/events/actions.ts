@@ -765,8 +765,7 @@ export async function archiveEventAction(
 
   const supabase = await createClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.rpc as any)("archive_event", { p_event_id: eventId });
+  const { error } = await supabase.rpc("archive_event", { p_event_id: eventId });
 
   if (error) {
     const code = error.message?.trim() ?? "";
@@ -791,8 +790,7 @@ export async function unarchiveEventAction(
 
   const supabase = await createClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.rpc as any)("unarchive_event", { p_event_id: eventId });
+  const { error } = await supabase.rpc("unarchive_event", { p_event_id: eventId });
 
   if (error) {
     const code = error.message?.trim() ?? "";

@@ -576,23 +576,34 @@ describe("Refund action: unchanged for non-disputed payments, hidden only when S
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe("db/types.ts and rollback completeness", () => {
-  it("process_stripe_dispute_webhook_event is registered in db/types.ts with a plain boolean Returns type (not an array/table shape)", () => {
-    const src = readSource(DB_TYPES_PATH);
+  // Phase 45C1 — src/lib/db/types.ts was rewritten into a thin domain layer
+  // over the GENERATED src/lib/db/database.types.ts. This function needed
+  // no override in that rewrite (generated already reports
+  // `Returns: boolean` correctly), so it no longer appears as literal text
+  // in types.ts at all — it flows through unchanged. This assertion now
+  // checks the generated source of truth directly.
+  it("process_stripe_dispute_webhook_event has a plain boolean Returns type (not an array/table shape) in the generated source of truth", () => {
+    const src = readSource("src/lib/db/database.types.ts");
     const idx = src.indexOf("process_stripe_dispute_webhook_event: {");
     expect(idx).toBeGreaterThan(0);
-    // The entry-level closing brace is 6-space indented ("      };"),
-    // distinct from the nested Args object's own 8-space-indented one —
-    // a naive first-"};" search lands on Args's, before ever reaching
-    // Returns.
-    const block = src.slice(idx, src.indexOf("\n      };", idx));
-    expect(block).toContain("Returns: boolean;");
+    const block = src.slice(idx, src.indexOf("\n      }", idx + 40));
+    expect(block).toContain("Returns: boolean");
   });
+
+  // types.ts DOES still override this function's Args (p_stripe_payment_
+  // intent_id / p_evidence_due_by nullability, a separate, confirmed
+  // generator limitation — see FunctionsOverride's own comments) — only its
+  // Returns needed no correction, which is what the assertion above covers.
 
   it("payment_disputes is registered in db/types.ts with Insert/Update: never — writes only ever go through the service-role RPC", () => {
     const src = readSource(DB_TYPES_PATH);
-    const idx = src.indexOf("payment_disputes: {");
+    // Phase 45C1: the table entry now opens with `Omit<GeneratedTables[...],
+    // ...> & {`, not a literal `payment_disputes: {` — search for the key
+    // alone and confirm Insert/Update: never appear in its own override
+    // block before the next top-level table entry.
+    const idx = src.indexOf("payment_disputes:");
     expect(idx).toBeGreaterThan(0);
-    const block = src.slice(idx, src.indexOf("Relationships:", idx));
+    const block = src.slice(idx, src.indexOf("profiles:", idx));
     expect(block).toContain("Insert: never;");
     expect(block).toContain("Update: never;");
   });

@@ -167,11 +167,11 @@ export default function LessonRequestDetail({ request, userId: _userId, clubId, 
     let cancelled = false;
     const supabase = createClient();
     (async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data } = await (supabase.from as any)("lesson_requests")
+      const { data } = await supabase
+        .from("lesson_requests")
         .select("price_amount_cents")
         .eq("id", request.id)
-        .single() as { data: { price_amount_cents: number | null } | null };
+        .single();
       if (!cancelled) setPriceAmountCents(data?.price_amount_cents ?? null);
     })();
     return () => { cancelled = true; };

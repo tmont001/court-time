@@ -236,23 +236,37 @@ describe("USER_PREF_ENABLED — search_path pinned, PUBLIC/anon revoked, authent
   });
 });
 
+// Phase 45C1 — src/lib/db/types.ts was rewritten from a full hand-maintained
+// copy of the schema into a thin domain layer over the GENERATED
+// src/lib/db/database.types.ts (never hand-edited — see README.md). Both
+// RPCs below still have a FunctionsOverride entry (the facts these tests
+// check are still true and still hand-maintained), just in the new
+// `functionName: OverrideXxx<GeneratedFunctions["functionName"], {...}>`
+// shape rather than a fully hand-written object literal.
 describe("db/types.ts", () => {
   it("get_communications_activity's Returns gains audience_mode and body", () => {
     const s = readSource(TYPES_PATH);
-    const idx = s.indexOf("get_communications_activity: {");
+    const idx = s.indexOf("get_communications_activity: OverrideArrayReturns<");
     expect(idx).toBeGreaterThan(-1);
-    const block = s.slice(idx, idx + 1700);
-    expect(block).toContain('audience_mode:      "all" | "specific";');
-    expect(block).toContain("body:                string | null;");
+    const block = s.slice(idx, idx + 400);
+    expect(block).toContain('audience_mode: "all" | "specific"');
+    expect(block).toContain("body: string | null");
   });
 
   it("send_announcement_v2's typed Args/Returns are unchanged by this checkpoint", () => {
     const s = readSource(TYPES_PATH);
-    const idx = s.indexOf("send_announcement_v2: {");
-    const block = s.slice(idx, idx + 400);
-    expect(block).toContain("p_title:               string;");
-    expect(block).toContain("p_audience_mode:       string;");
-    expect(block).toContain("p_recipient_user_ids:  string[] | null;");
+    const idx = s.indexOf("send_announcement_v2: OverrideArgs<");
+    expect(idx).toBeGreaterThan(-1);
+    const block = s.slice(idx, idx + 200);
+    expect(block).toContain("p_recipient_user_ids: string[] | null");
+    // p_title/p_audience_mode were always plain `string` (never a literal
+    // union) and needed no override — confirmed directly in the generated
+    // source of truth instead.
+    const genSrc = readSource("src/lib/db/database.types.ts");
+    const genIdx = genSrc.indexOf("send_announcement_v2: {");
+    const genBlock = genSrc.slice(genIdx, genIdx + 300);
+    expect(genBlock).toContain("p_title: string");
+    expect(genBlock).toContain("p_audience_mode: string");
   });
 });
 

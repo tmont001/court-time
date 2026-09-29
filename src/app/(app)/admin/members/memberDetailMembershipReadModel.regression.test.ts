@@ -328,7 +328,10 @@ describe("0191 — scope is strictly limited to get_admin_member_detail", () => 
 
   it("the types.ts delta touches only get_admin_member_detail's Returns shape — no other RPC Returns/Args were widened", () => {
     const typesSource = readSource("src/lib/db/types.ts");
-    const idx = typesSource.indexOf("get_admin_member_detail: {");
+    // Phase 45C1: types.ts is now a thin domain layer over the generated
+    // database.types.ts — this entry is `get_admin_member_detail:
+    // OverrideArrayReturns<...>`, not a literal `: {` object.
+    const idx = typesSource.indexOf("get_admin_member_detail: OverrideArrayReturns<");
     expect(idx).toBeGreaterThan(-1);
     const block = typesSource.slice(idx, typesSource.indexOf("get_member_upcoming_activity: {", idx));
     expect(block).toContain("// 0191 — Phase 42C-3A");

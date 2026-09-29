@@ -130,10 +130,8 @@ export async function hydrateExportDomainContext(
     fetchRowsByIdsExhaustively<{ id: string; pro_id: string; proposed_starts_at: string | null; proposed_ends_at: string | null; status: string }>(
       idsByDomain.lesson_request,
       async (chunkIds, offset, limit) => {
-        // Same pre-existing db/types.ts staleness workaround page.tsx
-        // already carries for this exact table.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (supabase.from as any)("lesson_requests")
+        const result = await supabase
+          .from("lesson_requests")
           .select("id, pro_id, proposed_starts_at, proposed_ends_at, status")
           .in("id", chunkIds)
           .order("id", { ascending: true })

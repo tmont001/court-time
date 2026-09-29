@@ -339,10 +339,10 @@ describe("D. the reversal-aware source summary is wired from the bulk query onto
     expect(s).not.toMatch(/bg-green|text-green|border-green/);
   });
 
-  it("11. the correction pass touched only PaymentDetailSheet's per-event actor/manual classification — the reversal-aware list summary's own source query, pagination, and pure derivation are untouched (unchanged wiring here; full pure-function behavior is proven by the unmodified src/lib/paymentProvenance.test.ts suite)", () => {
+  it("11. the correction pass touched only PaymentDetailSheet's per-event actor/manual classification — the reversal-aware list summary's own source query, pagination, and pure derivation are untouched (unchanged wiring here; full pure-function behavior is proven by the unmodified src/lib/paymentProvenance.test.ts suite). Phase 45C2B later removed this query's `as any` (a stale event_type union, not a behavior change) — the same three literal values are still queried.", () => {
     const pageSrc = readSource(PAGE_PATH);
     expect(pageSrc).toContain("fetchAllRowsExhaustively");
-    expect(pageSrc).toContain('.in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"] as any)');
+    expect(pageSrc).toContain('.in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"])');
     const provenanceLib = readSource("src/lib/paymentProvenance.ts");
     expect(provenanceLib).toContain("export function deriveEffectiveCollectionSummary(events: ProvenanceLedgerEvent[]): string | null {");
     expect(provenanceLib).toContain("export function formatEventProvenanceLabel(eventType: string, method: string | null): string | null {");

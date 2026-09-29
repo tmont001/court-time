@@ -378,32 +378,20 @@ export default function LessonProSheet({ request, courts, userId, clubId, clubTi
     let cancelled = false;
     const supabase = createClient();
     (async () => {
-      // Phase 34B: lesson_requests/lesson_types aren't in the generated
-      // Database["public"]["Tables"] map (both were only ever accessed via
-      // RPC before this checkpoint), so a strictly-typed .from() call
-      // doesn't type-check even though both columns genuinely exist —
-      // matches this codebase's existing narrow-cast precedent (e.g.
-      // admin/events/actions.ts's `(supabase.rpc as any)("archive_event"...)`
-      // for the same generated-types-lag reason.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: lr } = await (supabase.from as any)("lesson_requests")
+      const { data: lr } = await supabase
+        .from("lesson_requests")
         .select("lesson_type_id, pricing_basis, unit_price_amount_cents, price_amount_cents")
         .eq("id", request.id)
-        .single() as { data: {
-          lesson_type_id: string | null;
-          pricing_basis: "flat" | "hourly" | null;
-          unit_price_amount_cents: number | null;
-          price_amount_cents: number | null;
-        } | null };
+        .single();
       if (cancelled || !lr) return;
 
       let allowedDurations: number[] | null = null;
       if (lr.lesson_type_id) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data: lt } = await (supabase.from as any)("lesson_types")
+        const { data: lt } = await supabase
+          .from("lesson_types")
           .select("allowed_durations")
           .eq("id", lr.lesson_type_id)
-          .single() as { data: { allowed_durations: number[] | null } | null };
+          .single();
         if (!cancelled) allowedDurations = lt?.allowed_durations ?? null;
       }
       if (!cancelled) {

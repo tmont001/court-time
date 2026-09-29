@@ -2,6 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+// Phase 45C1B — HistoryItem is now defined in activityNormalization.ts (the
+// single source of truth shared by page.tsx's initial load and this file's
+// own loadMoreMemberHistoryAction below); re-exported here so
+// MemberDetailClient's/page.tsx's existing `import { type HistoryItem }
+// from "./actions"` needs no path change.
+import { normalizeMemberHistoryActivity, type HistoryItem } from "./activityNormalization";
+export type { HistoryItem } from "./activityNormalization";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -10,37 +17,24 @@ export interface AddedNote {
   member_id:            string;
   author_id:            string | null;
   author_name_snapshot: string;
-  content:              string;
+  body:                 string;
+  is_archived:          boolean;
   created_at:           string;
   updated_at:           string;
   archived_at:          string | null;
-}
-
-export interface HistoryItem {
-  activity_id:       string;
-  activity_type:     "event" | "lesson";
-  sort_ts:           string;
-  status:            string;
-  starts_at:         string | null;
-  ends_at:           string | null;
-  title:             string | null;
-  attendance_status: string | null;
-  pro_first_name:    string | null;
-  pro_last_name:     string | null;
-  duration_minutes:  number | null;
-  lesson_outcome:    string | null;
+  archived_by:          string | null;
 }
 
 // ─── addMemberNoteAction ──────────────────────────────────────────────────────
 
 export async function addMemberNoteAction(
   memberId: string,
-  content:  string,
+  body:     string,
 ): Promise<{ note?: AddedNote; error?: string }> {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("add_member_note", {
     p_member_id: memberId,
-    p_content:   content,
+    p_body:      body,
   });
 
   if (error) return { error: mapNoteError(error.message) };
@@ -52,13 +46,13 @@ export async function addMemberNoteAction(
 // ─── updateMemberNoteAction ───────────────────────────────────────────────────
 
 export async function updateMemberNoteAction(
-  noteId:  string,
-  content: string,
+  noteId: string,
+  body:   string,
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { error } = await supabase.rpc("update_member_note", {
     p_note_id: noteId,
-    p_content: content,
+    p_body:    body,
   });
 
   if (error) return { error: mapNoteError(error.message) };
@@ -72,6 +66,24 @@ export async function archiveMemberNoteAction(
 ): Promise<{ error?: string }> {
   const supabase = await createClient();
   const { error } = await supabase.rpc("archive_member_note", {
+    p_note_id: noteId,
+  });
+
+  if (error) return { error: mapNoteError(error.message) };
+  return {};
+}
+
+// ─── restoreMemberNoteAction ──────────────────────────────────────────────────
+// Phase 45C1A2 — the reverse of archiveMemberNoteAction, via migration
+// 0212's restore_member_note (created, not yet applied). Clears exactly
+// is_archived/archived_at/archived_by; body/author/created_at/member_id/
+// club_id are untouched server-side.
+
+export async function restoreMemberNoteAction(
+  noteId: string,
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("restore_member_note", {
     p_note_id: noteId,
   });
 
@@ -98,7 +110,10 @@ export async function loadMoreMemberHistoryAction(
 
   if (error) return { error: "Failed to load more history." };
 
-  return { items: (data ?? []) as HistoryItem[] };
+  // Same normalizeMemberHistoryActivity adapter page.tsx's initial load
+  // uses (activityNormalization.ts) — paginated and initial history rows
+  // always share the exact same view-model shape, never mapped separately.
+  return { items: (data ?? []).map(normalizeMemberHistoryActivity) };
 }
 
 // ─── markAttendanceFromDetailAction ──────────────────────────────────────────
@@ -140,14 +155,24 @@ export async function recordLessonOutcomeFromDetailAction(
 
 function mapNoteError(msg: string): string {
   const map: Record<string, string> = {
-    not_authenticated:   "Please sign in to continue.",
-    insufficient_role:   "Admin access required.",
-    member_not_found:    "Member not found.",
-    note_not_found:      "Note not found.",
-    note_archived:       "This note has already been archived.",
+    not_authenticated:     "Please sign in to continue.",
+    insufficient_role:     "Admin access required.",
+    member_not_found:      "Member not found.",
+    note_not_found:        "Note not found.",
+    note_archived:         "This note has already been archived.",
     note_already_archived: "This note has already been archived.",
-    content_required:    "Note content cannot be empty.",
-    content_too_long:    "Note is too long (max 1000 characters).",
+    // Phase 45C1A2 — restore_member_note's own lifecycle guard. The UI
+    // never offers Restore on an active note, so this should be
+    // unreachable in normal use; mapped defensively anyway, matching every
+    // other lifecycle-guard code in this map.
+    note_not_archived:     "This note is not archived.",
+    // Phase 45C1A: migration 0211 reconciles add_member_note/
+    // update_member_note with the live-verified error codes (body_empty/
+    // body_too_long, matching member_notes_body_length's 2000-char CHECK)
+    // — the old content_required/content_too_long (1000-char) codes these
+    // replace were never actually raised by the live database.
+    body_empty:            "Note content cannot be empty.",
+    body_too_long:         "Note is too long (max 2000 characters).",
   };
   return map[msg] ?? "Something went wrong. Please try again.";
 }

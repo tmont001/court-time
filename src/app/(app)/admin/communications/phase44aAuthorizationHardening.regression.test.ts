@@ -75,7 +75,10 @@ describe("A. legacy send_announcement(text, text) v1 — dropped, not repaired",
   it("4. the obsolete db/types.ts Functions entry for send_announcement (v1) is removed; send_announcement_v2's entry remains", () => {
     const s = readSource(TYPES_PATH);
     expect(s).not.toMatch(/\n {6}send_announcement:\s*\{/);
-    expect(s).toContain("send_announcement_v2: {");
+    // Phase 45C1: send_announcement_v2 is now `: OverrideArgs<...>`, not a
+    // literal `: {` object — see FunctionsOverride in types.ts.
+    expect(s).toContain("send_announcement_v2: OverrideArgs<");
+    expect(s).not.toMatch(/\n {2}send_announcement: OverrideArgs</);
   });
 
   it("0207 does not redefine send_announcement's replaced signature elsewhere in the file (drop only, no CREATE OR REPLACE for the v1 name)", () => {
@@ -443,8 +446,13 @@ describe("source retirement — no live reference to the retired path remains", 
     const s = readSource(LESSONS_ACTIONS_PATH);
     expect(s).toContain("export async function adminCreateMemberLessonAction(");
     expect(s).toContain('supabase.rpc("admin_create_member_lesson"');
-    const typesSrc = readSource(TYPES_PATH);
-    expect(typesSrc).toMatch(/\n\s*admin_create_member_lesson:\s*\{/);
+    // Phase 45C1: types.ts is now a thin domain layer over the GENERATED
+    // database.types.ts. admin_create_member_lesson needed no override
+    // (its optional Args are already correctly widened to nullable by
+    // types.ts's blanket WidenOptionalArgsToNullable rule), so it's no
+    // longer hand-declared in types.ts at all — only in the generated file.
+    const genSrc = readSource("src/lib/db/database.types.ts");
+    expect(genSrc).toMatch(/\n\s*admin_create_member_lesson:\s*\{/);
   });
 
   it("historical notification kinds/templates for the retired path (lesson_admin_requested) are NOT removed — historical notification rows may still need to render", () => {

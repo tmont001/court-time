@@ -1,5400 +1,854 @@
-// Placeholder — regenerate after applying migrations:
-//   pnpm dlx supabase gen types typescript --project-id <your-project-id> > src/lib/db/types.ts
+// HAND-MAINTAINED domain/compatibility layer (Phase 45C1).
 //
-// Until then, this file hand-mirrors the Phase 1 schema so the build succeeds.
+// src/lib/db/database.types.ts is GENERATED — real `supabase gen types`
+// output, committed, never hand-edited (see README.md, "Regenerate Supabase
+// types"). It reflects raw database STRUCTURE only: every public table and
+// function the schema actually has, regardless of RLS/grants — e.g.
+// club_memberships appears there because it genuinely exists, even though
+// it is fully locked down (RLS-enabled, zero policies, all grants revoked)
+// and unreachable via `.from()` by any caller. Type presence does NOT grant
+// database permission; RLS/EXECUTE grants/SECURITY DEFINER authorization
+// remain authoritative and are audited separately (see Phase 45D).
+//
+// This file layers a SMALL, EVIDENCE-BACKED set of corrections on top of the
+// generated structure — nothing here duplicates full table/function shapes:
+//
+//   1. Literal string unions for CHECK-constrained columns. Supabase's
+//      generator can only produce a literal union from a native Postgres
+//      ENUM type — this schema defines zero native enums (confirmed by
+//      `Enums: { [_ in never]: never }` in database.types.ts), so every
+//      status/role/kind/domain-classifier column generates as plain
+//      `string`. Each override below is verified against that column's
+//      current CHECK constraint at the migration cited in its comment.
+//   2. A handful of confirmed Args/Returns nullability corrections, where
+//      the generator provably under- or over-reports nullability (see each
+//      override's comment for the specific evidence).
+//   3. Two deliberate Insert/Update lockouts (`payments`, `payment_events`)
+//      preserving a pre-existing domain rule: these are append-only/
+//      rollup ledger tables the app must never write to directly, only via
+//      RPCs (record_manual_payment, record_refund, etc.).
+//
+// IMPORTANT: a literal-union override here documents application-level
+// domain knowledge; it does NOT independently verify that Postgres still
+// agrees. If a migration adds/removes a CHECK-constrained value, this file
+// must be updated by hand in the same change — nothing enforces that
+// automatically beyond code review and `pnpm db:types:check` (which only
+// catches STRUCTURAL drift, not whether a hand-written union is complete).
+//
+// notifications.kind / notification_preferences.kind are the one domain
+// this project gives a SINGLE canonical declaration (NotificationKind, in
+// notification-targets.ts) rather than two independently hand-written
+// copies — the previous two-copies approach drifted out of sync once
+// already (Phase 45C audit) before this rewrite.
 
-export type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json | undefined }
-  | Json[];
+import type { Database as GeneratedDatabase, Json } from "./database.types";
+import type { NotificationKind } from "@/lib/notification-targets";
 
-export type Database = {
-  public: {
-    Tables: {
-      clubs: {
-        Row: {
-          id: string;
-          name: string;
-          slug: string;
-          timezone: string;
-          logo_url: string | null;
-          theme_key: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          slug: string;
-          timezone?: string;
-          logo_url?: string | null;
-          theme_key?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          slug?: string;
-          timezone?: string;
-          logo_url?: string | null;
-          theme_key?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      club_settings: {
-        Row: {
-          id: string;
-          club_id: string;
-          booking_window_days: number;
-          cancellation_window_hours: number;
-          cancellation_grace_minutes: number;
-          waitlist_offer_window_hours: number;  // Phase 18A
-          currency: string;  // Phase 34B
-          default_court_hourly_rate_cents: number | null;  // Phase 34B
-          default_court_hourly_rate_non_member_cents: number | null;  // 0189 — Phase 42B
-          payment_mode: "none" | "manual" | "court_time_payments";  // Phase 34C
-          memberships_enabled: boolean;  // 0190 — Phase 42C-1
-          created_at: string;
-          updated_at: string;
-          rules_and_policies: string | null;  // 0184 — informational only, never enforced
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          booking_window_days?: number;
-          cancellation_window_hours?: number;
-          cancellation_grace_minutes?: number;
-          waitlist_offer_window_hours?: number;  // Phase 18A
-          currency?: string;  // Phase 34B
-          default_court_hourly_rate_cents?: number | null;  // Phase 34B
-          default_court_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-          payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
-          memberships_enabled?: boolean;  // 0190 — Phase 42C-1
-          created_at?: string;
-          updated_at?: string;
-          rules_and_policies?: string | null;  // 0184
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          booking_window_days?: number;
-          cancellation_window_hours?: number;
-          cancellation_grace_minutes?: number;
-          waitlist_offer_window_hours?: number;  // Phase 18A
-          currency?: string;  // Phase 34B
-          default_court_hourly_rate_cents?: number | null;  // Phase 34B
-          default_court_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-          payment_mode?: "none" | "manual" | "court_time_payments";  // Phase 34C
-          memberships_enabled?: boolean;  // 0190 — Phase 42C-1
-          created_at?: string;
-          updated_at?: string;
-          rules_and_policies?: string | null;  // 0184
-        };
-        Relationships: [
-          {
-            foreignKeyName: "club_settings_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: true;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      payments: {
-        // Phase 34C — current-state rollup row per obligation cycle. No
-        // money-movement fields here (those live in payment_events); UI
-        // code should treat this as read-only except through the RPCs.
-        Row: {
-          id: string;
-          club_id: string;
-          domain_type:
-            | "reservation"
-            | "lesson_request"
-            | "event_participant"
-            | "event_guest"
-            | "program_enrollment";
-          domain_id: string;
-          obligation_cycle: number;
-          roster_member_id: string | null;
-          amount_due_cents: number;
-          amount_paid_cents: number;
-          currency: string;
-          status:
-            | "unpaid"
-            | "partially_paid"
-            | "paid"
-            | "overpaid"
-            | "partially_refunded"
-            | "refunded"
-            | "waived"
-            | "void";
-          payment_mode_at_creation: "manual" | "court_time_payments";
-          created_by: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: never;
-        Update: never;
-        Relationships: [
-          {
-            foreignKeyName: "payments_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      payment_disputes: {
-        // Phase 34E-C — informational Stripe dispute state, entirely
-        // separate from payment_events/payment_refund_attempts. Read-only
-        // for `authenticated` (club-scoped Admin/Staff SELECT policy);
-        // every write goes through process_stripe_dispute_webhook_event
-        // (service-role only, via the webhook Route Handler).
-        Row: {
-          id: string;
-          club_id: string;
-          payment_id: string;
-          source_checkout_attempt_id: string;
-          stripe_dispute_id: string;
-          stripe_charge_id: string;
-          stripe_payment_intent_id: string;
-          stripe_account_id: string;
-          livemode: boolean;
-          amount_cents: number;
-          currency: string;
-          // Stripe's raw dispute status string — deliberately untyped
-          // beyond `string` (no CHECK at the DB layer either); see
-          // disputeConfig.ts's own presentDisputeStatus for the UI's safe
-          // known-value-plus-fallback mapping.
-          status: string;
-          reason: string;
-          evidence_due_by: string | null;
-          is_charge_refundable: boolean;
-          stripe_created_at: string;
-          last_synced_at: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: never;
-        Update: never;
-        Relationships: [
-          {
-            foreignKeyName: "payment_disputes_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "payment_disputes_payment_id_club_id_fkey";
-            columns: ["payment_id", "club_id"];
-            isOneToOne: false;
-            referencedRelation: "payments";
-            referencedColumns: ["id", "club_id"];
-          }
-        ];
-      };
-      payment_events: {
-        // Phase 34C — append-only canonical ledger. UI code should never
-        // write here directly; always via record_manual_payment /
-        // record_refund / reverse_payment_event / waive_payment /
-        // void_payment_obligation.
-        Row: {
-          id: string;
-          payment_id: string;
-          club_id: string;
-          event_type:
-            | "obligation_created"
-            | "obligation_amount_adjusted"
-            | "manual_payment_recorded"
-            | "refund_recorded"
-            | "reverse_payment_event"
-            | "void_payment_obligation"
-            | "waived";
-          amount_cents: number | null;
-          method:
-            | "cash"
-            | "check"
-            | "card_terminal"
-            | "bank_transfer"
-            | "digital_wallet"
-            | "other"
-            | null;
-          external_reference: string | null;
-          notes: string | null;
-          reverses_event_id: string | null;
-          actor_id: string | null;
-          occurred_at: string;
-          created_at: string;
-        };
-        Insert: never;
-        Update: never;
-        Relationships: [
-          {
-            foreignKeyName: "payment_events_payment_id_fkey";
-            columns: ["payment_id"];
-            isOneToOne: false;
-            referencedRelation: "payments";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      profiles: {
-        Row: {
-          id: string;
-          club_id: string | null;
-          first_name: string | null;
-          last_name: string | null;
-          phone: string | null;
-          role: "member" | "pro" | "staff" | "admin";
-          status: "active" | "inactive" | "suspended";
-          is_lesson_provider: boolean;
-          sms_opt_in: boolean;
-          sms_opted_in_at: string | null;
-          sms_opted_in_ip: string | null;
-          admin_notes: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id: string;
-          club_id?: string | null;
-          first_name?: string | null;
-          last_name?: string | null;
-          phone?: string | null;
-          role?: "member" | "pro" | "staff" | "admin";
-          status?: "active" | "inactive" | "suspended";
-          is_lesson_provider?: boolean;
-          sms_opt_in?: boolean;
-          sms_opted_in_at?: string | null;
-          sms_opted_in_ip?: string | null;
-          admin_notes?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string | null;
-          first_name?: string | null;
-          last_name?: string | null;
-          phone?: string | null;
-          role?: "member" | "pro" | "staff" | "admin";
-          status?: "active" | "inactive" | "suspended";
-          is_lesson_provider?: boolean;
-          sms_opt_in?: boolean;
-          sms_opted_in_at?: string | null;
-          sms_opted_in_ip?: string | null;
-          admin_notes?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "profiles_id_fkey";
-            columns: ["id"];
-            isOneToOne: true;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "profiles_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      courts: {
-        Row: {
-          id: string;
-          club_id: string;
-          name: string;
-          display_order: number;
-          is_active: boolean;
-          hourly_rate_cents: number | null;  // Phase 34B
-          hourly_rate_non_member_cents: number | null;  // 0189 — Phase 42B
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          name: string;
-          display_order?: number;
-          is_active?: boolean;
-          hourly_rate_cents?: number | null;  // Phase 34B
-          hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          name?: string;
-          display_order?: number;
-          is_active?: boolean;
-          hourly_rate_cents?: number | null;  // Phase 34B
-          hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "courts_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      court_rate_periods: {
-        Row: {
-          id: string;
-          club_id: string;
-          name: string;
-          days_of_week: number[];
-          starts_at_local: string;
-          ends_at_local: string;
-          hourly_rate_cents: number | null;
-          hourly_rate_non_member_cents: number | null;
-          is_active: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          name: string;
-          days_of_week: number[];
-          starts_at_local: string;
-          ends_at_local: string;
-          hourly_rate_cents?: number | null;
-          hourly_rate_non_member_cents?: number | null;
-          is_active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          name?: string;
-          days_of_week?: number[];
-          starts_at_local?: string;
-          ends_at_local?: string;
-          hourly_rate_cents?: number | null;
-          hourly_rate_non_member_cents?: number | null;
-          is_active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "court_rate_periods_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      operating_hours: {
-        Row: {
-          id: string;
-          club_id: string;
-          day_of_week: number;
-          opens_at: string;
-          closes_at: string;
-          is_closed: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          day_of_week: number;
-          opens_at: string;
-          closes_at: string;
-          is_closed?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          day_of_week?: number;
-          opens_at?: string;
-          closes_at?: string;
-          is_closed?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "operating_hours_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      operating_hours_override: {
-        Row: {
-          id: string;
-          club_id: string;
-          override_date: string;
-          opens_at: string | null;
-          closes_at: string | null;
-          is_closed: boolean;
-          note: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          override_date: string;
-          opens_at?: string | null;
-          closes_at?: string | null;
-          is_closed?: boolean;
-          note?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          override_date?: string;
-          opens_at?: string | null;
-          closes_at?: string | null;
-          is_closed?: boolean;
-          note?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "operating_hours_override_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      event_types: {
-        Row: {
-          id: string;
-          club_id: string;
-          key: string;
-          label: string;
-          color: string;
-          default_capacity: number;
-          default_duration_minutes: number;
-          default_court_count: number;
-          shows_participant_names: boolean;
-          is_active: boolean;
-          default_price_amount_cents: number | null;  // Phase 34B
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          key: string;
-          label: string;
-          color: string;
-          default_capacity: number;
-          default_duration_minutes: number;
-          default_court_count: number;
-          shows_participant_names?: boolean;
-          is_active?: boolean;
-          default_price_amount_cents?: number | null;  // Phase 34B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          key?: string;
-          label?: string;
-          color?: string;
-          default_capacity?: number;
-          default_duration_minutes?: number;
-          default_court_count?: number;
-          shows_participant_names?: boolean;
-          is_active?: boolean;
-          default_price_amount_cents?: number | null;  // Phase 34B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "event_types_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      reservations: {
-        Row: {
-          id: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id: string | null;
-          roster_member_id: string | null;
-          starts_at: string;
-          ends_at: string;
-          status: "pending" | "confirmed" | "cancelled";
-          reason: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
-          player_count: number | null;
-          format: "singles" | "doubles" | null;
-          guest_names: string[] | null;
-          notes: string | null;
-          show_notes_to_members: boolean;
-          event_id: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          cancelled_at: string | null;
-          cancelled_by: string | null;
-          cancellation_kind: "member" | "admin" | "system" | null;
-          hourly_rate_cents: number | null;  // Phase 34B
-          price_amount_cents: number | null;  // Phase 34B
-          membership_pricing_class: "member" | "non_member" | null;  // 0189 — Phase 42B
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id?: string | null;
-          roster_member_id?: string | null;
-          starts_at: string;
-          ends_at: string;
-          status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
-          player_count?: number | null;
-          format?: "singles" | "doubles" | null;
-          guest_names?: string[] | null;
-          notes?: string | null;
-          show_notes_to_members?: boolean;
-          event_id?: string | null;
-          created_by: string;
-          created_at?: string;
-          updated_at?: string;
-          cancelled_at?: string | null;
-          cancelled_by?: string | null;
-          cancellation_kind?: "member" | "admin" | "system" | null;
-          hourly_rate_cents?: number | null;  // Phase 34B
-          price_amount_cents?: number | null;  // Phase 34B
-          membership_pricing_class?: "member" | "non_member" | null;  // 0189 — Phase 42B
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          court_id?: string;
-          owner_user_id?: string | null;
-          roster_member_id?: string | null;
-          starts_at?: string;
-          ends_at?: string;
-          status?: "pending" | "confirmed" | "cancelled";
-          reason?: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
-          player_count?: number | null;
-          format?: "singles" | "doubles" | null;
-          guest_names?: string[] | null;
-          notes?: string | null;
-          show_notes_to_members?: boolean;
-          event_id?: string | null;
-          created_by?: string;
-          created_at?: string;
-          updated_at?: string;
-          cancelled_at?: string | null;
-          cancelled_by?: string | null;
-          cancellation_kind?: "member" | "admin" | "system" | null;
-          hourly_rate_cents?: number | null;  // Phase 34B
-          price_amount_cents?: number | null;  // Phase 34B
-          membership_pricing_class?: "member" | "non_member" | null;  // 0189 — Phase 42B
-        };
-        Relationships: [
-          {
-            foreignKeyName: "reservations_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "reservations_court_id_fkey";
-            columns: ["court_id"];
-            isOneToOne: false;
-            referencedRelation: "courts";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "reservations_owner_user_id_fkey";
-            columns: ["owner_user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "reservations_roster_member_id_fkey";
-            columns: ["roster_member_id"];
-            isOneToOne: false;
-            referencedRelation: "roster_members";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "reservations_event_id_fkey";
-            columns: ["event_id"];
-            isOneToOne: false;
-            referencedRelation: "events";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      events: {
-        Row: {
-          id: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description: string | null;
-          starts_at: string;
-          ends_at: string;
-          capacity: number;
-          court_count: number;
-          status: "scheduled" | "cancelled";
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          program_id: string | null;              // Phase 27B1
-          program_schedule_rule_id: string | null; // Phase 27B1
-          program_occurrence_date: string | null;  // Phase 27B1
-          is_program_exception: boolean;           // Phase 27B1
-          price_amount_cents: number | null;       // Phase 34B
-          archived_at: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
-          archived_by: string | null;              // 0060_archive_event.sql — previously missing from this hand-maintained file
-          cancelled_at: string | null;              // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description?: string | null;
-          starts_at: string;
-          ends_at: string;
-          capacity: number;
-          court_count?: number;
-          status?: "scheduled" | "cancelled";
-          created_by: string;
-          created_at?: string;
-          updated_at?: string;
-          program_id?: string | null;              // Phase 27B1
-          program_schedule_rule_id?: string | null; // Phase 27B1
-          program_occurrence_date?: string | null;  // Phase 27B1
-          is_program_exception?: boolean;           // Phase 27B1
-          price_amount_cents?: number | null;       // Phase 34B
-          archived_at?: string | null;
-          archived_by?: string | null;
-          cancelled_at?: string | null;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          event_type_id?: string;
-          title?: string;
-          description?: string | null;
-          starts_at?: string;
-          ends_at?: string;
-          capacity?: number;
-          court_count?: number;
-          status?: "scheduled" | "cancelled";
-          created_by?: string;
-          created_at?: string;
-          updated_at?: string;
-          program_id?: string | null;              // Phase 27B1
-          program_schedule_rule_id?: string | null; // Phase 27B1
-          program_occurrence_date?: string | null;  // Phase 27B1
-          is_program_exception?: boolean;           // Phase 27B1
-          price_amount_cents?: number | null;       // Phase 34B
-          archived_at?: string | null;
-          archived_by?: string | null;
-          cancelled_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "events_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "events_event_type_id_fkey";
-            columns: ["event_type_id"];
-            isOneToOne: false;
-            referencedRelation: "event_types";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "events_created_by_fkey";
-            columns: ["created_by"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "events_program_id_fkey";
-            columns: ["program_id"];
-            isOneToOne: false;
-            referencedRelation: "programs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "events_program_rule_fkey";
-            columns: ["program_schedule_rule_id", "program_id"];
-            isOneToOne: false;
-            referencedRelation: "program_schedule_rules";
-            referencedColumns: ["id", "program_id"];
-          }
-        ];
-      };
-      programs: {
-        Row: {
-          id: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description: string | null;
-          enrollment_model: "program" | "per_session" | "admin_managed";
-          status: "draft" | "active" | "cancelled" | "completed";
-          starts_on: string;
-          ends_on: string;
-          default_capacity: number;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          archived_at: string | null;
-          archived_by: string | null;
-          price_amount_cents: number | null;  // Phase 34B
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description?: string | null;
-          enrollment_model: "program" | "per_session" | "admin_managed";
-          status?: "draft" | "active" | "cancelled" | "completed";
-          starts_on: string;
-          ends_on: string;
-          default_capacity: number;
-          created_by: string;
-          created_at?: string;
-          updated_at?: string;
-          archived_at?: string | null;
-          archived_by?: string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          event_type_id?: string;
-          title?: string;
-          description?: string | null;
-          enrollment_model?: "program" | "per_session" | "admin_managed";
-          status?: "draft" | "active" | "cancelled" | "completed";
-          starts_on?: string;
-          ends_on?: string;
-          default_capacity?: number;
-          created_by?: string;
-          created_at?: string;
-          updated_at?: string;
-          archived_at?: string | null;
-          archived_by?: string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-        };
-        Relationships: [
-          {
-            foreignKeyName: "programs_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "programs_event_type_id_fkey";
-            columns: ["event_type_id"];
-            isOneToOne: false;
-            referencedRelation: "event_types";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "programs_created_by_fkey";
-            columns: ["created_by"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      program_schedule_rules: {
-        Row: {
-          id: string;
-          program_id: string;
-          day_of_week: number;
-          start_time: string;
-          duration_minutes: number;
-          capacity_override: number | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          program_id: string;
-          day_of_week: number;
-          start_time: string;
-          duration_minutes: number;
-          capacity_override?: number | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          program_id?: string;
-          day_of_week?: number;
-          start_time?: string;
-          duration_minutes?: number;
-          capacity_override?: number | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "program_schedule_rules_program_id_fkey";
-            columns: ["program_id"];
-            isOneToOne: false;
-            referencedRelation: "programs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      program_rule_courts: {
-        Row: {
-          id: string;
-          program_schedule_rule_id: string;
-          court_id: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          program_schedule_rule_id: string;
-          court_id: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          program_schedule_rule_id?: string;
-          court_id?: string;
-          created_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "program_rule_courts_program_schedule_rule_id_fkey";
-            columns: ["program_schedule_rule_id"];
-            isOneToOne: false;
-            referencedRelation: "program_schedule_rules";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "program_rule_courts_court_id_fkey";
-            columns: ["court_id"];
-            isOneToOne: false;
-            referencedRelation: "courts";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      program_enrollments: {
-        Row: {
-          id: string;
-          program_id: string;
-          profile_id: string | null;
-          roster_member_id: string;  // Phase 33D2b: NOT NULL — durable Member identity
-          status: "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at: string | null;
-          waitlisted_at: string | null;
-          price_amount_cents: number | null;  // Phase 34B
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          program_id: string;
-          profile_id?: string | null;
-          roster_member_id: string;  // Phase 33D2b: NOT NULL — required on insert
-          status: "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at?: string | null;
-          waitlisted_at?: string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          program_id?: string;
-          profile_id?: string | null;
-          roster_member_id?: string;  // Phase 33D2b: NOT NULL
-          status?: "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at?: string | null;
-          waitlisted_at?: string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "program_enrollments_program_id_fkey";
-            columns: ["program_id"];
-            isOneToOne: false;
-            referencedRelation: "programs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "program_enrollments_profile_id_fkey";
-            columns: ["profile_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "program_enrollments_roster_member_id_fkey";
-            columns: ["roster_member_id"];
-            isOneToOne: false;
-            referencedRelation: "roster_members";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      audit_log: {
-        Row: {
-          id:          string;
-          club_id:     string;
-          actor_id:    string;
-          action:      string;
-          target_type: string;
-          target_id:   string;
-          metadata:    Json | null;
-          created_at:  string;
-        };
-        Insert: {
-          id?:         string;
-          club_id:     string;
-          actor_id:    string;
-          action:      string;
-          target_type: string;
-          target_id:   string;
-          metadata?:   Json | null;
-          created_at?: string;
-        };
-        Update: {
-          id?:          string;
-          club_id?:     string;
-          actor_id?:    string;
-          action?:      string;
-          target_type?: string;
-          target_id?:   string;
-          metadata?:    Json | null;
-          created_at?:  string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "audit_log_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "audit_log_actor_id_fkey";
-            columns: ["actor_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      event_guests: {
-        Row: {
-          id:                string;
-          event_id:          string;
-          display_name:      string;
-          added_by:          string;
-          roster_member_id:  string | null;
-          created_at:        string;
-          status:            "active" | "cancelled";
-          attendance_status: "attended" | "no_show" | null;
-          cancelled_at:      string | null;
-          cancelled_by:      string | null;
-          price_amount_cents: number | null;  // Phase 34B
-        };
-        Insert: {
-          id?:               string;
-          event_id:          string;
-          display_name:      string;
-          added_by:          string;
-          roster_member_id?: string | null;
-          created_at?:       string;
-          status?:            "active" | "cancelled";
-          attendance_status?: "attended" | "no_show" | null;
-          cancelled_at?:      string | null;
-          cancelled_by?:      string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-        };
-        Update: {
-          id?:               string;
-          event_id?:         string;
-          display_name?:     string;
-          added_by?:         string;
-          roster_member_id?: string | null;
-          created_at?:       string;
-          status?:            "active" | "cancelled";
-          attendance_status?: "attended" | "no_show" | null;
-          cancelled_at?:      string | null;
-          cancelled_by?:      string | null;
-          price_amount_cents?: number | null;  // Phase 34B
-        };
-        Relationships: [
-          {
-            foreignKeyName: "event_guests_event_id_fkey";
-            columns: ["event_id"];
-            isOneToOne: false;
-            referencedRelation: "events";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "event_guests_added_by_fkey";
-            columns: ["added_by"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      event_participants: {
-        Row: {
-          id: string;
-          event_id: string;
-          profile_id: string | null;
-          roster_member_id: string;  // Phase 33D2a: NOT NULL — durable Member identity
-          role: "host" | "participant";
-          status: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A: offered
-          attendance_status: "attended" | "no_show" | null;
-          offer_expires_at: string | null;  // Phase 18A
-          created_at: string;
-          updated_at: string;
-          price_amount_cents: number | null;  // Phase 34B
-          confirmed_at: string | null;  // Phase 35C — set once, never cleared, by a DB trigger
-          cancelled_at: string | null;  // Phase 35C runtime correction (0174) — set once, never cleared, by the same DB trigger
-        };
-        Insert: {
-          id?: string;
-          event_id: string;
-          profile_id?: string | null;
-          roster_member_id: string;  // Phase 33D2a: NOT NULL — required on insert
-          role?: "host" | "participant";
-          status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
-          attendance_status?: "attended" | "no_show" | null;
-          offer_expires_at?: string | null;  // Phase 18A
-          created_at?: string;
-          updated_at?: string;
-          price_amount_cents?: number | null;  // Phase 34B
-          confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
-          cancelled_at?: string | null;  // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
-        };
-        Update: {
-          id?: string;
-          event_id?: string;
-          profile_id?: string | null;
-          roster_member_id?: string;  // Phase 33D2a: NOT NULL
-          role?: "host" | "participant";
-          status?: "confirmed" | "cancelled" | "waitlisted" | "offered";  // Phase 18A
-          attendance_status?: "attended" | "no_show" | null;
-          offer_expires_at?: string | null;  // Phase 18A
-          created_at?: string;
-          updated_at?: string;
-          price_amount_cents?: number | null;  // Phase 34B
-          confirmed_at?: string | null;  // Phase 35C — trigger-maintained, do not set directly
-          cancelled_at?: string | null;  // Phase 35C runtime correction (0174) — trigger-maintained, do not set directly
-        };
-        Relationships: [
-          {
-            foreignKeyName: "event_participants_event_id_fkey";
-            columns: ["event_id"];
-            isOneToOne: false;
-            referencedRelation: "events";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "event_participants_profile_id_fkey";
-            columns: ["profile_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "event_participants_roster_member_id_fkey";
-            columns: ["roster_member_id"];
-            isOneToOne: false;
-            referencedRelation: "roster_members";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      notifications: {
-        Row: {
-          id:         string;
-          club_id:    string;
-          user_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_updated" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          body:       string;
-          is_read:    boolean;
-          metadata:   Json | null;
-          created_at: string;
-        };
-        Insert: {
-          id?:         string;
-          club_id:     string;
-          user_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_updated" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          body:        string;
-          is_read?:    boolean;
-          metadata?:   Json | null;
-          created_at?: string;
-        };
-        Update: {
-          id?:         string;
-          club_id?:    string;
-          user_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_admin" | "reservation_cancelled_by_member" | "reservation_rescheduled" | "event_cancelled" | "event_updated" | "event_joined" | "waitlist_promoted" | "waitlist_offer" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          body?:       string;
-          is_read?:    boolean;
-          metadata?:   Json | null;
-          created_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "notifications_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "notifications_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      notification_deliveries: {
-        Row: {
-          id:                  string;
-          notification_id:     string;
-          club_id:             string;
-          channel:             "sms" | "email";
-          status:              "sent" | "failed" | "opted_out" | "no_phone";
-          provider:            string | null;
-          provider_message_id: string | null;
-          error:               string | null;
-          created_at:          string;
-          sent_at:             string | null;
-        };
-        Insert: {
-          id?:                  string;
-          notification_id:      string;
-          club_id:              string;
-          channel:              "sms" | "email";
-          status:               "sent" | "failed" | "opted_out" | "no_phone";
-          provider?:            string | null;
-          provider_message_id?: string | null;
-          error?:               string | null;
-          created_at?:          string;
-          sent_at?:             string | null;
-        };
-        Update: {
-          id?:                  string;
-          notification_id?:     string;
-          club_id?:             string;
-          channel?:             "sms" | "email";
-          status?:              "sent" | "failed" | "opted_out" | "no_phone";
-          provider?:            string | null;
-          provider_message_id?: string | null;
-          error?:               string | null;
-          created_at?:          string;
-          sent_at?:             string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "notification_deliveries_notification_id_fkey";
-            columns: ["notification_id"];
-            isOneToOne: false;
-            referencedRelation: "notifications";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "notification_deliveries_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      notification_preferences: {
-        Row: {
-          id:         string;
-          user_id:    string;
-          club_id:    string;
-          kind:       "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "event_updated" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          enabled:    boolean;
-          updated_at: string;
-        };
-        Insert: {
-          id?:         string;
-          user_id:     string;
-          club_id:     string;
-          kind:        "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "event_updated" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          enabled?:    boolean;
-          updated_at?: string;
-        };
-        Update: {
-          id?:         string;
-          user_id?:    string;
-          club_id?:    string;
-          kind?:       "reservation_confirmed" | "reservation_cancelled_by_member" | "reservation_cancelled_by_admin" | "reservation_rescheduled" | "event_joined" | "event_cancelled" | "event_updated" | "waitlist_offer" | "waitlist_promoted" | "announcement" | "lesson_request_received" | "lesson_request_proposed" | "lesson_request_confirmed" | "lesson_request_declined" | "lesson_cancelled" | "lesson_provider_reassigned" | "lesson_admin_requested";
-          enabled?:    boolean;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "notification_preferences_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "notification_preferences_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      club_invites: {
-        Row: {
-          id:                string;
-          club_id:           string;
-          code:              string;
-          role:              "member" | "pro" | "staff" | "admin";
-          email:             string | null;
-          roster_member_id:  string | null;
-          created_by:        string;
-          expires_at:        string;
-          accepted_at:       string | null;
-          accepted_by:       string | null;
-          revoked_at:        string | null;
-          created_at:        string;
-        };
-        Insert: {
-          id?:               string;
-          club_id:           string;
-          code?:              string;
-          role?:             "member" | "pro" | "staff" | "admin";
-          email?:             string | null;
-          roster_member_id?: string | null;
-          created_by:        string;
-          expires_at?:       string;
-          accepted_at?:      string | null;
-          accepted_by?:      string | null;
-          revoked_at?:       string | null;
-          created_at?:       string;
-        };
-        Update: {
-          id?:               string;
-          club_id?:          string;
-          code?:             string;
-          role?:             "member" | "pro" | "staff" | "admin";
-          email?:            string | null;
-          roster_member_id?: string | null;
-          created_by?:       string;
-          expires_at?:       string;
-          accepted_at?:      string | null;
-          accepted_by?:      string | null;
-          revoked_at?:       string | null;
-          created_at?:       string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "club_invites_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "club_invites_roster_member_id_fkey";
-            columns: ["roster_member_id"];
-            isOneToOne: false;
-            referencedRelation: "roster_members";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      lesson_requests: {
-        Row: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string | null;
-          pro_id:                string;
-          roster_member_id:      string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       "member" | "pro" | "staff" | "admin" | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-        Insert: {
-          id?:                    string;
-          club_id:                string;
-          member_id?:             string | null;
-          pro_id:                 string;
-          roster_member_id:       string;
-          preferred_court_id?:    string | null;
-          duration_minutes:       number;
-          member_note?:           string | null;
-          preferred_windows?:     Json | null;
-          proposed_starts_at?:    string | null;
-          proposed_ends_at?:      string | null;
-          proposed_court_id?:     string | null;
-          status?:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
-          decline_reason?:        string | null;
-          cancellation_reason?:   string | null;
-          last_actor_id?:         string | null;
-          last_actor_role?:       "member" | "pro" | "staff" | "admin" | null;
-          linked_reservation_id?: string | null;
-          created_at?:            string;
-          updated_at?:            string;
-          confirmed_at?:          string | null;
-          declined_at?:           string | null;
-          cancelled_at?:          string | null;
-          cancelled_by?:          string | null;
-        };
-        Update: {
-          id?:                    string;
-          club_id?:               string;
-          member_id?:             string | null;
-          pro_id?:                string;
-          roster_member_id?:      string;
-          preferred_court_id?:    string | null;
-          duration_minutes?:      number;
-          member_note?:           string | null;
-          preferred_windows?:     Json | null;
-          proposed_starts_at?:    string | null;
-          proposed_ends_at?:      string | null;
-          proposed_court_id?:     string | null;
-          status?:                "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
-          decline_reason?:        string | null;
-          cancellation_reason?:   string | null;
-          last_actor_id?:         string | null;
-          last_actor_role?:       "member" | "pro" | "staff" | "admin" | null;
-          linked_reservation_id?: string | null;
-          created_at?:            string;
-          updated_at?:            string;
-          confirmed_at?:          string | null;
-          declined_at?:           string | null;
-          cancelled_at?:          string | null;
-          cancelled_by?:          string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "lesson_requests_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lesson_requests_member_id_fkey";
-            columns: ["member_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lesson_requests_pro_id_fkey";
-            columns: ["pro_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lesson_requests_linked_reservation_id_fkey";
-            columns: ["linked_reservation_id"];
-            isOneToOne: false;
-            referencedRelation: "reservations";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "lesson_requests_roster_member_id_fkey";
-            columns: ["roster_member_id"];
-            isOneToOne: false;
-            referencedRelation: "roster_members";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      roster_members: {
-        Row: {
-          id:         string;
-          club_id:    string;
-          first_name: string;
-          last_name:  string;
-          email:      string | null;
-          phone:      string | null;
-          role:       "member" | "pro" | "staff" | "admin";  // display/intent only — does not grant permissions
-          notes:      string | null;
-          claimed_by: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          status:     "active" | "inactive";
-          removed_at: string | null;
-          removed_by: string | null;
-          membership_status: "active" | "inactive" | "suspended" | "non_member";  // 0188 — Phase 42A
-          membership_type_id: string | null;  // 0188 — Phase 42A
-        };
-        Insert: {
-          id?:         string;
-          club_id:     string;
-          first_name:  string;
-          last_name:   string;
-          email?:      string | null;
-          phone?:      string | null;
-          role?:       "member" | "pro" | "staff" | "admin";
-          notes?:      string | null;
-          claimed_by?: string | null;
-          created_by:  string;
-          created_at?: string;
-          updated_at?: string;
-          status?:     "active" | "inactive";
-          removed_at?: string | null;
-          removed_by?: string | null;
-          membership_status?: "active" | "inactive" | "suspended" | "non_member";  // 0188 — Phase 42A
-          membership_type_id?: string | null;  // 0188 — Phase 42A
-        };
-        Update: {
-          id?:         string;
-          club_id?:    string;
-          first_name?: string;
-          last_name?:  string;
-          email?:      string | null;
-          phone?:      string | null;
-          role?:       "member" | "pro" | "staff" | "admin";
-          notes?:      string | null;
-          claimed_by?: string | null;
-          created_by?: string;
-          created_at?: string;
-          updated_at?: string;
-          status?:     "active" | "inactive";
-          removed_at?: string | null;
-          removed_by?: string | null;
-          membership_status?: "active" | "inactive" | "suspended" | "non_member";  // 0188 — Phase 42A
-          membership_type_id?: string | null;  // 0188 — Phase 42A
-        };
-        Relationships: [
-          {
-            foreignKeyName: "roster_members_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      // 0188 — Phase 42A: club-configurable membership type labels, soft-lifecycle via is_active
-      membership_types: {
-        Row: {
-          id: string;
-          club_id: string;
-          name: string;
-          is_active: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          name: string;
-          is_active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          name?: string;
-          is_active?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "membership_types_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      // Phase 43A-1 — 0192. Admin Settings reads these two directly (RLS-
-      // scoped admin-only SELECT); Member-side reads go through the
-      // get_my_member_waiver_status()/get_member_waiver_status() RPCs
-      // instead, never this table directly. waiver_acceptances has no
-      // Tables entry — nothing in this checkpoint's UI reads it directly.
-      waivers: {
-        Row: {
-          id: string;
-          club_id: string;
-          audience: string;
-          current_version_id: string | null;
-          is_required: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          club_id: string;
-          audience?: string;
-          current_version_id?: string | null;
-          is_required?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          club_id?: string;
-          audience?: string;
-          current_version_id?: string | null;
-          is_required?: boolean;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "waivers_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      waiver_versions: {
-        Row: {
-          id: string;
-          waiver_id: string;
-          version_number: number;
-          title: string;
-          // Phase 43B-3B (0196) — additive nullable relaxation. NULL for
-          // every PDF-backed version (publish_waiver_pdf_version always
-          // inserts body = null); populated only for legacy text versions.
-          body: string | null;
-          status: "draft" | "published";
-          published_at: string | null;
-          published_by: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          waiver_id: string;
-          version_number: number;
-          title: string;
-          body?: string | null;
-          status?: "draft" | "published";
-          published_at?: string | null;
-          published_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          waiver_id?: string;
-          version_number?: number;
-          title?: string;
-          body?: string | null;
-          status?: "draft" | "published";
-          published_at?: string | null;
-          published_by?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "waiver_versions_waiver_id_fkey";
-            columns: ["waiver_id"];
-            isOneToOne: false;
-            referencedRelation: "waivers";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      // Phase 43B-3B — 0196. 1:1 immutable PDF artifact record for a
-      // waiver_versions row (waiver_version_id IS the primary key). All
-      // direct table access revoked from public/anon/authenticated — only
-      // reachable via createPrivilegedClient() (src/lib/waivers/
-      // pdfViewUrl.ts, src/app/(app)/admin/settings/page.tsx's own
-      // batched read). No Row-returning application code should ever
-      // reach this table through the normal RLS-scoped client.
-      waiver_document_files: {
-        Row: {
-          waiver_version_id: string;
-          storage_path: string;
-          original_filename: string;
-          mime_type: string;
-          file_size_bytes: number;
-          sha256_digest: string;
-          uploaded_by: string;
-          uploaded_at: string;
-        };
-        Insert: {
-          waiver_version_id: string;
-          storage_path: string;
-          original_filename: string;
-          mime_type?: string;
-          file_size_bytes: number;
-          sha256_digest: string;
-          uploaded_by: string;
-          uploaded_at?: string;
-        };
-        Update: {
-          waiver_version_id?: string;
-          storage_path?: string;
-          original_filename?: string;
-          mime_type?: string;
-          file_size_bytes?: number;
-          sha256_digest?: string;
-          uploaded_by?: string;
-          uploaded_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "waiver_document_files_waiver_version_id_fkey";
-            columns: ["waiver_version_id"];
-            isOneToOne: true;
-            referencedRelation: "waiver_versions";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      // Phase 24A
-      member_notes: {
-        Row: {
-          id:                   string;
-          club_id:              string;
-          member_id:            string;
-          author_id:            string;
-          author_name_snapshot: string;
-          content:              string;
-          created_at:           string;
-          updated_at:           string;
-          archived_at:          string | null;
-        };
-        Insert: {
-          id?:                   string;
-          club_id:               string;
-          member_id:             string;
-          author_id:             string;
-          author_name_snapshot:  string;
-          content:               string;
-          created_at?:           string;
-          updated_at?:           string;
-          archived_at?:          string | null;
-        };
-        Update: {
-          id?:                   string;
-          club_id?:              string;
-          member_id?:            string;
-          author_id?:            string;
-          author_name_snapshot?: string;
-          content?:              string;
-          created_at?:           string;
-          updated_at?:           string;
-          archived_at?:          string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "member_notes_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "member_notes_member_id_fkey";
-            columns: ["member_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "member_notes_author_id_fkey";
-            columns: ["author_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      pilot_inquiries: {
-        Row: {
-          id:                        string;
-          created_at:                string;
-          updated_at:                string;
-          status:                    "new" | "contacted" | "qualified" | "closed";
-          contact_name:              string;
-          email:                     string;
-          phone:                     string | null;
-          preferred_contact_method:  "email" | "phone" | "either" | null;
-          club_name:                 string;
-          facility_type:             "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
-          facility_type_other:       string | null;
-          website:                   string | null;
-          court_count:               number;
-          approximate_member_count:  number;
-          current_process:           string;
-          operational_challenge:     string;
-          preferred_operating_model: "staff_managed" | "member_self_service" | "not_sure";
-          additional_details:        string | null;
-          source:                    string;
-          request_fingerprint:       string | null;
-        };
-        Insert: {
-          id?:                        string;
-          created_at?:                string;
-          updated_at?:                string;
-          status?:                    "new" | "contacted" | "qualified" | "closed";
-          contact_name:               string;
-          email:                      string;
-          phone?:                     string | null;
-          preferred_contact_method?:  "email" | "phone" | "either" | null;
-          club_name:                  string;
-          facility_type:              "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
-          facility_type_other?:       string | null;
-          website?:                   string | null;
-          court_count:                number;
-          approximate_member_count:   number;
-          current_process:            string;
-          operational_challenge:      string;
-          preferred_operating_model:  "staff_managed" | "member_self_service" | "not_sure";
-          additional_details?:        string | null;
-          source?:                    string;
-          request_fingerprint?:       string | null;
-        };
-        Update: {
-          id?:                        string;
-          created_at?:                string;
-          updated_at?:                string;
-          status?:                    "new" | "contacted" | "qualified" | "closed";
-          contact_name?:              string;
-          email?:                     string;
-          phone?:                     string | null;
-          preferred_contact_method?:  "email" | "phone" | "either" | null;
-          club_name?:                 string;
-          facility_type?:             "private_club" | "country_club" | "hoa_residential" | "public_municipal" | "tennis_academy" | "school_university" | "other";
-          facility_type_other?:       string | null;
-          website?:                   string | null;
-          court_count?:               number;
-          approximate_member_count?:  number;
-          current_process?:           string;
-          operational_challenge?:     string;
-          preferred_operating_model?: "staff_managed" | "member_self_service" | "not_sure";
-          additional_details?:        string | null;
-          source?:                    string;
-          request_fingerprint?:       string | null;
-        };
-        Relationships: [];
-      };
-      calendar_feed_tokens: {
-        Row: {
-          id:         string;
-          club_id:    string;
-          profile_id: string;
-          feed_type:  "member_personal" | "pro_lessons";
-          token_hash: string;
-          created_at: string;
-          revoked_at: string | null;
-        };
-        Insert: {
-          id?:         string;
-          club_id:     string;
-          profile_id:  string;
-          feed_type:   "member_personal" | "pro_lessons";
-          token_hash:  string;
-          created_at?: string;
-          revoked_at?: string | null;
-        };
-        Update: {
-          id?:         string;
-          club_id?:    string;
-          profile_id?: string;
-          feed_type?:  "member_personal" | "pro_lessons";
-          token_hash?: string;
-          created_at?: string;
-          revoked_at?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "calendar_feed_tokens_club_id_fkey";
-            columns: ["club_id"];
-            isOneToOne: false;
-            referencedRelation: "clubs";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "calendar_feed_tokens_profile_id_fkey";
-            columns: ["profile_id"];
-            isOneToOne: false;
-            referencedRelation: "profiles";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-    };
-    Views: { [_ in never]: never };
-    Functions: {
-      current_user_role: {
-        Args: Record<string, never>;
-        Returns: string;
-      };
-      current_user_club_id: {
-        Args: Record<string, never>;
-        Returns: string;
-      };
-      current_user_roster_member_id: {
-        Args: Record<string, never>;
-        Returns: string | null;
-      };
-      current_user_is_lesson_provider: {
-        Args: Record<string, never>;
-        Returns: boolean;
-      };
-      current_club_has_capability: {
-        Args: { p_capability: string };
-        Returns: boolean;
-      };
-      get_financial_range_summary: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          domain:          string;
-          collected_cents: number;
-          refunded_cents:  number;
-        }[];
-      };
-      get_reporting_overview: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          gross_utilization_pct: number;
-          member_demand_utilization_pct: number;
-          total_reservations: number;
-          cancelled_reservations: number;
-          cancellation_rate_pct: number;
-          sessions_held: number;
-          total_session_capacity: number;
-          total_session_enrollment: number;
-          session_fill_rate_pct: number;
-          active_member_count: number;
-          outstanding_waitlist_count: number;
-        }[];
-      };
-      get_court_utilization: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          court_id: string;
-          court_name: string;
-          available_hours: number;
-          gross_reserved_hours: number;
-          member_demand_reserved_hours: number;
-          gross_utilization_pct: number;
-          member_demand_utilization_pct: number;
-        }[];
-      };
-      get_reservation_summary: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          total_reservations: number;
-          pending_reservations: number;
-          confirmed_reservations: number;
-          cancelled_reservations: number;
-          cancellation_rate_pct: number;
-          member_booking_count: number;
-          event_count: number;
-          pro_lesson_count: number;
-          maintenance_count: number;
-          admin_block_count: number;
-          daily_series: { local_date: string; total_count: number; cancelled_count: number }[];
-        }[];
-      };
-      get_event_program_summary: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          standalone_sessions_held: number;
-          program_sessions_held: number;
-          total_sessions_held: number;
-          total_capacity: number;
-          confirmed_members: number;
-          guests: number;
-          total_enrollment: number;
-          fill_rate_pct: number;
-          attended_count: number;
-          no_show_count: number;
-          attendance_marked_count: number;
-          attendance_rate_pct: number;
-          no_show_rate_pct: number;
-          cancelled_standalone_sessions: number;
-          cancelled_program_sessions: number;
-        }[];
-      };
-      get_waitlist_demand: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          event_waitlisted_entries: number;
-          event_live_offer_entries: number;
-          program_waitlisted_entries: number;
-          program_live_offer_entries: number;
-          total_outstanding_entries: number;
-        }[];
-      };
-      get_member_engagement_summary: {
-        Args: { p_start_date: string; p_end_date: string };
-        Returns: {
-          active_member_snapshot_count: number;
-          engaged_member_count: number;
-          members_with_reservations: number;
-          members_with_event_participation: number;
-          members_with_program_enrollment: number;
-        }[];
-      };
-      set_active_club: {
-        Args: { p_club_id: string };
-        Returns: {
-          club_id: string;
-          role: string;
-          status: string;
-          is_lesson_provider: boolean;
-        }[];
-      };
-      get_current_account_context: {
-        Args: Record<string, never>;
-        Returns: {
-          id: string;
-          first_name: string | null;
-          last_name: string | null;
-          phone: string | null;
-          created_at: string;
-          updated_at: string;
-          active_club_id: string | null;
-          role: string | null;
-          status: string | null;
-          is_lesson_provider: boolean | null;
-          club_name: string | null;
-          club_slug: string | null;
-          theme_key: string | null;
-        }[];
-      };
-      // Phase 31D (migration 0104): profiles.sms_opt_in was never added to
-      // the column-level SELECT grant established in
-      // 0079_phase25_account_foundation.sql, so any raw client select
-      // combining it with other columns (e.g. phone) is denied in full —
-      // the root cause of the Phase 31D contact-resolution defect. This
-      // SECURITY DEFINER RPC derives the caller solely from auth.uid(),
-      // accepts no parameters, and returns only the caller's own phone/
-      // sms_opt_in — never another user's row, never any other profile
-      // field. Returns null if unauthenticated or (anomalously) no profile
-      // row exists; callers must treat null as a failed lookup, not "no
-      // phone."
-      get_my_communication_settings: {
-        Args: Record<string, never>;
-        Returns: Json;
-        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
-      };
-      get_my_club_memberships: {
-        Args: Record<string, never>;
-        Returns: {
-          club_id: string;
-          club_name: string;
-          club_slug: string;
-          theme_key: string;
-          role: string;
-          is_lesson_provider: boolean;
-          is_active_club: boolean;
-        }[];
-      };
-      create_reservation: {
-        Args: {
-          p_court_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_format?: string | null;
-          p_player_count?: number | null;
-          p_guest_names?: string[] | null;
-          p_notes?: string | null;
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id: string | null;
-          roster_member_id: string | null;
-          starts_at: string;
-          ends_at: string;
-          status: string;
-          reason: string;
-          player_count: number | null;
-          format: string | null;
-          guest_names: string[] | null;
-          notes: string | null;
-          event_id: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          cancelled_at: string | null;
-          cancelled_by: string | null;
-          cancellation_kind: string | null;
-        };
-      };
-      admin_create_member_reservation: {
-        Args: {
-          p_court_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_roster_member_id: string;
-          p_expected_club_id: string;
-          p_format?: string | null;
-          p_player_count?: number | null;
-          p_guest_names?: string[] | null;
-          p_notes?: string | null;
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id: string | null;
-          roster_member_id: string | null;
-          starts_at: string;
-          ends_at: string;
-          status: string;
-          reason: string;
-          player_count: number | null;
-          format: string | null;
-          guest_names: string[] | null;
-          notes: string | null;
-          event_id: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          cancelled_at: string | null;
-          cancelled_by: string | null;
-          cancellation_kind: string | null;
-        };
-      };
-      create_event: {
-        Args: {
-          p_event_type_id: string;
-          p_title: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_court_ids: string[];
-          p_description?: string | null;
-          p_capacity?: number | null;
-          p_notes?: string | null;
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description: string | null;
-          starts_at: string;
-          ends_at: string;
-          capacity: number;
-          court_count: number;
-          status: string;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      create_event_with_price_override: {
-        // Phase 34F-B (pre-commit correction). Admin-only, authenticated
-        // grant, service-role NOT required (unlike the Checkout attempt
-        // wrappers — this never touches Stripe/payment_checkout_attempts,
-        // only events/audit_log, matching create_event's/set_event_price_
-        // override's own authenticated-grant convention). Atomically
-        // composes the existing, unmodified create_event and
-        // set_event_price_override inside ONE transaction — see the
-        // migration's own header for the full race this closes.
-        // p_price_amount_cents is nullable: null = explicit "no price"
-        // override, 0 = explicit Free, positive = custom price. "Use the
-        // Event Type default" is a DIFFERENT path entirely (plain
-        // create_event, no override call at all) — never expressed
-        // through this function.
-        Args: {
-          p_event_type_id: string;
-          p_title: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_court_ids: string[];
-          p_price_amount_cents: number | null;
-          p_description?: string | null;
-          p_capacity?: number | null;
-          p_notes?: string | null;
-          p_member_joinable?: boolean;
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          event_type_id: string;
-          title: string;
-          description: string | null;
-          starts_at: string;
-          ends_at: string;
-          capacity: number;
-          court_count: number;
-          status: string;
-          created_by: string;
-          member_joinable: boolean;
-          price_amount_cents: number | null;
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      join_event: {
-        Args: { p_event_id: string };
-        Returns: {
-          id: string;
-          event_id: string;
-          profile_id: string;
-          roster_member_id: string;  // Phase 33D2a: always the caller's own, resolved identity
-          role: string;
-          status: string;
-          attendance_status: string | null;
-          offer_expires_at: string | null;  // Phase 18A
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      leave_event: {
-        Args: { p_event_id: string };
-        Returns: string | null;  // offered profile_id or null (Phase 18A: was promoted profile_id)
-      };
-      // Phase 31C: exact-identity companion to leave_event, added in
-      // migration 0102. Same business logic (shared internal
-      // _leave_event_impl — not callable from the app), richer return.
-      leave_event_v2: {
-        Args: { p_event_id: string };
-        Returns: {
-          offered_profile_id: string | null;
-          notification_id:    string | null;
-        };
-      };
-      // Phase 18A: new RPCs
-      accept_waitlist_offer: {
-        Args: { p_event_id: string };
-        Returns: {
-          id: string;
-          event_id: string;
-          // Phase 33D2a: may be null — accepting a roster-matched (no-account
-          // pre-claim) offered row never backfills profile_id. roster_member_id
-          // is always present (NOT NULL on event_participants).
-          profile_id: string | null;
-          roster_member_id: string;
-          role: string;
-          status: string;
-          attendance_status: string | null;
-          offer_expires_at: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      decline_waitlist_offer: {
-        Args: { p_event_id: string };
-        Returns: string | null;  // next offered profile_id or null
-      };
-      create_maintenance_block: {
-        Args: {
-          p_court_id:  string;
-          p_starts_at: string;
-          p_ends_at:   string;
-          p_notes?:    string | null;
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id: string;
-          starts_at: string;
-          ends_at: string;
-          status: string;
-          reason: string;
-          player_count: number | null;
-          format: string | null;
-          guest_names: string[] | null;
-          notes: string | null;
-          event_id: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          cancelled_at: string | null;
-          cancelled_by: string | null;
-          cancellation_kind: string | null;
-        };
-      };
-      // Phase 31C: cancel_event's return type changed in migration 0102 from
-      // the raw `events` row to a jsonb bundle carrying the exact
-      // {notification_id, user_id} pair for every confirmed/waitlisted/
-      // offered participant notified — captured before any status mutation,
-      // so it correctly includes previously-offered participants (fixed in
-      // 0102's correction round). No app caller ever consumed the old raw
-      // row shape (only `{ error }` was read), so this is a safe in-place
-      // type update, not a new function.
-      cancel_event: {
-        Args: { p_event_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   event: { id, club_id, event_type_id, title, description,
-        //            starts_at, ends_at, capacity, court_count, status,
-        //            created_by, created_at, updated_at },
-        //   notifications: Array<{ notification_id: string; user_id: string }>
-        // }
-      };
-      // UNTOUCHED by migration 0102 — left byte-for-byte as-is for
-      // app-deploy-window safety (adminCancelReservation still reads
-      // `reservation.owner_user_id` off the raw return). Superseded by
-      // admin_cancel_reservation_v2 below as of Phase 31C.
-      admin_cancel_reservation: {
-        Args: { p_reservation_id: string };
-        Returns: {
-          id: string;
-          club_id: string;
-          court_id: string;
-          owner_user_id: string;
-          starts_at: string;
-          ends_at: string;
-          status: string;
-          reason: string;
-          player_count: number | null;
-          format: string | null;
-          guest_names: string[] | null;
-          notes: string | null;
-          event_id: string | null;
-          created_by: string;
-          created_at: string;
-          updated_at: string;
-          cancelled_at: string | null;
-          cancelled_by: string | null;
-          cancellation_kind: string | null;
-        };
-      };
-      // Phase 31C: exact-identity companion added in migration 0102. Same
-      // mutation/audit/notification body as admin_cancel_reservation; adds
-      // notification_id to the return so the caller never re-queries
-      // notifications for it.
-      admin_cancel_reservation_v2: {
-        Args: { p_reservation_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   reservation: <reservations row, same shape as
-        //     admin_cancel_reservation's Returns above>,
-        //   notification_id: string | null
-        // }
-      };
-      // Phase 33E3: no-account operational-email foundation (0119).
-      get_roster_member_email_for_notification: {
-        Args: { p_roster_member_id: string; p_expected_club_id: string };
-        Returns: string | null;
-      };
-      record_roster_operational_email: {
-        Args: {
-          p_roster_member_id:    string;
-          p_expected_club_id:    string;
-          p_kind:                string;
-          p_status:               string;
-          p_provider_message_id?: string | null;
-          p_error?:               string | null;
-        };
-        Returns: undefined;
-      };
-      update_member_reservation: {
-        Args: {
-          p_reservation_id: string;
-          p_expected_club_id: string;
-          p_expected_updated_at: string;
-          p_court_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_roster_member_id: string;
-          p_format?: string | null;
-          p_player_count?: number | null;
-          p_guest_names?: string[] | null;
-          p_notes?: string | null;
-        };
-        Returns: Json;
-      };
-      update_maintenance_block: {
-        Args: {
-          p_reservation_id: string;
-          p_expected_club_id: string;
-          p_expected_updated_at: string;
-          p_court_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_notes?: string | null;
-          p_show_notes_to_members?: boolean;
-        };
-        Returns: Json;
-      };
-      update_event: {
-        Args: {
-          p_event_id: string;
-          p_expected_club_id: string;
-          p_expected_updated_at: string;
-          p_title: string;
-          p_event_type_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_court_ids: string[];
-          p_capacity: number;
-          p_description?: string | null;
-        };
-        Returns: Json;
-      };
-      cancel_member_reservation: {
-        Args: {
-          p_reservation_id: string;
-          p_expected_club_id: string;
-        };
-        Returns: Json;
-      };
-      // Phase 41B completion (0187) — hand-added ahead of `supabase gen
-      // types` regeneration: the migration is authored and reviewed but
-      // deliberately not yet applied (STOP-before-apply checkpoint). Same
-      // Returns shape as cancel_member_reservation above (this wrapper
-      // delegates to it verbatim on a matching policy state).
-      preview_member_reservation_cancellation_policy: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: {
-          state:        string; // 'in_policy' | 'grace' | 'late'
-          cutoff_at:    string;
-          within_grace: boolean;
-        }[];
-      };
-      cancel_member_reservation_confirmed: {
-        Args: {
-          p_reservation_id: string;
-          p_expected_club_id: string;
-          p_expected_policy_state: string;
-        };
-        Returns: Json;
-      };
-      // Phase 37C (0179) — reservation roster RPCs.
-      get_reservation_roster: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: {
-          kind:               string;  // 'participant' | 'guest'
-          relationship_id:    string;
-          roster_member_id:   string | null;  // null for a guest row
-          display_name:       string;
-          is_holder:          boolean;  // always false for a guest row
-          reservation_status: string;
-        }[];
-      };
-      get_reservation_eligible_roster_members: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: {
-          roster_member_id:      string;
-          display_name:          string;
-          role:                   string;  // 'member' | 'pro' | 'staff' | 'admin'
-          is_reservation_holder:  boolean;
-        }[];
-      };
-      add_reservation_participant: {
-        Args: { p_reservation_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: string;  // reservation_participants.id
-      };
-      remove_reservation_participant: {
-        Args: { p_reservation_id: string; p_expected_club_id: string; p_participant_id: string };
-        Returns: string;  // reservation_participants.id
-      };
-      add_reservation_guest: {
-        Args: { p_reservation_id: string; p_expected_club_id: string; p_display_name: string };
-        Returns: string;  // reservation_guests.id
-      };
-      remove_reservation_guest: {
-        Args: { p_reservation_id: string; p_expected_club_id: string; p_guest_id: string };
-        Returns: string;  // reservation_guests.id
-      };
-      // Phase 39B-2 (0204, read-ambiguity fix 0205) — Looking-for-Players.
-      get_reservation_player_search: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: {
-          reservation_id:              string;
-          player_capacity:             number;
-          is_open:                     boolean;
-          effective_is_open:           boolean;
-          effective_open_block_reason: string | null;  // 'stale_host' | 'host_inactive' | 'legacy_guest_names' | null
-          occupied_seats:              number;
-          remaining_spots:             number;
-        }[];  // zero rows when no search exists for this reservation yet
-      };
-      set_reservation_player_search: {
-        Args: { p_reservation_id: string; p_expected_club_id: string; p_player_capacity: number };
-        Returns: string;  // reservation_player_searches.id
-      };
-      clear_reservation_player_search: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: string;  // reservation_player_searches.id
-      };
-      get_open_reservation_player_searches: {
-        Args: { p_expected_club_id: string };
-        Returns: {
-          reservation_id:    string;
-          court_id:          string;
-          court_name:        string;
-          starts_at:         string;
-          ends_at:           string;
-          format:            string | null;
-          host_display_name: string;
-          player_capacity:   number;
-          occupied_seats:    number;
-          remaining_spots:   number;
-        }[];
-      };
-      join_reservation_player_search: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: string;  // reservation_participants.id
-      };
-      leave_reservation_participation: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: string;  // reservation_participants.id
-      };
-      // Phase 39C-2A (0206) — My Schedule read for existing joined
-      // participations. Search-state independent (never reservation_
-      // player_searches); claim-continuity only, no eligibility gate.
-      get_my_reservation_player_participations: {
-        Args: { p_expected_club_id: string };
-        Returns: {
-          reservation_id:    string;
-          court_id:          string;
-          court_name:        string;
-          starts_at:         string;
-          ends_at:           string;
-          format:            string | null;
-          host_display_name: string;
-        }[];
-      };
-      get_members: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                    string;
-          first_name:            string | null;
-          last_name:             string | null;
-          phone:                 string | null;
-          role:                  string;
-          status:                string;
-          created_at:            string;
-          email:                 string | null;
-          is_lesson_provider:    boolean;
-          removed_at:            string | null;
-          membership_status:     "active" | "inactive" | "suspended" | "non_member" | null;  // 0190 — Phase 42C-1
-          membership_type_id:    string | null;  // 0190 — Phase 42C-1
-          membership_type_name:  string | null;  // 0190 — Phase 42C-1
-        }[];
-      };
-      remove_club_member: {
-        Args: { p_target_user_id: string };
-        Returns: undefined;
-      };
-      restore_club_member: {
-        Args: { p_target_user_id: string };
-        Returns: undefined;
-      };
-      set_lesson_provider_status: {
-        Args: { p_target_user_id: string; p_enabled: boolean };
-        Returns: undefined;
-      };
-      update_club_settings: {
-        Args: {
-          p_booking_window_days:         number;
-          p_cancellation_window_hours:   number;
-          p_cancellation_grace_minutes?: number;
-          p_waitlist_offer_window_hours?: number;  // Phase 18A
-        };
-        Returns: {
-          id: string;
-          club_id: string;
-          booking_window_days: number;
-          cancellation_window_hours: number;
-          cancellation_grace_minutes: number;
-          waitlist_offer_window_hours: number;  // Phase 18A
-          created_at: string;
-          updated_at: string;
-        };
-      };
-      update_club_name: {
-        Args: { p_name: string };
-        Returns: undefined;
-      };
-      create_maintenance_blocks: {
-        Args: {
-          p_court_ids:             string[];
-          p_starts_at:             string;
-          p_ends_at:               string;
-          p_notes?:                string | null;
-          p_show_notes_to_members?: boolean;
-        };
-        Returns: undefined;
-      };
-      get_audit_log: {
-        Args: {
-          p_limit?: number;
-          p_offset?: number;
-        };
-        Returns: {
-          id: string;
-          actor_name: string;
-          action: string;
-          target_type: string;
-          target_id: string;
-          metadata: Json | null;
-          created_at: string;
-        }[];
-      };
-      get_event_roster: {
-        Args: { p_event_id: string };
-        Returns: {
-          // Phase 33D2: null for a no-account participant added directly to
-          // event_participants (was previously always a real id, since only
-          // guest rows — always non-null via event_guests.id — could ever
-          // have a null-shaped identity here).
-          profile_id:        string | null;
-          display_name:      string;
-          role:              string;  // 'host' | 'participant' | 'guest' (Phase 19A)
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;  // Phase 18A: null for confirmed/waitlisted/guest
-          waitlist_position: number | null;
-          roster_member_id:  string | null;  // Phase 21I-C: non-null for roster-linked guests; Phase 33D2: also non-null for a direct no-account/claimed event_participants row
-        }[];
-      };
-      mark_attendance: {
-        Args: {
-          p_event_id:          string;
-          p_profile_id:        string;
-          p_attendance_status: string | null;
-        };
-        Returns: undefined;
-      };
-      // Phase 33D2a: roster-aware equivalent — same rules as mark_attendance,
-      // keyed by roster_member_id so a no-account participant's attendance
-      // can be marked too.
-      mark_attendance_roster_participant: {
-        Args: {
-          p_event_id:          string;
-          p_expected_club_id:  string;
-          p_roster_member_id:  string;
-          p_attendance_status: string | null;
-        };
-        Returns: undefined;
-      };
-      // Phase 33E2: Guest-attendance parity RPC, mirrors
-      // mark_attendance_roster_participant's shape keyed by guest id.
-      mark_attendance_guest: {
-        Args: {
-          p_event_id:          string;
-          p_expected_club_id:  string;
-          p_guest_id:          string;
-          p_attendance_status: string | null;
-        };
-        Returns: undefined;
-      };
-      update_sms_preference: {
-        Args: {
-          p_sms_opt_in: boolean;
-          p_ip?:        string | null;
-        };
-        Returns: undefined;
-      };
-      record_delivery_attempt: {
-        Args: {
-          p_notification_id:      string;
-          p_channel:              string;
-          p_status:               string;
-          p_provider?:            string | null;
-          p_provider_message_id?: string | null;
-          p_error?:               string | null;
-          p_sent_at?:             string | null;
-        };
-        Returns: string;
-      };
-      update_club_theme: {
-        Args: { p_theme_key: string };
-        Returns: undefined;
-      };
-      update_club_timezone: {
-        Args: { p_timezone: string };
-        Returns: undefined;
-      };
-      // 0184 — informational-only "Club Rules & Policies" document
-      update_club_rules_and_policies: {
-        Args: { p_rules_and_policies: string | null };
-        Returns: undefined;
-      };
-      create_event_type: {
-        Args: { p_label: string; p_color: string };
-        Returns: undefined;
-      };
-      update_event_type: {
-        Args: { p_id: string; p_label: string; p_color: string };
-        Returns: undefined;
-      };
-      set_event_type_active: {
-        Args: { p_id: string; p_is_active: boolean };
-        Returns: undefined;
-      };
-      // Phase 34B
-      set_event_type_price: {
-        Args: { p_id: string; p_default_price_amount_cents: number | null };
-        Returns: undefined;
-      };
-      set_event_price_override: {
-        Args: { p_event_id: string; p_price_amount_cents: number | null };
-        Returns: undefined;
-      };
-      set_program_price: {
-        Args: { p_program_id: string; p_price_amount_cents: number | null };
-        Returns: undefined;
-      };
-      update_club_pricing: {
-        Args: {
-          p_currency: string;
-          p_default_court_hourly_rate_cents: number | null;
-          p_default_court_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-        };
-        Returns: undefined;
-      };
-      set_court_hourly_rate: {
-        Args: {
-          p_court_id: string;
-          p_hourly_rate_cents: number | null;
-          p_hourly_rate_non_member_cents?: number | null;  // 0189 — Phase 42B
-        };
-        Returns: undefined;
-      };
-      upsert_court_rate_period: {
-        // 0200 — Peak/Off-Peak Pricing, Checkpoint A. p_id null = Add,
-        // a real id = Edit.
-        Args: {
-          p_id: string | null;
-          p_name: string;
-          p_days_of_week: number[];
-          p_starts_at_local: string;
-          p_ends_at_local: string;
-          p_hourly_rate_cents?: number | null;
-          p_hourly_rate_non_member_cents?: number | null;
-        };
-        Returns: undefined;
-      };
-      set_court_rate_period_active: {
-        // 0200 — Peak/Off-Peak Pricing, Checkpoint A. p_active true =
-        // Reactivate (re-validates overlap), false = Deactivate.
-        Args: { p_id: string; p_active: boolean };
-        Returns: undefined;
-      };
-      preview_court_reservation_price: {
-        // 0201/0202 — Peak/Off-Peak Pricing, Checkpoint B/C. Read-only,
-        // canonical booking-price preview. p_roster_member_id omitted =
-        // self-service (caller's own roster identity); provided =
-        // Admin/Staff explicit-target, which then also requires
-        // p_expected_club_id. Actual row shape is cast explicitly at the
-        // one call site (calendar/actions.ts) rather than modeled here.
-        Args: {
-          p_court_id: string;
-          p_starts_at: string;
-          p_ends_at: string;
-          p_roster_member_id?: string | null;
-          p_expected_club_id?: string | null;
-        };
-        Returns: undefined;
-      };
-      set_event_member_joinable: {
-        Args: { p_event_id: string; p_member_joinable: boolean };
-        Returns: undefined;
-      };
-      delete_event_type: {
-        Args: { p_id: string };
-        Returns: undefined;
-      };
-      add_court: {
-        Args: { p_name: string };
-        Returns: undefined;
-      };
-      rename_court: {
-        Args: { p_court_id: string; p_name: string };
-        Returns: undefined;
-      };
-      reorder_courts: {
-        Args: { p_court_order: string[] };
-        Returns: undefined;
-      };
-      set_court_active: {
-        Args: { p_court_id: string; p_is_active: boolean };
-        Returns: undefined;
-      };
-      delete_court: {
-        Args: { p_court_id: string };
-        Returns: undefined;
-      };
-      validate_club_invite: {
-        Args: { p_code: string };
-        Returns: Json;
-      };
-      accept_club_invite: {
-        Args: { p_code: string };
-        Returns: Json;
-      };
-      create_club_invite: {
-        Args: {
-          p_role:              string;
-          p_roster_member_id:  string;
-          p_expires_at?:       string;
-        };
-        Returns: string;
-      };
-      resend_club_invite: {
-        Args: {
-          p_old_code:    string;
-          p_expires_at?: string;
-        };
-        Returns: string;
-      };
-      revoke_club_invite: {
-        Args: { p_code: string };
-        Returns: undefined;
-      };
-      get_club_invites: {
-        Args: Record<string, never>;
-        Returns: {
-          id:               string;
-          code:             string;
-          role:             string;
-          email:            string | null;
-          expires_at:       string;
-          accepted_at:      string | null;
-          accepted_by:      string | null;
-          revoked_at:       string | null;
-          created_at:       string;
-        }[];
-      };
-      set_member_role: {
-        Args: { p_target_user_id: string; p_new_role: string };
-        Returns: undefined;
-      };
-      set_member_status: {
-        Args: { p_target_user_id: string; p_new_status: string };
-        Returns: undefined;
-      };
-      update_operating_hours: {
-        Args: { p_hours: Json; p_dry_run?: boolean };
-        Returns: Json;
-      };
-      notify_reservation_cancelled_by_member: {
-        Args: { p_reservation_id: string };
-        Returns: undefined;
-      };
-      // Phase 44A: the original send_announcement(text, text) — the
-      // UNTOUCHED-by-0102 predecessor this comment used to describe — was
-      // dropped by migration 0207 (zero application call sites; it never
-      // received 0177's active-membership eligibility fix, so it kept
-      // authorizing its sender and selecting recipients via the stale
-      // profiles legacy projection). send_announcement_v2 below is now the
-      // only supported announcement-send RPC.
-      //
-      // Phase 31C: exact-identity companion added in migration 0102. Same
-      // preference-filtered bulk-insert body as send_announcement (now
-      // removed); adds a durable per-send batch id and the exact
-      // {notification_id, user_id} set actually inserted.
-      //
-      // Phase 44B (migration 0209): introduced this four-argument form as
-      // the sole canonical implementation, temporarily alongside a
-      // two-argument compatibility wrapper (same old signature, delegated
-      // entirely to this one with audience_mode: "all",
-      // p_recipient_user_ids: null) kept only until the application
-      // calling this four-argument form directly had been deployed and
-      // proven. That wrapper was never typed here — this hand-maintained
-      // Functions map is keyed by function NAME ONLY and cannot express
-      // two distinct overloads under one key — every real TypeScript call
-      // site already called this shape (communicationsActions.ts's
-      // sendAnnouncementAction, updated in 0209's own checkpoint), so this
-      // entry described every real caller correctly throughout.
-      //
-      // Phase 44D (migration 0210): the two-argument wrapper is now
-      // DROPPED — this four-argument signature is the only
-      // send_announcement_v2 that exists, in the database or in this
-      // type. Its own body additionally now persists the announcement
-      // body into audit_log.metadata for every send (recipient_count
-      // included, even zero) — a durable, recipient-count-independent
-      // history source for Communications Activity. Args/Returns below
-      // are unchanged by 0210.
-      send_announcement_v2: {
-        Args: {
-          p_title:               string;
-          p_body:                string;
-          p_audience_mode:       string;          // "all" | "specific"
-          p_recipient_user_ids:  string[] | null;  // null/empty for "all"; non-empty for "specific"
-        };
-        Returns: Json;
-        // Runtime shape: {
-        //   batch_id: string,
-        //   recipient_count: number,
-        //   notifications: Array<{ notification_id: string; user_id: string }>
-        // }
-      };
-      // Phase 44B (migration 0209): read-only, Admin-only. Shares the
-      // canonical eligibility helper send_announcement_v2 uses, so preview
-      // and send can never disagree about who is eligible. eligible_user_ids
-      // is always empty for audience_mode "all" (a preview endpoint must
-      // never enumerate a whole club roster) and is the deduped eligible
-      // subset of the caller's own submission for "specific".
-      preview_announcement_recipients: {
-        Args: {
-          p_audience_mode:      string;          // "all" | "specific"
-          p_recipient_user_ids: string[] | null;
-        };
-        Returns: { eligible_count: number; eligible_user_ids: string[] | null }[];
-      };
-      // Phase 44B (migration 0209): read-only, Admin-only. Narrow
-      // selector-listing RPC for a future "Specific People" picker — never
-      // widens or reuses get_members(). Returns only currently-eligible
-      // (active, non-removed, same-club, not-self) candidates, including
-      // announcement_enabled: false rows (an opted-out person remains
-      // visible/selectable-with-a-caveat rather than silently hidden).
-      // role is club_memberships-derived, never profiles.role.
-      get_announcement_recipient_candidates: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                    string;
-          first_name:            string | null;
-          last_name:             string | null;
-          role:                  string;
-          announcement_enabled:  boolean;
-        }[];
-      };
-      update_notification_preference: {
-        Args: { p_kind: string; p_enabled: boolean };
-        Returns: undefined;
-      };
-      user_pref_enabled: {
-        Args: { p_user_id: string; p_kind: string };
-        Returns: boolean;
-      };
-      get_user_email_for_notification: {
-        Args: { p_notification_id: string };
-        Returns: string | null;
-      };
-      email_already_delivered: {
-        Args: { p_notification_id: string };
-        Returns: boolean;
-      };
-      // Phase 31C: added in migration 0102. Domain-scoped, exact-identity
-      // delivery-context RPCs — see supabase/migrations/0102 for full
-      // authorization rules. Each returns null on any authorization
-      // failure or wrong-domain kind rather than raising.
-      get_reservation_delivery_context: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { notification_id, recipient_user_id,
-        //   club_id, kind, body, metadata }
-      };
-      get_event_delivery_context: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { notification_id, recipient_user_id,
-        //   club_id, kind, body, metadata }
-      };
-      get_waitlist_delivery_context: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { notification_id, recipient_user_id,
-        //   club_id, kind, body, metadata }
-      };
-      get_waitlist_recipient_email: {
-        Args: { p_notification_id: string };
-        Returns: string | null;
-      };
-      get_waitlist_recipient_sms_contact: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
-      };
-      // Phase 31C (migration 0103): reservation/event SMS-reliability
-      // correction. Authorization identical to get_reservation_delivery_
-      // context / get_event_delivery_context respectively — see 0103 for
-      // the full rule set. Replaces the raw profiles read previously used
-      // for reservation/event SMS contact resolution, which two confirmed
-      // local reproductions showed was not pilot-reliable.
-      get_reservation_recipient_sms_contact: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
-      };
-      get_event_recipient_sms_contact: {
-        Args: { p_notification_id: string };
-        Returns: Json;
-        // Runtime shape when non-null: { phone: string | null; sms_opt_in: boolean }
-      };
-      // Phase 31C (migration 0103): pilot-level best-effort SMS idempotency,
-      // mirroring email_already_delivered's role for email. Unlike
-      // email_already_delivered, this re-derives the notification's domain
-      // (reservation/event/waitlist) from its own kind and applies that
-      // domain's exact authorization rule before disclosing anything —
-      // returns false for an unauthorized or cross-club caller, identical
-      // to "not yet delivered".
-      sms_already_delivered: {
-        Args: { p_notification_id: string };
-        Returns: boolean;
-      };
-      get_announcement_batch_delivery_context: {
-        Args: { p_batch_id: string };
-        Returns: {
-          notification_id:   string;
-          recipient_user_id: string;
-          body:               string;
-        }[];
-      };
-      get_communications_activity: {
-        Args: {
-          p_limit?:  number;
-          p_offset?: number;
-        };
-        Returns: {
-          // batch_id is null for an announcement sent before migration 0102
-          // added durable batch tracking — see get_communications_activity's
-          // own SQL comment.
-          batch_id:           string | null;
-          title:              string;
-          sent_at:            string;
-          recipient_count:    number;
-          email_sent_count:   number;
-          email_failed_count: number;
-          // Phase 44D (migration 0210): defaults to "all" for any batch
-          // predating migration 0209 — send_announcement_v2 had no
-          // capability to target anything else before then, a structural
-          // fact, not a guess.
-          audience_mode:      "all" | "specific";
-          // Phase 44D (migration 0210): audit_log.metadata.body for any
-          // batch sent by 0210's redefined send_announcement_v2 (present
-          // even for a zero-recipient ALL send); falls back to one
-          // notification.body for an older batch that still has
-          // recipients; null when genuinely unreconstructable (a
-          // historical zero-recipient batch, or a legacy pre-0102
-          // batch-id-null row) — never fabricated.
-          body:                string | null;
-        }[];
-      };
-      upsert_operating_hours_override: {
-        Args: {
-          p_override_date: string;
-          p_is_closed:     boolean;
-          p_opens_at?:     string | null;
-          p_closes_at?:    string | null;
-          p_note?:         string | null;
-          p_dry_run?:      boolean;
-        };
-        Returns: Json;
-      };
-      delete_operating_hours_override: {
-        Args: {
-          p_override_date: string;
-          p_dry_run?:      boolean;
-        };
-        Returns: Json;
-      };
-      // Phase 27B2: program definition and session generation RPCs
-      create_program: {
-        Args: {
-          p_event_type_id:    string;
-          p_title:             string;
-          p_enrollment_model:  "program" | "per_session" | "admin_managed";
-          p_starts_on:         string;
-          p_ends_on:           string;
-          p_default_capacity:  number;
-          p_rules:             Json;
-          p_description?:      string | null;
-        };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      // Phase 27C.1: edit a draft program's definition
-      update_program: {
-        Args: {
-          p_program_id:        string;
-          p_event_type_id:     string;
-          p_title:             string;
-          p_enrollment_model:  "program" | "per_session" | "admin_managed";
-          p_starts_on:         string;
-          p_ends_on:           string;
-          p_default_capacity:  number;
-          p_rules:             Json;
-          p_description?:      string | null;
-        };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      preview_program_sessions: {
-        Args: {
-          p_program_id:    string;
-          p_from_date?:    string | null;
-          p_through_date?: string | null;
-        };
-        Returns: {
-          program_schedule_rule_id:  string;
-          occurrence_date:            string;
-          starts_at:                  string;
-          ends_at:                    string;
-          court_id:                   string;
-          court_name:                 string;
-          already_generated:          boolean;
-          has_conflict:               boolean;
-          conflicting_reservation_id: string | null;
-          conflicting_event_id:       string | null;
-          conflict_reason:            string | null;
-        }[];
-      };
-      generate_program_sessions: {
-        Args: {
-          p_program_id:    string;
-          p_from_date?:    string | null;
-          p_through_date?: string | null;
-        };
-        Returns: {
-          inserted_count: number;
-          skipped_count:  number;
-          event_ids:      string[];
-        }[];
-      };
-      // Phase 27D1: whole-program enrollment state machine
-      // Phase 33D2b: profile_id nullable, roster_member_id (NOT NULL on
-      // the underlying table) added to every Returns shape below.
-      join_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      leave_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      accept_program_waitlist_offer: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      decline_program_waitlist_offer: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      // Phase 27D3A: admin/pro program roster management RPCs
-      // Phase 33D2b: profile_id nullable, roster_member_id added.
-      get_program_roster: {
-        Args: { p_program_id: string };
-        Returns: {
-          enrollment_id:     string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          first_name:        string | null;
-          last_name:         string | null;
-          email:             string | null;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          waitlisted_at:     string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        }[];
-      };
-      add_program_member: {
-        Args: { p_program_id: string; p_profile_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      remove_program_member: {
-        Args: { p_program_id: string; p_profile_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      // Phase 33D2b: roster-aware equivalents of add_program_member /
-      // remove_program_member, keyed by roster_member_id so a no-account
-      // enrollee supports the same staff actions as a claimed one.
-      add_program_roster_member: {
-        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      remove_program_roster_member: {
-        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      // Phase 33D2b: staff-managed lifecycle — waitlisted or offered ->
-      // enrolled, for an enrollee (no-account or claimed) who cannot or
-      // has not self-accepted.
-      force_confirm_program_roster_member: {
-        Args: { p_program_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: {
-          id:                string;
-          program_id:        string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          status:            "enrolled" | "waitlisted" | "offered" | "cancelled";
-          offer_expires_at:  string | null;
-          waitlisted_at:     string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      // Phase 27D3C: membership-native eligible-member lookup for the
-      // program roster Add Member picker
-      get_program_eligible_members: {
-        Args: { p_program_id: string };
-        Returns: {
-          profile_id:    string;
-          first_name:    string | null;
-          last_name:     string | null;
-          display_name:  string;
-        }[];
-      };
-      // Phase 33D2b: Programs-scoped analog of get_roster_members(),
-      // deliberately NOT that function (which is hard admin-only) —
-      // returns only same-club unclaimed roster Members not already
-      // actively enrolled in the target program. Admin or owning Pro.
-      get_program_eligible_roster_members: {
-        Args: { p_program_id: string };
-        Returns: {
-          roster_member_id: string;
-          first_name:       string | null;
-          last_name:        string | null;
-          display_name:     string;
-        }[];
-      };
-      // Phase 27E: program lifecycle RPCs
-      cancel_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      complete_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      archive_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      unarchive_program: {
-        Args: { p_program_id: string };
-        Returns: {
-          id:                string;
-          club_id:           string;
-          event_type_id:     string;
-          title:             string;
-          description:       string | null;
-          enrollment_model:  "program" | "per_session" | "admin_managed";
-          status:            "draft" | "active" | "cancelled" | "completed";
-          starts_on:         string;
-          ends_on:           string;
-          default_capacity:  number;
-          created_by:        string;
-          created_at:        string;
-          updated_at:        string;
-          archived_at:       string | null;
-          archived_by:       string | null;
-        };
-      };
-      // Phase 19B: admin participant action RPCs
-      admin_add_member: {
-        Args: { p_event_id: string; p_profile_id: string };
-        Returns: {
-          id:                string;
-          event_id:          string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          role:              string;
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      admin_remove_participant: {
-        Args: { p_event_id: string; p_profile_id: string };
-        Returns: undefined;
-      };
-      // Phase 33E2 (0118): single admin+pro Event eligible-Member source,
-      // replacing EventRosterSheet's old dual profiles/get_roster_members
-      // lookup. Claim state never determines eligibility — only
-      // role='member' and status='active' do.
-      get_event_eligible_members: {
-        Args: { p_event_id: string };
-        Returns: {
-          roster_member_id: string;
-          profile_id:        string | null;
-          display_name:      string;
-          has_account:       boolean;
-        }[];
-      };
-      // Phase 33D2
-      admin_add_roster_participant: {
-        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: {
-          id:                string;
-          event_id:          string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          role:              string;
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      admin_remove_roster_participant: {
-        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: {
-          id:                string;
-          event_id:          string;
-          profile_id:        string | null;
-          roster_member_id:  string;
-          role:              string;
-          status:            string;
-          attendance_status: string | null;
-          offer_expires_at:  string | null;
-          created_at:        string;
-          updated_at:        string;
-        };
-      };
-      // Phase 31C: return type changed in migration 0102 from the raw
-      // `event_participants` row to a jsonb bundle carrying the exact
-      // notification_id, with `triggered_by: auth.uid()` stamped into that
-      // notification's metadata so a Pro actor (this RPC has always allowed
-      // role in ('admin','pro')) can dispatch it without granting access to
-      // any other, unrelated Pro. No app caller ever consumed the old raw
-      // row shape (only `{ error }` was read), so this is a safe in-place
-      // type update, not a new function.
-      admin_force_confirm: {
-        Args: { p_event_id: string; p_profile_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   participant: { id, event_id, profile_id, role, status,
-        //     attendance_status, offer_expires_at, created_at, updated_at },
-        //   notification_id: string
-        // }
-      };
-      admin_offer_spot: {
-        Args: { p_event_id: string; p_profile_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   participant: { id, event_id, profile_id, role, status,
-        //     attendance_status, offer_expires_at, created_at, updated_at },
-        //   notification_id: string
-        // }
-      };
-      admin_expire_offer: {
-        Args: { p_event_id: string; p_profile_id: string };
-        Returns: undefined;
-      };
-      // Phase 33D2a: roster-aware equivalents of admin_force_confirm /
-      // admin_offer_spot / admin_expire_offer — same rules, keyed by
-      // roster_member_id so a no-account participant supports the same
-      // staff actions as a claimed one.
-      admin_force_confirm_roster_participant: {
-        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   participant: { id, event_id, profile_id, roster_member_id, role,
-        //     status, attendance_status, offer_expires_at, created_at, updated_at },
-        //   notification_id: string | null   // null if still unclaimed
-        // }
-      };
-      admin_offer_spot_roster_participant: {
-        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: Json;
-        // Runtime shape: {
-        //   participant: { id, event_id, profile_id, roster_member_id, role,
-        //     status, attendance_status, offer_expires_at, created_at, updated_at },
-        //   notification_id: string | null   // null if still unclaimed
-        // }
-      };
-      admin_expire_offer_roster_participant: {
-        Args: { p_event_id: string; p_expected_club_id: string; p_roster_member_id: string };
-        Returns: undefined;
-      };
-      admin_add_guest: {
-        Args: { p_event_id: string; p_display_name: string };
-        Returns: {
-          id:           string;
-          event_id:     string;
-          display_name: string;
-          added_by:     string;
-          created_at:   string;
-        };
-      };
-      admin_remove_guest: {
-        Args: { p_event_id: string; p_guest_id: string };
-        Returns: undefined;
-      };
-      // Phase 21I-A: roster member RPCs
-      // Phase 33E2: p_include_inactive added (default false) — active-only
-      // by default for picker use; the Admin Members CRM listing passes
-      // true to also see inactive unclaimed identities.
-      get_roster_members: {
-        Args: { p_include_inactive?: boolean };
-        Returns: {
-          id:                    string;
-          first_name:            string;
-          last_name:             string;
-          email:                 string | null;
-          phone:                 string | null;
-          role:                  string;
-          notes:                 string | null;
-          created_by:            string;
-          created_at:            string;
-          status:                string;
-          removed_at:            string | null;
-          membership_status:     "active" | "inactive" | "suspended" | "non_member";  // 0190 — Phase 42C-1
-          membership_type_id:    string | null;  // 0190 — Phase 42C-1
-          membership_type_name:  string | null;  // 0190 — Phase 42C-1
-        }[];
-      };
-      add_roster_member: {
-        Args: {
-          p_first_name: string;
-          p_last_name:  string;
-          p_email?:     string | null;
-          p_phone?:     string | null;
-          p_role?:      string;
-          p_notes?:     string | null;
-        };
-        Returns: string;  // new roster_member id
-      };
-      update_roster_member: {
-        Args: {
-          p_id:         string;
-          p_first_name: string;
-          p_last_name:  string;
-          p_email?:     string | null;
-          p_phone?:     string | null;
-          p_role?:      string;
-          p_notes?:     string | null;
-        };
-        Returns: undefined;
-      };
-      delete_roster_member: {
-        Args: { p_id: string };
-        Returns: undefined;
-      };
-      // Phase 33E2-correction: durable no-account Member lifecycle —
-      // normal-lifecycle soft removal/restore, scoped to claimed_by IS
-      // NULL. Preserves roster_members.id and all historical relations.
-      remove_roster_member: {
-        Args: { p_roster_member_id: string };
-        Returns: undefined;
-      };
-      restore_roster_member: {
-        Args: { p_roster_member_id: string };
-        Returns: undefined;
-      };
-      // 0188 — Phase 42A: membership domain foundation. Admin-only, same-club.
-      // is_active_club_member is intentionally NOT exposed here — it is
-      // revoked from authenticated (private helper, never client-callable).
-      create_membership_type: {
-        Args: { p_name: string };
-        Returns: undefined;
-      };
-      update_membership_type: {
-        Args: { p_id: string; p_name: string };
-        Returns: undefined;
-      };
-      set_membership_type_active: {
-        Args: { p_id: string; p_is_active: boolean };
-        Returns: undefined;
-      };
-      set_roster_member_membership_type: {
-        Args: { p_roster_member_id: string; p_membership_type_id?: string | null };
-        Returns: undefined;
-      };
-      set_roster_member_membership_status: {
-        Args: {
-          p_roster_member_id:  string;
-          p_membership_status: "active" | "inactive" | "suspended" | "non_member";
-        };
-        Returns: undefined;
-      };
-      // Phase 43A-1 — Member Waiver RPCs (0192, accepted_at fix in 0193 —
-      // no contract change). _evaluate_member_waiver_status is
-      // intentionally NOT exposed here — private helper, revoked from
-      // authenticated, never client-callable.
-      create_member_waiver_draft: {
-        Args: { p_title: string; p_body: string };
-        Returns: string;
-      };
-      update_member_waiver_draft: {
-        Args: { p_version_id: string; p_title: string; p_body: string };
-        Returns: undefined;
-      };
-      publish_member_waiver_version: {
-        Args: { p_version_id: string };
-        Returns: undefined;
-      };
-      set_member_waiver_required: {
-        Args: { p_required: boolean };
-        Returns: undefined;
-      };
-      // Phase 43B-2A (0195) — Guest waiver authoring RPCs, audience='guest'
-      // mirror of the four Member ones above. Admin-only. No Guest read/
-      // acceptance RPC exists yet (later checkpoint).
-      create_guest_waiver_draft: {
-        Args: { p_title: string; p_body: string };
-        Returns: string;
-      };
-      update_guest_waiver_draft: {
-        Args: { p_version_id: string; p_title: string; p_body: string };
-        Returns: undefined;
-      };
-      publish_guest_waiver_version: {
-        Args: { p_version_id: string };
-        Returns: undefined;
-      };
-      set_guest_waiver_required: {
-        Args: { p_required: boolean };
-        Returns: undefined;
-      };
-      // Phase 43B-3B (0196) — PDF-only authoring. service_role ONLY —
-      // never callable from the browser or an ordinary authenticated
-      // Server Action client; only the finalize Server Action's
-      // createPrivilegedClient() call may invoke this. Actor/club are
-      // explicit params, independently verified against club_memberships
-      // (never auth.uid()/current_user_role(), meaningless for a
-      // service_role caller acting on a different, already-verified
-      // user's behalf).
-      publish_waiver_pdf_version: {
-        Args: {
-          p_actor_user_id: string;
-          p_club_id: string;
-          p_audience: "member" | "guest";
-          p_version_id: string;
-          p_original_filename: string;
-          p_title: string;
-          p_file_size_bytes: number;
-          p_sha256_digest: string;
-        };
-        Returns: {
-          version_id: string;
-          version_number: number;
-          storage_path: string;
-          published_at: string;
-        }[];
-      };
-      // Phase 43B-3B (0196) — authenticated, Admin-only. Explicit,
-      // deliberate discard of a pre-PDF-pivot unpublished text draft —
-      // never called implicitly from publish_waiver_pdf_version.
-      discard_waiver_draft: {
-        Args: { p_version_id: string };
-        Returns: undefined;
-      };
-      // Phase 43B-4A (0198) — Guest waiver invitation/acceptance. Hand-
-      // added: src/lib/db/types.ts was not regenerated against the live
-      // schema after 0198 was applied (no `supabase gen types` access in
-      // this environment) — these four entries mirror 0198's actual
-      // function signatures exactly. Reservation mint reuses the existing
-      // reservation-roster authorization boundary; event mint reuses the
-      // existing admin/pro/staff event-Guest boundary. resolve/accept are
-      // service_role ONLY.
-      mint_reservation_guest_waiver_invitation: {
-        Args: {
-          p_reservation_id: string;
-          p_expected_club_id: string;
-          p_guest_id: string;
-          p_token_hash: string;
-        };
-        Returns: string;
-      };
-      mint_event_guest_waiver_invitation: {
-        Args: { p_event_id: string; p_guest_id: string; p_token_hash: string };
-        Returns: string;
-      };
-      resolve_guest_waiver_invitation: {
-        Args: { p_token_hash: string };
-        Returns: {
-          invitation_id: string;
-          club_id: string;
-          club_name: string | null;
-          reservation_guest_id: string | null;
-          event_guest_id: string | null;
-          guest_display_name: string | null;
-          waiver_id: string | null;
-          current_version_id: string | null;
-          version_title: string | null;
-          is_required: boolean;
-          is_current_accepted: boolean;
-          accepted_at: string | null;
-        }[];
-      };
-      accept_guest_waiver: {
-        Args: { p_token_hash: string; p_waiver_version_id: string };
-        Returns: string;
-      };
-      // Phase 43B-5B (0199) — hand-added, same reason as the 0198 entries
-      // above: no `supabase gen types` access in this environment. One
-      // row per active Guest slot in the given Reservation/Event.
-      get_reservation_guest_waiver_compliance: {
-        Args: { p_reservation_id: string; p_expected_club_id: string };
-        Returns: {
-          relationship_id: string;
-          waiver_configured: boolean;
-          status: string;
-        }[];
-      };
-      get_event_guest_waiver_compliance: {
-        Args: { p_event_id: string };
-        Returns: {
-          relationship_id: string;
-          waiver_configured: boolean;
-          status: string;
-        }[];
-      };
-      // Role-agnostic (Member/Pro/Staff/Admin all accept identically) —
-      // resolves only the caller's own claimed roster identity server-side.
-      // No proxy-acceptance variant exists.
-      accept_member_waiver: {
-        Args: { p_waiver_version_id: string };
-        Returns: string;
-      };
-      get_my_member_waiver_status: {
-        Args: Record<string, never>;
-        Returns: {
-          status:             "not_required" | "current" | "outdated" | "never_accepted";
-          waiver_id:          string | null;
-          current_version_id: string | null;
-          version_number:     number | null;
-          title:              string | null;
-          body:               string | null;
-          published_at:       string | null;
-          accepted_at:        string | null;
-          is_required:        boolean;
-        }[];
-      };
-      get_member_waiver_status: {
-        Args: { p_roster_member_id: string };
-        Returns: {
-          status:             "not_required" | "current" | "outdated" | "never_accepted";
-          waiver_id:          string | null;
-          current_version_id: string | null;
-          version_number:     number | null;
-          title:              string | null;
-          published_at:       string | null;
-          accepted_at:        string | null;
-          is_required:        boolean;
-        }[];
-      };
-      // Phase 43B-1A (0194) — bulk, set-based roster compliance read for
-      // /admin/members. Admin+Staff only (server-enforced); waiver_
-      // configured distinguishes "no Member waiver document" from "waiver
-      // exists but not required/published" — status alone never does.
-      get_club_member_waiver_compliance: {
-        Args: Record<string, never>;
-        Returns: {
-          roster_member_id:  string;
-          waiver_configured: boolean;
-          status:             "not_required" | "current" | "outdated" | "never_accepted";
-        }[];
-      };
-      // Phase 21I-C-A: member notes + roster members in events
-      set_member_notes: {
-        Args: { p_target_user_id: string; p_notes: string | null };
-        Returns: undefined;
-      };
-      admin_add_roster_member_to_event: {
-        Args: { p_event_id: string; p_roster_member_id: string };
-        Returns: {
-          id:               string;
-          event_id:         string;
-          display_name:     string;
-          added_by:         string;
-          roster_member_id: string | null;
-          created_at:       string;
-        };
-      };
-      // Migration 0067
-      add_roster_member_and_invite: {
-        Args: {
-          p_first_name: string;
-          p_last_name:  string;
-          p_email:      string;
-          p_role?:      string;
-          p_phone?:     string | null;
-          p_notes?:     string | null;
-        };
-        Returns: { roster_member_id: string; code: string };
-      };
-      get_club_pros: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                 string;
-          first_name:         string | null;
-          last_name:          string | null;
-          role:               string;
-          is_lesson_provider: boolean;
-        }[];
-      };
-      // Phase 25C: admin-only provider list — includes calling admin when eligible
-      get_admin_club_pros: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                 string;
-          first_name:         string | null;
-          last_name:          string | null;
-          role:               string;
-          is_lesson_provider: boolean;
-        }[];
-      };
-      // Phase 38A multi-club correction: confirmed-lesson-reassignment-only
-      // provider list, club_memberships-canonical (see 0180).
-      get_confirmed_lesson_reassignment_pros: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                 string;
-          first_name:         string | null;
-          last_name:          string | null;
-          role:               string;
-          is_lesson_provider: boolean;
-        }[];
-      };
-      // Phase 33G2 (0128): admin+pro roster read for the Lesson-booking
-      // Member picker — roster_members itself stays admin-only RLS.
-      get_lesson_roster_members: {
-        Args: Record<string, never>;
-        Returns: {
-          id:         string;
-          first_name: string | null;
-          last_name:  string | null;
-          claimed_by: string | null;
-        }[];
-      };
-      // Phase 24A: member CRM RPCs
-      add_member_note: {
-        Args: { p_member_id: string; p_content: string };
-        Returns: {
-          id:                   string;
-          club_id:              string;
-          member_id:            string;
-          author_id:            string;
-          author_name_snapshot: string;
-          content:              string;
-          created_at:           string;
-          updated_at:           string;
-          archived_at:          string | null;
-        };
-      };
-      update_member_note: {
-        Args: { p_note_id: string; p_content: string };
-        Returns: undefined;
-      };
-      archive_member_note: {
-        Args: { p_note_id: string };
-        Returns: undefined;
-      };
-      get_member_notes: {
-        Args: { p_member_id: string };
-        Returns: {
-          id:                   string;
-          member_id:            string;
-          author_id:            string;
-          author_name_snapshot: string;
-          content:              string;
-          created_at:           string;
-          updated_at:           string;
-          archived_at:          string | null;
-        }[];
-      };
-      get_admin_member_detail: {
-        Args: { p_member_id: string };
-        Returns: {
-          id:                          string;
-          first_name:                  string | null;
-          last_name:                   string | null;
-          phone:                       string | null;
-          role:                        string;
-          status:                      string;
-          created_at:                  string;
-          email:                       string | null;
-          is_lesson_provider:          boolean;
-          removed_at:                  string | null;
-          attended_event_count:        number;
-          event_no_show_count:         number;
-          completed_lesson_count:      number;
-          member_lesson_no_show_count: number;
-          membership_status:           "active" | "inactive" | "suspended" | "non_member" | null;  // 0191 — Phase 42C-3A
-          membership_type_id:          string | null;  // 0191 — Phase 42C-3A
-          membership_type_name:        string | null;  // 0191 — Phase 42C-3A
-        }[];
-      };
-      get_member_upcoming_activity: {
-        Args: { p_member_id: string };
-        Returns: {
-          activity_id:         string;
-          activity_type:       string;
-          sort_ts:             string;
-          status:              string;
-          title:               string | null;
-          starts_at:           string | null;
-          ends_at:             string | null;
-          court_name:          string | null;
-          pro_first_name:      string | null;
-          pro_last_name:       string | null;
-          duration_minutes:    number | null;
-          proposed_starts_at:  string | null;
-          proposed_ends_at:    string | null;
-          proposed_court_name: string | null;
-        }[];
-      };
-      get_member_activity_history: {
-        Args: {
-          p_member_id:   string;
-          p_cursor_ts?:  string | null;
-          p_cursor_type?: string | null;
-          p_cursor_id?:  string | null;
-          p_limit?:      number;
-        };
-        Returns: {
-          activity_id:       string;
-          activity_type:     string;
-          sort_ts:           string;
-          status:            string;
-          starts_at:         string | null;
-          ends_at:           string | null;
-          title:             string | null;
-          attendance_status: string | null;
-          pro_first_name:    string | null;
-          pro_last_name:     string | null;
-          duration_minutes:  number | null;
-          lesson_outcome:    string | null;
-        }[];
-      };
-      // Phase 24B: admin lesson ops
-      reassign_lesson_provider: {
-        Args: { p_request_id: string; p_new_pro_id: string };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string;
-          pro_id:                string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      admin_reassign_confirmed_lesson_pro: {
-        Args: {
-          p_request_id:          string;
-          p_expected_updated_at: string;
-          p_new_pro_id:          string;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string | null;
-          pro_id:                string;
-          roster_member_id:      string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      get_lesson_notification_id: {
-        Args: { p_request_id: string; p_user_id: string; p_kind: string };
-        Returns: Json | null;  // { id: string; body: string } | null
-      };
-      get_lesson_recipient_email: {
-        Args: { p_request_id: string; p_user_id: string };
-        Returns: string | null;
-      };
-      submit_lesson_request: {
-        Args: {
-          p_pro_id:              string;
-          p_duration_minutes:    number;
-          p_preferred_court_id?: string | null;
-          p_member_note?:        string | null;
-          p_preferred_windows?:  Json | null;
-          p_lesson_type_id?:     string | null;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string;
-          pro_id:                string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      withdraw_lesson_request: {
-        Args: { p_request_id: string };
-        Returns: {
-          id: string; status: string; updated_at: string;
-        };
-      };
-      propose_lesson_time: {
-        Args: {
-          p_request_id:            string;
-          p_expected_updated_at:   string;
-          p_starts_at:             string;
-          p_ends_at:               string;
-          p_court_id?:             string | null;
-        };
-        Returns: {
-          id: string; status: string; proposed_starts_at: string | null; proposed_ends_at: string | null; proposed_court_id: string | null; updated_at: string;
-        };
-      };
-      accept_lesson_proposal: {
-        Args: { p_request_id: string };
-        Returns: Json;  // { request_id, reservation_id }
-      };
-      decline_lesson_proposal: {
-        Args: { p_request_id: string };
-        Returns: {
-          id: string; status: string; updated_at: string;
-        };
-      };
-      decline_lesson_request: {
-        Args: {
-          p_request_id: string;
-          p_reason?:    string | null;
-        };
-        Returns: {
-          id: string; status: string; decline_reason: string | null; declined_at: string | null; updated_at: string;
-        };
-      };
-      cancel_lesson: {
-        Args: {
-          p_request_id: string;
-          p_reason?:    string | null;
-        };
-        Returns: {
-          id: string; status: string; cancellation_reason: string | null; cancelled_at: string | null; updated_at: string;
-          // Phase 33E3: the RPC actually returns the full lesson_requests
-          // row (0111's `returns public.lesson_requests`) — these fields
-          // were previously omitted from this narrower type but are used
-          // to resolve the no-account cancellation email's Pro/court/time
-          // details server-side, from this same trusted return value.
-          roster_member_id:  string;
-          pro_id:             string;
-          proposed_starts_at: string | null;
-          proposed_ends_at:   string | null;
-          proposed_court_id:  string | null;
-        };
-      };
-      // Phase 41B completion (0187) — hand-added ahead of `supabase gen
-      // types` regeneration: the migration is authored and reviewed but
-      // deliberately not yet applied (STOP-before-apply checkpoint).
-      preview_member_lesson_cancellation_policy: {
-        Args: { p_request_id: string };
-        Returns: {
-          state:        string; // 'in_policy' | 'late'
-          cutoff_at:    string;
-          within_grace: boolean;
-        }[];
-      };
-      // Same Returns shape as cancel_lesson above (this wrapper delegates
-      // to it verbatim on a matching policy state).
-      cancel_member_lesson_confirmed: {
-        Args: {
-          p_request_id: string;
-          p_reason?:    string | null;
-          p_expected_policy_state: string;
-        };
-        Returns: {
-          id: string; status: string; cancellation_reason: string | null; cancelled_at: string | null; updated_at: string;
-          roster_member_id:  string;
-          pro_id:             string;
-          proposed_starts_at: string | null;
-          proposed_ends_at:   string | null;
-          proposed_court_id:  string | null;
-        };
-      };
-      get_my_lesson_requests: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                    string;
-          pro_id:                string;
-          pro_first_name:        string | null;
-          pro_last_name:         string | null;
-          preferred_court_id:    string | null;
-          preferred_court_name:  string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          proposed_court_name:   string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          lesson_type_id:        string | null;
-          lesson_type_name:      string | null;
-          lesson_outcome:        string | null;
-        }[];
-      };
-      admin_create_member_lesson: {
-        Args: {
-          p_expected_club_id: string;
-          p_roster_member_id: string;
-          p_pro_id:           string;
-          p_court_id:         string;
-          p_starts_at:        string;
-          p_ends_at:          string;
-          p_lesson_type_id?:  string | null;
-          p_member_note?:     string | null;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string | null;
-          pro_id:                string;
-          roster_member_id:      string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      admin_update_member_lesson: {
-        Args: {
-          p_request_id:          string;
-          p_expected_club_id:    string;
-          p_expected_updated_at: string;
-          p_roster_member_id:    string;
-          p_pro_id:              string;
-          p_court_id:            string;
-          p_starts_at:           string;
-          p_ends_at:             string;
-          p_lesson_type_id?:     string | null;
-          p_member_note?:        string | null;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          member_id:             string | null;
-          pro_id:                string;
-          roster_member_id:      string;
-          preferred_court_id:    string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_id:         string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          declined_at:           string | null;
-          cancelled_at:          string | null;
-          cancelled_by:          string | null;
-        };
-      };
-      get_pro_lesson_requests: {
-        Args: {
-          p_pro_filter?: string | null;
-          p_status?:     string | null;
-        };
-        Returns: {
-          id:                    string;
-          member_id:             string | null;
-          member_first_name:     string | null;
-          member_last_name:      string | null;
-          roster_member_id:      string;
-          member_claimed:        boolean;
-          pro_id:                string;
-          pro_first_name:        string | null;
-          pro_last_name:         string | null;
-          preferred_court_id:    string | null;
-          preferred_court_name:  string | null;
-          duration_minutes:      number;
-          member_note:           string | null;
-          preferred_windows:     Json | null;
-          proposed_starts_at:    string | null;
-          proposed_ends_at:      string | null;
-          proposed_court_id:     string | null;
-          proposed_court_name:   string | null;
-          status:                string;
-          decline_reason:        string | null;
-          cancellation_reason:   string | null;
-          last_actor_role:       string | null;
-          linked_reservation_id: string | null;
-          created_at:            string;
-          updated_at:            string;
-          confirmed_at:          string | null;
-          lesson_type_id:        string | null;
-          lesson_type_name:      string | null;
-          lesson_outcome:        string | null;
-        }[];
-      };
-      // Phase 23 competitive foundation RPCs (migration 0070)
-      get_lesson_types: {
-        Args: Record<string, never>;
-        Returns: {
-          id:                       string;
-          name:                     string;
-          description:              string | null;
-          allowed_durations:        number[] | null;
-          max_participants:         number;
-          pricing_basis:            "flat" | "hourly";
-          unit_price_amount_cents:  number | null;
-          rate_notes:               string | null;
-          is_active:                boolean;
-        }[];
-      };
-      update_club_payment_mode: {
-        // Phase 34C. Admin only.
-        Args: { p_payment_mode: "none" | "manual" | "court_time_payments" };
-        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
-      };
-      update_club_memberships_enabled: {
-        // 0190 — Phase 42C-1. Admin only. Deliberately separate from
-        // update_club_pricing, matching update_club_payment_mode's own
-        // precedent of a dedicated single-purpose toggle RPC.
-        Args: { p_enabled: boolean };
-        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
-      };
-      record_manual_payment: {
-        // Phase 34C. Admin + Staff.
-        Args: {
-          p_payment_id:         string;
-          p_amount_cents:       number;
-          p_method:             "cash" | "check" | "card_terminal" | "bank_transfer" | "digital_wallet" | "other";
-          p_occurred_at?:       string;
-          p_external_reference?: string | null;
-          p_notes?:             string | null;
-        };
-        Returns: Database["public"]["Tables"]["payments"]["Row"];
-      };
-      get_payment_states_for_domains: {
-        // Phase 34C. Sanitized, batched, role-gated read boundary — the
-        // only sanctioned way Member/Pro consume payment state.
-        Args: {
-          p_domain_type: "reservation" | "lesson_request" | "event_participant" | "event_guest" | "program_enrollment";
-          p_domain_ids:  string[];
-        };
-        Returns: {
-          domain_id:                  string;
-          current_payment_id:         string;
-          current_obligation_cycle:   number;
-          current_amount_due_cents:   number;
-          current_amount_paid_cents:  number;
-          current_status:
-            | "unpaid"
-            | "partially_paid"
-            | "paid"
-            | "overpaid"
-            | "partially_refunded"
-            | "refunded"
-            | "waived"
-            | "void";
-          current_currency: string;
-          unresolved_prior: {
-            payment_id: string;
-            obligation_cycle: number;
-            amount_due_cents: number;
-            amount_paid_cents: number;
-            currency: string;
-            status: string;
-          }[];
-        }[];
-      };
-      get_club_stripe_connect_status: {
-        // Phase 34D-A. service_role only — never callable from an
-        // authenticated browser session (so no client can pick its own
-        // p_livemode). Scoped to one (club, Stripe mode) pair. Never
-        // returns the raw Stripe account id — only the derived readiness
-        // signal. Accounts v2: card_payments_status is Stripe's own
-        // capability status vocabulary (active/pending/restricted/
-        // unsupported), not a locally-invented enum.
-        Args: { p_club_id: string; p_livemode: boolean };
-        Returns: {
-          connected:             boolean;
-          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
-          last_synced_at:        string | null;
-        }[];
-      };
-      get_club_stripe_account_ref: {
-        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
-        // mode) pair — a club may have both a test-mode and a live-mode
-        // connected account.
-        Args: { p_club_id: string; p_livemode: boolean };
-        Returns: string | null;
-      };
-      upsert_club_stripe_account: {
-        // Phase 34D-A. service_role only. Scoped to one (club, Stripe
-        // mode) pair via the unique(club_id, livemode) constraint.
-        Args: {
-          p_club_id:              string;
-          p_stripe_account_id:    string;
-          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
-          p_actor_id:             string;
-          p_livemode:             boolean;
-        };
-        Returns: {
-          id:                    string;
-          club_id:               string;
-          stripe_account_id:     string;
-          livemode:              boolean;
-          card_payments_status:  "active" | "pending" | "restricted" | "unsupported";
-          last_synced_at:        string | null;
-          created_by:            string | null;
-          created_at:            string;
-          updated_at:            string;
-        };
-      };
-      process_stripe_connect_account_event: {
-        // Phase 34D-B. service_role only — never callable from an
-        // authenticated browser session. The one atomic entry point for
-        // Stripe Connect account lifecycle events: deduplicates on
-        // p_stripe_event_id (a genuine duplicate is a clean no-op —
-        // already_processed: true), then updates club_stripe_accounts.
-        // card_payments_status/last_synced_at only for the row matching
-        // BOTH stripe_account_id and livemode. Never creates a new
-        // club_stripe_accounts row and never touches any row for a
-        // different account/mode. If no row matches, the call THROWS
-        // (stripe_account_not_found) and rolls back — including the event
-        // receipt insert — so the caller (the webhook route) surfaces a
-        // 500 and Stripe's own retry can succeed later once the account
-        // mapping exists; an unmatched event is never silently/
-        // permanently recorded as handled.
-        Args: {
-          p_stripe_event_id:      string;
-          p_event_type:           string;
-          p_livemode:             boolean;
-          p_stripe_account_id:    string;
-          p_card_payments_status: "active" | "pending" | "restricted" | "unsupported";
-        };
-        Returns: {
-          already_processed: boolean;
-          matched:            boolean;
-        }[];
-      };
-      activate_court_time_payments: {
-        // Phase 34D-C. service_role only — never callable from an
-        // authenticated browser session (so no client can supply its own
-        // p_livemode to bypass the readiness gate). The ONLY path to
-        // court_time_payments: requires a club_stripe_accounts row
-        // matching BOTH p_club_id and p_livemode with card_payments_status
-        // = 'active'; otherwise throws stripe_connect_not_ready. On
-        // success, updates club_settings.payment_mode exactly like
-        // update_club_payment_mode's own none/manual path (same audit_log
-        // action name).
-        Args: { p_club_id: string; p_livemode: boolean; p_actor_id: string };
-        Returns: Database["public"]["Tables"]["club_settings"]["Row"];
-      };
-      get_reservation_payment_for_checkout: {
-        // Phase 34D-D1. authenticated-grant, pure read. Requires the
-        // caller's CURRENT role to be exactly 'member' (raises
-        // insufficient_role otherwise — an Admin/Staff/Pro with a roster
-        // identity must not pass), then returns at most one row: the
-        // CALLER's own latest payment obligation for a reservation —
-        // independently re-derived via current_user_roster_member_id(),
-        // never trusting a client-supplied identity. Hardcoded to
-        // domain_type = 'reservation', so Event Guest is structurally
-        // unreachable. payment_mode_at_creation lets the caller enforce
-        // that an obligation created under 'manual' stays manual-only
-        // forever, even if the club later enables Court Time Payments.
-        Args: { p_reservation_id: string };
-        Returns: {
-          payment_id:               string;
-          club_id:                  string;
-          amount_due_cents:         number;
-          amount_paid_cents:        number;
-          currency:                 string;
-          status:                   string;
-          payment_mode_at_creation: string;
-        }[];
-      };
-      get_lesson_payment_for_checkout: {
-        // Phase 34F-A (rewritten after external review). authenticated-
-        // grant, pure read — the lesson_request sibling of get_
-        // reservation_payment_for_checkout above, hardcoded to domain_type
-        // = 'lesson_request'. Requires the caller's CURRENT role to be
-        // exactly 'member' AND the lesson_request's CURRENT status to be
-        // exactly 'confirmed' (server-derived, never trusted from the
-        // client) before returning a row at all — a cancelled/declined/
-        // withdrawn/pending/proposed lesson is structurally unreachable.
-        // Unlike get_reservation_payment_for_checkout, this DOES check
-        // lifecycle status: Court Time has no cancellation-fee model, so a
-        // cancelled lesson's (still-preserved, still Admin-resolvable)
-        // obligation must not remain Member-Checkout-payable. Also
-        // verifies the lesson_request's own club_id matches the resolved
-        // payment's club_id. Independently re-derives the caller's own
-        // roster identity via current_user_roster_member_id(), never
-        // trusting a client-supplied identity.
-        Args: { p_request_id: string };
-        Returns: {
-          payment_id:               string;
-          club_id:                  string;
-          amount_due_cents:         number;
-          amount_paid_cents:        number;
-          currency:                 string;
-          status:                   string;
-          payment_mode_at_creation: string;
-        }[];
-      };
-      open_lesson_payment_checkout_attempt: {
-        // Phase 34F-A (external review correction, BLOCKER 1). service_
-        // role only. Atomic lesson-aware wrapper around open_payment_
-        // checkout_attempt below — closes the TOCTOU race between get_
-        // lesson_payment_for_checkout's own read and this, the actual
-        // attempt-opening step. Locks the lesson_requests row FIRST,
-        // re-verifies status = 'confirmed' UNDER that lock (raises
-        // lesson_not_found / lesson_not_confirmed otherwise), resolves the
-        // current payment_id fresh, then delegates entirely to open_
-        // payment_checkout_attempt for everything else — never duplicates
-        // that function's own algorithm. Same Returns shape.
-        Args: {
-          p_request_id:        string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "must_expire_remote";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      supersede_lesson_checkout_attempt_and_open_fresh: {
-        // Phase 34F-A (external review correction, BLOCKER 1). service_
-        // role only. Atomic lesson-aware wrapper around supersede_
-        // checkout_attempt_and_open_fresh below — the SAME race closed at
-        // the primary attempt-open call site (open_lesson_payment_
-        // checkout_attempt above) exists identically here: the out-of-
-        // process Stripe round-trip between the two calls cannot hold a DB
-        // lock. Locks the lesson_requests row, re-verifies status =
-        // 'confirmed', resolves payment_id fresh, then delegates entirely
-        // to supersede_checkout_attempt_and_open_fresh. Same Returns
-        // shape.
-        Args: {
-          p_request_id:        string;
-          p_stale_attempt_id:  string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "already_completed";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      get_event_payment_for_checkout: {
-        // Phase 34F-B. authenticated-grant, pure read — the event_
-        // participant sibling of get_lesson_payment_for_checkout above,
-        // hardcoded to domain_type = 'event_participant'. Requires the
-        // caller's CURRENT role to be exactly 'member', the parent Event's
-        // CURRENT status to be exactly 'scheduled' and not archived, and
-        // the caller's own event_participants row (matched by roster
-        // identity) to be exactly 'confirmed' before returning a row at
-        // all — waitlisted/offered/cancelled participants and a
-        // cancelled/archived Event are all structurally unreachable.
-        // event_starts_at is additionally returned so callers can build a
-        // date-aware /calendar return URL, mirroring get_reservation_
-        // payment_for_checkout's own reservationDateISO need. No guest
-        // path — event_guest has no roster identity to match.
-        Args: { p_event_id: string };
-        Returns: {
-          payment_id:               string;
-          club_id:                  string;
-          amount_due_cents:         number;
-          amount_paid_cents:        number;
-          currency:                 string;
-          status:                   string;
-          payment_mode_at_creation: string;
-          event_starts_at:          string | null;
-        }[];
-      };
-      open_event_payment_checkout_attempt: {
-        // Phase 34F-B. service_role only. Atomic event-aware wrapper
-        // around open_payment_checkout_attempt below — closes the TOCTOU
-        // race between get_event_payment_for_checkout's own read and this,
-        // the actual attempt-opening step. Locks the events row FIRST,
-        // re-verifies the Event is scheduled/non-archived AND the caller's
-        // own (p_actor_id-resolved) event_participants row is still
-        // 'confirmed' UNDER that lock, resolves the current payment_id
-        // fresh, then delegates entirely to open_payment_checkout_attempt
-        // for everything else — never duplicates that function's own
-        // algorithm. Same Returns shape as the Lesson/Reservation
-        // siblings.
-        Args: {
-          p_event_id:          string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "must_expire_remote";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      supersede_event_checkout_attempt_and_open_fresh: {
-        // Phase 34F-B. service_role only. Atomic event-aware wrapper
-        // around supersede_checkout_attempt_and_open_fresh below — the
-        // SAME race closed at the primary attempt-open call site (open_
-        // event_payment_checkout_attempt above) exists identically here.
-        // Locks the events row, re-verifies scheduled/non-archived +
-        // participant confirmed, resolves payment_id fresh, then
-        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
-        // Same Returns shape.
-        Args: {
-          p_event_id:          string;
-          p_stale_attempt_id:  string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "already_completed";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      list_event_blocking_checkout_attempts: {
-        // Phase 34F-B. service_role only, read-only. Event-level batch
-        // preflight for the cancel_event / update_event fan-out stale-
-        // Checkout guard — for every CURRENTLY confirmed participant on
-        // the Event, reports that participant's latest payment id if (and
-        // only if) it has a genuinely blocking attempt (status='open' AND
-        // a bound Stripe Checkout Session), the same predicate get_
-        // blocking_checkout_attempt_for_payment (0151) uses for the
-        // single-payment case. Returns payment_id ONLY — never a Stripe
-        // session id or any participant identity/PII.
-        Args: { p_event_id: string; p_club_id: string };
-        Returns: { payment_id: string }[];
-      };
-      get_program_payment_for_checkout: {
-        // Phase 34F-C. authenticated-grant, pure read — the whole-program-
-        // enrollment sibling of get_event_payment_for_checkout above,
-        // hardcoded to domain_type = 'program_enrollment'. Requires the
-        // caller's CURRENT role to be exactly 'member', the parent
-        // Program's enrollment_model to be exactly 'program', the
-        // Program's CURRENT status to be IN ('active','completed') and not
-        // archived (the locked eligibility allowlist — never the broader
-        // "status <> 'cancelled'" predicate), and the caller's own
-        // program_enrollments row (matched by roster identity) to be
-        // exactly 'enrolled' before returning a row at all —
-        // waitlisted/offered/cancelled enrollments and a
-        // cancelled/draft/archived Program are all structurally
-        // unreachable. No event_starts_at-equivalent field: the return
-        // route is the flat /events page, not date-navigated like
-        // /calendar.
-        Args: { p_program_id: string };
-        Returns: {
-          payment_id:               string;
-          club_id:                  string;
-          amount_due_cents:         number;
-          amount_paid_cents:        number;
-          currency:                 string;
-          status:                   string;
-          payment_mode_at_creation: string;
-        }[];
-      };
-      open_program_payment_checkout_attempt: {
-        // Phase 34F-C. service_role only. Atomic program-aware wrapper
-        // around open_payment_checkout_attempt below — closes the TOCTOU
-        // race between get_program_payment_for_checkout's own read and
-        // this, the actual attempt-opening step. Locks the programs row
-        // FIRST, re-verifies enrollment_model='program', status IN
-        // ('active','completed'), not archived, AND the caller's own
-        // (p_actor_id-resolved) program_enrollments row is still
-        // 'enrolled' UNDER that lock, resolves the current payment_id
-        // fresh, then delegates entirely to open_payment_checkout_attempt
-        // for everything else — never duplicates that function's own
-        // algorithm. Same Returns shape as the Event/Lesson/Reservation
-        // siblings.
-        Args: {
-          p_program_id:        string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "must_expire_remote";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      supersede_program_checkout_attempt_and_open_fresh: {
-        // Phase 34F-C. service_role only. Atomic program-aware wrapper
-        // around supersede_checkout_attempt_and_open_fresh below — the
-        // SAME race closed at the primary attempt-open call site (open_
-        // program_payment_checkout_attempt above) exists identically here.
-        // Locks the programs row, re-verifies enrollment_model/status/
-        // archived + enrollment enrolled, resolves payment_id fresh, then
-        // delegates entirely to supersede_checkout_attempt_and_open_fresh.
-        // Same Returns shape.
-        Args: {
-          p_program_id:        string;
-          p_stale_attempt_id:  string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "already_completed";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      list_program_blocking_checkout_attempts: {
-        // Phase 34F-C. service_role only, read-only. Program-level batch
-        // preflight for the cancel_program fan-out stale-Checkout guard —
-        // for every CURRENTLY 'enrolled' program_enrollments row on the
-        // Program, reports that enrollment's latest payment id if (and
-        // only if) it has a genuinely blocking attempt (status='open' AND
-        // a bound Stripe Checkout Session), the same predicate list_event_
-        // blocking_checkout_attempts (0161) uses. Returns payment_id
-        // ONLY — never a Stripe session id or any enrollment identity/PII.
-        Args: { p_program_id: string; p_club_id: string };
-        Returns: { payment_id: string }[];
-      };
-      open_payment_checkout_attempt: {
-        // Phase 34D-D1 (correction round 4). service_role only.
-        // Re-derives amount owed and eligibility fresh from the payments
-        // row under a row lock — never trusts an earlier caller-side
-        // read. Returns action='ready' when an existing OPEN attempt is
-        // reused as-is (amount, currency, connected Stripe account, AND
-        // livemode ALL match, and its bound Session's own Stripe-reported
-        // expiration — stripe_session_expires_at — is still in the
-        // future, or it has no bound Session yet) or a fresh attempt was
-        // opened (including when a stale UNBOUND attempt was safely
-        // superseded locally — no remote Stripe artifact existed for it).
-        // Returns action='must_expire_remote' — mutating NOTHING — when an
-        // existing OPEN attempt needs replacing but already has a bound
-        // Session that may still be genuinely payable at Stripe: the
-        // caller MUST retrieve/expire it via Stripe (in the STALE
-        // attempt's own stripe_account_id context) before calling
-        // supersede_checkout_attempt_and_open_fresh. Raises
-        // stale_attempt_environment_mismatch (never returns
-        // 'must_expire_remote') when the stale bound attempt's own
-        // livemode differs from the current one — that Session cannot be
-        // safely addressed by the current Stripe API key at all.
-        Args: {
-          p_payment_id:        string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "must_expire_remote";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      supersede_checkout_attempt_and_open_fresh: {
-        // Phase 34D-D1 (correction round 4). service_role only. Called
-        // ONLY after the Server Action has confirmed via Stripe (using
-        // the stale attempt's own stripe_account_id context) that its
-        // bound Session is no longer payable. Re-validates payment
-        // eligibility fresh (state may have changed during the Stripe
-        // round-trip) and re-checks the stale attempt is STILL 'open' at
-        // this exact moment — if something else resolved it in the
-        // meantime (most notably the webhook completing it), returns
-        // action='already_completed' with that row and creates NO new
-        // attempt. Otherwise marks the stale attempt 'expired' and opens
-        // a fresh one carrying the current stripe_account_id/livemode, in
-        // the same transaction — action='ready'.
-        Args: {
-          p_stale_attempt_id:  string;
-          p_payment_id:        string;
-          p_club_id:           string;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_actor_id:          string;
-        };
-        Returns: {
-          action:                     "ready" | "already_completed";
-          id:                         string;
-          payment_id:                 string;
-          club_id:                    string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string | null;
-          stripe_session_expires_at:  string | null;
-          stripe_payment_intent_id:   string | null;
-          amount_expected_cents:      number;
-          currency_expected:          string;
-          status:                     "open" | "completed" | "expired" | "canceled";
-          created_by:                 string | null;
-          created_at:                 string;
-          updated_at:                 string;
-        }[];
-      };
-      record_checkout_session_created: {
-        // Phase 34D-D1. service_role only. Stores the Stripe Checkout
-        // Session id AND Stripe's own authoritative expires_at returned
-        // by the create call onto its attempt row — REQUIRED to succeed
-        // before the Server Action may return a checkout URL
-        // (process_stripe_payment_event finds an attempt solely by this
-        // id). Fails loudly (throws) rather than silently affecting zero
-        // rows: checkout_attempt_not_found for an unknown attempt,
-        // checkout_attempt_not_open for a canceled/expired/completed
-        // attempt, checkout_session_mismatch for an already-stored
-        // DIFFERENT session id. Binding the SAME session id again onto a
-        // still-open attempt (a Server Action retry) is idempotent
-        // success.
-        Args: {
-          p_attempt_id: string;
-          p_stripe_checkout_session_id: string;
-          p_stripe_session_expires_at: string;
-        };
-        Returns: void;
-      };
-      process_stripe_payment_event: {
-        // Phase 34D-D1 (correction round 4). service_role only. The one
-        // atomic payment-reconciliation RPC for checkout.session.completed.
-        // Dedupes via stripe_event_receipts (shared with 0148's Connect
-        // lifecycle events). Canonical lock order: locates the payment_id
-        // via a non-locking lookup, locks payments FIRST, then re-reads/
-        // locks the attempt row and revalidates it (matching
-        // open_payment_checkout_attempt / supersede_checkout_attempt_
-        // and_open_fresh's own payments-first lock order — avoids a
-        // deadlock opportunity). Immutable-identity validation (connected
-        // account, livemode, currency, amount) runs BEFORE the
-        // completed-attempt no-op — every mismatch raises, rolling back
-        // the just-inserted receipt too, so a valid Stripe payment Court
-        // Time cannot safely reconcile is always retryable rather than
-        // permanently dropped. Deliberately NOT gated on the local
-        // payment's current status — once Stripe has genuinely collected
-        // money against a matched attempt, it is recorded regardless of
-        // what happened locally since the Session was created (manual
-        // payment, price change, waiver, void); _recompute_payment_rollup
-        // reflects that real money correctly. p_stripe_payment_intent_id
-        // is NULLABLE — Stripe documents Checkout Session.payment_intent
-        // as nullable even for a paid mode=payment Session, so a
-        // genuinely paid, signature-verified Session must never be
-        // dropped merely because it's absent; p_stripe_checkout_session_id
-        // (required) is this function's real immutable reconciliation
-        // identity. A completed attempt's PaymentIntent is only checked
-        // for conflict when BOTH the stored and incoming ids are non-null
-        // and differ. On success, marks the attempt completed, stores the
-        // (possibly null) PaymentIntent id, and inserts a single
-        // online_payment_recorded payment_events row whose
-        // external_reference is the Checkout SESSION id (always
-        // non-null) — atomically.
-        Args: {
-          p_stripe_event_id:            string;
-          p_event_type:                 string;
-          p_livemode:                   boolean;
-          p_stripe_account_id:          string;
-          p_stripe_checkout_session_id: string;
-          p_stripe_payment_intent_id:   string | null;
-          p_amount_total_cents:         number;
-          p_currency:                   string;
-        };
-        Returns: {
-          already_processed: boolean;
-          matched:            boolean;
-        }[];
-      };
-      get_blocking_checkout_attempt_for_payment: {
-        // Phase 34E-A. service_role only. Read-only. Called by a Server
-        // Action immediately after its own mutation RPC (record_manual_
-        // payment / waive_payment / void_payment_obligation / record_
-        // refund / reverse_payment_event / update_member_reservation /
-        // admin_update_member_lesson) raised open_checkout_requires_
-        // resolution, to fetch the Stripe identity of the bound, open
-        // attempt it must resolve via Stripe before safely retrying.
-        // Returns zero rows if already resolved in the interim.
-        Args: {
-          p_payment_id: string;
-          p_club_id:    string;
-        };
-        Returns: {
-          id:                         string;
-          stripe_account_id:          string;
-          livemode:                   boolean;
-          stripe_checkout_session_id: string;
-        }[];
-      };
-      expire_blocking_checkout_attempt: {
-        // Phase 34E-A. service_role only. Called ONLY after the Server
-        // Action has independently confirmed via Stripe that the blocking
-        // attempt's bound Session is no longer payable (already expired,
-        // or just actively expired). Re-verifies the attempt is STILL
-        // 'open' under a fresh lock before marking it 'expired' —
-        // returns action='already_completed' (mutating nothing) if the
-        // webhook resolved it in the interim; the caller must stop and
-        // never retry its competing local mutation in that case.
-        Args: {
-          p_attempt_id: string;
-          p_payment_id: string;
-          p_club_id:    string;
-        };
-        Returns: {
-          action: "proceed" | "already_completed";
-        }[];
-      };
-      open_payment_refund_attempt: {
-        // Phase 34E-B. service_role only. Resolves the payment's own
-        // latest COMPLETED online payment_checkout_attempts row as
-        // trusted refund provenance, computes that attempt's own
-        // Stripe-refundable ceiling, and either reuses an existing
-        // unresolved ('pending', unbound) attempt for this payment WHEN
-        // THE REQUESTED AMOUNT MATCHES (double-submit / retry-after-
-        // uncertainty safety — never mints a second Stripe idempotency
-        // key for what may be the same in-flight request), raises
-        // pending_refund_amount_mismatch before any Stripe call when a
-        // DIFFERENT amount is requested against that same unresolved
-        // attempt (correction pass — never silently substitutes the old
-        // amount), or opens a fresh one.
-        Args: {
-          p_payment_id:             string;
-          p_club_id:                string;
-          p_requested_amount_cents: number;
-          p_actor_id:               string;
-          p_admin_reason?:          string | null;
-        };
-        Returns: {
-          id:                          string;
-          payment_id:                  string;
-          club_id:                     string;
-          source_checkout_attempt_id:  string;
-          stripe_account_id:           string;
-          livemode:                    boolean;
-          stripe_checkout_session_id:  string | null;
-          stripe_payment_intent_id:    string | null;
-          requested_amount_cents:      number;
-          status:                      "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
-          currency:                    string;
-        }[];
-      };
-      mark_refund_attempt_local_failure: {
-        // Phase 34E-B. service_role only. Only for a failure BEFORE any
-        // Stripe API call was ever made (e.g. no PaymentIntent could be
-        // resolved) — raises refund_already_submitted_to_stripe if a
-        // Stripe Refund id is already bound.
-        Args: {
-          p_refund_attempt_id: string;
-          p_failure_reason:    string | null;
-        };
-        Returns: void;
-      };
-      backfill_refund_attempt_payment_intent: {
-        // Phase 34E-B (correction pass). service_role only, narrow.
-        // Called BEFORE stripe.refunds.create() whenever the source
-        // Checkout attempt's own stripe_payment_intent_id was null and
-        // had to be resolved fresh via a trusted Session retrieve —
-        // persists it onto BOTH the refund attempt and its source
-        // Checkout attempt so it is never merely held in memory. Raises
-        // payment_intent_mismatch if a DIFFERENT PaymentIntent is already
-        // stored; a repeat call with the SAME value is a no-op.
-        Args: {
-          p_refund_attempt_id:        string;
-          p_stripe_payment_intent_id: string;
-        };
-        Returns: void;
-      };
-      bind_stripe_refund_result: {
-        // Phase 34E-B. service_role only. Called by the Server Action
-        // immediately after its own stripe.refunds.create() call
-        // returns — reconciles from that response's CURRENT state via
-        // the shared internal helper, which is terminal-state-safe
-        // (correction pass): 'succeeded'/'failed'/'canceled' are never
-        // regressed by a later call reporting anything else. p_refund_
-        // attempt_id is trusted directly for RESOLUTION (a same-request,
-        // server-generated value); p_stripe_payment_intent_id is passed
-        // through for VALIDATION only against trusted stored provenance.
-        Args: {
-          p_refund_attempt_id: string;
-          p_stripe_refund_id:  string;
-          p_status:            "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
-          p_amount_cents:      number;
-          p_stripe_account_id: string;
-          p_livemode:          boolean;
-          p_currency:          string;
-          p_failure_reason?:   string | null;
-          p_stripe_payment_intent_id?: string | null;
-        };
-        Returns: void;
-      };
-      process_stripe_refund_webhook_event: {
-        // Phase 34E-B (correction pass). service_role only. The
-        // asynchronous webhook path for refund.created/refund.updated/
-        // refund.failed. Dedupes on Stripe's own event id (stripe_event_
-        // receipts, reused unchanged), then reconciles from the CURRENT
-        // Stripe-retrieved Refund state the Route Handler passes in
-        // (never a trusted event-payload snapshot) — never assumes a
-        // particular event type implies a particular status.
-        // Resolution is ALWAYS by p_stripe_payment_intent_id/account/
-        // livemode provenance matching, never by p_refund_attempt_id
-        // directly — that value (sourced from the Refund's own metadata,
-        // a forgeable client-set field) is used ONLY as a candidate to
-        // verify against the independently-resolved truth; a mismatch
-        // raises refund_attempt_provenance_mismatch. matched: false in
-        // the return value means genuinely foreign, safely ignored.
-        Args: {
-          p_stripe_event_id:           string;
-          p_event_type:                string;
-          p_livemode:                  boolean;
-          p_stripe_account_id:         string;
-          p_stripe_refund_id:          string;
-          p_refund_attempt_id:         string | null;
-          p_stripe_payment_intent_id:  string | null;
-          p_status:                    "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
-          p_amount_cents:              number;
-          p_currency:                  string;
-          p_failure_reason?:           string | null;
-        };
-        Returns: {
-          already_processed: boolean;
-          matched:            boolean;
-        }[];
-      };
-      get_online_refundable_amount_for_payments: {
-        // Phase 34E-B. authenticated (Admin/Staff role-checked
-        // internally) — pure ledger read, no Stripe identity/livemode
-        // involved. The one sanctioned read path for "how much online
-        // money is still Stripe-refundable" for a batch of payments.
-        Args: {
-          p_payment_ids: string[];
-        };
-        Returns: {
-          payment_id:       string;
-          refundable_cents: number;
-          currency:         string;
-        }[];
-      };
-      create_refund_request: {
-        // Phase 38B. authenticated, Staff only. Creates a pending refund
-        // request against a specific payment's CURRENT online-refundable
-        // balance (reused from get_online_refundable_amount_for_payments,
-        // never payments.amount_paid_cents). Never mutates payments/
-        // payment_events/payment_refund_attempts/Stripe state. Exactly one
-        // pending request per payment (partial unique index) —
-        // refund_request_already_pending on a duplicate.
-        Args: {
-          p_payment_id:   string;
-          p_amount_cents: number;
-          p_reason:       string;
-          p_notes?:       string | null;
-        };
-        Returns: {
-          id:                     string;
-          club_id:                string;
-          payment_id:             string;
-          requested_by:           string;
-          requested_amount_cents: number;
-          reason:                 string;
-          notes:                  string | null;
-          status:                 "pending" | "completed" | "rejected";
-          reviewed_by:            string | null;
-          reviewed_at:            string | null;
-          rejection_reason:       string | null;
-          refund_attempt_id:      string | null;
-          created_at:             string;
-          updated_at:             string;
-        };
-      };
-      get_pending_refund_requests_for_payments: {
-        // Phase 38B. authenticated, Admin+Staff. The one sanctioned read
-        // path for "which of these payments has a pending Staff refund
-        // request" — scoped to the caller's own current club, joined to
-        // profiles ONLY for the requester's display name and to
-        // payment_refund_attempts ONLY for the linked attempt's own
-        // status (never a duplicated Stripe field).
-        Args: {
-          p_payment_ids: string[];
-        };
-        Returns: {
-          request_id:             string;
-          payment_id:             string;
-          requested_by:           string;
-          requested_by_name:      string;
-          requested_amount_cents: number;
-          reason:                 string;
-          notes:                  string | null;
-          refund_attempt_id:      string | null;
-          attempt_status:         "pending" | "requires_action" | "succeeded" | "failed" | "canceled" | null;
-          created_at:             string;
-        }[];
-      };
-      reject_refund_request: {
-        // Phase 38B. authenticated, Admin only. Requires a non-empty
-        // rejection reason. Never creates a refund attempt, never touches
-        // payments/payment_events/Stripe. Notifies the requesting Staff
-        // member in-app only (refund_request_rejected).
-        Args: {
-          p_request_id:       string;
-          p_rejection_reason: string;
-        };
-        Returns: {
-          id:                     string;
-          club_id:                string;
-          payment_id:             string;
-          requested_by:           string;
-          requested_amount_cents: number;
-          reason:                 string;
-          notes:                  string | null;
-          status:                 "pending" | "completed" | "rejected";
-          reviewed_by:            string | null;
-          reviewed_at:            string | null;
-          rejection_reason:       string | null;
-          refund_attempt_id:      string | null;
-          created_at:             string;
-          updated_at:             string;
-        };
-      };
-      begin_refund_request_execution: {
-        // Phase 38B. service_role only. The single atomic RPC that locks
-        // `payments` FIRST (canonical top-level serialization point),
-        // then locks/revalidates the request row, then decides fresh vs.
-        // reuse vs. heal based on the linked payment_refund_attempts row's
-        // OWN live status — never a browser-supplied amount; always
-        // request.requested_amount_cents. Return shape is IDENTICAL to
-        // open_payment_refund_attempt's own, so the shared Stripe
-        // execution tail (Task 2) can consume either result unchanged.
-        Args: {
-          p_request_id: string;
-          p_club_id:    string;
-          p_actor_id:   string;
-        };
-        Returns: {
-          id:                          string;
-          payment_id:                  string;
-          club_id:                     string;
-          source_checkout_attempt_id:  string;
-          stripe_account_id:           string;
-          livemode:                    boolean;
-          stripe_checkout_session_id:  string | null;
-          stripe_payment_intent_id:    string | null;
-          requested_amount_cents:      number;
-          status:                      "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
-          currency:                    string;
-        }[];
-      };
-      process_stripe_dispute_webhook_event: {
-        // Phase 34E-C. service_role only. The webhook path for charge.
-        // dispute.created/updated/closed/funds_withdrawn/funds_reinstated.
-        // Dedupes on Stripe's own event id (stripe_event_receipts, reused
-        // unchanged), then reconciles from the CURRENT Stripe-retrieved
-        // Dispute state the Route Handler passes in (never a trusted
-        // event-payload snapshot). A dispute is never Court-Time-
-        // initiated — resolution is ALWAYS by verified account/livemode/
-        // PaymentIntent provenance against a completed Court Time
-        // Checkout attempt, never by metadata (disputes carry none).
-        // Returns a plain boolean (matched) — deliberately NOT a
-        // RETURNS TABLE function, sidestepping the 0153/0154/0155
-        // OUT-variable ambiguity class by construction. false means
-        // genuinely foreign/unmatched, safely ignored. INFORMATIONAL
-        // ONLY: never touches payments.amount_paid_cents or any
-        // payment/refund ledger event.
-        Args: {
-          p_stripe_event_id:          string;
-          p_event_type:               string;
-          p_livemode:                 boolean;
-          p_stripe_account_id:        string;
-          p_stripe_dispute_id:        string;
-          p_stripe_charge_id:         string;
-          p_stripe_payment_intent_id: string | null;
-          p_amount_cents:             number;
-          p_currency:                 string;
-          p_status:                   string;
-          p_reason:                   string;
-          p_evidence_due_by:          string | null;
-          p_is_charge_refundable:     boolean;
-          p_stripe_created_at:        string;
-        };
-        Returns: boolean;
-      };
-      upsert_lesson_type: {
-        Args: {
-          p_id?:                       string | null;
-          p_name?:                     string | null;
-          p_description?:              string | null;
-          p_allowed_durations?:        number[] | null;
-          p_max_participants?:         number;
-          p_pricing_basis?:            string;
-          p_unit_price_amount_cents?:  number | null;
-          p_rate_notes?:               string | null;
-        };
-        Returns: string;
-      };
-      archive_lesson_type: {
-        Args: { p_type_id: string };
-        Returns: undefined;
-      };
-      mark_lesson_outcome: {
-        Args: { p_request_id: string; p_outcome: string };
-        Returns: undefined;
-      };
-      get_pro_availability_windows: {
-        Args: { p_pro_id?: string | null };
-        Returns: {
-          id:          string;
-          pro_id:      string;
-          day_of_week: number;
-          start_time:  string;
-          end_time:    string;
-          is_active:   boolean;
-        }[];
-      };
-      upsert_pro_availability_window: {
-        Args: {
-          p_day_of_week:  number;
-          p_start_time:   string;
-          p_end_time:     string;
-          p_pro_id?:      string | null;
-          p_window_id?:   string | null;
-        };
-        Returns: string;
-      };
-      delete_pro_availability_window: {
-        Args: { p_window_id: string };
-        Returns: undefined;
-      };
-      get_pro_blackouts: {
-        Args: {
-          p_pro_id?:    string | null;
-          p_from_date?: string | null;
-          p_to_date?:   string | null;
-        };
-        Returns: {
-          id:            string;
-          pro_id:        string;
-          blackout_date: string;
-          reason:        string | null;
-          created_at:    string;
-        }[];
-      };
-      upsert_pro_blackout: {
-        Args: {
-          p_blackout_date: string;
-          p_reason?:       string | null;
-          p_pro_id?:       string | null;
-        };
-        Returns: string;
-      };
-      delete_pro_blackout: {
-        Args: { p_blackout_id: string };
-        Returns: undefined;
-      };
-      submit_pilot_inquiry: {
-        Args: {
-          p_contact_name:              string;
-          p_email:                     string;
-          p_club_name:                 string;
-          p_facility_type:             string;
-          p_court_count:               number;
-          p_approximate_member_count:  number;
-          p_current_process:           string;
-          p_operational_challenge:     string;
-          p_preferred_operating_model: string;
-          p_facility_type_other?:      string | null;
-          p_phone?:                    string | null;
-          p_preferred_contact_method?: string | null;
-          p_website?:                  string | null;
-          p_additional_details?:       string | null;
-          p_source?:                   string | null;
-          p_fingerprint?:              string | null;
-        };
-        Returns: { id: string; deduped: boolean }[];
-      };
-      issue_calendar_feed_token: {
-        Args: { p_feed_type: string; p_token_hash: string; p_expected_club_id: string };
-        Returns: undefined;
-      };
-      revoke_calendar_feed_token: {
-        Args: { p_feed_type: string; p_expected_club_id: string };
-        Returns: undefined;
-      };
-      has_active_calendar_feed_token: {
-        Args: { p_feed_type: string };
-        Returns: boolean;
-      };
-      get_calendar_feed_rows: {
-        Args: { p_token_hash: string };
-        Returns: Json;
-      };
-    };
-    Enums: { [_ in never]: never };
-    CompositeTypes: { [_ in never]: never };
+export type { Json };
+
+type GeneratedTables = GeneratedDatabase["public"]["Tables"];
+type GeneratedFunctionsRaw = GeneratedDatabase["public"]["Functions"];
+
+// ─────────────────────────────────────────────────────────────────────────
+// Systemic correction: RPC Args nullability.
+//
+// Confirmed by comparing database.types.ts against live SQL signatures and
+// several real call sites (e.g. send_announcement_v2, preview_court_
+// reservation_price): the generator NEVER marks a function argument as
+// accepting `null`, regardless of whether the underlying Postgres parameter
+// genuinely does. For an OPTIONAL argument (one with a SQL DEFAULT, `?` in
+// generated output) this matters in practice — many existing call sites
+// across the app explicitly pass `null` rather than omitting the key
+// (confirmed by the scale of compile errors produced while adopting the
+// generated file directly: dozens of call sites across courts/events/
+// lessons/members/payments actions).
+//
+// This is safe to correct BLANKET, not case-by-case: `grep` confirms this
+// schema defines ZERO `strict` SQL/plpgsql functions (the only Postgres
+// modifier that would make passing an explicit NULL for an optional
+// parameter behave differently, e.g. short-circuit to a NULL return
+// instead of running the function body) across all 210 migrations. Since
+// every optional parameter can safely receive an explicit NULL, every
+// optional parameter's type may safely include `| null`.
+//
+// A REQUIRED argument that is also genuinely nullable (no SQL default, but
+// the function body still branches on `is null`, e.g.
+// send_announcement_v2.p_recipient_user_ids) is NOT covered by this blanket
+// rule — optionality (`?`) and nullability are different SQL facts, and the
+// generator gets required-but-nullable args wrong in the opposite direction
+// (never adds `| null` at all, regardless of optionality). Those are
+// corrected individually in FunctionsOverride below, since the generator
+// gives no structural signal to detect them automatically.
+type OptionalKeys<T> = { [K in keyof T]-?: object extends Pick<T, K> ? K : never }[keyof T];
+type WidenOptionalArgsToNullable<Args> = {
+  [K in keyof Args]: K extends OptionalKeys<Args> ? Args[K] | null : Args[K];
+};
+type GeneratedFunctions = {
+  [FnName in keyof GeneratedFunctionsRaw]: GeneratedFunctionsRaw[FnName] extends {
+    Args: infer A;
+    Returns: infer R;
+  }
+    ? Omit<GeneratedFunctionsRaw[FnName], "Args" | "Returns"> & {
+        Args: WidenOptionalArgsToNullable<A>;
+        Returns: R;
+      }
+    : GeneratedFunctionsRaw[FnName];
+};
+
+/** Replaces the given keys of `Base` with `Override`'s value types, keeping
+ * every other key (and Base's own optionality on untouched keys) intact. */
+type ApplyOverride<Base, Override> = Omit<Base, keyof Override> & Override;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Table overrides
+// ─────────────────────────────────────────────────────────────────────────
+
+// club_settings.payment_mode — migration 0143, CHECK unchanged since.
+type ClubSettingsRow = { payment_mode: "none" | "manual" | "court_time_payments" };
+type ClubSettingsWrite = { payment_mode?: "none" | "manual" | "court_time_payments" };
+
+// payments — migration 0143. domain_type/status CHECK-constrained, unchanged
+// since. Insert/Update are deliberately `never`: this is a read-only,
+// current-state rollup row per obligation cycle; all writes go through RPCs
+// (record_manual_payment, record_refund, void_payment_obligation, etc.).
+type PaymentsRow = {
+  domain_type: "reservation" | "lesson_request" | "event_participant" | "event_guest" | "program_enrollment";
+  status: "unpaid" | "partially_paid" | "paid" | "overpaid" | "partially_refunded" | "refunded" | "waived" | "void";
+  payment_mode_at_creation: "manual" | "court_time_payments";
+};
+
+// payment_events — migration 0143 created event_type/method CHECK-
+// constrained; event_type was later widened twice — 0150 added
+// online_payment_recorded, 0153 added online_refund_recorded (both
+// verified directly against payment_events_event_type_check's live
+// pg_get_constraintdef output, matching 0153's own committed final DROP+
+// ADD CONSTRAINT text exactly — no later migration touches this
+// constraint). This union previously lagged those two widenings, forcing
+// `as any` at every .in("event_type", ...) filter call site (Phase 45C2
+// found these; Phase 45C2B corrected the root union here and removed all
+// three). Insert/Update deliberately `never`: append-only ledger, written
+// exclusively via the RPCs listed above.
+type PaymentEventsRow = {
+  event_type:
+    | "obligation_created"
+    | "obligation_amount_adjusted"
+    | "manual_payment_recorded"
+    | "online_payment_recorded"
+    | "refund_recorded"
+    | "online_refund_recorded"
+    | "reverse_payment_event"
+    | "void_payment_obligation"
+    | "waived";
+  method: "cash" | "check" | "card_terminal" | "bank_transfer" | "digital_wallet" | "other" | null;
+};
+
+// profiles.role/status — migration 0131 (role widened to include 'staff').
+type ProfilesRow = {
+  role: "member" | "pro" | "staff" | "admin";
+  status: "active" | "inactive" | "suspended";
+};
+type ProfilesWrite = {
+  role?: "member" | "pro" | "staff" | "admin";
+  status?: "active" | "inactive" | "suspended";
+};
+
+// reservations — migration 0003 (status/format/cancellation_kind), 0189
+// (membership_pricing_class), 0186 (cancellation_policy_state — previously
+// missing from this file entirely; added here alongside lesson_requests'
+// identical column).
+type ReservationsRow = {
+  status: "pending" | "confirmed" | "cancelled";
+  reason: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
+  format: "singles" | "doubles" | null;
+  cancellation_kind: "member" | "admin" | "system" | null;
+  membership_pricing_class: "member" | "non_member" | null;
+  cancellation_policy_state: "in_policy" | "grace" | "late" | "not_applicable" | null;
+};
+type ReservationsWrite = {
+  status?: "pending" | "confirmed" | "cancelled";
+  reason?: "member_booking" | "maintenance" | "admin_block" | "event" | "pro_lesson";
+  format?: "singles" | "doubles" | null;
+  cancellation_kind?: "member" | "admin" | "system" | null;
+  membership_pricing_class?: "member" | "non_member" | null;
+  cancellation_policy_state?: "in_policy" | "grace" | "late" | "not_applicable" | null;
+};
+
+// events.status — migration 0004, unchanged since. (events.member_joinable,
+// added migration 0062, needed no override — it's a plain boolean and now
+// flows through automatically from the generated structure.)
+type EventsRow = { status: "scheduled" | "cancelled" };
+type EventsWrite = { status?: "scheduled" | "cancelled" };
+
+// programs — migration 0087. enrollment_model is required (no default) on
+// Insert; status defaults to 'draft' so it's optional there.
+type ProgramsRow = {
+  enrollment_model: "program" | "per_session" | "admin_managed";
+  status: "draft" | "active" | "cancelled" | "completed";
+};
+type ProgramsInsert = {
+  enrollment_model: "program" | "per_session" | "admin_managed";
+  status?: "draft" | "active" | "cancelled" | "completed";
+};
+type ProgramsUpdate = {
+  enrollment_model?: "program" | "per_session" | "admin_managed";
+  status?: "draft" | "active" | "cancelled" | "completed";
+};
+
+// program_enrollments.status — migration 0087. No default, so required on
+// Insert; ordinary partial-update optionality on Update.
+type ProgramEnrollmentsRow = { status: "enrolled" | "waitlisted" | "offered" | "cancelled" };
+type ProgramEnrollmentsInsert = { status: "enrolled" | "waitlisted" | "offered" | "cancelled" };
+type ProgramEnrollmentsUpdate = { status?: "enrolled" | "waitlisted" | "offered" | "cancelled" };
+
+// event_guests.status/attendance_status — migration 0117.
+type EventGuestsRow = {
+  status: "active" | "cancelled";
+  attendance_status: "attended" | "no_show" | null;
+};
+type EventGuestsWrite = {
+  status?: "active" | "cancelled";
+  attendance_status?: "attended" | "no_show" | null;
+};
+
+// event_participants.role/status/attendance_status — migrations 0004, 0048,
+// 0117 respectively, unchanged since.
+type EventParticipantsRow = {
+  role: "host" | "participant";
+  status: "confirmed" | "cancelled" | "waitlisted" | "offered";
+  attendance_status: "attended" | "no_show" | null;
+};
+type EventParticipantsWrite = {
+  role?: "host" | "participant";
+  status?: "confirmed" | "cancelled" | "waitlisted" | "offered";
+  attendance_status?: "attended" | "no_show" | null;
+};
+
+// notification_deliveries.channel/status — migration 0019. Both required
+// (no default) on Insert; ordinary optionality on Update.
+type NotificationDeliveriesRow = {
+  channel: "sms" | "email";
+  status: "sent" | "failed" | "opted_out" | "no_phone";
+};
+type NotificationDeliveriesInsert = {
+  channel: "sms" | "email";
+  status: "sent" | "failed" | "opted_out" | "no_phone";
+};
+type NotificationDeliveriesUpdate = {
+  channel?: "sms" | "email";
+  status?: "sent" | "failed" | "opted_out" | "no_phone";
+};
+
+// club_invites.role — migration 0131 (widened to include 'staff').
+type ClubInvitesRow = { role: "member" | "pro" | "staff" | "admin" };
+type ClubInvitesWrite = { role?: "member" | "pro" | "staff" | "admin" };
+
+// lesson_requests — status (0069), last_actor_role (0131), lesson_outcome
+// (0070), pricing_basis/unit_price_amount_cents/price_amount_cents (0140),
+// cancellation_policy_state (0186).
+type LessonRequestsRow = {
+  status: "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
+  last_actor_role: "member" | "pro" | "staff" | "admin" | null;
+  lesson_outcome: "completed" | "member_no_show" | "pro_no_show" | "cancelled" | null;
+  pricing_basis: "flat" | "hourly" | null;
+  cancellation_policy_state: "in_policy" | "grace" | "late" | "not_applicable" | null;
+};
+type LessonRequestsWrite = {
+  status?: "pending" | "proposed" | "confirmed" | "declined" | "withdrawn" | "cancelled";
+  last_actor_role?: "member" | "pro" | "staff" | "admin" | null;
+  lesson_outcome?: "completed" | "member_no_show" | "pro_no_show" | "cancelled" | null;
+  pricing_basis?: "flat" | "hourly" | null;
+  cancellation_policy_state?: "in_policy" | "grace" | "late" | "not_applicable" | null;
+};
+
+// lesson_types.pricing_basis — migration 0140 (not null, defaults to 'flat').
+type LessonTypesRow = { pricing_basis: "flat" | "hourly" };
+type LessonTypesWrite = { pricing_basis?: "flat" | "hourly" };
+
+// roster_members.role/status/membership_status — migrations 0131, 0056, 0188.
+type RosterMembersRow = {
+  role: "member" | "pro" | "staff" | "admin";
+  status: "active" | "inactive";
+  membership_status: "active" | "inactive" | "suspended" | "non_member";
+};
+type RosterMembersWrite = {
+  role?: "member" | "pro" | "staff" | "admin";
+  status?: "active" | "inactive";
+  membership_status?: "active" | "inactive" | "suspended" | "non_member";
+};
+
+// waiver_versions.status — migration 0192, unchanged since.
+type WaiverVersionsRow = { status: "draft" | "published" };
+type WaiverVersionsWrite = { status?: "draft" | "published" };
+
+// pilot_inquiries — migration 0105. facility_type/preferred_operating_model
+// have no default, so required on Insert; status/preferred_contact_method
+// have defaults/are nullable, so optional on Insert. All optional on Update.
+type PilotInquiriesRow = {
+  status: "new" | "contacted" | "qualified" | "closed";
+  preferred_contact_method: "email" | "phone" | "either" | null;
+  facility_type:
+    | "private_club"
+    | "country_club"
+    | "hoa_residential"
+    | "public_municipal"
+    | "tennis_academy"
+    | "school_university"
+    | "other";
+  preferred_operating_model: "staff_managed" | "member_self_service" | "not_sure";
+};
+type PilotInquiriesInsert = {
+  status?: "new" | "contacted" | "qualified" | "closed";
+  preferred_contact_method?: "email" | "phone" | "either" | null;
+  facility_type:
+    | "private_club"
+    | "country_club"
+    | "hoa_residential"
+    | "public_municipal"
+    | "tennis_academy"
+    | "school_university"
+    | "other";
+  preferred_operating_model: "staff_managed" | "member_self_service" | "not_sure";
+};
+type PilotInquiriesUpdate = {
+  status?: "new" | "contacted" | "qualified" | "closed";
+  preferred_contact_method?: "email" | "phone" | "either" | null;
+  facility_type?:
+    | "private_club"
+    | "country_club"
+    | "hoa_residential"
+    | "public_municipal"
+    | "tennis_academy"
+    | "school_university"
+    | "other";
+  preferred_operating_model?: "staff_managed" | "member_self_service" | "not_sure";
+};
+
+// calendar_feed_tokens.feed_type — migration 0173. Required (no default) on
+// Insert; optional on Update.
+type CalendarFeedTokensRow = { feed_type: "member_personal" | "pro_lessons" };
+type CalendarFeedTokensInsert = { feed_type: "member_personal" | "pro_lessons" };
+type CalendarFeedTokensUpdate = { feed_type?: "member_personal" | "pro_lessons" };
+
+// notifications / notification_preferences.kind — canonical NotificationKind
+// (see notification-targets.ts), not redeclared here. Both required on
+// Insert (no default column); ordinary optionality on Update.
+type NotificationsRow = { kind: NotificationKind };
+type NotificationsInsertRequired = { kind: NotificationKind };
+type NotificationsUpdateOptional = { kind?: NotificationKind };
+
+// ── member_notes — UNRESOLVED DISCREPANCY, see Phase 45C1 report ──────────
+// member_notes needed NO override as of Phase 45C1A. The Phase 45C1
+// discrepancy noted here previously (repo migration history said `content`/
+// `p_content`; real generation said `body`/`p_body`) is now resolved and
+// VERIFIED (not guessed): a live smoke test confirmed the repository's old
+// p_content call site genuinely fails against the live database ("Something
+// went wrong" — a real, reproduced failure, not a hypothetical), and direct
+// live introspection confirmed body/is_archived/archived_by/p_body as the
+// authoritative contract. Migration 0211 (Phase 45C1A) reconciles the
+// table/write-RPC migration history to match; the application call sites
+// were updated in the same checkpoint (see admin/members/[id]/actions.ts
+// and MemberDetailClient.tsx). member_notes' Row/Insert/Update now flow
+// through from database.types.ts unmodified — it is already correct.
+
+type TablesOverride = {
+  club_settings: Omit<GeneratedTables["club_settings"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["club_settings"]["Row"], ClubSettingsRow>;
+    Insert: ApplyOverride<GeneratedTables["club_settings"]["Insert"], ClubSettingsWrite>;
+    Update: ApplyOverride<GeneratedTables["club_settings"]["Update"], ClubSettingsWrite>;
+  };
+  payments: Omit<GeneratedTables["payments"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["payments"]["Row"], PaymentsRow>;
+    Insert: never;
+    Update: never;
+  };
+  payment_events: Omit<GeneratedTables["payment_events"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["payment_events"]["Row"], PaymentEventsRow>;
+    Insert: never;
+    Update: never;
+  };
+  // payment_disputes — migration 0156. Informational Stripe dispute state,
+  // read-only for `authenticated`; every write goes through
+  // process_stripe_dispute_webhook_event (service-role only). `status` is
+  // deliberately left as plain `string`, not a literal union — Stripe's raw
+  // dispute status has no local CHECK constraint; see disputeConfig.ts's
+  // own presentDisputeStatus for the UI's safe known-value-plus-fallback
+  // mapping.
+  payment_disputes: Omit<GeneratedTables["payment_disputes"], "Insert" | "Update"> & {
+    Insert: never;
+    Update: never;
+  };
+  profiles: Omit<GeneratedTables["profiles"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["profiles"]["Row"], ProfilesRow>;
+    Insert: ApplyOverride<GeneratedTables["profiles"]["Insert"], ProfilesWrite>;
+    Update: ApplyOverride<GeneratedTables["profiles"]["Update"], ProfilesWrite>;
+  };
+  reservations: Omit<GeneratedTables["reservations"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["reservations"]["Row"], ReservationsRow>;
+    Insert: ApplyOverride<GeneratedTables["reservations"]["Insert"], ReservationsWrite>;
+    Update: ApplyOverride<GeneratedTables["reservations"]["Update"], ReservationsWrite>;
+  };
+  events: Omit<GeneratedTables["events"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["events"]["Row"], EventsRow>;
+    Insert: ApplyOverride<GeneratedTables["events"]["Insert"], EventsWrite>;
+    Update: ApplyOverride<GeneratedTables["events"]["Update"], EventsWrite>;
+  };
+  programs: Omit<GeneratedTables["programs"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["programs"]["Row"], ProgramsRow>;
+    Insert: ApplyOverride<GeneratedTables["programs"]["Insert"], ProgramsInsert>;
+    Update: ApplyOverride<GeneratedTables["programs"]["Update"], ProgramsUpdate>;
+  };
+  program_enrollments: Omit<GeneratedTables["program_enrollments"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["program_enrollments"]["Row"], ProgramEnrollmentsRow>;
+    Insert: ApplyOverride<GeneratedTables["program_enrollments"]["Insert"], ProgramEnrollmentsInsert>;
+    Update: ApplyOverride<GeneratedTables["program_enrollments"]["Update"], ProgramEnrollmentsUpdate>;
+  };
+  event_guests: Omit<GeneratedTables["event_guests"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["event_guests"]["Row"], EventGuestsRow>;
+    Insert: ApplyOverride<GeneratedTables["event_guests"]["Insert"], EventGuestsWrite>;
+    Update: ApplyOverride<GeneratedTables["event_guests"]["Update"], EventGuestsWrite>;
+  };
+  event_participants: Omit<GeneratedTables["event_participants"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["event_participants"]["Row"], EventParticipantsRow>;
+    Insert: ApplyOverride<GeneratedTables["event_participants"]["Insert"], EventParticipantsWrite>;
+    Update: ApplyOverride<GeneratedTables["event_participants"]["Update"], EventParticipantsWrite>;
+  };
+  notification_deliveries: Omit<GeneratedTables["notification_deliveries"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["notification_deliveries"]["Row"], NotificationDeliveriesRow>;
+    Insert: ApplyOverride<GeneratedTables["notification_deliveries"]["Insert"], NotificationDeliveriesInsert>;
+    Update: ApplyOverride<GeneratedTables["notification_deliveries"]["Update"], NotificationDeliveriesUpdate>;
+  };
+  club_invites: Omit<GeneratedTables["club_invites"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["club_invites"]["Row"], ClubInvitesRow>;
+    Insert: ApplyOverride<GeneratedTables["club_invites"]["Insert"], ClubInvitesWrite>;
+    Update: ApplyOverride<GeneratedTables["club_invites"]["Update"], ClubInvitesWrite>;
+  };
+  lesson_requests: Omit<GeneratedTables["lesson_requests"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["lesson_requests"]["Row"], LessonRequestsRow>;
+    Insert: ApplyOverride<GeneratedTables["lesson_requests"]["Insert"], LessonRequestsWrite>;
+    Update: ApplyOverride<GeneratedTables["lesson_requests"]["Update"], LessonRequestsWrite>;
+  };
+  lesson_types: Omit<GeneratedTables["lesson_types"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["lesson_types"]["Row"], LessonTypesRow>;
+    Insert: ApplyOverride<GeneratedTables["lesson_types"]["Insert"], LessonTypesWrite>;
+    Update: ApplyOverride<GeneratedTables["lesson_types"]["Update"], LessonTypesWrite>;
+  };
+  roster_members: Omit<GeneratedTables["roster_members"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["roster_members"]["Row"], RosterMembersRow>;
+    Insert: ApplyOverride<GeneratedTables["roster_members"]["Insert"], RosterMembersWrite>;
+    Update: ApplyOverride<GeneratedTables["roster_members"]["Update"], RosterMembersWrite>;
+  };
+  waiver_versions: Omit<GeneratedTables["waiver_versions"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["waiver_versions"]["Row"], WaiverVersionsRow>;
+    Insert: ApplyOverride<GeneratedTables["waiver_versions"]["Insert"], WaiverVersionsWrite>;
+    Update: ApplyOverride<GeneratedTables["waiver_versions"]["Update"], WaiverVersionsWrite>;
+  };
+  pilot_inquiries: Omit<GeneratedTables["pilot_inquiries"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["pilot_inquiries"]["Row"], PilotInquiriesRow>;
+    Insert: ApplyOverride<GeneratedTables["pilot_inquiries"]["Insert"], PilotInquiriesInsert>;
+    Update: ApplyOverride<GeneratedTables["pilot_inquiries"]["Update"], PilotInquiriesUpdate>;
+  };
+  calendar_feed_tokens: Omit<GeneratedTables["calendar_feed_tokens"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["calendar_feed_tokens"]["Row"], CalendarFeedTokensRow>;
+    Insert: ApplyOverride<GeneratedTables["calendar_feed_tokens"]["Insert"], CalendarFeedTokensInsert>;
+    Update: ApplyOverride<GeneratedTables["calendar_feed_tokens"]["Update"], CalendarFeedTokensUpdate>;
+  };
+  notifications: Omit<GeneratedTables["notifications"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["notifications"]["Row"], NotificationsRow>;
+    Insert: ApplyOverride<GeneratedTables["notifications"]["Insert"], NotificationsInsertRequired>;
+    Update: ApplyOverride<GeneratedTables["notifications"]["Update"], NotificationsUpdateOptional>;
+  };
+  notification_preferences: Omit<GeneratedTables["notification_preferences"], "Row" | "Insert" | "Update"> & {
+    Row: ApplyOverride<GeneratedTables["notification_preferences"]["Row"], NotificationsRow>;
+    Insert: ApplyOverride<GeneratedTables["notification_preferences"]["Insert"], NotificationsInsertRequired>;
+    Update: ApplyOverride<GeneratedTables["notification_preferences"]["Update"], NotificationsUpdateOptional>;
+  };
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Function overrides.
+//
+// Two evidence-backed categories:
+//
+//   A. REQUIRED-BUT-NULLABLE Args. The blanket WidenOptionalArgsToNullable
+//      rule above only widens OPTIONAL (`?`) parameters — it cannot detect
+//      a REQUIRED parameter that is nonetheless genuinely nullable (no SQL
+//      default, but the function body still branches on `is null`, or the
+//      app has always passed `null` through it). The generator gives no
+//      structural signal to find these automatically; every one below was
+//      found by actually adopting the generated file and fixing every
+//      resulting compile error against real call sites — this is believed
+//      to be the full set as of this checkpoint, not a partial sample.
+//   B. RETURNS literal-union corrections, for the same reason as the Table
+//      overrides above (CHECK-constrained domains the generator can only
+//      type as `string`), applied to composite RETURNS TABLE(...) shapes
+//      instead of table columns.
+//
+// Verified by comparing database.types.ts against each RPC's live SQL
+// signature and, where applicable, its actual application call site.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Shared literal unions, reused across multiple RPCs returning the same
+// domain value (kept as named aliases here so each is written once).
+type PaymentLedgerStatus =
+  | "unpaid"
+  | "partially_paid"
+  | "paid"
+  | "overpaid"
+  | "partially_refunded"
+  | "refunded"
+  | "waived"
+  | "void";
+type RefundAttemptStatus = "pending" | "requires_action" | "succeeded" | "failed" | "canceled";
+type MemberWaiverStatus = "not_required" | "current" | "outdated" | "never_accepted";
+type MembershipStatus = "active" | "inactive" | "suspended" | "non_member";
+type CardPaymentsStatus = "active" | "pending" | "restricted" | "unsupported";
+type ProgramEnrollmentRowStatus = "enrolled" | "waitlisted" | "offered" | "cancelled";
+
+/** Applies a Returns override to a function whose Returns is `Row[]`.
+ * Uses indexed access (`Fn["Returns"][number]`), not `extends {Returns:
+ * (infer Row)[]}` — GeneratedFunctions' entries are intersection types
+ * (from the blanket Args-widening mapped type above), and conditional-type
+ * inference over an intersection does not reliably unwrap to the element
+ * type; indexed access does. */
+type OverrideArrayReturns<Fn extends { Returns: readonly unknown[] }, Override> = Omit<Fn, "Returns"> & {
+  Returns: Array<ApplyOverride<Fn["Returns"][number], Override>>;
+};
+/** Same as OverrideArrayReturns, for a function whose Returns is a single
+ * object (RETURNS a record, not RETURNS TABLE/SETOF — no `[]`). */
+type OverrideReturns<Fn extends { Returns: object }, Override> = Omit<Fn, "Returns"> & {
+  Returns: ApplyOverride<Fn["Returns"], Override>;
+};
+/** Applies an Args override to a function, leaving Returns untouched. Same
+ * indexed-access reasoning as OverrideArrayReturns above. */
+type OverrideArgs<Fn extends { Args: unknown; Returns: unknown }, Override> = {
+  Args: ApplyOverride<Fn["Args"], Override>;
+  Returns: Fn["Returns"];
+};
+
+// One shared status override, applied identically across every RPC that
+// returns a program_enrollments row (all confirmed via database.types.ts to
+// share this exact Returns shape).
+type ProgramEnrollmentStatusOverride = { status: ProgramEnrollmentRowStatus };
+
+type FunctionsOverride = {
+  // ── Category A: required-but-nullable Args ──────────────────────────────
+  // Live SQL (migration 0210) declares `p_recipient_user_ids uuid[]` with no
+  // NOT NULL/default and explicitly branches on `is null`; the call site
+  // (communicationsActions.ts) passes null for "all" mode.
+  send_announcement_v2: OverrideArgs<
+    GeneratedFunctions["send_announcement_v2"],
+    { p_recipient_user_ids: string[] | null }
+  >;
+  // Same p_recipient_user_ids nullability fact, same "all" mode reason —
+  // this is send_announcement_v2's own read-only preview counterpart
+  // (0209), sharing its audience-mode contract exactly.
+  preview_announcement_recipients: OverrideArgs<
+    GeneratedFunctions["preview_announcement_recipients"],
+    { p_recipient_user_ids: string[] | null }
+  >;
+  // mark_attendance/_roster_participant/_guest — p_attendance_status is
+  // cleared back to null (no attendance recorded) as a normal, supported
+  // action, not just set.
+  mark_attendance: OverrideArgs<GeneratedFunctions["mark_attendance"], { p_attendance_status: string | null }>;
+  mark_attendance_roster_participant: OverrideArgs<
+    GeneratedFunctions["mark_attendance_roster_participant"],
+    { p_attendance_status: string | null }
+  >;
+  mark_attendance_guest: OverrideArgs<
+    GeneratedFunctions["mark_attendance_guest"],
+    { p_attendance_status: string | null }
+  >;
+  // Price-override RPCs — null is the documented "clear the override, fall
+  // back to the type/court default" input, not merely an omittable default.
+  set_event_price_override: OverrideArgs<
+    GeneratedFunctions["set_event_price_override"],
+    { p_price_amount_cents: number | null }
+  >;
+  set_event_type_price: OverrideArgs<
+    GeneratedFunctions["set_event_type_price"],
+    { p_default_price_amount_cents: number | null }
+  >;
+  set_program_price: OverrideArgs<GeneratedFunctions["set_program_price"], { p_price_amount_cents: number | null }>;
+  create_event_with_price_override: OverrideArgs<
+    GeneratedFunctions["create_event_with_price_override"],
+    { p_price_amount_cents: number | null }
+  >;
+  // set_member_notes — clearing the free-text notes field is null, not "".
+  set_member_notes: OverrideArgs<GeneratedFunctions["set_member_notes"], { p_notes: string | null }>;
+  // update_club_pricing — null means "no default court rate configured".
+  update_club_pricing: OverrideArgs<
+    GeneratedFunctions["update_club_pricing"],
+    {
+      p_default_court_hourly_rate_cents: number | null;
+      p_default_court_hourly_rate_non_member_cents: number | null;
+    }
+  >;
+  // upsert_court_rate_period — p_id null means "create a new period"; only
+  // non-null on the edit-existing-period path.
+  upsert_court_rate_period: OverrideArgs<
+    GeneratedFunctions["upsert_court_rate_period"],
+    { p_id: string | null }
+  >;
+  // cancel_member_lesson_confirmed — a cancellation reason is optional.
+  cancel_member_lesson_confirmed: OverrideArgs<
+    GeneratedFunctions["cancel_member_lesson_confirmed"],
+    { p_reason: string | null }
+  >;
+  // set_court_hourly_rate — a non-member-rate-preserving call passes through
+  // the current (possibly null/"no override set") member rate unchanged.
+  set_court_hourly_rate: OverrideArgs<
+    GeneratedFunctions["set_court_hourly_rate"],
+    { p_hourly_rate_cents: number | null }
+  >;
+  // Stripe webhook processors — a PaymentIntent/evidence-due-by date may
+  // genuinely be absent on the Stripe object being processed; the RPCs'
+  // own bodies treat this as a valid, expected input (never guessed or
+  // defaulted by the caller — see route.ts's own comments).
+  process_stripe_payment_event: OverrideArgs<
+    GeneratedFunctions["process_stripe_payment_event"],
+    { p_stripe_payment_intent_id: string | null }
+  >;
+  // p_refund_attempt_id — resolved from an optional Stripe metadata key
+  // (refund.metadata?.court_time_refund_attempt_id ?? null); genuinely
+  // absent for a refund this app didn't initiate.
+  process_stripe_refund_webhook_event: OverrideArgs<
+    GeneratedFunctions["process_stripe_refund_webhook_event"],
+    { p_stripe_payment_intent_id: string | null; p_refund_attempt_id: string | null }
+  >;
+  process_stripe_dispute_webhook_event: OverrideArgs<
+    GeneratedFunctions["process_stripe_dispute_webhook_event"],
+    { p_stripe_payment_intent_id: string | null; p_evidence_due_by: string | null }
+  >;
+
+  // ── Category B: Returns literal-union corrections ────────────────────────
+  // Migration 0210's own comment documents genuine null cases for batch_id/
+  // body; audience_mode is CHECK-constrained ('all'/'specific') like every
+  // other domain column the generator can only type as `string`.
+  get_communications_activity: OverrideArrayReturns<
+    GeneratedFunctions["get_communications_activity"],
+    { batch_id: string | null; body: string | null; audience_mode: "all" | "specific" }
+  >;
+  get_my_member_waiver_status: OverrideArrayReturns<
+    GeneratedFunctions["get_my_member_waiver_status"],
+    { status: MemberWaiverStatus }
+  >;
+  get_member_waiver_status: OverrideArrayReturns<
+    GeneratedFunctions["get_member_waiver_status"],
+    { status: MemberWaiverStatus }
+  >;
+  get_members: OverrideArrayReturns<GeneratedFunctions["get_members"], { membership_status: MembershipStatus | null }>;
+  // Same nullable-membership fields as get_members, plus the FK id/name
+  // pair (migration 0191) — a member need not have a membership type
+  // assigned at all.
+  get_admin_member_detail: OverrideArrayReturns<
+    GeneratedFunctions["get_admin_member_detail"],
+    {
+      membership_status: MembershipStatus | null; // 0191 — Phase 42C-3A
+      membership_type_id: string | null; // 0191 — Phase 42C-3A
+      membership_type_name: string | null; // 0191 — Phase 42C-3A
+    }
+  >;
+  get_roster_members: OverrideArrayReturns<
+    GeneratedFunctions["get_roster_members"],
+    { membership_status: MembershipStatus }
+  >;
+  // unresolved_prior is itself an array of small ledger-status rows nested
+  // inside the outer Returns row — the generator can only see it as opaque
+  // Json (a jsonb-aggregated sub-array in the SQL body, not a flat RETURNS
+  // TABLE column), so its element shape needs the same treatment as the
+  // outer row, applied by hand since it's one level deeper than
+  // OverrideArrayReturns reaches.
+  get_payment_states_for_domains: OverrideArrayReturns<
+    GeneratedFunctions["get_payment_states_for_domains"],
+    {
+      current_status: PaymentLedgerStatus;
+      unresolved_prior: {
+        payment_id: string;
+        obligation_cycle: number;
+        amount_due_cents: number;
+        amount_paid_cents: number;
+        currency: string;
+        status: string;
+      }[];
+    }
+  >;
+  get_club_stripe_connect_status: OverrideArrayReturns<
+    GeneratedFunctions["get_club_stripe_connect_status"],
+    { card_payments_status: CardPaymentsStatus }
+  >;
+  // begin_refund_request_execution's own Returns shape is identical to
+  // open_payment_refund_attempt's (refundActions.ts's own comment) — both
+  // feed the same shared executeOnlineRefund tail.
+  open_payment_refund_attempt: OverrideArrayReturns<
+    GeneratedFunctions["open_payment_refund_attempt"],
+    { status: RefundAttemptStatus }
+  >;
+  begin_refund_request_execution: OverrideArrayReturns<
+    GeneratedFunctions["begin_refund_request_execution"],
+    { status: RefundAttemptStatus }
+  >;
+  get_pending_refund_requests_for_payments: OverrideArrayReturns<
+    GeneratedFunctions["get_pending_refund_requests_for_payments"],
+    { attempt_status: RefundAttemptStatus | null }
+  >;
+  // Every RPC below returns a program_enrollments row — same override,
+  // applied once per function (see ProgramEnrollmentStatusOverride above).
+  join_program: OverrideReturns<GeneratedFunctions["join_program"], ProgramEnrollmentStatusOverride>;
+  leave_program: OverrideReturns<GeneratedFunctions["leave_program"], ProgramEnrollmentStatusOverride>;
+  accept_program_waitlist_offer: OverrideReturns<
+    GeneratedFunctions["accept_program_waitlist_offer"],
+    ProgramEnrollmentStatusOverride
+  >;
+  decline_program_waitlist_offer: OverrideReturns<
+    GeneratedFunctions["decline_program_waitlist_offer"],
+    ProgramEnrollmentStatusOverride
+  >;
+  add_program_member: OverrideReturns<
+    GeneratedFunctions["add_program_member"],
+    ProgramEnrollmentStatusOverride
+  >;
+  remove_program_member: OverrideReturns<
+    GeneratedFunctions["remove_program_member"],
+    ProgramEnrollmentStatusOverride
+  >;
+  add_program_roster_member: OverrideReturns<
+    GeneratedFunctions["add_program_roster_member"],
+    ProgramEnrollmentStatusOverride
+  >;
+  remove_program_roster_member: OverrideReturns<
+    GeneratedFunctions["remove_program_roster_member"],
+    ProgramEnrollmentStatusOverride
+  >;
+  force_confirm_program_roster_member: OverrideReturns<
+    GeneratedFunctions["force_confirm_program_roster_member"],
+    ProgramEnrollmentStatusOverride
+  >;
+
+  // add_member_note/update_member_note needed NO override as of Phase
+  // 45C1A — see the TablesOverride comment above for the full resolution.
+  // Their Args now correctly flow through as generated (p_body).
+  // get_member_notes needs one narrow Returns correction, immediately
+  // below.
+  //
+  // add_member_note's Returns is genuinely weaker in generated output than
+  // it needs to be, though: the live function returns `json` (opaque to
+  // Postgres' own type system — a SQL `json`/`jsonb` return type carries no
+  // structural information for any tool to introspect), so generation can
+  // only ever report `Json`. Migration 0211's `add_member_note` body
+  // constructs its `json_build_object(...)` result from an explicit,
+  // fixed field list — every member_notes column except `club_id` — so
+  // that exact field list is narrowly refined here, DERIVED from
+  // GeneratedTables["member_notes"]["Row"] via Pick (not manually retyped)
+  // so it can never drift from the table's own real column types, and
+  // does NOT claim club_id is present, matching migration 0211's
+  // json_build_object call exactly.
+  // Not expressed via OverrideReturns (that helper merges the override into
+  // Fn["Returns"] with ApplyOverride, which only makes sense against an
+  // existing object/array shape — generated Returns here is the generic
+  // `Json` scalar union, since a SQL `json` return type carries no
+  // structural information to introspect). This replaces Returns wholesale
+  // instead of refining it.
+  add_member_note: Omit<GeneratedFunctions["add_member_note"], "Returns"> & {
+    Returns: Pick<
+      GeneratedTables["member_notes"]["Row"],
+      | "id"
+      | "member_id"
+      | "author_id"
+      | "author_name_snapshot"
+      | "body"
+      | "is_archived"
+      | "created_at"
+      | "updated_at"
+      | "archived_at"
+      | "archived_by"
+    >;
+  };
+
+  // get_member_notes (RETURNS TABLE, migration 0132) — the generator
+  // reports author_id/archived_at/archived_by as non-null `string`, but
+  // these are the SAME three member_notes columns that are genuinely
+  // nullable on the table itself (author_id: the author's profile may have
+  // been deleted since; archived_at/archived_by: null for any note that
+  // has never been archived). This is the same RETURNS-TABLE-nullability
+  // generator limitation documented at the top of this file, corrected
+  // here narrowly for just these three fields, DERIVED from
+  // GeneratedTables["member_notes"]["Row"] via Pick (not manually retyped)
+  // so it can never drift from the table's own real nullability. Every
+  // other generated field — including the computed `author_name` (a
+  // coalesce over a LEFT JOIN, not a table column) — flows through
+  // unmodified via OverrideArrayReturns/ApplyOverride. Args are untouched
+  // (OverrideArrayReturns only replaces Returns).
+  get_member_notes: OverrideArrayReturns<
+    GeneratedFunctions["get_member_notes"],
+    Pick<GeneratedTables["member_notes"]["Row"], "author_id" | "archived_at" | "archived_by">
+  >;
+
+  // restore_member_note needed NO override as of Phase 45C1A3 — migration
+  // 0212 is now applied and database.types.ts regenerated, so it flows
+  // through from GeneratedFunctions unmodified: { Args: { p_note_id: string
+  // }; Returns: undefined }, the exact same shape the generator already
+  // produces for archive_member_note (a `returns void` SQL function always
+  // generates as `Returns: undefined`, never a hand-written `void`). The
+  // Phase 45C1A2 forward declaration that stood in for this before 0212
+  // existed live has been removed.
+
+  // get_member_upcoming_activity/get_member_activity_history — Phase 45C1B.
+  // The previous full hand-declared overrides here (Phase 45C1A debt)
+  // modeled a stale, never-real flat shape (pro_first_name/pro_last_name,
+  // proposed_starts_at/ends_at/court_name — none of these are actual raw
+  // RPC columns) that existed only to keep the still-unfixed application
+  // code compiling. Application code now reads activity rows through
+  // normalizeMemberUpcomingActivity/normalizeMemberHistoryActivity
+  // (src/app/(app)/admin/members/[id]/activityNormalization.ts), which
+  // takes these RPCs' REAL raw generated row shape as input and safely
+  // extracts the documented `details` jsonb keys itself — so
+  // GeneratedFunctions' raw structure is now the accurate source of truth
+  // and these no longer need a full override.
+  //
+  // Two narrow corrections remain genuinely necessary, both confirmed
+  // directly against migration 0132's SQL, not guessed:
+  //   1. `activity_type` is a three-way `'reservation'|'event'|'lesson'`
+  //      text literal tag (each UNION ALL branch casts a string literal),
+  //      which the generator — same as every other CHECK/literal-domain
+  //      column in this file — can only ever type as plain `string`.
+  //      Refined here so the normalizer needs no unsafe `as` cast to
+  //      produce UpcomingItem/HistoryItem's own literal-union
+  //      `activity_type` field.
+  //   2. `attendance_status`/`outcome` are the same RETURNS-TABLE-
+  //      nullability generator limitation already documented and
+  //      corrected once for get_member_notes above: each branch of the
+  //      UNION explicitly selects `null::text as attendance_status` (every
+  //      branch except event) or `null::text as outcome` (every branch
+  //      except lesson) — genuinely nullable per-row, but the generator
+  //      reports both as non-null `string` regardless.
+  get_member_upcoming_activity: OverrideArrayReturns<
+    GeneratedFunctions["get_member_upcoming_activity"],
+    {
+      activity_type: "reservation" | "event" | "lesson";
+      attendance_status: string | null;
+      outcome: string | null;
+    }
+  >;
+  get_member_activity_history: OverrideArrayReturns<
+    GeneratedFunctions["get_member_activity_history"],
+    {
+      activity_type: "reservation" | "event" | "lesson";
+      attendance_status: string | null;
+      outcome: string | null;
+    }
+  >;
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// Assembled Database type — everything not explicitly overridden above
+// flows straight through from the generated structure, including
+// __InternalSupabase, Views, Enums, CompositeTypes, Relationships, and
+// every table/function this file doesn't mention at all.
+// ─────────────────────────────────────────────────────────────────────────
+
+export type Database = Omit<GeneratedDatabase, "public"> & {
+  public: Omit<GeneratedDatabase["public"], "Tables" | "Functions"> & {
+    Tables: Omit<GeneratedTables, keyof TablesOverride> & TablesOverride;
+    Functions: Omit<GeneratedFunctions, keyof FunctionsOverride> & FunctionsOverride;
   };
 };

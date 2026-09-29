@@ -181,8 +181,7 @@ export default async function AdminPaymentsPage() {
       ? supabase.from("reservations").select("id, court_id, starts_at, ends_at, status").in("id", idsByDomain.reservation)
       : Promise.resolve({ data: [] }),
     idsByDomain.lesson_request.length > 0
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (supabase.from as any)("lesson_requests").select("id, pro_id, proposed_starts_at, proposed_ends_at, status").in("id", idsByDomain.lesson_request)
+      ? supabase.from("lesson_requests").select("id, pro_id, proposed_starts_at, proposed_ends_at, status").in("id", idsByDomain.lesson_request)
       : Promise.resolve({ data: [] }),
     idsByDomain.event_participant.length > 0
       ? supabase.from("event_participants").select("id, event_id, status").in("id", idsByDomain.event_participant)
@@ -355,16 +354,8 @@ export default async function AdminPaymentsPage() {
         // Written as literal strings (not spread from COLLECTION_EVENT_TYPES)
         // so this stays a plain, readable filter list — COLLECTION_EVENT_TYPES
         // stays a plain Set<string> for the pure helper's own membership
-        // checks, never reused here. The `as any` is a narrow, pre-existing-
-        // pattern workaround (mirrors this same file's own lesson_requests
-        // cast above): src/lib/db/types.ts's hand-maintained event_type
-        // union predates migrations 0150/0153 and is missing
-        // online_payment_recorded/online_refund_recorded, even though both
-        // are valid values under payment_events' own CHECK constraint —
-        // a generated-types staleness issue, not a runtime concern, and out
-        // of scope to regenerate in this checkpoint.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"] as any)
+        // checks, never reused here.
+        .in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"])
         .range(offset, offset + limit - 1);
       return { data: result.data, error: result.error };
     });

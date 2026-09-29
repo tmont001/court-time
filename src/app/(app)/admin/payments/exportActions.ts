@@ -200,10 +200,7 @@ export async function exportOutstandingBalancesCsv(
       .select("id, payment_id, event_type, method, reverses_event_id, occurred_at")
       .eq("club_id", clubId)
       .in("payment_id", chunkIds)
-      // Narrow, pre-existing-pattern workaround for db/types.ts's stale
-      // event_type union (mirrors page.tsx's own identical cast).
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"] as any)
+      .in("event_type", ["manual_payment_recorded", "online_payment_recorded", "reverse_payment_event"])
       .order("id", { ascending: true })
       .range(offset, offset + limit - 1);
     return { data: result.data, error: result.error };
@@ -322,8 +319,7 @@ export async function exportPaymentActivityCsv(
         .from("payment_events")
         .select("id, payment_id, event_type, amount_cents, method, external_reference, notes, reverses_event_id, actor_id, occurred_at")
         .eq("club_id", clubId)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .in("event_type", PAYMENT_ACTIVITY_EVENT_TYPES as any)
+        .in("event_type", PAYMENT_ACTIVITY_EVENT_TYPES)
         .order("occurred_at", { ascending: true })
         .order("id", { ascending: true });
       if (range.startUTC) query = query.gte("occurred_at", range.startUTC);

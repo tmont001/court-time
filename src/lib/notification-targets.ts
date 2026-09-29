@@ -36,14 +36,36 @@
 // decides who may see what, so it never falls back due to an authorization
 // concern (there is none to evaluate here).
 
-import type { Json } from "@/lib/db/types";
+// Json is imported from the GENERATED file directly, not from
+// @/lib/db/types (the domain layer) — that file imports NotificationKind
+// FROM this one (see below) to make this the single canonical declaration,
+// so this module must not import anything back from it, or the two files
+// would form a circular import.
+import type { Json } from "@/lib/db/database.types";
 import { isMember } from "@/lib/auth/roles";
 
-/** The 21 kinds currently produced (notifications_kind_check, migration
- * 0197 — the last migration to touch that constraint; 0099 through
- * lesson_admin_requested, Phase 38B adds refund_request_rejected/
+/** THE canonical declaration of this domain (notifications_kind_check,
+ * migration 0204 — the last migration to touch that constraint; 0099
+ * through lesson_admin_requested, Phase 38B adds refund_request_rejected/
  * refund_request_completed (0181) and refund_request_submitted (0183),
- * Phase 43B-3F adds member_waiver_requires_acceptance (0197).
+ * Phase 43B-3F adds member_waiver_requires_acceptance (0197), Phase 39B-2
+ * adds reservation_player_activity (0204).
+ *
+ * Phase 45C1: src/lib/db/types.ts's notifications.kind / notification_
+ * preferences.kind column overrides import and use this exact type rather
+ * than re-declaring it — this used to be two independently hand-written
+ * copies connected only by a compile-time equality guard, and the two
+ * drifted apart once already (types.ts fell 5 kinds behind before the
+ * Phase 45C audit caught it) before that guard even existed. With one
+ * declaration there is nothing left for a guard to compare, so it was
+ * removed rather than kept as dead code.
+ *
+ * This still does NOT independently verify that this list matches Postgres
+ * — only `pnpm db:types:check` does that, and only for STRUCTURAL drift on
+ * the generated side, not for whether this hand-written list is complete.
+ * If a migration adds/removes a value from notifications_kind_check, this
+ * union must be updated by hand in the same change.
+ *
  * Adding a kind here without a matching NOTIFICATION_TARGET_MAP entry is a
  * compile error. */
 export type NotificationKind =

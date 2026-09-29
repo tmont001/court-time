@@ -33,3 +33,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# supabase CLI (used ad hoc via `pnpm dlx supabase`, not a project dependency)
+supabase/.temp/
+
+# Phase 45C1 — src/lib/db/database.types.ts is the generated structural
+# source of truth and MUST NOT be ignored (it is committed, see README.md,
+# "Database types: generated structural source + domain layer"). Its
+# verification comparison copy is written to a private mktemp path by
+# scripts/db-types-check.sh and cleaned up automatically — never checked
+# into this repo, so there is nothing to list here for it.

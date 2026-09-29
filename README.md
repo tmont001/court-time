@@ -113,15 +113,39 @@ Open [http://localhost:3000](http://localhost:3000). You will be redirected to `
 
 ---
 
-## 7. Regenerate Supabase types after future migrations
+## 7. Database types: generated structural source + domain layer
 
-After any schema change, regenerate `src/lib/db/types.ts`:
+Two files, two different jobs:
+
+- **`src/lib/db/database.types.ts`** — real `supabase gen types` output, **committed**, **never hand-edited**. It reflects raw database STRUCTURE only: every public table and function the schema has, regardless of RLS/grants. (`club_memberships`, for example, appears here because it genuinely exists — even though it's fully locked down at the RLS/grant layer and unreachable via `.from()` by any caller. Type presence never implies database permission; RLS/EXECUTE grants/SECURITY DEFINER authorization are audited separately.)
+- **`src/lib/db/types.ts`** — a small, **hand-maintained** domain/compatibility layer over the generated file. Application code keeps importing `Database`/`Json` from here (`@/lib/db/types`), exactly as before — this split changed zero import paths anywhere else in the app. It layers on:
+  - **Literal string unions for CHECK-constrained columns.** Supabase's generator can only produce a literal union from a native Postgres ENUM type — this schema defines zero native enums, so every status/role/kind column generates as plain `string`. `types.ts` restores the stronger type for columns where that matters (`profiles.role`, `reservations.status`, `notifications.kind`, etc.), each verified against its current CHECK constraint.
+  - **A handful of confirmed Args/Returns nullability corrections**, where the generator provably under- or over-reports nullability (it never marks a function argument as accepting `null`, regardless of whether the SQL genuinely does).
+  - Two deliberate `Insert`/`Update` lockouts (`payments`, `payment_events`) preserving an intentional domain rule: these are append-only/rollup ledger tables the app must never write to directly, only via RPCs.
+
+  Everything **not** explicitly overridden flows straight through from the generated file automatically — new tables/functions added by a future regeneration appear with no manual copying required.
+
+**Regenerating (only when you intend to update the committed generated file):**
 
 ```bash
-pnpm dlx supabase gen types typescript --project-id <your-project-id> > src/lib/db/types.ts
+# One-time setup: log in once (opens a browser), or set SUPABASE_ACCESS_TOKEN
+pnpm dlx supabase@2.118.0 login
+
+# Your project ref is the subdomain in its dashboard URL
+# (https://supabase.com/dashboard/project/<ref>) — not a secret, but keep it
+# out of shell history if you'd rather not.
+SUPABASE_PROJECT_REF=<your-project-ref> pnpm run db:types:generate
 ```
 
-The placeholder `src/lib/db/types.ts` already contains hand-written types that match Phase 1's schema, so the build passes before first generation.
+This overwrites `src/lib/db/database.types.ts` directly — review the diff, and re-check `src/lib/db/types.ts`'s overrides still make sense (a migration can add/remove a CHECK-constrained value that a literal-union override needs to track by hand) before committing.
+
+**Verifying without touching anything (CI-safe, local-safe):**
+
+```bash
+SUPABASE_PROJECT_REF=<your-project-ref> pnpm run db:types:check
+```
+
+`db:types:check` (`scripts/db-types-check.sh`) generates a real, disposable comparison file to a private temp path, diffs it against the committed `database.types.ts`, prints the diff and exits non-zero on any drift, and always cleans up the temp file — it **never** writes to `database.types.ts` itself. It fails loudly (not silently) if `SUPABASE_PROJECT_REF` is unset or the CLI isn't authenticated. Both commands pin the same exact Supabase CLI version (`2.118.0`) so they can never disagree about output shape due to a version skew between them. Neither command commits or requires committing an access token.
 
 ---
 

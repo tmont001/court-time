@@ -460,24 +460,45 @@ describe("DEPLOYMENT SAFETY / scope discipline", () => {
   });
 });
 
+// Phase 45C1 — src/lib/db/types.ts was rewritten into a thin domain layer
+// over the GENERATED src/lib/db/database.types.ts. send_announcement_v2's
+// canonical four-argument shape is no longer hand-declared in full — only
+// p_recipient_user_ids' nullability needs a FunctionsOverride entry; p_title/
+// p_audience_mode flow through unchanged from the generated file. The old
+// "this hand-maintained Functions map is keyed by function NAME ONLY and
+// cannot express two overloads" comment explained a limitation of the
+// previous full-hand-declaration approach specifically — it no longer
+// applies (there's nothing left to hand-declare that could misrepresent an
+// overload), and the underlying retirement fact it was protecting
+// (migration 0210 dropped the 2-arg wrapper) is already documented in that
+// migration itself, not duplicated here.
 describe("db/types.ts", () => {
-  it("send_announcement_v2's hand-maintained type describes the canonical four-argument shape", () => {
+  it("send_announcement_v2's FunctionsOverride entry covers the canonical four-argument shape's one real correction", () => {
     const s = readSource(TYPES_PATH);
-    const idx = s.indexOf("send_announcement_v2: {");
+    const idx = s.indexOf("send_announcement_v2: OverrideArgs<");
     expect(idx).toBeGreaterThan(-1);
-    const block = s.slice(idx, idx + 400);
-    expect(block).toContain("p_audience_mode:       string;");
-    expect(block).toContain("p_recipient_user_ids:  string[] | null;");
+    const block = s.slice(idx, idx + 200);
+    expect(block).toContain("p_recipient_user_ids: string[] | null");
+    const genSrc = readSource("src/lib/db/database.types.ts");
+    const genIdx = genSrc.indexOf("send_announcement_v2: {");
+    expect(genSrc.slice(genIdx, genIdx + 300)).toContain("p_audience_mode: string");
   });
 
-  it("documented the two-argument overload limitation at the time (Phase 44D later retired that wrapper entirely — see phase44dHistorySecurityCloseout.regression.test.ts — so the comment now describes that retirement instead; either way, no misleading union type was ever fabricated)", () => {
-    const s = readSource(TYPES_PATH);
-    expect(s).toMatch(/is keyed by function NAME ONLY and cannot express\s*\n\s*\/\/ two distinct overloads under one key/);
+  it("migration 0210 (not types.ts) documents the two-argument overload's retirement", () => {
+    const s = readSource("supabase/migrations/0210_phase44d_communications_history_security_closeout.sql");
+    expect(s).toMatch(/drop function public\.send_announcement_v2\(text, text\)/);
   });
 
   it("preview_announcement_recipients and get_announcement_recipient_candidates entries exist", () => {
     const s = readSource(TYPES_PATH);
-    expect(s).toContain("preview_announcement_recipients: {");
-    expect(s).toContain("get_announcement_recipient_candidates: {");
+    // Phase 45C1: types.ts is now a thin domain layer over the GENERATED
+    // database.types.ts. preview_announcement_recipients needed a
+    // FunctionsOverride entry (p_recipient_user_ids nullability, same fact
+    // as send_announcement_v2's), so its key is followed by
+    // `: OverrideArgs<...>`, not a literal `: {`.
+    // get_announcement_recipient_candidates needed no override at all — it
+    // isn't hand-declared in types.ts anymore, only in the generated file.
+    expect(s).toContain("preview_announcement_recipients: OverrideArgs<");
+    expect(readSource("src/lib/db/database.types.ts")).toContain("get_announcement_recipient_candidates: {");
   });
 });

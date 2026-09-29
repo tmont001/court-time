@@ -389,22 +389,45 @@ describe("/help page.tsx — conditional rendering, whitespace-pre-wrap, no mark
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("hand-maintained DB types — club_settings.rules_and_policies", () => {
+// Phase 45C1 — src/lib/db/types.ts was rewritten from a full hand-maintained
+// copy of the schema into a thin domain layer over the GENERATED
+// src/lib/db/database.types.ts (never hand-edited — see README.md). Neither
+// club_settings.rules_and_policies nor update_club_rules_and_policies needed
+// an override in that rewrite: real generation already produces
+// `rules_and_policies: string | null` correctly (a genuinely nullable text
+// column, tracked properly by Postgres column metadata, unlike CHECK-
+// constrained domains or function-argument nullability), and
+// update_club_rules_and_policies's only call site (admin/settings/
+// actions.ts) always passes a real string, never null, so the generated
+// `p_rules_and_policies: string` (required, non-nullable) is the MORE
+// accurate contract — the old hand-file's `string | null` was unnecessarily
+// permissive, not a correction worth preserving. These assertions now check
+// the generated source of truth directly instead of re-asserting content
+// that types.ts no longer hand-declares.
+describe("generated DB types — club_settings.rules_and_policies", () => {
+  const DB_TYPES_PATH = "src/lib/db/database.types.ts";
+
   it("Row/Insert/Update all carry rules_and_policies: string | null (optional on Insert/Update)", () => {
-    const s = readSource(TYPES_PATH);
+    const s = readSource(DB_TYPES_PATH);
     const clubSettingsStart = s.indexOf("club_settings: {");
     expect(clubSettingsStart).toBeGreaterThan(-1);
     const clubSettingsBlock = s.slice(clubSettingsStart, clubSettingsStart + 2000);
-    expect(clubSettingsBlock).toContain("rules_and_policies: string | null;");
-    expect(clubSettingsBlock).toContain("rules_and_policies?: string | null;");
+    expect(clubSettingsBlock).toContain("rules_and_policies: string | null");
+    expect(clubSettingsBlock).toContain("rules_and_policies?: string | null");
   });
 
   it("the update_club_rules_and_policies RPC is declared in the Functions map with the correct Args/Returns shape", () => {
-    const s = readSource(TYPES_PATH);
+    const s = readSource(DB_TYPES_PATH);
     const idx = s.indexOf("update_club_rules_and_policies: {");
     expect(idx).toBeGreaterThan(-1);
     const block = s.slice(idx, idx + 200);
-    expect(block).toContain("Args: { p_rules_and_policies: string | null };");
-    expect(block).toContain("Returns: undefined;");
+    expect(block).toContain("Args: { p_rules_and_policies: string }");
+    expect(block).toContain("Returns: undefined");
+  });
+
+  it("types.ts does not override either — it lets both flow through from the generated file unchanged", () => {
+    const s = readSource(TYPES_PATH);
+    expect(s).not.toContain("rules_and_policies");
+    expect(s).not.toContain("update_club_rules_and_policies");
   });
 });

@@ -9,6 +9,11 @@ import MemberDetailClient, {
   type ClientNote,
 } from "./MemberDetailClient";
 import type { HistoryItem } from "./actions";
+// Phase 45C1B — both RPCs return activity-specific data nested inside a
+// `details` jsonb column, not as flat columns; this adapter is the ONLY
+// place that reads it, shared with loadMoreMemberHistoryAction's own
+// pagination so initial load and "Load more" can never drift apart.
+import { normalizeMemberUpcomingActivity, normalizeMemberHistoryActivity } from "./activityNormalization";
 import type { PaymentStateRow } from "@/lib/payments";
 
 interface Props {
@@ -99,7 +104,7 @@ export default async function MemberDetailPage({ params }: Props) {
   }
 
   const member       = (detailResult.data as MemberDetail[])[0];
-  const upcoming     = (upcomingResult.data ?? []) as UpcomingItem[];
+  const upcoming: UpcomingItem[] = (upcomingResult.data ?? []).map(normalizeMemberUpcomingActivity);
 
   // Phase 34C — lightweight, read-only financial summary on this Member's
   // upcoming activity. reservation/lesson activity_id already IS
@@ -145,7 +150,7 @@ export default async function MemberDetailPage({ params }: Props) {
     const evId = eventIdByParticipantId.get(p.domain_id);
     if (evId) paymentStateByActivityKey.set(`event:${evId}`, p);
   }
-  const historyItems = (historyResult.data ?? []) as HistoryItem[];
+  const historyItems: HistoryItem[] = (historyResult.data ?? []).map(normalizeMemberHistoryActivity);
   const notes        = (notesResult.data ?? []) as ClientNote[];
   const timezone     = (clubResult as { data: { timezone: string } | null })?.data?.timezone
     ?? "America/New_York";

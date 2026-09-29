@@ -320,9 +320,15 @@ describe("D. email_opted_out_count is absent from 0170, db/types.ts, and the Act
   });
 
   it("db/types.ts's get_communications_activity Returns shape has no opted-out field", () => {
-    const s = readSource("src/lib/db/types.ts");
+    // Phase 45C1: types.ts's own FunctionsOverride entry for this RPC only
+    // touches batch_id/body/audience_mode — email_sent_count/
+    // email_failed_count aren't overridden, so they only appear in the
+    // GENERATED database.types.ts, which reflects the RPC's real Postgres
+    // RETURNS TABLE column list directly (this is exactly the source an
+    // opted-out field would have to appear in if it existed at all).
+    const s = readSource("src/lib/db/database.types.ts");
     const fnStart = s.indexOf("get_communications_activity: {");
-    const fnEnd   = s.indexOf("};", s.indexOf("Returns: {", fnStart));
+    const fnEnd   = s.indexOf("}", s.indexOf("Returns: {", fnStart));
     const fnBlock = s.slice(fnStart, fnEnd);
     expect(fnBlock).not.toMatch(/email_opted_out_count/);
     expect(fnBlock).toContain("email_sent_count");
