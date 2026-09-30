@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Database } from "./types";
 import type { NotificationKind } from "@/lib/notification-targets";
@@ -301,11 +301,20 @@ describe("NotificationKind has exactly one hand-written declaration", () => {
   });
 });
 
-describe("0210 remains immutable; migration history advances by exactly two new files (Phase 45C1A, then 45C1A2)", () => {
-  it("0212 exists (created, per Phase 45C1A2) and is the highest migration — no 0213", () => {
-    const files: string[] = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const numbers = files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n));
-    expect(Math.max(...numbers)).toBe(212);
+describe("0210 remains immutable; migration history advanced by exactly two new files as of Phase 45C1A2 (0211, then 0212)", () => {
+  // "0212 exists ... and is the highest migration — no 0213" was previously
+  // asserted here as a hardcoded "highest migration === 212" ceiling.
+  // Removed: that pattern is invalid for a historical checkpoint's
+  // regression suite — it cannot prove no LATER, unrelated checkpoint will
+  // ever add a migration (several have since: 0213-0216, added by Phase
+  // 45D). Replaced with a durable existence check for the two files this
+  // checkpoint actually owns; migration-specific claims for later
+  // migrations belong in the test suite of the checkpoint that actually
+  // owns them. See topLevelBackLinkCleanup.regression.test.ts's own note on
+  // this same cleanup.
+  it("0211 and 0212 both exist as real migration files on disk", () => {
+    expect(() => readSource("supabase/migrations/0211_member_notes_schema_reconciliation.sql")).not.toThrow();
+    expect(() => readSource("supabase/migrations/0212_restore_member_note.sql")).not.toThrow();
   });
 
   it("0210's own content is byte-for-byte unchanged", () => {

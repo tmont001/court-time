@@ -657,14 +657,13 @@ export async function adminRemoveGuest(
 // ---------------------------------------------------------------------------
 // getEventGuestWaiverComplianceAction
 // Phase 43B-5B — set-based Guest waiver compliance for this event's active
-// Guests, via get_event_guest_waiver_compliance (0199). Called ONCE per
-// roster load, never per-Guest (no N+1). That RPC's own role check
-// (admin/pro ONLY — mirrors get_event_roster's CURRENT boundary exactly,
-// per this checkpoint's own authorization audit; deliberately narrower
-// than admin_add_guest/admin_remove_guest's admin/pro/staff mutation
-// boundary) is the real authorization — this action adds none of its own
-// beyond the same assertActiveClub preflight every action here already
-// uses.
+// Guests, via get_event_guest_waiver_compliance (0199, widened to include
+// Staff by 0214 — Phase 45D2). Called ONCE per roster load, never
+// per-Guest (no N+1). That RPC's own role check (admin/staff/pro — matches
+// get_event_roster's boundary and admin_add_guest/admin_remove_guest's
+// mutation boundary) is the real authorization — this action adds none of
+// its own beyond the same assertActiveClub preflight every action here
+// already uses.
 // ---------------------------------------------------------------------------
 export async function getEventGuestWaiverComplianceAction(
   eventId: string,

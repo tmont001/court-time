@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 // Phase 45C2 — removes obsolete `(supabase.rpc as any)`/`(supabase.from as
@@ -321,7 +321,7 @@ describe("the one known unrelated remaining cast is intentionally untouched", ()
 // 11-13. Migration immutability.
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("0211/0212 untouched; no migration 0213 was created for this type-safety-only cleanup", () => {
+describe("0211/0212 untouched; this type-safety-only cleanup added no migration of its own", () => {
   it("0211 still contains fingerprints from every prior correction round", () => {
     const s = readSource(MIGRATION_0211_PATH);
     expect(s).toContain("-- 1a. member_notes — member_id FK convergence (ON DELETE CASCADE)");
@@ -333,9 +333,15 @@ describe("0211/0212 untouched; no migration 0213 was created for this type-safet
     expect(s).toContain("if not v_note.is_archived then raise exception 'note_not_archived'; end if;");
   });
 
-  it("0212 remains the highest migration — no 0213", () => {
-    const files: string[] = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const numbers = files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n));
-    expect(Math.max(...numbers)).toBe(212);
-  });
+  // "0212 remains the highest migration — no 0213" was previously asserted
+  // here as a hardcoded "highest migration === 212" ceiling. Removed: that
+  // pattern is invalid for a historical checkpoint's regression suite — it
+  // cannot prove no LATER, unrelated checkpoint will ever add a migration
+  // (several have since: 0213-0216, added by Phase 45D). This checkpoint
+  // truthfully added no migration of its own, which the two contract checks
+  // above continue to prove by confirming 0211/0212 are exactly as this
+  // checkpoint left them; migration-specific claims for later migrations
+  // belong in the test suite of the checkpoint that actually owns them. See
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup.
 });

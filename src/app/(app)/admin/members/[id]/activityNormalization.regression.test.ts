@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { normalizeMemberUpcomingActivity, normalizeMemberHistoryActivity } from "./activityNormalization";
 import type { Database } from "@/lib/db/types";
@@ -373,10 +373,20 @@ describe("unrelated, previously-justified domain overrides in types.ts are untou
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// 19-20. 0211/0212 untouched; no 0213.
+// 19-20. 0211/0212 untouched.
 // ─────────────────────────────────────────────────────────────────────────
 
-describe("0211 and 0212 remain byte-for-byte untouched; no migration 0213 was created", () => {
+// "0212 is the highest migration — no 0213" was previously asserted here as
+// a hardcoded "highest migration === 212" ceiling. Removed: that pattern is
+// invalid for a historical checkpoint's regression suite — it cannot prove
+// no LATER, unrelated checkpoint will ever add a migration (several have
+// since: 0213-0216, added by Phase 45D). The two content checks below
+// continue to prove 0211/0212 remain byte-for-byte as this checkpoint left
+// them; migration-specific claims for later migrations belong in the test
+// suite of the checkpoint that actually owns them. See
+// topLevelBackLinkCleanup.regression.test.ts's own note on this same
+// cleanup.
+describe("0211 and 0212 remain byte-for-byte untouched", () => {
   it("0211 still contains its full evolved content (all three correction rounds)", () => {
     const s = readSource(MIGRATION_0211_PATH);
     expect(s).toContain("-- 0211_member_notes_schema_reconciliation.sql");
@@ -391,12 +401,6 @@ describe("0211 and 0212 remain byte-for-byte untouched; no migration 0213 was cr
     expect(s).toContain("create or replace function public.restore_member_note(");
     expect(s).toContain("if not v_note.is_archived then raise exception 'note_not_archived'; end if;");
     expect(s.trim().endsWith("commit;")).toBe(true);
-  });
-
-  it("0212 is the highest migration — no 0213", () => {
-    const files: string[] = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const numbers = files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n));
-    expect(Math.max(...numbers)).toBe(212);
   });
 });
 
@@ -623,12 +627,18 @@ describe("mark_lesson_outcome (canonical, migration 0132) already permits changi
     expect(block).toContain("if v_request.pro_id <> auth.uid() and v_profile.role not in ('admin', 'staff') then");
   });
 
-  it("0212 is still the highest migration — no new migration was created for this fix", () => {
-    const files: string[] = readdirSync(join(process.cwd(), "supabase/migrations"));
-    const numbers = files.map((f) => parseInt(f.slice(0, 4), 10)).filter((n) => !Number.isNaN(n));
-    expect(Math.max(...numbers)).toBe(212);
-  });
-
+  // "0212 is still the highest migration — no new migration was created for
+  // this fix" was previously asserted here as a hardcoded
+  // "highest migration === 212" ceiling. Removed: that pattern is invalid
+  // for a historical checkpoint's regression suite — it cannot prove no
+  // LATER, unrelated checkpoint will ever add a migration (several have
+  // since: 0213-0216, added by Phase 45D). The content check below
+  // continues to prove 0211/0212 remain byte-for-byte as this checkpoint
+  // left them, which is the durable fact this fix actually needed no new
+  // migration to achieve (mark_lesson_outcome's existing 0132 body already
+  // permitted changing an outcome). See
+  // topLevelBackLinkCleanup.regression.test.ts's own note on this same
+  // cleanup.
   it("0211 and 0212 remain untouched (fingerprints from every prior correction round still present)", () => {
     const s211 = readSource(MIGRATION_0211_PATH);
     expect(s211).toContain("-- 1a. member_notes — member_id FK convergence (ON DELETE CASCADE)");

@@ -273,11 +273,10 @@ export default function EventRosterSheet({ eventId, clubId, onClose, clubTimezon
     // failure here silently leaves the Waiver indicator hidden (map stays
     // empty) rather than surfacing a second error banner over the roster
     // itself, which is not blocked by this at all. get_event_guest_
-    // waiver_compliance is admin/pro ONLY (mirrors get_event_roster's own
-    // CURRENT read boundary — narrower than the admin/pro/staff mutation
-    // boundary Remove/Copy Link use); a Staff caller's own get_event_
-    // roster call already fails first in that case, so this call simply
-    // never resolves any compliance data for them either.
+    // waiver_compliance is admin/staff/pro (widened to include Staff by
+    // 0214 — Phase 45D2; now matches get_event_roster's own read boundary
+    // and the admin/pro/staff mutation boundary Remove/Copy Link use), so
+    // a Staff caller sees Waiver compliance data the same as Admin/Pro.
     getEventGuestWaiverComplianceAction(eventId, clubId).then(({ data }) => {
       setGuestCompliance(new Map((data ?? []).map((row) => [row.relationship_id, row])));
     });
