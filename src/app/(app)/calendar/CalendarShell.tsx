@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/db/types";
 import EventDetailSheet from "./EventDetailSheet";
+import { WAITLIST_OFFER_RESOLVED_EVENT } from "@/components/WaitlistOfferModal";
 import CreateEventSheet from "./CreateEventSheet";
 import ReservationDetailSheet from "./ReservationDetailSheet";
 // Phase 34F-D — the SAME canonical Member Lesson detail component
@@ -508,6 +509,40 @@ export default function CalendarShell({ courts, hasError, userId, userRosterMemb
   // clicked pro_lesson block on this page. Reuses LessonRequestDetail
   // verbatim (imported above) rather than a second implementation.
   const [selectedLessonRequest, setSelectedLessonRequest] = useState<LessonRequestRow | null>(null);
+
+  // Phase 45E1 UX follow-up (second pass, after failed browser QA):
+  // WaitlistOfferModal is mounted globally in the authenticated layout,
+  // with no parent/child relationship to this component, and dispatches
+  // this event after a successful accept/decline — its own
+  // router.refresh() only refreshes ITS server-fetched prop, never this
+  // component's independently client-fetched events/selectedEvent state.
+  // The first pass gated this listener's registration on
+  // `[selectedEvent]` and had its handler branch on a CLOSED-OVER
+  // `selectedEvent` value read at the time that particular listener
+  // instance was registered. Browser QA proved that path never actually
+  // refreshed/closed an already-open sheet at runtime (backend and the
+  // 0217 guard both confirmed correct; the defect is isolated to this
+  // listener). Rather than depend on re-registering the listener in sync
+  // with every selectedEvent change (a real class of closure-staleness
+  // risk for a DOM-level listener reacting to React state), this now
+  // registers ONCE on mount and reads current state the way React
+  // guarantees is always fresh: (1) unconditionally bump refreshTick so
+  // CalendarShell's own client-fetched event data always refreshes, and
+  // (2) close the sheet via a functional setState updater, which receives
+  // the true latest `prev` value at flush time regardless of what this
+  // closure captured at registration — no dependency on selectedEvent
+  // needed at all. Still the exact same underlying refresh/close
+  // mechanism the in-sheet accept/decline/join/leave handlers already use
+  // via onRefresh — just triggered correctly now.
+  useEffect(() => {
+    function handleOfferResolved(e: Event) {
+      const eventId = (e as CustomEvent<{ eventId: string }>).detail?.eventId;
+      setRefreshTick(t => t + 1);
+      setSelectedEvent(prev => (prev?.id === eventId ? null : prev));
+    }
+    window.addEventListener(WAITLIST_OFFER_RESOLVED_EVENT, handleOfferResolved);
+    return () => window.removeEventListener(WAITLIST_OFFER_RESOLVED_EVENT, handleOfferResolved);
+  }, []);
 
   // Phase 34D-D1, generalized in Phase 36B — auto-open a reservation's own
   // detail sheet directly by id, independent of whatever date range this

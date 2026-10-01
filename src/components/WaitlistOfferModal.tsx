@@ -28,8 +28,30 @@ function mapOfferError(message: string): string {
     event_archived:    "This event is no longer available.",
     offer_not_found:   "This offer is no longer available.",
     offer_expired:     "This offer has expired.",
+    offer_no_longer_available: "This offer is no longer available.",
   };
   return map[message] ?? "Something went wrong. Please try again.";
+}
+
+// Phase 45E1 UX follow-up: this modal is mounted globally (see this file's
+// own header comment below) and has no parent/child relationship to
+// whatever calendar view might independently already have this same
+// event's detail sheet open — router.refresh() only refreshes THIS
+// component's own server-fetched `offer` prop, not that other, purely
+// client-fetched sheet's state (browser QA of 0217 found an already-open
+// EventDetailSheet left showing stale "Spot offered"/Accept/Pass controls
+// after a successful accept here). Dispatching this window event is the
+// smallest available bridge between the two disconnected component
+// trees — CalendarShell listens for it and reuses its own existing
+// refresh/close mechanism verbatim, not a new state-management
+// architecture.
+export const WAITLIST_OFFER_RESOLVED_EVENT = "ct:waitlist-offer-resolved";
+
+function notifyOfferResolved(eventId: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(WAITLIST_OFFER_RESOLVED_EVENT, { detail: { eventId } })
+  );
 }
 
 function dismissKey(offer: WaitlistOfferData): string {
@@ -85,6 +107,7 @@ export default function WaitlistOfferModal({ offer }: Props) {
     startTransition(async () => {
       const res = await acceptWaitlistOffer(offer!.eventId, offer!.clubId);
       if (res.error) { setError(mapOfferError(res.error)); return; }
+      notifyOfferResolved(offer!.eventId);
       router.refresh();
     });
   }
@@ -94,6 +117,7 @@ export default function WaitlistOfferModal({ offer }: Props) {
     startTransition(async () => {
       const res = await declineWaitlistOffer(offer!.eventId, offer!.clubId);
       if (res.error) { setError(mapOfferError(res.error)); return; }
+      notifyOfferResolved(offer!.eventId);
       router.refresh();
     });
   }

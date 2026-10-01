@@ -3509,6 +3509,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      _lock_pro_schedule: { Args: { p_pro_id: string }; Returns: undefined }
       _lock_reservation_player_search_row: {
         Args: { p_reservation_id: string }
         Returns: {

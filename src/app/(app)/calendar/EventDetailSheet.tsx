@@ -155,6 +155,7 @@ function mapOfferError(message: string): string {
   if (message === STALE_CLUB_CONTEXT_ERROR) return STALE_CLUB_MESSAGE;
   if (message === "offer_not_found")   return "This offer is no longer valid.";
   if (message === "offer_expired")     return "Your offer has expired. You can rejoin the waitlist if you're still interested.";
+  if (message === "offer_no_longer_available") return "This offer is no longer valid.";
   if (message === "not_authenticated") return "Please sign in to continue.";
   if (message === "event_archived")    return "This event is archived and no longer available.";
   if (message === "member_schedule_conflict") return "You already have another confirmed commitment at that time.";
@@ -176,6 +177,26 @@ export default function EventDetailSheet({
   const [localGuestCount, setLocalGuestCount]         = useState(
     event.event_guests?.filter(g => g.status === "active").length ?? 0
   );
+  // Phase 45E1 UX follow-up: localParticipants/localGuestCount were
+  // initialized ONCE from the event prop at mount and never resynced —
+  // browser QA of 0217 found that accepting a waitlist offer via the
+  // app-wide WaitlistOfferModal popup (which only calls router.refresh(),
+  // correct for its own server-fetched prop but a no-op for this
+  // component's own client-fetched state — see CalendarShell's
+  // ct:waitlist-offer-resolved listener below) left an already-open
+  // EventDetailSheet for the same event stuck showing pre-mutation
+  // "Spot offered"/Accept/Pass controls indefinitely. Resyncing whenever
+  // CalendarShell hands down a genuinely fresh participants/guests array
+  // (its own reference only changes after a real refetch) closes this —
+  // and is a correct fix regardless of which surface triggered the
+  // refetch, not just the one QA reproduced.
+  useEffect(() => {
+    setLocalParticipants(event.event_participants);
+  }, [event.event_participants]);
+
+  useEffect(() => {
+    setLocalGuestCount(event.event_guests?.filter(g => g.status === "active").length ?? 0);
+  }, [event.event_guests]);
   // Phase 33D2a fix: null = not yet resolved (show "Loading participants…");
   // [] = resolved with zero matching profiles — a real, valid end state
   // once no-account participants exist (see the fetch effect below), not
